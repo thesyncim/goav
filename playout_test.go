@@ -428,7 +428,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 	}
 	var budgets []plan.Decision
 	for _, decision := range report.Decisions {
-		if decision.Code == diagnosticPathLatencyBudget {
+		if decision.Code == "path_latency_budget" {
 			budgets = append(budgets, decision)
 		}
 	}
@@ -458,7 +458,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, decision := range ungated.Decisions {
-		if decision.Code == diagnosticPathLatencyBudget {
+		if decision.Code == "path_latency_budget" {
 			t.Fatalf("ungated path reported a latency budget: %+v", decision)
 		}
 	}

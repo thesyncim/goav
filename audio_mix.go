@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/shape"
 )
 
 // audioMixStage sums N synchronized audio inputs into one output stream — the
@@ -37,15 +37,15 @@ type audioMixStage struct {
 	message pipeline.Message
 }
 
-func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode) *audioMixStage {
+func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode) *audioMixStage {
 	return newAudioMixStageWithPrealloc(name, inputs, out, mode, 1)
 }
 
-func newAudioMixStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode, preallocDepth int) *audioMixStage {
+func newAudioMixStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int) *audioMixStage {
 	return newAudioMixStageWithPreallocAndPools(name, inputs, out, mode, preallocDepth, nil)
 }
 
-func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode, preallocDepth int, pools *mediaPools) *audioMixStage {
+func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int, pools *mediaPools) *audioMixStage {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
@@ -77,7 +77,7 @@ func (s *audioMixStage) Name() string { return s.name }
 // DescribeNode reports the same detail the join planner records on the planned
 // node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
 func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
-	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
 }
 
 // DroppedMessages implements pipeline.DropReporter: frames the join discarded
@@ -241,7 +241,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	mixed := av.NewBuffer(n)
 	mixS16Into(mixed.Bytes, inputs, n)
 	*audio = *base.Audio
-	audio.Samples = n / 2 / maxInt(base.Audio.Channels, 1)
+	audio.Samples = n / 2 / max(base.Audio.Channels, 1)
 	dst.StreamID = out
 	dst.Type = av.MediaAudio
 	dst.PTS = base.PTS
@@ -327,75 +327,6 @@ func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
 		s.pools.putPlanes(frame.Planes)
 		frame.Planes = nil
 	}
-}
-
-// mixJoinProfile is Mix's entry in the join table: audio arms, explicit
-// packet-arm decode, first-arm-wins format solving through the shared shape
-// solver (the implicit always-on arm policy — no user opt-in needed),
-// audioMixStage convergence, and an encodable S16 output stream derived from
-// the first arm's shape.
-var mixJoinProfile = joinProfile{
-	media:      av.MediaAudio,
-	decodeArms: true,
-	graphBuffer: &pipeline.BufferPolicy{
-		Capacity: realtimeRecipeBufferCapacity,
-		Drop:     pipeline.DropBlock,
-	},
-	graphBufferRealtimeOnly: true,
-	// The first arm's audio format is the mix target; later arms that differ
-	// get a conversion planned by the shape solver under the arm policy.
-	armExpected: func(p *joinPlan, stream av.Stream) shape.Spec {
-		if stream.Codec.SampleRate <= 0 {
-			return shape.Spec{}
-		}
-		channels := maxInt(stream.Codec.Channels, 1)
-		if p.targetRate == 0 {
-			p.targetRate, p.targetChannels = stream.Codec.SampleRate, channels
-			return shape.Spec{}
-		}
-		return shape.Frame(av.MediaAudio, shape.Audio(p.targetRate, p.targetChannels, ""))
-	},
-	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
-	// An arm whose format is known only once it opens converts at run time to
-	// the first arm's rate and channels in S16, or to the encoder's explicit
-	// rate and channels when the first arm is such an arm too.
-	conformTarget: func(p *joinPlan, first av.Stream) shape.Spec {
-		rate, channels := first.Codec.SampleRate, first.Codec.Channels
-		if rate > 0 {
-			channels = maxInt(channels, 1)
-		}
-		if p.lateTarget {
-			rate = firstPositiveInt(p.target.SampleRate, rate)
-			channels = firstPositiveInt(p.target.Channels, channels)
-		}
-		return shape.Frame(av.MediaAudio, shape.Audio(rate, channels, av.SampleFormatS16))
-	},
-	conformFollowsFirstArm: true,
-	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
-	},
-	// The output id is the join's planned node name (mix, or mix-2 when
-	// nested under another mix); the format facts come from the first arm —
-	// a leaf's declared source shape or a sub-join's joined stream.
-	joinedStream: func(p *joinPlan) av.Stream {
-		shape := p.firstArmSourceShape()
-		return av.Stream{
-			ID:   av.StreamID(p.name),
-			Type: av.MediaAudio,
-			Codec: av.CodecParameters{
-				Type:         av.MediaAudio,
-				SampleRate:   shape.SampleRate,
-				Channels:     shape.Channels,
-				SampleFormat: shape.SampleFormat,
-				ClockRate:    uint32(shape.SampleRate),
-			},
-		}
-	},
-	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
-	sinkOnlySuggestions: []string{
-		"encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(codec.Bitrate(96_000))).To(out)",
-		"deliver raw mixed frames with .To(goav.Sink(sink)) instead",
-	},
 }
 
 func (s *audioMixStage) enableAdmission() { s.sync.enableAdmission() }

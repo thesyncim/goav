@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The recipe compiler moved out of the root package into `internal/compile`
+  (validation, shape solving, join planning, lowering, and the spec and work
+  plan it emits); the root keeps the grammar, `Runtime`, the task, attach, and
+  adapter opening. No API or behavior change: refusals are the same
+  `*BuildError` codes, details, and fixes, the compiler oracle and the
+  allocation ratchets are unchanged, and new pins hold the boundary (root
+  reaches the compiler only through an allowlisted set of names, and every
+  compile refusal returns through one conversion). Root non-test code: 24,354
+  to 14,684 lines.
+
 - A composite canvas is one pooled block shared by its three planes: one
   pool round trip per output instead of three.
 - Payloads are shared by reference instead of copied per edge. `av.Buffer`

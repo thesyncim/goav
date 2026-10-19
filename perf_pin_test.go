@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 	runconfig "github.com/thesyncim/goav/runconfig"
@@ -153,7 +154,7 @@ func TestAudioMixStepAllocs(t *testing.T) {
 		{name: "eight-arms", ids: []av.StreamID{"a", "b", "c", "d", "e", "f", "g", "h"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mix := newAudioMixStage("mix", tt.ids, "mix", joinSyncArrival)
+			mix := newAudioMixStage("mix", tt.ids, "mix", compile.JoinSyncArrival)
 			emit := discardPinEmitter{}
 			messages := make([]*pipeline.Message, len(tt.ids))
 			for i := range tt.ids {
@@ -183,7 +184,7 @@ func TestVideoCompositeStepAllocs(t *testing.T) {
 	}
 	ctx := context.Background()
 	composite := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := discardPinEmitter{}
 	frameA := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 100, 10, 20)}
 	frameB := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("b", 4, 4, 200, 30, 40)}
@@ -276,12 +277,12 @@ func TestRuntimeMediaPoolsRecycleJoinStagePlanes(t *testing.T) {
 		t.Fatal("WithMediaPools(true) did not install runtime media pools")
 	}
 
-	mix := newAudioMixStageWithPreallocAndPools("mix", []av.StreamID{"a", "b"}, "out", joinSyncArrival, 2, pools)
+	mix := newAudioMixStageWithPreallocAndPools("mix", []av.StreamID{"a", "b"}, "out", compile.JoinSyncArrival, 2, pools)
 	if err := mix.Close(); err != nil {
 		t.Fatal(err)
 	}
 	composite := newVideoCompositeStageWithPreallocAndPools("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival, 2, pools)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival, 2, pools)
 	if err := composite.Close(); err != nil {
 		t.Fatal(err)
 	}

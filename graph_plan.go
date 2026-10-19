@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 )
@@ -17,7 +17,7 @@ type graphPlan struct {
 	realtime bool
 	nodes    []pipeline.NodeSpec
 	edges    []pipeline.EdgeSpec
-	work     workPlan
+	work     compile.WorkPlan
 	lowerer  *recipeLowerer
 }
 
@@ -27,14 +27,14 @@ func (p graphPlan) ready() bool {
 
 func (p graphPlan) Describe() (pipeline.Spec, error) {
 	if !p.ready() {
-		return pipeline.Spec{}, graphPlanInvalidError("graph plan is not ready", nil)
+		return pipeline.Spec{}, publicError(compile.GraphPlanInvalidError("graph plan is not ready", nil))
 	}
 	return p.spec(), nil
 }
 
 func (p graphPlan) Build(ctx context.Context) (LiveTask, error) {
 	if !p.ready() {
-		return nil, graphPlanInvalidError("graph plan is not ready", nil)
+		return nil, publicError(compile.GraphPlanInvalidError("graph plan is not ready", nil))
 	}
 	return buildGraphPlanTask(ctx, p)
 }
@@ -55,11 +55,11 @@ func (p graphPlan) spec() pipeline.Spec {
 	}
 }
 
-func (p graphPlan) workPlan() workPlan {
-	return cloneWorkPlan(p.work)
+func (p graphPlan) workPlan() compile.WorkPlan {
+	return compile.CloneWorkPlan(p.work)
 }
 
-func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work workPlan, lowerer *recipeLowerer) graphPlan {
+func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work compile.WorkPlan, lowerer *recipeLowerer) graphPlan {
 	return graphPlan{
 		runtime:  runtime,
 		name:     work.Name,
@@ -81,12 +81,12 @@ func graphPlanWithRuntime(gp graphPlan, rt *Runtime) graphPlan {
 
 func validateGraphPlanLowering(gp graphPlan) error {
 	if !gp.ready() {
-		return graphPlanInvalidError("graph plan is not ready", nil)
+		return publicError(compile.GraphPlanInvalidError("graph plan is not ready", nil))
 	}
 	if len(gp.nodes) != 0 && len(gp.work.Operations) == 0 {
-		return graphPlanInvalidError("graph plan has nodes but no ordered operations", []string{
+		return publicError(compile.GraphPlanInvalidError("graph plan has nodes but no ordered operations", []string{
 			"nodes=" + strconv.Itoa(len(gp.nodes)),
-		})
+		}))
 	}
 	if err := validateGraphPlanEdges(gp); err != nil {
 		return err
@@ -100,13 +100,13 @@ func validateGraphPlanLowering(gp graphPlan) error {
 			"kind=" + string(operation.Kind),
 		}
 		if operation.Kind == "" {
-			return graphPlanInvalidError("graph-plan operation has no kind", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan operation has no kind", details))
 		}
 		if operation.Branch == "" {
-			return graphPlanInvalidError("graph-plan operation has no branch", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan operation has no branch", details))
 		}
 		if graphPlanOperationDestinationsRequired(operation.Kind) && len(operation.Destinations) == 0 {
-			return graphPlanInvalidError("graph-plan destination operation has no destination refs", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan destination operation has no destination refs", details))
 		}
 	}
 	return nil
@@ -128,13 +128,13 @@ func validateGraphPlanEdges(gp graphPlan) error {
 			"to=" + edge.To.String(),
 		}
 		if edge.From == "" || edge.To == "" {
-			return graphPlanInvalidError("graph-plan edge is missing a source or target", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan edge is missing a source or target", details))
 		}
 		if _, ok := nodes[edge.From]; !ok {
-			return graphPlanInvalidError("graph-plan edge source is not a planned node", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan edge source is not a planned node", details))
 		}
 		if _, ok := nodes[edge.To]; !ok {
-			return graphPlanInvalidError("graph-plan edge target is not a planned node", details)
+			return publicError(compile.GraphPlanInvalidError("graph-plan edge target is not a planned node", details))
 		}
 	}
 	return nil
@@ -146,21 +146,5 @@ func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func graphPlanInvalidError(reason string, details []string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(graphPlanInvalidCode),
-		Code:      graphPlanInvalidCode,
-		Operation: "build graph plan",
-		Reason:    reason,
-		fields:    errDetailLines(append([]string(nil), details...)),
-		fixes: buildErrorFixes([]string{
-			"compile recipes through Streams, joins, and Outputs: rt.Run(ctx, outputs...)",
-			"keep graph-plan nodes, edges, operations, and destinations in sync",
-		}),
-		cause: errUnsupportedBuild,
 	}
 }

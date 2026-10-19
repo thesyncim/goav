@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 type decodeTestDecoderFactory struct {
@@ -71,10 +72,10 @@ type decodeTestDecoder struct {
 }
 
 func TestSelectDecodeStreamRequiresCodecMetadata(t *testing.T) {
-	_, err := selectDecodeStream([]av.Stream{{
+	_, err := refuse(compile.SelectDecodeStream([]av.Stream{{
 		ID:   "mystery",
 		Type: av.MediaAudio,
-	}}, av.StreamSelector{Type: av.MediaAudio})
+	}}, av.StreamSelector{Type: av.MediaAudio}))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != streamCodecMissingCode || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want stream_codec_missing with matching BuildError code", err)
@@ -266,9 +267,9 @@ func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
 	factory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
 	rt := mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	control := func(any) error { return nil }
-	request := decodeRequest{
-		selector: testSelectAudio(),
-		config: codec.Spec{
+	request := compile.DecodeRequest{
+		Selector: testSelectAudio(),
+		Config: codec.Spec{
 			Settings: codec.CodecSettings{
 				Bitrate: 48_000,
 				Profile: "analysis",
@@ -339,7 +340,7 @@ func TestNewDecodeStageNamedCustomDecoderErrorContracts(t *testing.T) {
 			Type: av.MediaAudio,
 		},
 	}
-	request := decodeRequest{selector: testSelectAudio()}
+	request := compile.DecodeRequest{Selector: testSelectAudio()}
 	newRuntime := func(factory codec.DecoderFactory) *Runtime {
 		return mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	}

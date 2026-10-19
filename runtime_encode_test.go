@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 type encodeTestEncoderFactory struct {
@@ -107,7 +108,7 @@ func TestEncodePacketBufferSizeScalesWithVideoFrame(t *testing.T) {
 }
 
 func TestPrepareEncodeConfigRequiresMatchingStream(t *testing.T) {
-	request := encodeRequest{selector: testSelectVideo(), config: pcmEncodeConfig()}
+	request := compile.EncodeRequest{Selector: testSelectVideo(), Config: pcmEncodeConfig()}
 
 	_, _, err := prepareEncodeConfig(audioOpusTestStream(), request, false)
 	var buildErr *BuildError
@@ -120,7 +121,7 @@ func TestPrepareEncodeConfigRequiresMatchingStream(t *testing.T) {
 }
 
 func TestPrepareEncodeConfigRequiresTargetCodec(t *testing.T) {
-	request := encodeRequest{selector: testSelectAudio()}
+	request := compile.EncodeRequest{Selector: testSelectAudio()}
 
 	_, _, err := prepareEncodeConfig(audioOpusTestStream(), request, false)
 	var buildErr *BuildError

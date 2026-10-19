@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,9 @@ import (
 // Suggestion containing each decisive fix fragment.
 func requireBuildError(t *testing.T, err error, code errcode.Code, operation string, node string, fixes ...string) *goav.BuildError {
 	t.Helper()
+	if leak := internalErrorIn(err); leak != "" {
+		t.Fatalf("err chain carries the internal %s; the root converts every compiler refusal to *goav.BuildError", leak)
+	}
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %v, want a *goav.BuildError", err)
@@ -485,4 +489,31 @@ func TestErrorAcceptanceFramesIntoFileNeedAnEncoder(t *testing.T) {
 		"call .Encode(codec.Opus(...)) before .To(goav.Write(...))",
 		"send decoded frames to goav.Sink(...)",
 	)
+}
+
+// internalErrorIn names the first error in err's chain whose type is
+// declared under goav's internal packages (a compiler refusal that escaped
+// the root's conversion), or "".
+func internalErrorIn(err error) string {
+	if err == nil {
+		return ""
+	}
+	t := reflect.TypeOf(err)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if strings.HasPrefix(t.PkgPath(), "github.com/thesyncim/goav/internal/") {
+		return t.String()
+	}
+	switch e := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, inner := range e.Unwrap() {
+			if leak := internalErrorIn(inner); leak != "" {
+				return leak
+			}
+		}
+	case interface{ Unwrap() error }:
+		return internalErrorIn(e.Unwrap())
+	}
+	return ""
 }

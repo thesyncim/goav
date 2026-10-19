@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -33,7 +34,7 @@ type inputStreamAnchor struct {
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
 func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
-	spec = normalizeCustomSourceShape(name, spec)
+	spec = recipeir.NormalizeSourceShape(name, spec)
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name:     name,
@@ -75,16 +76,6 @@ func (s inputStreamAnchor) branchSource() branchSourceBinding {
 		stream:       &stream,
 		streamDomain: s.input.sourceEventDomain(),
 	}
-}
-
-func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {
-	if spec.Domain == "" {
-		spec.Domain = shape.DomainPacket
-	}
-	if spec.StreamID == "" {
-		spec.StreamID = av.StreamID(firstNonEmpty(name, string(spec.MediaKind), "stream"))
-	}
-	return spec
 }
 
 func codecSpecFromSourceShape(shape shape.Spec) codec.Spec {
@@ -133,7 +124,7 @@ func customSourceShape(input InputSpec) (shape.Spec, bool) {
 	if input.source == nil {
 		return shape.Spec{}, false
 	}
-	return normalizeCustomSourceShape(input.inputName("source"), input.source.shape), true
+	return recipeir.NormalizeSourceShape(input.inputName("source"), input.source.shape), true
 }
 
 func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
@@ -143,7 +134,7 @@ func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
 	if input.provider == nil {
 		return shape.Spec{}, false
 	}
-	return normalizeCustomSourceShape(input.inputName("source"), input.provider.SourceShape()), true
+	return recipeir.NormalizeSourceShape(input.inputName("source"), input.provider.SourceShape()), true
 }
 
 type compileSourceShapeState interface {
@@ -173,7 +164,7 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 }
 
 func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
-	shape := normalizeCustomSourceShape(input.inputName("source"), spec)
+	shape := recipeir.NormalizeSourceShape(input.inputName("source"), spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,
@@ -189,55 +180,8 @@ func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
 		},
 		Name: string(shape.StreamID),
 	}
-	fillStreamCodecParameters(&stream, input.codec)
+	recipeir.FillStreamCodecParameters(&stream, input.codec)
 	return stream
-}
-
-// fillStreamCodecParameters overlays shape-derived codec parameters onto a
-// declared source stream: the declared stream stays authoritative, and the
-// source shape fills only facts the stream left open.
-func fillStreamCodecParameters(stream *av.Stream, spec codec.Spec) {
-	if spec.ID != "" && stream.Codec.ID != "" && spec.ID != stream.Codec.ID {
-		return
-	}
-	params := spec.Parameters
-	if stream.Codec.ID == "" {
-		stream.Codec.ID = firstCodecID(spec.ID, params.ID)
-	}
-	if stream.Codec.SampleRate == 0 {
-		stream.Codec.SampleRate = params.SampleRate
-	}
-	if stream.Codec.Channels == 0 {
-		stream.Codec.Channels = params.Channels
-	}
-	if stream.Codec.SampleFormat == "" {
-		stream.Codec.SampleFormat = params.SampleFormat
-	}
-	if stream.Codec.ChannelLayout == "" {
-		stream.Codec.ChannelLayout = params.ChannelLayout
-	}
-	if stream.Codec.Width == 0 {
-		stream.Codec.Width = params.Width
-	}
-	if stream.Codec.Height == 0 {
-		stream.Codec.Height = params.Height
-	}
-	if stream.Codec.PixelFormat == "" {
-		stream.Codec.PixelFormat = params.PixelFormat
-	}
-	if stream.Codec.ClockRate == 0 {
-		stream.Codec.ClockRate = params.ClockRate
-	}
-}
-
-// firstCodecID returns the first non-empty codec id.
-func firstCodecID(ids ...av.CodecID) av.CodecID {
-	for _, id := range ids {
-		if id != "" {
-			return id
-		}
-	}
-	return ""
 }
 
 // graphSourceBuild is the unified result of opening one input as a graph source:
@@ -311,28 +255,6 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 			realtime:  input.Realtime,
 		}, nil
 	}
-}
-
-// applySourceWraps decorates an opened source with the input's WrapSource
-// chain, then re-pins the node's name and described detail to the opened
-// source's values so Describe() ≡ Build() holds no matter what the decorator
-// reports. A decorator that delegates Name() and DescribeNode passes through
-// untouched, keeping every optional capability it implements visible.
-func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
-	if len(s.wraps) == 0 || source == nil {
-		return source
-	}
-	name, detail := source.Name(), describedNodeDetail(source)
-	wrapped := source
-	for _, wrap := range s.wraps {
-		if wrap == nil {
-			continue
-		}
-		if next := wrap(wrapped); next != nil {
-			wrapped = next
-		}
-	}
-	return resolvedProviderSource(wrapped, name, detail)
 }
 
 // graphSourceNodeName returns the base planner node name for this input. Callers
@@ -439,4 +361,10 @@ func (s *customSource) Start(ctx context.Context, emitter pipeline.Emitter) erro
 func (s *customSource) Close() error {
 	s.closed.Store(true)
 	return nil
+}
+
+// inputStartsFrameDomain reports an input that delivers decoded frames.
+func inputStartsFrameDomain(input InputSpec) bool {
+	spec, ok := declaredSourceShape(input)
+	return ok && spec.Domain == shape.DomainFrame
 }

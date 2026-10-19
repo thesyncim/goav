@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -27,11 +28,6 @@ type destinationSpec struct {
 	resolvedFormat av.FormatID
 	name           string
 	err            error
-}
-
-type namedDestinationSpec struct {
-	name   string
-	output destinationSpec
 }
 
 type branchDestinationFacts struct {
@@ -64,20 +60,12 @@ func branchDestinationFactsFromSpec(name string, output destinationSpec) branchD
 	}
 }
 
-func destinationSpecOutput(destination destinationSpec) format.Output {
-	return destination.output
-}
-
 func destinationGraphFormat(output destinationSpec) av.FormatID {
 	return output.format
 }
 
 func destinationOpenFormat(output destinationSpec) av.FormatID {
 	return destinationSpecFormat(output)
-}
-
-func destinationIdentity(destination namedDestinationSpec) string {
-	return destinationIdentityFromFacts(branchDestinationFactsFromSpec(destination.name, destination.output))
 }
 
 func destinationIdentityFromFacts(facts branchDestinationFacts) string {
@@ -103,10 +91,6 @@ func destinationSinkName(output destinationSpec) string {
 		return ""
 	}
 	return output.sink.Name()
-}
-
-func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDestinationSpec) bool {
-	return destinationIdentity(first) != "" && destinationIdentity(first) == destinationIdentity(second)
 }
 
 func destinationHandle(spec destinationSpec) Destination {
@@ -354,10 +338,10 @@ func MIME(mimeType string) MediaOption {
 func Metadata(metadata av.Metadata) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
-			spec.input.Metadata = cloneMetadata(metadata)
+			spec.input.Metadata = compile.CloneMetadata(metadata)
 		},
 		destination: func(spec *destinationSpec) {
-			spec.output.Metadata = cloneMetadata(metadata)
+			spec.output.Metadata = compile.CloneMetadata(metadata)
 		},
 	}
 }
@@ -450,7 +434,7 @@ func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider
 		}
 		return nopDestinationWriter{Writer: s.output.Writer}, nil
 	}
-	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer")
+	return nil, publicError(compile.DestinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer"))
 }
 
 func (s destinationSpec) validate(operation string, fallback string) error {
@@ -633,7 +617,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
 		return destinationNames[index]
 	}
-	return muxNodeName(output, index)
+	return compile.MuxNodeName(output, index)
 }
 
 func duplicateOutputError(operation string, name string) error {

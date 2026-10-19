@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -29,10 +30,15 @@ import (
 
 // attachPlan is one attach group planned against a running task.
 type attachPlan struct {
-	task     *task
-	name     string
-	state    *recipeCompileState
-	lowering *recipeLowering
+	task *task
+	name string
+	// dests are the group's destination handles, in its recipe's order.
+	dests []destinationSpec
+	// plan is the lowered group; streams are its branches, and names its
+	// destinations' names.
+	plan     *compile.AttachPlan
+	streams  []recipeir.Stream
+	names    []string
 	branches []attachPlanBranch
 	// anchors are the live streams the group's anchor nodes carry.
 	anchors map[pipeline.NodeRef]av.Stream
@@ -66,7 +72,7 @@ type attachAnchor struct {
 	key     string
 	ref     pipeline.NodeRef
 	pending recipeir.NodeID
-	route   anchorRoute
+	route   compile.AnchorRoute
 	tap     string
 	shape   shape.Spec
 	stream  av.Stream
@@ -122,12 +128,12 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 	t := p.task
 	graphSpec := t.graph.Spec()
 	live := t.tapsLocked()
-	s := &recipeCompileState{operation: "attach runtime branch", runtime: t.runtime, inserted: map[string]recipeir.NodeID{}}
-	attach := &attachLowering{
-		name:    p.name,
-		anchors: map[recipeir.NodeID]pipeline.NodeRef{},
-		routes:  map[recipeir.NodeID]anchorRoute{},
-		pending: map[recipeir.NodeID]recipeir.NodeID{},
+	group := compile.AttachGroup{
+		Name:    p.name,
+		Env:     t.runtime.compileEnv(),
+		Anchors: map[recipeir.NodeID]pipeline.NodeRef{},
+		Routes:  map[recipeir.NodeID]compile.AnchorRoute{},
+		Pending: map[recipeir.NodeID]recipeir.NodeID{},
 	}
 	// Operations keep the identities of the Streams they came from, so work
 	// several branches share is one node; an operation without one (a
@@ -152,10 +158,10 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 			next++
 			roots[anchor.key] = root
 			if anchor.ref != "" {
-				attach.anchors[root] = anchor.ref
-				attach.routes[root] = anchor.route
+				group.Anchors[root] = anchor.ref
+				group.Routes[root] = anchor.route
 			} else {
-				attach.pending[root] = anchor.pending
+				group.Pending[root] = anchor.pending
 			}
 		}
 		operations := cloneOperations(recipe.Operations)
@@ -176,7 +182,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 			Named:      true,
 			Root:       root,
 			Input:      -1,
-			Selector:   plan.StreamSelect{Type: firstNonEmptyMedia(recipe.Media, anchor.shape.MediaKind), Codec: anchor.shape.Codec},
+			Selector:   plan.StreamSelect{Type: compile.FirstNonEmptyMedia(recipe.Media, anchor.shape.MediaKind), Codec: anchor.shape.Codec},
 			Operations: operations,
 			Buffer:     recipe.Buffer,
 		}
@@ -186,29 +192,30 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 			anchor:       anchor,
 			destinations: branch.destinations,
 		}
-		facts := branchFacts{frames: anchor.shape.Domain == shape.DomainFrame}
+		var dests []int
 		for _, destination := range branch.destinations {
 			key := destination.recipe.ShareKey
 			if index, ok := shared[key]; ok && (input.groupDestinations.sharesSink(key) || input.groupDestinations.sharesMux(key)) {
-				facts.dests = append(facts.dests, index)
+				dests = append(dests, index)
 				continue
 			}
-			shared[key] = len(s.outputAttachments)
-			facts.dests = append(facts.dests, len(s.outputAttachments))
-			s.outputAttachments = append(s.outputAttachments, destination.dest)
-			s.outputDestinationNames = append(s.outputDestinationNames, destination.recipe.Name)
+			shared[key] = len(group.Destinations)
+			dests = append(dests, len(group.Destinations))
+			group.Destinations = append(group.Destinations, compileDestinationFromSpec(destination.dest))
+			group.Names = append(group.Names, destination.recipe.Name)
+			p.dests = append(p.dests, destination.dest)
 		}
-		planned.dests = facts.dests
-		s.recipe.Streams = append(s.recipe.Streams, stream)
-		s.facts = append(s.facts, facts)
+		planned.dests = dests
+		group.Streams = append(group.Streams, stream)
+		group.Frames = append(group.Frames, anchor.shape.Domain == shape.DomainFrame)
+		group.Dests = append(group.Dests, dests)
 		p.branches = append(p.branches, planned)
 	}
-	l := newRecipeLowering(s)
-	l.attach = attach
-	if err := l.plan(); err != nil {
+	lowered, err := refuse(compile.LowerAttach(group))
+	if err != nil {
 		return err
 	}
-	p.state, p.lowering = s, l
+	p.plan, p.streams, p.names = lowered, group.Streams, group.Names
 	return nil
 }
 
@@ -220,13 +227,13 @@ func (p *attachPlan) resolveAnchor(recipe recipeir.RuntimeBranch, graphSpec pipe
 	if policy == "" {
 		policy = pipeline.RouteAll
 	}
-	route := anchorRoute{policy: policy, label: source.Label}
+	route := compile.AnchorRoute{Policy: policy, Label: source.Label}
 	if name := source.Tap.Name; name != "" {
 		for _, tap := range live {
 			if tap.Name != name {
 				continue
 			}
-			if err := validateTapDomain("attach runtime branch", firstNonEmpty(recipe.Name, "branch"), tapRef{name: name, domain: source.Tap.Domain}, tap.Domain); err != nil {
+			if err := validateTapDomain("attach runtime branch", firstNonEmpty(recipe.Name, "branch"), compile.TapRef{Name: name, Domain: source.Tap.Domain}, tap.Domain); err != nil {
 				return attachAnchor{}, err
 			}
 			return attachAnchor{key: "tap\x00" + name, ref: tap.Node, route: route, tap: name, shape: runtimeBranchAnchorShape(tap)}, nil
@@ -258,7 +265,7 @@ func (p *attachPlan) resolveAnchor(recipe recipeir.RuntimeBranch, graphSpec pipe
 
 // node is the planned node an operation of the group lowers to.
 func (p *attachPlan) node(operation recipeir.Operation) (int, bool) {
-	ref, ok := p.lowering.refs[operation.Node]
+	ref, ok := p.plan.Ref(operation.Node)
 	if !ok || ref == "" {
 		return 0, false
 	}
@@ -266,8 +273,8 @@ func (p *attachPlan) node(operation recipeir.Operation) (int, bool) {
 }
 
 func (p *attachPlan) nodeIndex(ref pipeline.NodeRef) (int, bool) {
-	for i := range p.lowering.g.nodes {
-		if p.lowering.g.nodes[i].name == ref.String() {
+	for i := range p.plan.Nodes {
+		if p.plan.Nodes[i].Name == ref.String() {
 			return i, true
 		}
 	}
@@ -280,7 +287,7 @@ func (p *attachPlan) nodeIndex(ref pipeline.NodeRef) (int, bool) {
 func (p *attachPlan) checkBranch(index int) error {
 	t := p.task
 	branch := &p.branches[index]
-	stream := p.state.recipe.Streams[index]
+	stream := p.streams[index]
 	name := branch.name
 	current, live := branch.anchor.shape, branch.anchor.stream
 	if branch.anchor.ref == "" {
@@ -290,7 +297,7 @@ func (p *attachPlan) checkBranch(index int) error {
 		if !declared.ok {
 			return runtimeBranchTapMissingError(branch.anchor.tap, t.tapsLocked())
 		}
-		if err := validateTapDomain("attach runtime branch", name, tapRef{name: branch.anchor.tap, domain: branch.source.Tap.Domain}, declared.shape.Domain); err != nil {
+		if err := validateTapDomain("attach runtime branch", name, compile.TapRef{Name: branch.anchor.tap, Domain: branch.source.Tap.Domain}, declared.shape.Domain); err != nil {
 			return err
 		}
 		current, live = declared.shape, declared.stream
@@ -299,8 +306,8 @@ func (p *attachPlan) checkBranch(index int) error {
 	}
 	operations := stream.Operations
 	recipeStream := stream
-	recipeStream.Selector.Type = firstNonEmptyMedia(live.Type, live.Codec.Type, stream.Selector.Type, codecMedia(live.Codec.ID))
-	recipeStream.Selector.Codec = firstNonEmptyCodec(live.Codec.ID, stream.Selector.Codec)
+	recipeStream.Selector.Type = compile.FirstNonEmptyMedia(live.Type, live.Codec.Type, stream.Selector.Type, compile.CodecMedia(live.Codec.ID))
+	recipeStream.Selector.Codec = compile.FirstNonEmptyCodec(live.Codec.ID, stream.Selector.Codec)
 	if err := validateAttachBranchShapeContract(recipeStream, operations, branch.destinations, current); err != nil {
 		return err
 	}
@@ -331,24 +338,24 @@ func (p *attachPlan) checkBranch(index int) error {
 				return runtimeBranchDecodeCodecMissingError(name, current)
 			}
 			planned := recipeStream
-			planned.Selector = streamSelectFromStream(live)
+			planned.Selector = compile.StreamSelectFromStream(live)
 			if _, err := t.runtime.codecs.DecoderFactory(live.Codec.ID); err != nil {
-				return recipeDecodeAdapterError("attach runtime branch", planned, live.Codec.ID, t.runtime.codecs, err)
+				return publicError(compile.RecipeDecodeAdapterError("attach runtime branch", planned, live.Codec.ID, t.runtime.codecs, err))
 			}
-			if err := validateDecodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, decodeAdapterRequestFromStream(live, planned)); err != nil {
+			if err := publicError(compile.ValidateDecodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, compile.DecodeAdapterRequestFromStream(live, planned))); err != nil {
 				return err
 			}
 			current.Domain = shape.DomainFrame
 		case plan.OpShape:
-			if mediaShapeEmpty(operation.Shape) {
+			if compile.MediaShapeEmpty(operation.Shape) {
 				break
 			}
-			if err := validateShapeAnnotationDomain("attach runtime branch", name, i, current, operation.Shape); err != nil {
+			if err := publicError(compile.ValidateShapeAnnotationDomain("attach runtime branch", name, i, current, operation.Shape)); err != nil {
 				return err
 			}
 			current = shape.Merge(current, operation.Shape)
 		case plan.OpTransform:
-			if recipeIRTransformEmpty(operation.Transform) {
+			if compile.RecipeIRTransformEmpty(operation.Transform) {
 				break
 			}
 			if err := needsRuntime("transforms", "resize/resample branches"); err != nil {
@@ -364,14 +371,14 @@ func (p *attachPlan) checkBranch(index int) error {
 				return err
 			}
 			node, _ := p.node(operation)
-			transform := p.lowering.g.nodes[node].transform
+			transform := p.plan.Nodes[node].Transform
 			planned := recipeStream
-			planned.Selector.Type = firstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
-			if _, err := t.runtime.filters.Factory(transform.factory); err != nil {
-				return recipeTransformAdapterError("attach runtime branch", planned, transform.factory, err)
+			planned.Selector.Type = compile.FirstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
+			if _, err := t.runtime.filters.Factory(transform.Factory); err != nil {
+				return publicError(compile.RecipeTransformAdapterError("attach runtime branch", planned, transform.Factory, err))
 			}
-			if desc, err := t.runtime.filters.Descriptor(transform.factory); err == nil {
-				if err := validateRecipeIRTransformAdapterDescriptor("attach runtime branch", planned, operation.Transform, transform.factory, desc); err != nil {
+			if desc, err := t.runtime.filters.Descriptor(transform.Factory); err == nil {
+				if err := publicError(compile.ValidateRecipeIRTransformAdapterDescriptor("attach runtime branch", planned, operation.Transform, transform.Factory, desc)); err != nil {
 					return err
 				}
 			}
@@ -384,7 +391,7 @@ func (p *attachPlan) checkBranch(index int) error {
 			}
 			out, err := applyMediaTransformToStream(live, transform)
 			if err != nil {
-				return runtimeBranchTransformError(transform.name, err)
+				return runtimeBranchTransformError(transform.Name, err)
 			}
 			live = out
 			current = mediaShapeFromRuntimeBranchStream(live, current)
@@ -394,7 +401,7 @@ func (p *attachPlan) checkBranch(index int) error {
 			}
 			terminal := recipeIROperationTapIsTerminalPacket(operation)
 			if !terminal {
-				if err := validateTapDomain("attach runtime branch", name, tapRef{name: operation.Tap.Name, domain: operation.Tap.Domain}, current.Domain); err != nil {
+				if err := validateTapDomain("attach runtime branch", name, compile.TapRef{Name: operation.Tap.Name, Domain: operation.Tap.Domain}, current.Domain); err != nil {
 					return err
 				}
 			}
@@ -407,7 +414,7 @@ func (p *attachPlan) checkBranch(index int) error {
 				// point of it.
 				break
 			}
-			p.taps = append(p.taps, runtimeBranchTap(operation.Tap.Name, p.lowering.parentRef(index, operation.Node), current, operation.Tap.After))
+			p.taps = append(p.taps, runtimeBranchTap(operation.Tap.Name, p.plan.ParentRef(index, operation.Node), current, operation.Tap.After))
 		case plan.OpEncode:
 			if err := needsRuntime("encoding", "encode branches"); err != nil {
 				return err
@@ -415,20 +422,20 @@ func (p *attachPlan) checkBranch(index int) error {
 			if current.Domain != shape.DomainFrame {
 				return runtimeBranchEncodeDomainError(name, current)
 			}
-			if err := validateRecipeEncode(operation.Encode, "attach runtime branch", name); err != nil {
+			if err := publicError(compile.ValidateRecipeEncode(operation.Encode, "attach runtime branch", name)); err != nil {
 				return err
 			}
 			planned := recipeStream
-			planned.Selector.Type = firstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
+			planned.Selector.Type = compile.FirstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
 			if _, err := t.runtime.codecs.EncoderFactory(operation.Encode.ID); err != nil {
-				return recipeEncodeAdapterCodecError("attach runtime branch", planned, operation.Encode.ID, t.runtime.codecs, err)
+				return publicError(compile.RecipeEncodeAdapterCodecError("attach runtime branch", planned, operation.Encode.ID, t.runtime.codecs, err))
 			}
 			node, _ := p.node(operation)
-			_, out, err := prepareEncodeConfig(live, p.lowering.g.nodes[node].request, realtime)
+			_, out, err := prepareEncodeConfig(live, p.plan.Nodes[node].Request, realtime)
 			if err != nil {
 				return err
 			}
-			if err := validateEncodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(operation.Encode, out)); err != nil {
+			if err := publicError(compile.ValidateEncodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, compile.EncodeAdapterRequestFromPreparedStream(operation.Encode, out))); err != nil {
 				return err
 			}
 			live = out
@@ -476,9 +483,8 @@ func streamOrAnchor(anchor attachAnchor, name string) av.Stream {
 // checkMuxes probes the format of every mux destination and checks the
 // streams its branches deliver fit it, before anything opens.
 func (p *attachPlan) checkMuxes(ctx context.Context) error {
-	s := p.state
-	for dest := range s.outputAttachments {
-		destination := s.outputAttachments[dest]
+	for dest := range p.dests {
+		destination := p.dests[dest]
 		if destination.sink != nil {
 			continue
 		}
@@ -494,11 +500,11 @@ func (p *attachPlan) checkMuxes(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		name := s.outputDestinationNames[dest]
+		name := p.names[dest]
 		if issue, ok := runtimeMuxCompatibilityIssue(name, formatID, branches, streams, p.task.runtime); ok {
-			return muxCompatibilityBuildError("attach runtime branch", issue)
+			return publicError(compile.MuxCompatibilityBuildError("attach runtime branch", issue))
 		}
-		s.outputAttachments[dest].resolvedFormat = formatID
+		p.dests[dest].resolvedFormat = formatID
 	}
 	return nil
 }
@@ -516,39 +522,39 @@ func (p *attachPlan) open(ctx context.Context) error {
 		}
 		return p.anchors[ref], p.anchorShape(ref)
 	}
-	for _, node := range p.lowering.g.nodes {
-		ref := pipeline.NodeRef(node.name)
-		in := make([]av.Stream, 0, len(node.inputs))
+	for _, node := range p.plan.Nodes {
+		ref := pipeline.NodeRef(node.Name)
+		in := make([]av.Stream, 0, len(node.Inputs))
 		var inShape shape.Spec
-		for i, input := range node.inputs {
+		for i, input := range node.Inputs {
 			stream, spec := maps(input)
 			in = append(in, stream)
 			if i == 0 {
 				inShape = spec
 			}
 		}
-		opened, err := openComposeNode(ctx, service, node, in, p.state.outputAttachments, realtime, codec.DecodeBounds{})
+		opened, err := openComposeNode(ctx, service, node, in, p.dests, realtime, codec.DecodeBounds{})
 		if err != nil {
-			if node.kind == composeStep && node.transform.stage == nil {
-				return runtimeBranchTransformError(node.transform.name, err)
+			if node.Kind == compile.ComposeStep && node.Transform.Stage == nil {
+				return runtimeBranchTransformError(node.Transform.Name, err)
 			}
 			return err
 		}
-		if node.kind == composeStep && node.transform.stage != nil {
+		if node.Kind == compile.ComposeStep && node.Transform.Stage != nil {
 			// Attached gates pace on the running task's timeline and report
 			// QoS to its Watch surface.
-			bindGateDeps(node.transform.stage, t.playoutClock(), t.qosReportFunc())
+			bindGateDeps(node.Transform.Stage, t.playoutClock(), t.qosReportFunc())
 		}
 		p.opened = append(p.opened, opened)
 		streams[ref] = opened.stream
-		switch node.kind {
-		case composeDecode:
+		switch node.Kind {
+		case compile.ComposeDecode:
 			inShape.Domain = shape.DomainFrame
-		case composeStep:
-			if node.transform.stage == nil {
+		case compile.ComposeStep:
+			if node.Transform.Stage == nil {
 				inShape = mediaShapeFromRuntimeBranchStream(opened.stream, inShape)
 			}
-		case composeEncode:
+		case compile.ComposeEncode:
 			inShape = streamPacketShapeFromRuntimeBranchStream(opened.stream, inShape)
 		}
 		p.shapes[ref] = inShape
@@ -582,17 +588,17 @@ func (p *attachPlan) reserve() error {
 	}
 	graphSpec := t.graph.Spec()
 	seen := map[string]bool{}
-	for _, node := range p.lowering.g.nodes {
-		if seen[node.name] || specHasNode(graphSpec, node.name) {
-			return runtimeBranchNodeDuplicateError(node.name)
+	for _, node := range p.plan.Nodes {
+		if seen[node.Name] || specHasNode(graphSpec, node.Name) {
+			return runtimeBranchNodeDuplicateError(node.Name)
 		}
-		seen[node.name] = true
+		seen[node.Name] = true
 	}
 	for i := range p.branches {
-		p.branches[i].buffer = t.attachBufferPolicy(p.state.recipe.Streams[i].Buffer)
+		p.branches[i].buffer = t.attachBufferPolicy(p.streams[i].Buffer)
 	}
-	p.buffers = make([]pipeline.BufferPolicy, len(p.lowering.g.nodes))
-	for n, node := range p.lowering.g.nodes {
+	p.buffers = make([]pipeline.BufferPolicy, len(p.plan.Nodes))
+	for n, node := range p.plan.Nodes {
 		fed := false
 		for i := range p.branches {
 			if !p.feeds(i, node) {
@@ -609,13 +615,13 @@ func (p *attachPlan) reserve() error {
 }
 
 // feeds reports whether the branch at index reads node.
-func (p *attachPlan) feeds(index int, node composeNode) bool {
-	switch node.kind {
-	case composeSink, composeMux:
-		return slices.Contains(p.branches[index].dests, node.output)
+func (p *attachPlan) feeds(index int, node compile.ComposeNode) bool {
+	switch node.Kind {
+	case compile.ComposeSink, compile.ComposeMux:
+		return slices.Contains(p.branches[index].dests, node.Output)
 	}
-	for _, operation := range p.state.recipe.Streams[index].Operations {
-		if ref, ok := p.lowering.refs[operation.Node]; ok && ref.String() == node.name {
+	for _, operation := range p.streams[index].Operations {
+		if ref, ok := p.plan.Ref(operation.Node); ok && ref.String() == node.Name {
 			return true
 		}
 	}
@@ -663,29 +669,29 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		t.rollbackRuntimeBranch(nodes)
 		return nil, err
 	}
-	for n, node := range p.lowering.g.nodes {
+	for n, node := range p.plan.Nodes {
 		opened := p.opened[n]
 		var err error
 		var ref pipeline.NodeRef
 		if opened.sink != nil {
 			ref, err = t.graph.AddSink(opened.sink, p.buffers[n])
 			if err != nil {
-				return fail(runtimeBranchGraphError("add sink", node.name, err))
+				return fail(runtimeBranchGraphError("add sink", node.Name, err))
 			}
 		} else {
 			ref, err = t.graph.AddStage(opened.stage, p.buffers[n])
 			if err != nil {
-				return fail(runtimeBranchGraphError("add stage", node.name, err))
+				return fail(runtimeBranchGraphError("add stage", node.Name, err))
 			}
 		}
 		nodes = append(nodes, ref)
-		for _, input := range node.inputs {
+		for _, input := range node.Inputs {
 			if !slices.Contains(nodes, input) {
 				continue
 			}
-			next := pipeline.Route{From: input.String(), To: []string{node.name}, Policy: pipeline.RouteAll}
+			next := pipeline.Route{From: input.String(), To: []string{node.Name}, Policy: pipeline.RouteAll}
 			if err := t.graph.Connect(next); err != nil {
-				return fail(runtimeBranchGraphError(p.connectOperation(node, input), node.name, err))
+				return fail(runtimeBranchGraphError(p.connectOperation(node, input), node.Name, err))
 			}
 			routes = append(routes, next)
 		}
@@ -714,11 +720,12 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		if branch.anchor.ref != "" {
 			attachment.anchorNodes = append(attachment.anchorNodes, branch.anchor.ref.String())
 		} else {
-			attachment.anchorNodes = append(attachment.anchorNodes, p.lowering.refs[p.state.recipe.Streams[i].Root].String())
+			ref, _ := p.plan.Ref(p.streams[i].Root)
+			attachment.anchorNodes = append(attachment.anchorNodes, ref.String())
 		}
 		for _, destination := range branch.destinations {
-			attachment.destinations = append(attachment.destinations, workDestination{
-				ID:        workDestinationID(destination.recipe.Name),
+			attachment.destinations = append(attachment.destinations, compile.WorkDestination{
+				ID:        compile.WorkDestinationID(destination.recipe.Name),
 				Name:      destination.recipe.Name,
 				Operation: attachDestinationOperationKind(destination),
 				Component: attachDestinationComponent(destination),
@@ -743,20 +750,20 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 // per anchor node, policy, and label, into every node it feeds.
 func (p *attachPlan) ingress(planned []pipeline.NodeRef) []pipeline.Route {
 	var out []pipeline.Route
-	for _, node := range p.lowering.g.nodes {
-		for i, input := range node.inputs {
+	for _, node := range p.plan.Nodes {
+		for i, input := range node.Inputs {
 			if slices.Contains(planned, input) {
 				continue
 			}
-			route := node.route(i)
+			route := node.Route(i)
 			at := slices.IndexFunc(out, func(r pipeline.Route) bool {
-				return r.From == input.String() && r.Policy == route.policy && r.Label == route.label
+				return r.From == input.String() && r.Policy == route.Policy && r.Label == route.Label
 			})
 			if at < 0 {
-				out = append(out, pipeline.Route{From: input.String(), Policy: route.policy, Label: route.label})
+				out = append(out, pipeline.Route{From: input.String(), Policy: route.Policy, Label: route.Label})
 				at = len(out) - 1
 			}
-			out[at].To = append(out[at].To, node.name)
+			out[at].To = append(out[at].To, node.Name)
 		}
 	}
 	return out
@@ -764,8 +771,8 @@ func (p *attachPlan) ingress(planned []pipeline.NodeRef) []pipeline.Route {
 
 // connectOperation names a failed connect inside the patch: stage to stage,
 // or into a destination.
-func (p *attachPlan) connectOperation(node composeNode, input pipeline.NodeRef) string {
-	if node.kind == composeSink || node.kind == composeMux {
+func (p *attachPlan) connectOperation(node compile.ComposeNode, input pipeline.NodeRef) string {
+	if node.Kind == compile.ComposeSink || node.Kind == compile.ComposeMux {
 		return "connect branch target"
 	}
 	return "connect branch stage"
@@ -774,7 +781,7 @@ func (p *attachPlan) connectOperation(node composeNode, input pipeline.NodeRef) 
 // spec is the graph patch the plan describes: the nodes it adds and the
 // edges into them, as the running graph reports them once applied.
 func (p *attachPlan) spec() (pipeline.Spec, error) {
-	return p.lowering.g.emit(pipeline.Spec{Name: p.name, Realtime: p.task.graph.Spec().Realtime})
+	return refuse(p.plan.Spec(pipeline.Spec{Name: p.name, Realtime: p.task.graph.Spec().Realtime}))
 }
 
 func attachDestinationOperationKind(destination attachDestination) plan.OperationKind {
@@ -803,7 +810,7 @@ func attachDestinationsHaveMux(destinations []attachDestination) bool {
 	return false
 }
 
-func destinationSnapshotsFromWork(destinations []workDestination, state lifecycle.DestinationState) []snapshot.Destination {
+func destinationSnapshotsFromWork(destinations []compile.WorkDestination, state lifecycle.DestinationState) []snapshot.Destination {
 	if len(destinations) == 0 {
 		return nil
 	}

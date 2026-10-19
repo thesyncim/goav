@@ -146,3 +146,13 @@ var _ shape.Contract = (*syncGate)(nil)
 
 // FrameOnlyInput reports that the gate aligns packets as well as frames.
 func (g *syncGate) FrameOnlyInput() bool { return false }
+
+// GateName names the gate's node on branch.
+func (g *syncGate) GateName(branch string) string {
+	return syncStageName(branch + "-" + g.policy.Name())
+}
+
+// DeclaredLatency is the sync tolerance the gate's policy declares.
+func (g *syncGate) DeclaredLatency() (sync, playout time.Duration) {
+	return g.policy.Tolerance(), 0
+}

@@ -179,3 +179,13 @@ var _ shape.Contract = (*playoutGate)(nil)
 
 // FrameOnlyInput reports that the gate paces packets as well as frames.
 func (g *playoutGate) FrameOnlyInput() bool { return false }
+
+// GateName names the gate's node on branch.
+func (g *playoutGate) GateName(branch string) string {
+	return playoutStageName(branch + "-" + g.policy.Name())
+}
+
+// DeclaredLatency is the playout offset the gate's policy declares.
+func (g *playoutGate) DeclaredLatency() (sync, playout time.Duration) {
+	return 0, g.policy.Offset()
+}

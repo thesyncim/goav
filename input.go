@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -208,7 +209,7 @@ func (s InputSpec) validateCustomSource() error {
 			cause: errNilSource,
 		}
 	}
-	spec := normalizeCustomSourceShape(node, s.source.shape)
+	spec := recipeir.NormalizeSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
 			Phase:     phaseBuild,
@@ -290,7 +291,7 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
 		MIMEType: s.input.MIMEType,
-		Codec:    cloneCodecSpec(s.codec),
+		Codec:    compile.CloneCodecSpec(s.codec),
 		Realtime: s.input.Realtime || (s.source != nil && s.source.shape.Realtime),
 	}
 	switch {
@@ -305,20 +306,6 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		out.SourceShape = sourceShape
 	}
 	return out
-}
-
-// recipeIRInputSourceShape is the stream shape a provider or custom source
-// declares, normalized.
-func recipeIRInputSourceShape(input recipeir.Input) (shape.Spec, bool) {
-	switch input.Kind {
-	case recipeir.InputKindCustomSource, recipeir.InputKindProvider:
-	default:
-		return shape.Spec{}, false
-	}
-	if input.SourceShape.Domain == "" {
-		return shape.Spec{}, false
-	}
-	return normalizeCustomSourceShape(input.Name, input.SourceShape), true
 }
 
 func (s InputSpec) inputName(fallback string) string {
@@ -393,4 +380,14 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 		}
 	}
 	return probes, nil
+}
+
+// sourceEventDomain reports the media domain this input's source produces, so
+// discovered-stream anchors carry the right domain (frame-domain custom
+// sources announce frame streams; everything else is packet-domain).
+func (s InputSpec) sourceEventDomain() shape.MediaDomain {
+	if spec, ok := declaredSourceShape(s); ok && spec.Domain != "" {
+		return spec.Domain
+	}
+	return shape.DomainPacket
 }

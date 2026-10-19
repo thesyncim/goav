@@ -9,24 +9,6 @@ import (
 	"github.com/thesyncim/goav/codec"
 )
 
-func TestMetadataEqualContracts(t *testing.T) {
-	if !metadataEqual(nil, nil) {
-		t.Fatal("nil metadata should equal nil metadata")
-	}
-	if metadataEqual(nil, av.Metadata{}) {
-		t.Fatal("nil metadata should not equal an empty non-nil map")
-	}
-	if !metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main"}) {
-		t.Fatal("equal metadata did not compare equal")
-	}
-	if metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "high"}) {
-		t.Fatal("different values compared equal")
-	}
-	if metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main", "level": "3.1"}) {
-		t.Fatal("different lengths compared equal")
-	}
-}
-
 func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 	baseControl := func(any) error { return nil }
 	base := codec.CodecSettings{

@@ -9,35 +9,36 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 )
 
 func TestWorkOperationEncodeCodecContracts(t *testing.T) {
-	if got := workOperationEncodeCodec(workOperation{
+	if got := workOperationEncodeCodec(compile.WorkOperation{
 		Kind:  plan.OpEncode,
 		Codec: codec.Codec(av.CodecID("x_custom"), av.MediaAudio),
 	}); got != av.CodecID("x_custom") {
 		t.Fatalf("work operation codec = %q, want x_custom", got)
 	}
-	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode, Component: "x_fallback"}); got != av.CodecID("x_fallback") {
+	if got := workOperationEncodeCodec(compile.WorkOperation{Kind: plan.OpEncode, Component: "x_fallback"}); got != av.CodecID("x_fallback") {
 		t.Fatalf("operation component codec = %q, want x_fallback", got)
 	}
-	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode, Component: "encoder"}); got != "" {
+	if got := workOperationEncodeCodec(compile.WorkOperation{Kind: plan.OpEncode, Component: "encoder"}); got != "" {
 		t.Fatalf("generic encoder component codec = %q, want empty", got)
 	}
-	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode}); got != "" {
+	if got := workOperationEncodeCodec(compile.WorkOperation{Kind: plan.OpEncode}); got != "" {
 		t.Fatalf("empty component codec = %q, want empty", got)
 	}
 }
 
 func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
-	operation := workOperation{ID: "audio/000/decode", Kind: plan.OpDecode, Component: "decoder"}
-	_, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
+	operation := compile.WorkOperation{ID: "audio/000/decode", Kind: plan.OpDecode, Component: "decoder"}
+	_, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, compile.WorkBranch{
 		Name:       "audio",
 		Operations: []string{operation.ID},
-	}, map[string]workOperation{operation.ID: operation}, nil)
-	if len(warnings) != 1 || warnings[0].Code != diagnosticDecodeCodecDeferred ||
+	}, map[string]compile.WorkOperation{operation.ID: operation}, nil)
+	if len(warnings) != 1 || warnings[0].Code != compile.DiagnosticDecodeCodecDeferred ||
 		warnings[0].Node != "audio" ||
 		!explainSuggestionsContain(warnings[0].Suggestions, "declare the provider codec intent") {
 		t.Fatalf("warnings = %+v, want decode_codec_deferred with provider-codec guidance", warnings)
@@ -45,16 +46,16 @@ func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
 }
 
 func TestExplainRequirementsUseWorkOperationCodec(t *testing.T) {
-	operation := workOperation{
+	operation := compile.WorkOperation{
 		ID:        "web/000/encode",
 		Kind:      plan.OpEncode,
 		Component: "encoder",
 		Codec:     codec.VP9(),
 	}
-	requirements, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
+	requirements, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, compile.WorkBranch{
 		Name:       "web",
 		Operations: []string{operation.ID},
-	}, map[string]workOperation{operation.ID: operation}, nil)
+	}, map[string]compile.WorkOperation{operation.ID: operation}, nil)
 	if len(warnings) != 0 || len(requirements) != 1 ||
 		requirements[0].Kind != "encoder" ||
 		requirements[0].Codec != av.CodecVP9 {
@@ -63,7 +64,7 @@ func TestExplainRequirementsUseWorkOperationCodec(t *testing.T) {
 }
 
 func TestExplainStreamsUseWorkStreamOperations(t *testing.T) {
-	streams := explainStreams([]workStream{{
+	streams := explainStreams([]compile.WorkStream{{
 		Name:   "preview",
 		Select: plan.StreamSelect{Type: av.MediaVideo},
 		Operations: []recipeir.Operation{
@@ -100,7 +101,7 @@ func TestExplainPreflightErrorWarning(t *testing.T) {
 	var report plan.Report
 	annotatePlanReportError(&report, errors.New("probe exploded"))
 	if len(report.Warnings) != 1 ||
-		report.Warnings[0].Code != diagnosticExplainPreflightError ||
+		report.Warnings[0].Code != compile.DiagnosticExplainPreflightError ||
 		report.Warnings[0].Message != "probe exploded" {
 		t.Fatalf("warnings = %+v, want explain_preflight_error", report.Warnings)
 	}

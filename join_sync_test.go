@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -108,7 +109,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 // summing identity), then the PTS-matched pairs sum — never a[i]+b[i+1] as
 // arrival pairing would produce.
 func TestAudioMixSyncByPTSAlignsOffsetArms(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncPTS)
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -144,7 +145,7 @@ func TestAudioMixSyncByPTSAlignsOffsetArms(t *testing.T) {
 // already-mixed timeline (duplicate/backwards PTS without a discontinuity) is
 // dropped to catch up, never replayed.
 func TestAudioMixSyncByPTSDropsStaleFrames(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncPTS)
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -178,7 +179,7 @@ func TestAudioMixSyncByPTSDropsStaleFrames(t *testing.T) {
 // (Seek/Segment repositioned it) flushes that arm's pending queue, re-syncs at
 // the new position, and forwards one discontinuity on the joined stream.
 func TestAudioMixSyncByPTSFlushesArmOnDiscontinuity(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncPTS)
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -215,7 +216,7 @@ func TestAudioMixSyncByPTSFlushesArmOnDiscontinuity(t *testing.T) {
 // TestAudioMixArrivalIgnoresDiscontinuity pins the arrival contract: arrival
 // joins pair by order only, so a discontinuity neither flushes nor forwards.
 func TestAudioMixArrivalIgnoresDiscontinuity(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncArrival)
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -235,7 +236,7 @@ func TestAudioMixArrivalIgnoresDiscontinuity(t *testing.T) {
 // TestAudioMixEndedArmStopsGating: when one arm ends early the remaining arms
 // keep mixing without it; the joined stream ends only when every arm ends.
 func TestAudioMixEndedArmStopsGating(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncArrival)
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -281,7 +282,7 @@ func compositeSyncTestFrame(id av.StreamID, ptsMS int64, w, h int, y, u, v byte)
 // arm's last-known extent so the geometry stays stable.
 func TestVideoCompositeSyncByPTSPaintsPresentArms(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncPTS)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 

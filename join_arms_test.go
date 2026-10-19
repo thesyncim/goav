@@ -188,7 +188,7 @@ func TestArmRestampStageContracts(t *testing.T) {
 	}
 
 	// A bound file arm passes only its stream and stream-less events.
-	bound := newArmRestampStage("mix-select-a.webm", bindArmNodeDetail(av.StreamSelector{Type: av.MediaAudio}), "2", "a.webm")
+	bound := newArmRestampStage("mix-select-a.webm", "bind on open type=audio", "2", "a.webm")
 	filtered := &tapArmStageTestEmitter{}
 	for _, msg := range []*pipeline.Message{
 		{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "1"}},

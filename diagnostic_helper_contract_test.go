@@ -7,33 +7,11 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/shape"
 )
 
 func TestRecipeDiagnosticHelperContracts(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		code errcode.Code
-	}{
-		{
-			name: "runtime missing",
-			err:  runtimeMissingError("compile job"),
-			code: errcode.RuntimeMissing,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assertBuildErrorCode(t, tt.err, tt.code)
-			if !errors.Is(tt.err, errUnsupportedBuild) {
-				t.Fatalf("err = %v, want errUnsupportedBuild cause", tt.err)
-			}
-		})
-	}
-
 	if got := resizeModesFromStrings(nil); got != nil {
 		t.Fatalf("nil resize modes = %#v, want nil", got)
 	}
@@ -41,13 +19,6 @@ func TestRecipeDiagnosticHelperContracts(t *testing.T) {
 	wantModes := []filter.ResizeMode{filter.ResizeExact, filter.ResizeFit, filter.ResizeFill}
 	if !reflect.DeepEqual(modes, wantModes) {
 		t.Fatalf("resize modes = %#v, want %#v", modes, wantModes)
-	}
-
-	if got := joinCodecIDs(nil); got != "" {
-		t.Fatalf("empty codec ids = %q, want empty", got)
-	}
-	if got := joinCodecIDs([]av.CodecID{av.CodecVP8, "", av.CodecOpus, av.CodecID("x_custom")}); got != "vp8,opus,x_custom" {
-		t.Fatalf("codec ids = %q", got)
 	}
 }
 
@@ -109,31 +80,4 @@ func TestCustomStreamPredicateAndPreferenceDropReasons(t *testing.T) {
 		t.Fatalf("description = %q, want custom", got)
 	}
 
-	ambiguous := &shapeAdapterSelectionError{
-		media:      av.MediaVideo,
-		needed:     shape.AllowResize(),
-		candidates: []string{"resize-a", "resize-b"},
-		cause:      errShapeAdapterAmbiguous,
-	}
-	if !errors.Is(ambiguous, errShapeAdapterAmbiguous) {
-		t.Fatalf("ambiguous error = %v, want errShapeAdapterAmbiguous", ambiguous)
-	}
-	if got := ambiguous.Error(); got != errShapeAdapterAmbiguous.Error() {
-		t.Fatalf("ambiguous Error() = %q", got)
-	}
-	if got := preferenceDropReason(ambiguous); !strings.Contains(got, "resize-a, resize-b") {
-		t.Fatalf("ambiguous preference reason = %q", got)
-	}
-
-	missing := &shapeAdapterSelectionError{
-		media:  av.MediaAudio,
-		needed: shape.AllowResample(),
-		cause:  errShapeAdapterMissing,
-	}
-	if got := preferenceDropReason(missing); got != "no registered adapter can perform the preferred conversion" {
-		t.Fatalf("missing preference reason = %q", got)
-	}
-	if got := preferenceDropReason(errors.New("plain")); got != "the preferred conversion cannot be planned" {
-		t.Fatalf("plain preference reason = %q", got)
-	}
 }

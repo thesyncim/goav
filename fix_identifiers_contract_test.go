@@ -44,6 +44,11 @@ func TestStringLiteralAPIReferencesResolve(t *testing.T) {
 		}
 		exported[name] = names
 	}
+	// The compiler's refusals carry fixes too: check its literals, though it
+	// exports nothing a fix may name.
+	for _, dir := range []string{filepath.Join("internal", "compile"), filepath.Join("internal", "builderr")} {
+		files[dir] = parseDir(t, fset, dir)
+	}
 	// task.X names a method of the task a Build returns.
 	exported["task"] = map[string]bool{}
 	for _, file := range files["goav"] {

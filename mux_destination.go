@@ -3,10 +3,10 @@ package goav
 import (
 	"context"
 	"io"
-	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 )
@@ -52,7 +52,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		Format:   formatID,
 		MIMEType: output.MIMEType,
 		Streams:  cloneStreams(streams),
-		Metadata: cloneMetadata(output.Metadata),
+		Metadata: compile.CloneMetadata(output.Metadata),
 		Realtime: b.runtime.realtime || output.Realtime,
 	}
 	writer, err := destination.custom.Open(ctx, info)
@@ -90,7 +90,7 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		return nil, err
 	}
 	if writer != nil {
-		transaction := &destinationTransaction{requireSuccess: b.requireRunOK, name: muxNodeName(output, index)}
+		transaction := &destinationTransaction{requireSuccess: b.requireRunOK, name: compile.MuxNodeName(output, index)}
 		b.destinationTxs = append(b.destinationTxs, transaction)
 		muxer = &destinationWriterMuxer{
 			Muxer:       muxer,
@@ -99,8 +99,8 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		}
 	}
 	stage, err := format.NewMuxStage(format.MuxStageConfig{
-		Name:   muxNodeName(output, index),
-		Detail: outputNodeDetailWithFormat(output, detailFormat),
+		Name:   compile.MuxNodeName(output, index),
+		Detail: compile.OutputNodeDetailWithFormat(output, detailFormat),
 		Muxer:  muxer,
 		Result: format.WriteResult{Events: make([]av.Event, 0, 1)},
 	})
@@ -190,9 +190,9 @@ func cloneStreams(streams []av.Stream) []av.Stream {
 	out := make([]av.Stream, len(streams))
 	copy(out, streams)
 	for i := range out {
-		out[i].Metadata = cloneMetadata(out[i].Metadata)
-		out[i].Codec.Attributes = cloneMetadata(out[i].Codec.Attributes)
-		out[i].Codec.ExtraData = cloneBuffer(out[i].Codec.ExtraData)
+		out[i].Metadata = compile.CloneMetadata(out[i].Metadata)
+		out[i].Codec.Attributes = compile.CloneMetadata(out[i].Codec.Attributes)
+		out[i].Codec.ExtraData = compile.CloneBuffer(out[i].Codec.ExtraData)
 	}
 	return out
 }
@@ -210,17 +210,4 @@ func outputProbeRequest(output format.Output) format.ProbeRequest {
 			Metadata: output.Metadata,
 		},
 	}
-}
-
-func muxNodeName(output format.Output, index int) string {
-	if output.Name != "" {
-		return output.Name
-	}
-	if output.URI != "" {
-		return output.URI
-	}
-	if index == 0 {
-		return "output"
-	}
-	return "output-" + strconv.Itoa(index)
 }

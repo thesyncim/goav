@@ -3,7 +3,6 @@ package goav
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"strconv"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -39,12 +39,12 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	}
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
-	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
+	report.Warnings = appendPlanDiagnostics(report.Warnings, compile.MuxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
 	report.Summary = explainSummary(resolved.name, report)
 	return report, nil
 }
 
-func explainTaps(taps []workTap) []plan.Tap {
+func explainTaps(taps []compile.WorkTap) []plan.Tap {
 	reports := make([]plan.Tap, 0, len(taps))
 	for i := range taps {
 		reports = append(reports, plan.Tap{
@@ -77,7 +77,7 @@ func explainInputs(resolved recipeResolved) []plan.Input {
 			report.Streams = append([]av.Stream(nil), probe.Streams...)
 		}
 		if len(report.Streams) == 0 && input.Realtime && input.Codec.ID != "" {
-			report.Streams = liveInputStreams([]recipeir.Input{input})
+			report.Streams = compile.LiveInputStreams([]recipeir.Input{input})
 		}
 		reports = append(reports, report)
 	}
@@ -95,16 +95,16 @@ func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
 	return probe, true
 }
 
-func explainStreams(streams []workStream) []plan.Stream {
+func explainStreams(streams []compile.WorkStream) []plan.Stream {
 	reports := make([]plan.Stream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
 		reports = append(reports, plan.Stream{
 			Name:         stream.Name,
 			Select:       stream.Select,
-			Decode:       operationsHaveDecode(stream.Operations),
+			Decode:       compile.OperationsHaveDecode(stream.Operations),
 			Operations:   explainOperations(stream.Operations),
-			Encode:       cloneCodecSpec(operationsEncodeSpec(stream.Operations)),
+			Encode:       compile.CloneCodecSpec(compile.OperationsEncodeSpec(stream.Operations)),
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
@@ -138,7 +138,7 @@ func operationAdapter(operation recipeir.Operation) string {
 	case plan.OpEncode:
 		return string(operation.Encode.ID)
 	case plan.OpTransform:
-		return firstNonEmpty(operation.Component, recipeIRTransformFactoryName(operation.Transform))
+		return firstNonEmpty(operation.Component, compile.RecipeIRTransformFactoryName(operation.Transform))
 	case plan.OpStage:
 		return operation.Component
 	default:
@@ -207,14 +207,14 @@ func putConfigString(config map[string]string, key, value string) {
 func operationShape(operation recipeir.Operation) shape.Spec {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return mediaShapeFromRecipeIRTransform(operation.Transform)
+		return compile.MediaShapeFromRecipeIRTransform(operation.Transform)
 	case plan.OpShape:
 		if operation.Require != nil {
 			return *operation.Require
 		}
 		return operation.Shape
 	case plan.OpEncode:
-		return mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket)
+		return compile.MediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket)
 	default:
 		return shape.Spec{}
 	}
@@ -223,7 +223,7 @@ func operationShape(operation recipeir.Operation) shape.Spec {
 func operationDetail(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return firstNonEmpty(recipeIRTransformFactoryName(operation.Transform), "transform frames")
+		return firstNonEmpty(compile.RecipeIRTransformFactoryName(operation.Transform), "transform frames")
 	case plan.OpShape:
 		switch {
 		case operation.Auto != nil:
@@ -247,14 +247,14 @@ func operationDetail(operation recipeir.Operation) string {
 	}
 }
 
-func explainBranches(work workPlan) []plan.Branch {
-	operations := workOperationsByID(work.Operations)
+func explainBranches(work compile.WorkPlan) []plan.Branch {
+	operations := compile.WorkOperationsByID(work.Operations)
 	reports := make([]plan.Branch, 0, len(work.Branches))
 	for i := range work.Branches {
 		branch := work.Branches[i]
 		destinations := make([]string, 0, len(branch.Destinations))
 		for _, id := range branch.Destinations {
-			destinations = append(destinations, workDestinationNameByID(work.Destinations, id))
+			destinations = append(destinations, compile.WorkDestinationNameByID(work.Destinations, id))
 		}
 		reports = append(reports, plan.Branch{
 			Name:         branch.Name,
@@ -271,11 +271,11 @@ func explainBranches(work workPlan) []plan.Branch {
 // explainBranchOperations renders a branch's operation rows from the work
 // plan; the terminal destination operations are reported as destinations, not
 // branch operations.
-func explainBranchOperations(branch workBranch, operations map[string]workOperation) []plan.Operation {
+func explainBranchOperations(branch compile.WorkBranch, operations map[string]compile.WorkOperation) []plan.Operation {
 	reports := make([]plan.Operation, 0, len(branch.Operations))
 	for _, id := range branch.Operations {
 		operation, ok := operations[id]
-		if !ok || workOperationTerminal(operation.Kind) {
+		if !ok || compile.WorkOperationTerminal(operation.Kind) {
 			continue
 		}
 		reports = append(reports, plan.Operation{
@@ -293,7 +293,7 @@ func explainBranchOperations(branch workBranch, operations map[string]workOperat
 
 // workOperationAdapter names the implementation a planned branch operation
 // lowers to: the codec id for decode/encode or the component name otherwise.
-func workOperationAdapter(operation workOperation) string {
+func workOperationAdapter(operation compile.WorkOperation) string {
 	switch operation.Kind {
 	case plan.OpDecode, plan.OpEncode:
 		if id := string(operation.Codec.ID); id != "" {
@@ -313,7 +313,7 @@ func workOperationAdapter(operation workOperation) string {
 // carries). It mirrors the stream path's operationConfig so transform and
 // encode operations report config consistently whether they sit on a stream or
 // a branch. Nil when the operation carries no settings.
-func workOperationConfig(operation workOperation) map[string]string {
+func workOperationConfig(operation compile.WorkOperation) map[string]string {
 	switch operation.Kind {
 	case plan.OpTransform:
 		return shapeTransformConfig(operation.ShapeOut)
@@ -344,7 +344,7 @@ func shapeTransformConfig(spec shape.Spec) map[string]string {
 	return config
 }
 
-func explainDecisions(decisions []planDecision) []plan.Decision {
+func explainDecisions(decisions []compile.PlanDecision) []plan.Decision {
 	reports := make([]plan.Decision, 0, len(decisions))
 	for i := range decisions {
 		reports = append(reports, plan.Decision(decisions[i]))
@@ -352,7 +352,7 @@ func explainDecisions(decisions []planDecision) []plan.Decision {
 	return reports
 }
 
-func explainDestinations(destinations []recipeir.Destination, outputFormats map[string]av.FormatID, workDestinations []workDestination) []plan.Destination {
+func explainDestinations(destinations []recipeir.Destination, outputFormats map[string]av.FormatID, workDestinations []compile.WorkDestination) []plan.Destination {
 	reports := make([]plan.Destination, 0, len(destinations))
 	branchesByDestination := workDestinationBranches(workDestinations)
 	for i := range destinations {
@@ -379,7 +379,7 @@ func explainDestinations(destinations []recipeir.Destination, outputFormats map[
 	return reports
 }
 
-func workDestinationBranches(destinations []workDestination) map[string][]string {
+func workDestinationBranches(destinations []compile.WorkDestination) map[string][]string {
 	branches := make(map[string][]string, len(destinations))
 	for i := range destinations {
 		if len(destinations[i].Branches) == 0 {
@@ -390,7 +390,7 @@ func workDestinationBranches(destinations []workDestination) map[string][]string
 	return branches
 }
 
-func explainRequirements(resolved recipeResolved, work workPlan, report plan.Report) ([]plan.AdapterRequirement, []plan.Diagnostic) {
+func explainRequirements(resolved recipeResolved, work compile.WorkPlan, report plan.Report) ([]plan.AdapterRequirement, []plan.Diagnostic) {
 	var requirements []plan.AdapterRequirement
 	var warnings []plan.Diagnostic
 	for i := range report.Inputs {
@@ -425,7 +425,7 @@ func explainRequirements(resolved recipeResolved, work workPlan, report plan.Rep
 			firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i)),
 		))
 	}
-	operations := workOperationsByID(work.Operations)
+	operations := compile.WorkOperationsByID(work.Operations)
 	for i := range work.Branches {
 		branch := work.Branches[i]
 		var branchWarnings []plan.Diagnostic
@@ -435,7 +435,7 @@ func explainRequirements(resolved recipeResolved, work workPlan, report plan.Rep
 	return requirements, warnings
 }
 
-func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch workBranch, operations map[string]workOperation, inputs []workInput) ([]plan.AdapterRequirement, []plan.Diagnostic) {
+func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch compile.WorkBranch, operations map[string]compile.WorkOperation, inputs []compile.WorkInput) ([]plan.AdapterRequirement, []plan.Diagnostic) {
 	var warnings []plan.Diagnostic
 	requiredBy := firstNonEmpty(branch.Name, "branch")
 	for _, id := range branch.Operations {
@@ -448,7 +448,7 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 			codecID, ok := workOperationDecodeCodec(resolved, branch, operation, inputs)
 			if !ok || codecID == "" {
 				warnings = append(warnings, plan.Diagnostic{
-					Code:    diagnosticDecodeCodecDeferred,
+					Code:    compile.DiagnosticDecodeCodecDeferred,
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
 					Suggestions: []string{
@@ -476,11 +476,11 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 	return requirements, warnings
 }
 
-func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operation workOperation, inputs []workInput) (av.CodecID, bool) {
+func workOperationDecodeCodec(resolved recipeResolved, branch compile.WorkBranch, operation compile.WorkOperation, inputs []compile.WorkInput) (av.CodecID, bool) {
 	if operation.Codec.ID != "" {
 		return operation.Codec.ID, true
 	}
-	if codecID, _, _, ok := copyMuxStreamFacts(branch, inputs, resolved.inputProbes); ok {
+	if codecID, _, _, ok := compile.CopyMuxStreamFacts(branch, inputs, resolved.inputProbes); ok {
 		return codecID, true
 	}
 	codecID := av.CodecID(operation.Component)
@@ -490,7 +490,7 @@ func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operat
 	return codecID, true
 }
 
-func workOperationEncodeCodec(operation workOperation) av.CodecID {
+func workOperationEncodeCodec(operation compile.WorkOperation) av.CodecID {
 	if operation.Codec.ID != "" {
 		return operation.Codec.ID
 	}
@@ -563,7 +563,7 @@ func filterAdapterRequirement(rt *Runtime, name string, requiredBy string) plan.
 	requirement.ResizeModes = append([]filter.ResizeMode(nil), desc.ResizeModes...)
 	requirement.Realtime = desc.Realtime
 	requirement.Stateless = desc.Stateless
-	requirement.Metadata = cloneMetadata(desc.Metadata)
+	requirement.Metadata = compile.CloneMetadata(desc.Metadata)
 	return requirement
 }
 
@@ -596,7 +596,7 @@ func formatAdapterRequirement(rt *Runtime, kind string, formatID av.FormatID, re
 	requirement.MinStreams = desc.MinStreams
 	requirement.MaxStreams = desc.MaxStreams
 	requirement.Realtime = desc.Realtime
-	requirement.Metadata = cloneMetadata(desc.Metadata)
+	requirement.Metadata = compile.CloneMetadata(desc.Metadata)
 	return requirement
 }
 
@@ -639,11 +639,11 @@ func codecDescriptorsForRequirement(rt *Runtime, kind string, codecID av.CodecID
 
 func applyCodecDescriptorRequirement(requirement plan.AdapterRequirement, descriptors []codec.Descriptor) plan.AdapterRequirement {
 	for i := range descriptors {
-		if descriptors[i].Type != "" && !mediaAllowed(requirement.Media, descriptors[i].Type) {
+		if descriptors[i].Type != "" && !compile.MediaAllowed(requirement.Media, descriptors[i].Type) {
 			requirement.Media = append(requirement.Media, descriptors[i].Type)
 		}
-		requirement.SampleFormats = mergeStringList(requirement.SampleFormats, descriptors[i].Capabilities.SampleFormats)
-		requirement.PixelFormats = mergeStringList(requirement.PixelFormats, descriptors[i].Capabilities.PixelFormats)
+		requirement.SampleFormats = compile.MergeStringList(requirement.SampleFormats, descriptors[i].Capabilities.SampleFormats)
+		requirement.PixelFormats = compile.MergeStringList(requirement.PixelFormats, descriptors[i].Capabilities.PixelFormats)
 		requirement.Realtime = requirement.Realtime || descriptors[i].Realtime
 	}
 	return requirement
@@ -678,7 +678,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
 		report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostic{
-			Code:    diagnosticExplainPreflightError,
+			Code:    compile.DiagnosticExplainPreflightError,
 			Message: err.Error(),
 		})
 		return
@@ -812,15 +812,6 @@ func applyCodecDetailsFromBuildError(requirement *plan.AdapterRequirement, detai
 	if details["field"] == "pixel_format" && details["supported"] != "" && len(requirement.PixelFormats) == 0 {
 		requirement.PixelFormats = splitDetailCSV(details["supported"])
 	}
-}
-
-func cloneMetadata(metadata av.Metadata) av.Metadata {
-	if metadata == nil {
-		return nil
-	}
-	cloned := make(av.Metadata, len(metadata))
-	maps.Copy(cloned, metadata)
-	return cloned
 }
 
 func adapterRequirementStatus(code errcode.Code) string {
@@ -957,7 +948,30 @@ func explainExecutionDecision(resolved recipeResolved) (plan.Decision, bool) {
 		return plan.Decision{}, false
 	}
 	return plan.Decision{
-		Code:    diagnosticBufferedExecution,
+		Code:    compile.DiagnosticBufferedExecution,
 		Message: "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel",
 	}, true
+}
+
+func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]plan.Decision, 0, len(rules))
+	for i := range rules {
+		names := make([]string, 0, len(rules[i].Branches))
+		destinations := make([]string, 0)
+		for j := range rules[i].Branches {
+			names = append(names, rules[i].Branches[j].Name+"-<stream>")
+			destinations = append(destinations, rules[i].Branches[j].Destinations...)
+		}
+		match := firstNonEmpty(rules[i].MatchDescription, "none")
+		out = append(out, plan.Decision{
+			Code:   compile.DiagnosticStreamRule,
+			Branch: strings.Join(names, "+"),
+			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
+				match, strings.Join(names, ", "), strings.Join(destinations, ", ")),
+		})
+	}
+	return out
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/internal/builderr"
 )
 
 // commonBuildError is one named representative refusal for the machine-readable
@@ -54,6 +55,10 @@ func collectCommonBuildErrors(t *testing.T) []*BuildError {
 	errs := make([]*BuildError, 0, len(cases))
 	for _, c := range cases {
 		err := c.trigger()
+		var refusal *builderr.Refusal
+		if errors.As(err, &refusal) {
+			t.Fatalf("case %q leaked the compiler refusal %v; the root converts it to *BuildError", c.name, err)
+		}
 		var buildErr *BuildError
 		if !errors.As(err, &buildErr) {
 			t.Fatalf("case %q produced %v, want a *BuildError", c.name, err)

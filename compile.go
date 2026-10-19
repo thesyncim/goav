@@ -3,12 +3,10 @@ package goav
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -95,74 +93,6 @@ func buildCompileOptions(ctx context.Context) recipeCompileOptions {
 	return recipeCompileOptions{ctx: ctx, preflight: true}
 }
 
-func (o recipeCompileOptions) Context() context.Context {
-	if o.ctx != nil {
-		return o.ctx
-	}
-	return context.Background()
-}
-
-// recipeCompileState is one recipe under compilation: its IR (the DAG, the
-// branches derived from it, inputs, destinations), the concrete handles the
-// IR indexes, and what the passes resolve along the way.
-type recipeCompileState struct {
-	operation string
-	graph     *recipeGraph
-	recipe    recipeir.Recipe
-	runtime   *Runtime
-	options   recipeCompileOptions
-
-	// facts are the lowering facts of each branch, aligned with
-	// recipe.Streams.
-	facts []branchFacts
-	// remux are the whole-input copies (input.To): inputs and destinations.
-	remux []remuxOutput
-
-	inputAttachments       []InputSpec
-	outputAttachments      []destinationSpec
-	outputDestinationNames []string
-	inputProbes            []format.ProbeResult
-	streamRules            []streamRule
-
-	// joins are the planned joins, by graph node.
-	joins     map[recipeir.NodeID]*joinPlan
-	joinOrder []recipeir.NodeID
-	// joinNames are the joins' claimed node names, by graph node.
-	joinNames map[recipeir.NodeID]string
-	// armDecodes are the decoders join arms planned, by decode node, and
-	// armTaps the arm taps installed, so a path several joins' arms read
-	// decodes and taps once.
-	armDecodes map[recipeir.NodeID]string
-	armTaps    map[recipeir.NodeID]bool
-
-	// inserted are the nodes the planner inserted (packet copies and shape
-	// conversions), keyed so a node shared by several branches gets one.
-	inserted map[string]recipeir.NodeID
-	// destIndex indexes each output node's destination.
-	destIndex map[recipeir.NodeID]int
-
-	shapeDiagnostics []plan.Diagnostic
-	graphPlan        graphPlan
-}
-
-// branchFacts are what the lowering knows of one branch beyond its IR.
-type branchFacts struct {
-	// lone marks the only branch of a root that names no fork: it lowers
-	// under its root's identity.
-	lone bool
-	// frames reports that the branch's root carries frames.
-	frames bool
-	// dests indexes the branch's destinations, in .To order.
-	dests []int
-}
-
-type remuxOutput struct {
-	input int
-	// nodes are the destination nodes; dests their destination indexes.
-	nodes []recipeir.NodeID
-	dests []int
-}
-
 type recipeResolved struct {
 	recipe            recipeir.Recipe
 	runtime           *Runtime
@@ -177,85 +107,46 @@ type recipeResolved struct {
 	rulesDomain       shape.MediaDomain
 }
 
-type recipeCompilePass struct {
-	name string
-	fn   func(*recipeCompileState) error
-}
-
-// compileRecipe runs the compiler passes over one recipe DAG: derive and
-// validate its branches, check its inputs and destinations, preflight the
-// adapters, plan its joins, solve its shapes, and lower it to the one graph
-// plan Describe, Explain, and Build read.
+// compileRecipe compiles one recipe DAG against rt: it projects the DAG and
+// its handles into the compile request, runs the compiler, and binds the
+// result back to the handles the build opens.
 func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
-	state := recipeCompileState{
-		operation: "build job",
-		graph:     g,
-		runtime:   g.compileRuntime(rt),
-		options:   options,
-		inserted:  map[string]recipeir.NodeID{},
+	rt = g.compileRuntime(rt)
+	handles := g.handles(rt)
+	req := g.compileRequest(handles)
+	req.Env, req.Preflight, req.Ctx = rt.compileEnv(), options.preflight, options.ctx
+	result, err := refuse(compile.Compile(req))
+	if err != nil {
+		return recipeResolved{}, err
 	}
-	passes := []recipeCompilePass{
-		{"derive branches", (*recipeCompileState).deriveBranches},
-		{"validate stream rules", validateStreamRulesForCompile},
-		{"validate recipe shape", (*recipeCompileState).validateRecipeShape},
-		{"validate attachments", (*recipeCompileState).validateAttachments},
-		{"validate stream output kinds", (*recipeCompileState).validateStreamOutputKinds},
-		{"validate live stream selection", (*recipeCompileState).validateLiveStreamSelection},
-		{"validate output format adapters", (*recipeCompileState).validateOutputFormatAdapters},
-		{"validate decode adapters", (*recipeCompileState).validateDecodeAdapters},
-		{"validate encode adapters", (*recipeCompileState).validateEncodeAdapters},
-		{"validate transform adapters", (*recipeCompileState).validateTransformAdapters},
-		{"validate input format adapters", (*recipeCompileState).validateInputFormatAdapters},
-		{"validate known input stream selection", (*recipeCompileState).validateKnownInputStreamSelection},
-		{"plan joins", (*recipeCompileState).planJoins},
-		{"solve operation shapes", (*recipeCompileState).solveOperationShapes},
-		{"validate destination shapes", (*recipeCompileState).validateDestinationShapes},
-		{"validate known input decode adapters", (*recipeCompileState).validateKnownInputDecodeAdapters},
-		{"lower recipe", (*recipeCompileState).lower},
-		{"validate mux compatibility", validateMuxCompatibility},
-		{"validate recipe runtime", (*recipeCompileState).validateRuntime},
+	resolved := recipeResolved{
+		recipe:            result.Recipe,
+		runtime:           rt,
+		inputAttachments:  handles.inputs,
+		outputAttachments: handles.outputs(result.OutputSlots),
+		inputProbes:       result.InputProbes,
+		outputFormats:     result.OutputFormats,
+		name:              result.Name,
+		rulesSource:       result.RulesSource,
+		rulesDomain:       result.RulesDomain,
 	}
-	for _, pass := range passes {
-		if err := pass.fn(&state); err != nil {
-			return recipeResolved{}, compilerPassError(state.operation, pass.name, err)
-		}
+	if len(result.StreamRules) != 0 {
+		// Rule branches bind the handles as the recipe declared them, before
+		// the compile resolved any output format.
+		resolved.streamRules = g.handles(rt).streamRules(result.StreamRules)
 	}
-	return recipeResolved{
-		recipe:            state.recipe,
-		runtime:           state.runtime,
-		graphPlan:         state.graphPlan,
-		inputAttachments:  state.inputAttachments,
-		outputAttachments: state.outputAttachments,
-		inputProbes:       state.inputProbes,
-		outputFormats:     state.outputFormatMap(),
-		streamRules:       state.streamRules,
-		name:              state.recipeName(),
-		rulesSource:       state.ruleSourceNode(),
-		rulesDomain:       state.ruleSourceDomain(),
-	}, nil
-}
-
-func compilerPassError(operation string, pass string, err error) error {
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr == nil {
-		return err
+	if result.Lowered {
+		resolved.graphPlan = newGraphPlan(rt, result.Spec, result.Work, &recipeLowerer{
+			runtime:   rt,
+			recipe:    result.Recipe,
+			joins:     result.Joins,
+			joinOrder: result.JoinOrder,
+			graph:     result.Graph,
+			inputs:    resolved.inputAttachments,
+			outputs:   resolved.outputAttachments,
+		})
 	}
-	if buildErr.Code != "" || buildErr.Reason != "" || len(buildErr.DetailLines()) != 0 || len(buildErr.FixLines()) != 0 {
-		return err
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(compilerPassFailedCode),
-		Code:      compilerPassFailedCode,
-		Operation: firstNonEmpty(buildErr.Operation, operation),
-		Reason:    "recipe compiler pass failed without a diagnostic",
-		fields:    errDetails(errDetail("pass", pass)),
-		fixes: buildErrorFixes([]string{
-			"run Explain(ctx) to inspect the partial plan",
-			"report the pass name with the recipe shape",
-		}),
-		cause: err,
-	}
+	return resolved, nil
 }
 
 // compileRuntime is the runtime a recipe plans and builds against. Realtime
@@ -281,45 +172,6 @@ func inputsAreLive(inputs []InputSpec) bool {
 	return false
 }
 
-// recipeName names the recipe in Explain's summary: a recipe that is one
-// join is named after it.
-func (s *recipeCompileState) recipeName() string {
-	if root, ok := s.soleJoinRoot(); ok {
-		return s.joinNames[root]
-	}
-	return "from"
-}
-
-// soleJoinRoot reports the join a recipe is, when every branch reads one
-// join's output.
-func (s *recipeCompileState) soleJoinRoot() (recipeir.NodeID, bool) {
-	if len(s.recipe.Streams) == 0 {
-		return 0, false
-	}
-	root := s.recipe.Streams[0].Root
-	for i := range s.recipe.Streams {
-		if s.recipe.Streams[i].Root != root || s.recipe.Streams[i].Input >= 0 {
-			return 0, false
-		}
-	}
-	return root, true
-}
-
-func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
-	formats := make(map[string]av.FormatID)
-	for i := range s.outputAttachments {
-		formatID := destinationSpecFormat(s.outputAttachments[i])
-		if formatID == "" {
-			continue
-		}
-		formats[s.outputDestinationNames[i]] = formatID
-	}
-	if len(formats) == 0 {
-		return nil
-	}
-	return formats
-}
-
 func destinationSpecFormat(output destinationSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
@@ -329,14 +181,14 @@ func destinationSpecFormat(output destinationSpec) av.FormatID {
 
 func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	if !r.graphPlan.ready() {
-		return pipeline.Spec{}, recipeGraphUnsupportedRecipeError("describe recipe", r.recipe)
+		return pipeline.Spec{}, publicError(compile.RecipeGraphUnsupportedRecipeError("describe recipe", r.recipe))
 	}
 	return r.graphPlan.Describe()
 }
 
 func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 	if !r.graphPlan.ready() {
-		return nil, recipeGraphUnsupportedRecipeError("build recipe", r.recipe)
+		return nil, publicError(compile.RecipeGraphUnsupportedRecipeError("build recipe", r.recipe))
 	}
 	report, err := newPlanReport("build job", r)
 	if err != nil {
@@ -352,14 +204,14 @@ func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 }
 
 // workIR is the compiled work plan — the single plan views render from.
-func (r recipeResolved) workIR() workPlan {
+func (r recipeResolved) workIR() compile.WorkPlan {
 	if r.graphPlan.ready() {
 		return r.graphPlan.workPlan()
 	}
-	return workPlan{}
+	return compile.WorkPlan{}
 }
 
-func installTaskTaps(mediaTask Task, taps []workTap) {
+func installTaskTaps(mediaTask Task, taps []compile.WorkTap) {
 	if len(taps) == 0 {
 		return
 	}
@@ -379,7 +231,7 @@ func installTaskExplainReport(mediaTask Task, report plan.Report) {
 	runtimeTask.explainReportReady = true
 }
 
-func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
+func tapInfosFromPlan(taps []compile.WorkTap) []snapshot.Tap {
 	out := make([]snapshot.Tap, 0, len(taps))
 	seen := make(map[string]struct{}, len(taps))
 	for i := range taps {
@@ -404,392 +256,8 @@ func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
 
 // --- recipe shape ---
 
-// validateRecipeShape checks what every branch must carry before any adapter
-// is consulted: a valid selector, encoder, and transforms. The DAG already
-// gives every branch an input and a destination.
-func (s *recipeCompileState) validateRecipeShape() error {
-	for i := range s.recipe.Streams {
-		stream := s.recipe.Streams[i]
-		node := recipeIRStreamName(stream)
-		if err := validateRecipeStreamSelector(s.operation, node, recipeIRStreamSelector(stream)); err != nil {
-			return err
-		}
-		if err := validateRecipeEncode(recipeIRStreamEncodeSpec(stream), s.operation, stream.Name); err != nil {
-			return err
-		}
-		for _, transform := range recipeIRStreamTransforms(stream) {
-			if err := validateRecipeIRTransform(s.operation, node, transform); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func recipeIRStreamName(stream recipeir.Stream) string {
-	return firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
-}
-
-func recipeIRStreamSelector(stream recipeir.Stream) av.StreamSelector {
-	return recipeIRSelector(stream.Selector)
-}
-
-// recipeIRSelector is the stream selector a planned selection carries.
-func recipeIRSelector(selector plan.StreamSelect) av.StreamSelector {
-	return av.StreamSelector{
-		ID:       selector.ID,
-		Index:    selector.Index,
-		UseIndex: selector.UseIndex,
-		Type:     selector.Type,
-		Codec:    selector.Codec,
-		Name:     selector.Name,
-	}
-}
-
-// recipeIROperationIsAnnotation reports an operation that constrains or
-// names the stream but lowers to no node and does no work: an .Auto(...)
-// policy, a .Require(...) or .Prefer(...), an As name, or a Buffer.
-func recipeIROperationIsAnnotation(operation recipeir.Operation) bool {
-	switch operation.Kind {
-	case recipeir.OpName, recipeir.OpBuffer:
-		return true
-	case plan.OpShape:
-		return mediaShapeEmpty(operation.Shape) &&
-			(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
-	default:
-		return false
-	}
-}
-
-func recipeIRStreamEncodeSpec(stream recipeir.Stream) codec.Spec {
-	for i := range stream.Operations {
-		operation := stream.Operations[i]
-		if operation.Kind == plan.OpEncode || operation.Kind == plan.OpCopy {
-			return cloneCodecSpec(operation.Encode)
-		}
-	}
-	return codec.Spec{}
-}
-
-func recipeIRStreamTransforms(stream recipeir.Stream) []recipeir.Transform {
-	var transforms []recipeir.Transform
-	for i := range stream.Operations {
-		if stream.Operations[i].Kind == plan.OpTransform {
-			transforms = append(transforms, stream.Operations[i].Transform)
-		}
-	}
-	return transforms
-}
-
-func recipeIRStreamHasDecode(stream recipeir.Stream) bool {
-	for i := range stream.Operations {
-		if stream.Operations[i].Kind == plan.OpDecode {
-			return true
-		}
-	}
-	return false
-}
-
-func validateRecipeIRTransform(operation string, node string, transform recipeir.Transform) error {
-	switch transform.Kind {
-	case recipeir.TransformResize:
-		if transform.Resize.Width > 0 && transform.Resize.Height > 0 {
-			return nil
-		}
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: operation,
-			Node:      node,
-			Reason:    "resize requires positive width and height",
-			fields:    errDetails(errDetail("width", fmt.Sprintf("%d", transform.Resize.Width)), errDetail("height", fmt.Sprintf("%d", transform.Resize.Height))),
-			fixes: buildErrorFixes([]string{
-				"call .Resize(width, height) with positive dimensions",
-				"remove .Resize(...) when no video scaling is needed",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	case recipeir.TransformResample:
-		if transform.Resample.SampleRate > 0 && transform.Resample.Channels > 0 {
-			return nil
-		}
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: operation,
-			Node:      node,
-			Reason:    "resample requires positive sample rate and channels",
-			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", transform.Resample.SampleRate)), errDetail("channels", fmt.Sprintf("%d", transform.Resample.Channels))),
-			fixes: buildErrorFixes([]string{
-				"call .Resample(sampleRate, channels) with positive values",
-				"remove .Resample(...) when no audio conversion is needed",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	default:
-		return emptyTransformSpecError(operation, node)
-	}
-}
-
 // --- attachments ---
-
-func (s *recipeCompileState) validateAttachments() error {
-	if err := validateJobInputs(s.inputAttachments); err != nil {
-		return err
-	}
-	return validateDestinationSpecs(s.operation, s.outputAttachments, s.outputDestinationNames...)
-}
-
-// validateStreamOutputKinds refuses a branch whose output kinds its stream
-// cannot feed: decoded frames reach a mux only through an encoder, and one
-// branch cannot feed sinks and muxes from frames.
-func (s *recipeCompileState) validateStreamOutputKinds() error {
-	for i := range s.recipe.Streams {
-		stream := s.recipe.Streams[i]
-		facts := s.facts[i]
-		sink, mux := false, false
-		for _, dest := range facts.dests {
-			if s.recipe.Destinations[dest].Kind == recipeir.DestinationKindSink {
-				sink = true
-			} else {
-				mux = true
-			}
-		}
-		encode := recipeIRStreamEncodeSpec(stream)
-		node := recipeIRStreamName(stream)
-		if sink && mux && !codecIntentSet(encode) {
-			return mixedStreamOutputError(s.operation, node, stream.Selector.Type)
-		}
-		if mux && encode.ID == "" && !encode.Copy && s.streamEndsFrames(i) {
-			return streamEncodeMissingError(s.operation, node, stream.Selector.Type)
-		}
-	}
-	return nil
-}
-
-// streamEndsFrames reports whether a branch carries frames at its end.
-func (s *recipeCompileState) streamEndsFrames(index int) bool {
-	frames := s.facts[index].frames
-	for _, operation := range s.recipe.Streams[index].Operations {
-		switch operation.Kind {
-		case plan.OpDecode:
-			frames = true
-		case plan.OpEncode, plan.OpCopy:
-			frames = false
-		}
-	}
-	return frames
-}
-
-func (s *recipeCompileState) validateLiveStreamSelection() error {
-	if !s.options.preflight {
-		return nil
-	}
-	for i := range s.recipe.Streams {
-		stream := s.recipe.Streams[i]
-		if stream.Input < 0 {
-			continue
-		}
-		if s.selectionNeedsUnion(stream) {
-			if err := s.validateStreamSelectionAcrossInputs(stream); err != nil {
-				return err
-			}
-			continue
-		}
-		if !s.streamNeedsDecode(i) {
-			continue
-		}
-		if err := validateLiveRecipeStreamSelection(s.recipe.Inputs, stream); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *recipeCompileState) validateKnownInputStreamSelection() error {
-	for i := range s.recipe.Streams {
-		stream := s.recipe.Streams[i]
-		if stream.Input < 0 {
-			continue
-		}
-		if s.selectionNeedsUnion(stream) {
-			if err := s.validateStreamSelectionAcrossInputs(stream); err != nil {
-				return err
-			}
-			continue
-		}
-		if !s.streamNeedsDecode(i) {
-			continue
-		}
-		if stream.Input < len(s.inputProbes) {
-			if err := validateKnownProbeRecipeStreamSelection(s.inputProbes[stream.Input], stream); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// selectionNeedsUnion reports a branch of a recipe with several inputs: its
-// selection is checked against the stream sets of every input, narrowed to
-// its own.
-func (s *recipeCompileState) selectionNeedsUnion(stream recipeir.Stream) bool {
-	return len(s.recipe.Inputs) > 1 || stream.Selector.Input != ""
-}
-
-func (s *recipeCompileState) validateStreamSelectionAcrossInputs(stream recipeir.Stream) error {
-	_, _, err := selectStreamAcrossInputSets(s.inputStreamSets(), recipeIRStreamSelector(stream), stream.Selector.Input)
-	return err
-}
-
-func (s *recipeCompileState) inputStreamSets() []inputStreamSet {
-	return jobInputStreamSets(s.recipe.Inputs, s.inputProbes)
-}
-
-func validateKnownProbeRecipeStreamSelection(probe format.ProbeResult, stream recipeir.Stream) error {
-	if len(probe.Streams) == 0 {
-		return nil
-	}
-	_, err := selectDecodeStream(probe.Streams, recipeIRStreamSelector(stream))
-	return err
-}
-
-// streamNeedsDecode reports a branch of an input's packets that decodes,
-// transforms, or encodes them.
-func (s *recipeCompileState) streamNeedsDecode(index int) bool {
-	stream := s.recipe.Streams[index]
-	if stream.Input < 0 || s.facts[index].frames {
-		return false
-	}
-	return recipeIRStreamHasDecode(stream) ||
-		len(recipeIRStreamTransforms(stream)) != 0 ||
-		recipeIRStreamEncodeSpec(stream).ID != ""
-}
-
-func (s *recipeCompileState) streamsNeedingDecode() []recipeir.Stream {
-	var out []recipeir.Stream
-	for i := range s.recipe.Streams {
-		if s.streamNeedsDecode(i) {
-			out = append(out, s.recipe.Streams[i])
-		}
-	}
-	return out
-}
 
 // --- adapters ---
 
-func (s *recipeCompileState) adapterRuntime() *Runtime {
-	return s.runtime
-}
-
-func (s *recipeCompileState) validateOutputFormatAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	outputs, err := validateOutputFormatAdapters(s.options.Context(), s.adapterRuntime(), s.outputAttachments, s.outputDestinationNames...)
-	if err != nil {
-		return err
-	}
-	s.outputAttachments = outputs
-	return nil
-}
-
-func (s *recipeCompileState) validateInputFormatAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	probes, err := validateInputFormatAdapters(s.options.Context(), s.adapterRuntime(), s.inputAttachments)
-	if err != nil {
-		return err
-	}
-	s.inputProbes = probes
-	return nil
-}
-
-func (s *recipeCompileState) validateDecodeAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	streams := s.streamsNeedingDecode()
-	if len(streams) == 0 {
-		return nil
-	}
-	return validateRecipeIRDecodeAdapters(s.operation, s.adapterRuntime(), s.recipe.Inputs, streams)
-}
-
-func (s *recipeCompileState) validateEncodeAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	return validateRecipeIREncodeAdapters(s.operation, s.adapterRuntime(), s.recipe.Streams)
-}
-
-func (s *recipeCompileState) validateTransformAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	return validateRecipeIRTransformAdapters(s.operation, s.adapterRuntime(), s.recipe.Streams)
-}
-
-func (s *recipeCompileState) validateKnownInputDecodeAdapters() error {
-	if !s.options.preflight {
-		return nil
-	}
-	streams := s.streamsNeedingDecode()
-	if len(streams) == 0 {
-		return nil
-	}
-	return validateKnownRecipeIRDecodeAdapters(s.operation, s.adapterRuntime(), s.inputProbes, streams)
-}
-
 // --- runtime ---
-
-// validateRuntime refuses a build without a runtime: a recipe builds on one,
-// which owns its adapters, buffers, and clock.
-func (s *recipeCompileState) validateRuntime() error {
-	if s.options.preflight && s.runtime == nil {
-		return runtimeMissingError(s.operation)
-	}
-	return nil
-}
-
-// runtimeMissingError is the no-runtime refusal.
-func runtimeMissingError(operation string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(errcode.RuntimeMissing),
-		Code:      errcode.RuntimeMissing,
-		Operation: operation,
-		Reason:    "no runtime is configured",
-		fixes: buildErrorFixes([]string{
-			"run the Outputs on a runtime: rt.Run(ctx, outputs...)",
-			"build a bare runtime with goav.New(...)",
-			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, outputs...), or bundle.Run(ctx, outputs...)",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func recipeGraphUnsupportedRecipeError(operation string, recipe recipeir.Recipe) error {
-	details := []string{
-		fmt.Sprintf("inputs: %d", len(recipe.Inputs)),
-		fmt.Sprintf("streams: %d", len(recipe.Streams)),
-		fmt.Sprintf("destinations: %d", len(recipe.Destinations)),
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(errcode.RecipeGraphUnsupported),
-		Code:      errcode.RecipeGraphUnsupported,
-		Operation: operation,
-		Reason:    "recipe did not plan a graph",
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
-			"use input.To(output...) for packet-preserving record or remux",
-			"use input.Audio().Decode().To(goav.Sink(...)) or input.Video().Decode().To(...) for decoded frames",
-			"use v := input.Video().Decode(), then v.Encode(codec.VP9(...)).As(name).To(output) for named forks",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}

@@ -7,6 +7,8 @@
 package recipeir
 
 import (
+	"cmp"
+
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
@@ -270,6 +272,14 @@ type Anchor struct {
 	Route *pipeline.Route
 }
 
+// The built-in join kinds a Join's Kind names; any other Kind is a custom
+// join's name.
+const (
+	JoinMix       = "mix"
+	JoinComposite = "composite"
+	JoinSelect    = "select"
+)
+
 // Join is a convergence node's kind and per-arm placement.
 type Join struct {
 	// Kind is mix, composite, or select, or a custom join's name.
@@ -295,3 +305,81 @@ const (
 	OpName   plan.OperationKind = "name"
 	OpBuffer plan.OperationKind = "buffer"
 )
+
+// Path lists the nodes from a stream's root to id: its select, rule, anchor,
+// or join, then its operations in order.
+func (g Graph) Path(id NodeID) []NodeID {
+	var nodes []NodeID
+	for {
+		nodes = append(nodes, id)
+		node := g.Nodes[id]
+		if node.Kind != NodeOp {
+			break
+		}
+		id = node.Parents[0]
+	}
+	for i, j := 0, len(nodes)-1; i < j; i, j = i+1, j-1 {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
+	}
+	return nodes
+}
+
+// HasOp reports whether any of nodes is an operation of kind.
+func (g Graph) HasOp(nodes []NodeID, kind plan.OperationKind) bool {
+	for _, n := range nodes {
+		if g.Nodes[n].Kind == NodeOp && g.Nodes[n].Op.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeSourceShape is a declared source shape as the IR records it: a
+// packet domain unless declared, and a stream id defaulting to the source's
+// name, else its media kind.
+func NormalizeSourceShape(name string, spec shape.Spec) shape.Spec {
+	if spec.Domain == "" {
+		spec.Domain = shape.DomainPacket
+	}
+	if spec.StreamID == "" {
+		spec.StreamID = av.StreamID(cmp.Or(name, string(spec.MediaKind), "stream"))
+	}
+	return spec
+}
+
+// FillStreamCodecParameters overlays shape-derived codec parameters onto a
+// declared source stream: the declared stream stays authoritative, and the
+// source shape fills only facts the stream left open.
+func FillStreamCodecParameters(stream *av.Stream, spec codec.Spec) {
+	if spec.ID != "" && stream.Codec.ID != "" && spec.ID != stream.Codec.ID {
+		return
+	}
+	params := spec.Parameters
+	if stream.Codec.ID == "" {
+		stream.Codec.ID = cmp.Or(spec.ID, params.ID)
+	}
+	if stream.Codec.SampleRate == 0 {
+		stream.Codec.SampleRate = params.SampleRate
+	}
+	if stream.Codec.Channels == 0 {
+		stream.Codec.Channels = params.Channels
+	}
+	if stream.Codec.SampleFormat == "" {
+		stream.Codec.SampleFormat = params.SampleFormat
+	}
+	if stream.Codec.ChannelLayout == "" {
+		stream.Codec.ChannelLayout = params.ChannelLayout
+	}
+	if stream.Codec.Width == 0 {
+		stream.Codec.Width = params.Width
+	}
+	if stream.Codec.Height == 0 {
+		stream.Codec.Height = params.Height
+	}
+	if stream.Codec.PixelFormat == "" {
+		stream.Codec.PixelFormat = params.PixelFormat
+	}
+	if stream.Codec.ClockRate == 0 {
+		stream.Codec.ClockRate = params.ClockRate
+	}
+}

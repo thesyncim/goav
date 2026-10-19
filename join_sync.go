@@ -8,37 +8,13 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
-)
-
-// joinSyncMode selects how a convergent join (Mix/Composite) aligns its arms.
-type joinSyncMode int
-
-const (
-	// joinSyncArrival pairs arm frames by arrival: one buffered frame per arm
-	// per step, no timestamp math. Right for live sources on one clock; the
-	// default.
-	joinSyncArrival joinSyncMode = iota
-	// joinSyncPTS aligns arm frames by presentation time on a common
-	// nanosecond clock — opt-in via LegacyMix(...).SyncByPTS() and
-	// LegacyComposite(...).SyncByPTS().
-	joinSyncPTS
 )
 
 // joinSyncNSUnset marks the step clock as underived: the next step re-derives
 // it from the minimum head PTS (first step, or after a discontinuity re-sync).
 const joinSyncNSUnset = math.MinInt64
-
-// joinSyncNodeDetail renders the join node's planned/built graph detail.
-// Arrival is the default and stays unannotated, so existing plans are
-// byte-identical; the planner and the stages' DescribeNode share this one
-// function, keeping Describe() ≡ Build().
-func joinSyncNodeDetail(mode joinSyncMode) string {
-	if mode == joinSyncPTS {
-		return "sync=pts"
-	}
-	return ""
-}
 
 // joinSyncState is the arm buffering and alignment state shared by the
 // convergence stages (audioMixStage, videoCompositeStage). Every field is
@@ -50,7 +26,7 @@ func joinSyncNodeDetail(mode joinSyncMode) string {
 // still participate, then the remaining arms keep joining without it; the
 // joined stream ends only when every arm has ended.
 type joinSyncState struct {
-	mode    joinSyncMode
+	mode    compile.JoinSyncMode
 	inputs  []av.StreamID
 	pending map[av.StreamID][]*av.Frame
 	eos     map[av.StreamID]struct{}
@@ -156,7 +132,7 @@ func (s *joinSyncState) releaseAdmission() {
 	}
 }
 
-func newJoinSyncStateWithPendingCap(mode joinSyncMode, inputs []av.StreamID, pendingCap int) *joinSyncState {
+func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.StreamID, pendingCap int) *joinSyncState {
 	if pendingCap < 1 {
 		pendingCap = 1
 	}
@@ -191,7 +167,7 @@ func (s *joinSyncState) markEOS(id av.StreamID) bool {
 // reports whether it acted: arrival joins ignore discontinuities — arrival
 // order is their only contract, preserved unchanged.
 func (s *joinSyncState) discontinuity(id av.StreamID) bool {
-	if s.mode != joinSyncPTS {
+	if s.mode != compile.JoinSyncPTS {
 		return false
 	}
 	for _, arm := range s.inputs {
@@ -239,14 +215,14 @@ func (s *joinSyncState) ready() bool {
 // dropped to catch up, and heads without a usable PTS participate
 // unconditionally (arrival degradation — a PTS-less arm never stalls the join).
 func (s *joinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
-	if s.mode == joinSyncPTS {
+	if s.mode == compile.JoinSyncPTS {
 		s.dropStale()
 	}
 	if !s.ready() {
 		return nil, 0, false
 	}
 	frames = s.stepFrames()
-	if s.mode == joinSyncPTS {
+	if s.mode == compile.JoinSyncPTS {
 		ref = s.selectPTS(frames)
 	} else {
 		ref = s.selectArrival(frames)

@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -183,7 +184,7 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 	rule := streamRule{
 		branches: []attachBranch{{
 			name:       "late",
-			operations: []recipeir.Operation{opCopy()},
+			operations: []recipeir.Operation{compile.OpCopy()},
 			dests:      []destinationRef{newDirectDestinationRef("late-sink", Sink(SinkFunc("late-sink", func(context.Context, Message) error { return nil })).spec)},
 		}},
 	}

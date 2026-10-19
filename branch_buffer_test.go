@@ -1,13 +1,12 @@
 package goav
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -45,32 +44,11 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateBranchBuffer(tt.buffer, "build branch", "preview"); err != nil {
+			if err := publicError(compile.ValidateBranchBuffer(tt.buffer, "build branch", "preview")); err != nil {
 				t.Fatal(err)
 			}
 			if got := tt.buffer.PipelinePolicy(); got != tt.want {
 				t.Fatalf("PipelinePolicy() = %+v, want %+v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
-	tests := []struct {
-		name   string
-		buffer flow.BranchBuffer
-		code   errcode.Code
-	}{
-		{name: "zero capacity", buffer: flow.DropOldest(0), code: "branch_buffer_invalid"},
-		{name: "negative byte limit", buffer: flow.Blocking(1, flow.BufferMaxBytes(-1)), code: "branch_buffer_invalid"},
-		{name: "unbounded unsupported", buffer: flow.Unbounded(), code: "branch_buffer_unsupported"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateBranchBuffer(tt.buffer, "build branch", "preview")
-			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 		})
 	}

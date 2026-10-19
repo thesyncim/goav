@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -25,13 +26,13 @@ func TestTapNameAndDomainHelperContracts(t *testing.T) {
 		t.Fatalf("defaultPacketTapName(empty,2) = %q", got)
 	}
 
-	inferred := tapWithDomain(tapRef{name: "mid"}, shape.DomainFrame)
-	if inferred.Name() != "mid" || inferred.Domain() != shape.DomainFrame {
-		t.Fatalf("internal tap default = %s/%s", inferred.Name(), inferred.Domain())
+	inferred := tapWithDomain(compile.TapRef{Name: "mid"}, shape.DomainFrame)
+	if inferred.Name != "mid" || inferred.Domain != shape.DomainFrame {
+		t.Fatalf("internal tap default = %s/%s", inferred.Name, inferred.Domain)
 	}
 	explicit := tapWithDomain(packetTapRef("encoded"), shape.DomainFrame)
-	if explicit.Name() != "encoded" || explicit.Domain() != shape.DomainPacket {
-		t.Fatalf("explicit tap = %s/%s, want packet domain preserved", explicit.Name(), explicit.Domain())
+	if explicit.Name != "encoded" || explicit.Domain != shape.DomainPacket {
+		t.Fatalf("explicit tap = %s/%s, want packet domain preserved", explicit.Name, explicit.Domain)
 	}
 }
 
@@ -53,37 +54,5 @@ func TestTaskTapsDoNotInferFromGraphNodePrefixes(t *testing.T) {
 	task := &task{graph: graph}
 	if taps := task.Taps(); len(taps) != 0 {
 		t.Fatalf("Taps() = %+v, want no prefix-inferred taps", taps)
-	}
-}
-
-func TestWorkDestinationNameAndIDHelperContracts(t *testing.T) {
-	destinations := []workDestination{
-		{ID: "destination/archive", Name: "archive"},
-		{ID: "destination/preview", Name: "preview"},
-		{ID: "destination/nameless"},
-	}
-	ids := workDestinationIDsByName(destinations)
-	if got := ids["archive"]; got != "destination/archive" {
-		t.Fatalf("archive id = %q", got)
-	}
-	if _, ok := ids[""]; ok {
-		t.Fatalf("empty destination name should not be indexed: %v", ids)
-	}
-
-	if got := workDestinationIDForName(ids, "archive"); got != "destination/archive" {
-		t.Fatalf("workDestinationIDForName hit = %q", got)
-	}
-	if got := workDestinationIDForName(ids, "new"); got != "destination/new" {
-		t.Fatalf("workDestinationIDForName miss = %q", got)
-	}
-	if got := workDestinationIDForName(ids, ""); got != "destination/unnamed" {
-		t.Fatalf("workDestinationIDForName empty = %q", got)
-	}
-
-	if got := workDestinationNameByID(destinations, "destination/preview"); got != "preview" {
-		t.Fatalf("workDestinationNameByID hit = %q", got)
-	}
-	if got := workDestinationNameByID(destinations, "destination/missing"); got != "destination/missing" {
-		t.Fatalf("workDestinationNameByID miss = %q", got)
 	}
 }

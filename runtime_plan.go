@@ -2,13 +2,9 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
-
-type plannedNode struct {
-	ref  pipeline.NodeRef
-	kind pipeline.NodeKind
-}
 
 func (b *builder) Describe() (pipeline.Spec, error) {
 	spec := pipeline.Spec{
@@ -26,7 +22,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		return pipeline.Spec{}, explicitGraphMissingSourceError()
 	}
 
-	nodes := make(map[string]plannedNode, len(b.sources)+len(b.stages)+len(b.sinks))
+	nodes := make(map[string]compile.PlannedNode, len(b.sources)+len(b.stages)+len(b.sinks))
 	sourceRefs := make([]pipeline.NodeRef, len(b.sources))
 	stageRefs := make([]pipeline.NodeRef, len(b.stages))
 	sinkRefs := make([]pipeline.NodeRef, len(b.sinks))
@@ -37,18 +33,18 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		}
 		name := b.sources[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSource, ref, describedNodeDetail(b.sources[i])); err != nil {
+		if err := publicError(compile.AddPlannedNode(nodes, &spec, name, pipeline.NodeSource, ref, compile.DescribedNodeDetail(b.sources[i]))); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
-		if err := validateStageComponent(b.stages[i]); err != nil {
+		if err := publicError(compile.ValidateStageComponent(b.stages[i])); err != nil {
 			return pipeline.Spec{}, err
 		}
 		name := b.stages[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeStage, ref, describedNodeDetail(b.stages[i])); err != nil {
+		if err := publicError(compile.AddPlannedNode(nodes, &spec, name, pipeline.NodeStage, ref, compile.DescribedNodeDetail(b.stages[i]))); err != nil {
 			return pipeline.Spec{}, err
 		}
 		stageRefs[i] = ref
@@ -59,7 +55,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		}
 		name := b.sinks[i].Name()
 		ref := pipeline.NodeRef(name)
-		if err := addPlannedNode(nodes, &spec, name, pipeline.NodeSink, ref, describedNodeDetail(b.sinks[i])); err != nil {
+		if err := publicError(compile.AddPlannedNode(nodes, &spec, name, pipeline.NodeSink, ref, compile.DescribedNodeDetail(b.sinks[i]))); err != nil {
 			return pipeline.Spec{}, err
 		}
 		sinkRefs[i] = ref
@@ -103,42 +99,13 @@ func explicitGraphMissingSourceError() error {
 	}
 }
 
-func (b *builder) planExplicitRoutes(nodes map[string]plannedNode, spec *pipeline.Spec) error {
+func (b *builder) planExplicitRoutes(nodes map[string]compile.PlannedNode, spec *pipeline.Spec) error {
 	for i := range b.routes {
 		if err := planRoute(nodes, spec, b.routes[i]); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func addPlannedNode(nodes map[string]plannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, ref pipeline.NodeRef, detail ...string) error {
-	if name == "" {
-		return pipeline.ErrUnknownNode
-	}
-	if _, ok := nodes[name]; ok {
-		return pipeline.ErrNodeExists
-	}
-	nodes[name] = plannedNode{ref: ref, kind: kind}
-	spec.Nodes = append(spec.Nodes, pipeline.NodeSpec{Name: name, Kind: kind, Detail: firstDetail(detail)})
-	return nil
-}
-
-func firstDetail(detail []string) string {
-	for i := range detail {
-		if detail[i] != "" {
-			return detail[i]
-		}
-	}
-	return ""
-}
-
-func describedNodeDetail(node any) string {
-	describer, ok := node.(pipeline.NodeDescriber)
-	if !ok {
-		return ""
-	}
-	return describer.DescribeNode().Detail
 }
 
 func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeRef) {
@@ -153,7 +120,7 @@ func planLinks(spec *pipeline.Spec, from []pipeline.NodeRef, to []pipeline.NodeR
 	}
 }
 
-func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline.Route) error {
+func planRoute(nodes map[string]compile.PlannedNode, spec *pipeline.Spec, route pipeline.Route) error {
 	policy, err := plannedRoutePolicy(route.Policy)
 	if err != nil {
 		return pipeline.ErrUnsupportedRoute
@@ -169,7 +136,7 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 	if !ok {
 		return pipeline.ErrUnknownNode
 	}
-	if from.kind == pipeline.NodeSink {
+	if from.Kind == pipeline.NodeSink {
 		return pipeline.ErrInvalidLink
 	}
 	for i := range route.To {
@@ -181,7 +148,7 @@ func planRoute(nodes map[string]plannedNode, spec *pipeline.Spec, route pipeline
 		if !ok {
 			return pipeline.ErrUnknownNode
 		}
-		if to.kind == pipeline.NodeSource {
+		if to.Kind == pipeline.NodeSource {
 			return pipeline.ErrInvalidLink
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{
@@ -205,10 +172,10 @@ func plannedRoutePolicy(policy pipeline.RoutePolicy) (pipeline.RoutePolicy, erro
 	}
 }
 
-func resolvePlannedNode(nodes map[string]plannedNode, ref pipeline.NodeRef) (pipeline.NodeRef, error) {
+func resolvePlannedNode(nodes map[string]compile.PlannedNode, ref pipeline.NodeRef) (pipeline.NodeRef, error) {
 	node, ok := nodes[ref.String()]
 	if !ok {
 		return "", pipeline.ErrUnknownNode
 	}
-	return node.ref, nil
+	return node.Ref, nil
 }

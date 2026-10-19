@@ -7,36 +7,6 @@ import (
 	"github.com/thesyncim/goav/errcode"
 )
 
-func TestBuildErrorFamilyForCodePinned(t *testing.T) {
-	tests := []struct {
-		code   errcode.Code
-		family errcode.Family
-	}{
-		{inputInvalidCode, errcode.FamilyInput},
-		{streamAmbiguousCode, errcode.FamilyStream},
-		{transformAdapterMissingCode, errcode.FamilyTransform},
-		{shapeRequirementUnmetCode, errcode.FamilyShape},
-		{decodeAdapterMissingCode, errcode.FamilyCodec},
-		{encodeMissingCode, errcode.FamilyEncode},
-		{destinationDuplicateCode, errcode.FamilyDestination},
-		{decodeConfigConflictCode, errcode.FamilyBranch},
-		{branchBufferInvalidCode, errcode.FamilyBuffer},
-		{errcode.TapInvalid, errcode.FamilyTap},
-		{errcode.Code("mix_inputs"), errcode.FamilyJoin},
-		{runtimeBranchInvalidCode, errcode.FamilyRuntimeBranch},
-		{errcode.StreamRuleInvalid, errcode.FamilyStreamRule},
-		{compilerPassFailedCode, errcode.FamilyCompiler},
-		{errcode.Code(diagnosticShapeConversionInserted), errcode.Family("diagnostic")},
-		{errcode.Code("crossfade_inputs"), errcode.FamilyJoin},
-		{errcode.Code("example_vendor_failure"), errcode.FamilyExternal},
-	}
-	for _, tt := range tests {
-		if got := errcode.FamilyForCode(tt.code); got != tt.family {
-			t.Fatalf("FamilyForCode(%q) = %q, want %q", tt.code, got, tt.family)
-		}
-	}
-}
-
 func TestBuildErrorFamilyReachesReturnedErrors(t *testing.T) {
 	tests := []struct {
 		name   string

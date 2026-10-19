@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func inputFormatProbeError(input format.Input, cause error) error {
@@ -68,7 +69,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		Family:    errcode.FamilyForCode(outputFormatUnknownCode),
 		Code:      outputFormatUnknownCode,
 		Operation: "open output",
-		Node:      muxNodeName(output, index),
+		Node:      compile.MuxNodeName(output, index),
 		Reason:    "output format could not be detected",
 		fields:    outputFormatFields(output),
 		fixes:     buildErrorFixes(suggestions),
@@ -90,7 +91,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ch
 		Family:    errcode.FamilyForCode(outputMuxerMissingCode),
 		Code:      outputMuxerMissingCode,
 		Operation: "open output",
-		Node:      muxNodeName(output, index),
+		Node:      compile.MuxNodeName(output, index),
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
 		fields:    append(outputFormatFields(output), buildErrorDetail{Key: "format", Value: id}),
 		fixes:     buildErrorFixes(suggestions),

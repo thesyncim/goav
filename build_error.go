@@ -4,42 +4,33 @@ package goav
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/builderr"
 )
 
-// buildErrorDetail is one typed machine-readable fact attached to a
-// BuildError. Callers read details through BuildError.Detail and
-// BuildError.DetailLines so the root API does not expose implementation DTOs.
-type buildErrorDetail struct {
-	Key   string
-	Value any
-}
-
-func (d buildErrorDetail) String() string {
-	if d.Key == "" {
-		return fmt.Sprint(d.Value)
-	}
-	return d.Key + "=" + fmt.Sprint(d.Value)
-}
-
-// buildErrorFix is one concrete way to repair a BuildError.
-type buildErrorFix struct {
-	Message string
-}
-
-func (f buildErrorFix) String() string {
-	return f.Message
-}
+// The refusal vocabulary is internal/builderr's, shared with the compiler;
+// the root package spells it by these names.
+type (
+	buildErrorDetail = builderr.Detail
+	buildErrorFix    = builderr.Fix
+)
 
 const (
-	phaseBuild = "build"
-	phaseOpen  = "open"
-	phaseRun   = "run"
-	phaseClose = "close"
+	phaseBuild = builderr.PhaseBuild
+	phaseOpen  = builderr.PhaseOpen
+	phaseRun   = builderr.PhaseRun
+	phaseClose = builderr.PhaseClose
+)
+
+var (
+	errUnsupportedBuild = builderr.ErrUnsupportedBuild
+	errDetail           = builderr.KV
+	errNote             = builderr.Note
+	errDetails          = builderr.Details
+	errDetailLines      = builderr.DetailLines
+	buildErrorFixes     = builderr.Fixes
+	encodeHint          = builderr.EncodeHint
 )
 
 // BuildError is the one structured refusal goav raises from build,
@@ -69,39 +60,7 @@ func (e *BuildError) Error() string {
 	if e == nil {
 		return ""
 	}
-	var out strings.Builder
-	out.WriteString("goav")
-	if e.Operation != "" {
-		out.WriteString(": cannot ")
-		out.WriteString(e.Operation)
-	} else {
-		out.WriteString(": build failed")
-	}
-	if e.Node != "" {
-		out.WriteString(" for ")
-		out.WriteString(e.Node)
-	}
-	if e.Reason != "" {
-		out.WriteString(": ")
-		out.WriteString(e.Reason)
-	}
-	details := e.detailLines()
-	if len(details) != 0 {
-		out.WriteString("\nDetails:")
-		for i := range details {
-			out.WriteString("\n  - ")
-			out.WriteString(details[i])
-		}
-	}
-	suggestions := e.suggestionLines()
-	if len(suggestions) != 0 {
-		out.WriteString("\nSuggestions:")
-		for i := range suggestions {
-			out.WriteString("\n  - ")
-			out.WriteString(suggestions[i])
-		}
-	}
-	return out.String()
+	return builderr.Render(e.Operation, e.Node, e.Reason, e.detailLines(), e.suggestionLines())
 }
 
 // Detail returns the detail named key as a T, reporting false when the error
@@ -180,116 +139,62 @@ func (e *BuildError) detailLines() []string {
 	if e == nil {
 		return nil
 	}
-	return detailsToLines(e.fields)
+	return builderr.Lines(e.fields)
 }
 
 func (e *BuildError) suggestionLines() []string {
 	if e == nil {
 		return nil
 	}
-	if len(e.fixes) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(e.fixes))
-	for i := range e.fixes {
-		if e.fixes[i].Message == "" {
-			continue
-		}
-		out = append(out, e.fixes[i].String())
-	}
+	return builderr.FixLines(e.fixes)
+}
+
+// publicError is where a compiler Refusal becomes the public BuildError:
+// every exported entry that runs the compiler returns its error through it,
+// so a caller's errors.As(err, *BuildError) always holds. A BuildError whose
+// cause is a Refusal has the cause converted too.
+func publicError(err error) error {
+	out, _ := convertRefusal(err)
 	return out
 }
 
-// errDetail builds one typed machine-readable BuildError detail from an explicit
-// key and value. It replaces splitting a "key=value" string at construction:
-// the value keeps its real type (int, string, ...) and is read back through
-// BuildError.Detail(key).
-func errDetail(key string, value any) buildErrorDetail {
-	return buildErrorDetail{Key: key, Value: value}
-}
-
-// errNote builds one keyless detail: a machine-readable note with no key.
-func errNote(message string) buildErrorDetail {
-	return buildErrorDetail{Value: message}
-}
-
-// errDetails collects typed details, dropping empties. It is the typed builder
-// that replaced buildErrorFields([]string{"key=value"}).
-func errDetails(details ...buildErrorDetail) []buildErrorDetail {
-	if len(details) == 0 {
-		return nil
-	}
-	out := make([]buildErrorDetail, 0, len(details))
-	for _, d := range details {
-		if d.Key == "" && (d.Value == nil || d.Value == "") {
-			continue
+func convertRefusal(err error) (error, bool) {
+	switch e := err.(type) {
+	case *builderr.Refusal:
+		if e == nil {
+			return err, false
 		}
-		out = append(out, d)
+		cause, _ := convertRefusal(e.Cause)
+		return &BuildError{
+			Phase:     e.Phase,
+			Family:    e.Family,
+			Code:      e.Code,
+			Operation: e.Operation,
+			Node:      e.Node,
+			Reason:    e.Reason,
+			fields:    e.Details,
+			fixes:     e.Fixes,
+			cause:     cause,
+		}, true
+	case *BuildError:
+		if e == nil {
+			return err, false
+		}
+		if cause, changed := convertRefusal(e.cause); changed {
+			out := *e
+			out.cause = cause
+			return &out, true
+		}
 	}
-	return out
+	return err, false
 }
 
-// errDetailLines converts a dynamically-built slice of "key=value" (or plain)
-// lines into typed details, splitting each at the first '='. It is the runtime
-// path for call sites whose detail keys are not known statically; literal detail
-// lists use errDetail/errNote instead.
-func errDetailLines(lines []string) []buildErrorDetail {
-	if len(lines) == 0 {
-		return nil
-	}
-	out := make([]buildErrorDetail, 0, len(lines))
-	for i := range lines {
-		if lines[i] == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(lines[i], "=")
-		if !ok || key == "" {
-			out = append(out, buildErrorDetail{Value: lines[i]})
-			continue
-		}
-		out = append(out, buildErrorDetail{Key: key, Value: value})
-	}
-	return out
+// refuse and refuse2 convert the error of a compile call that also returns
+// values, as publicError does.
+func refuse[T any](v T, err error) (T, error) {
+	return v, publicError(err)
 }
 
-// encodeHint is the encoder phrase refusals suggest: the bundled recipe
-// encoders for the stream's media, so a video refusal never offers an audio
-// codec, and every encoder when the media is unknown.
-func encodeHint(media av.MediaType) string {
-	switch media {
-	case av.MediaAudio:
-		return ".Encode(codec.Opus(...))"
-	case av.MediaVideo:
-		return ".Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...))"
-	default:
-		return ".Encode(codec.Opus(...)) for audio or .Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...)) for video"
-	}
-}
-
-func buildErrorFixes(lines []string) []buildErrorFix {
-	if len(lines) == 0 {
-		return nil
-	}
-	out := make([]buildErrorFix, 0, len(lines))
-	for i := range lines {
-		if lines[i] == "" {
-			continue
-		}
-		out = append(out, buildErrorFix{Message: lines[i]})
-	}
-	return out
-}
-
-func detailsToLines(details []buildErrorDetail) []string {
-	if len(details) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(details))
-	for i := range details {
-		if details[i].Key == "" && details[i].Value == nil {
-			continue
-		}
-		out = append(out, details[i].String())
-	}
-	return out
+func refuse2[T, U any](v T, u U, err error) (T, U, error) {
+	return v, u, publicError(err)
 }

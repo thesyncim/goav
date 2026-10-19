@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -53,7 +54,7 @@ func compositeTestChromaAt(frame *av.Frame, x, y int) (byte, byte) {
 
 func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	if got := stage.DroppedMessages(); got != 0 {
@@ -120,7 +121,7 @@ func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 
 func TestVideoCompositeRejectsNonI420(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -138,7 +139,7 @@ func TestVideoCompositeRejectsNonI420(t *testing.T) {
 
 func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	eos := func(id av.StreamID) *pipeline.Message {
@@ -161,7 +162,7 @@ func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
 
 func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
 	stage := newVideoCompositeStageWithPrealloc("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncPTS, 0)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncPTS, 0)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -196,7 +197,7 @@ func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
 	}
 
 	arrival := newVideoCompositeStage("arrival", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	if err := arrival.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &discontinuity}, emit); err != nil {
 		t.Fatalf("arrival discontinuity error = %v", err)
 	}
@@ -215,23 +216,23 @@ func TestVideoCompositeDirectValidationAndReuseContracts(t *testing.T) {
 	if _, err := compositeI420FramesInto(nil, nil, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "no participating frames") {
 		t.Fatalf("empty composite err = %v", err)
 	}
-	if _, err := compositeI420FramesInto([]*av.Frame{{StreamID: "a"}}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "no video plane") {
+	if _, err := compositeI420FramesInto([]*av.Frame{{StreamID: "a"}}, []compile.CompositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "no video plane") {
 		t.Fatalf("no video err = %v", err)
 	}
 
 	missingPlanes := compositeTestI420Frame("a", 2, 2, 1, 2, 3)
 	missingPlanes.Planes = missingPlanes.Planes[:2]
-	if _, err := compositeI420FramesInto([]*av.Frame{missingPlanes}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "needs 3 planes") {
+	if _, err := compositeI420FramesInto([]*av.Frame{missingPlanes}, []compile.CompositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "needs 3 planes") {
 		t.Fatalf("missing planes err = %v", err)
 	}
 
 	emptyCanvas := compositeTestI420Frame("a", 0, 0, 1, 2, 3)
-	if _, err := compositeI420FramesInto([]*av.Frame{emptyCanvas}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "canvas is empty") {
+	if _, err := compositeI420FramesInto([]*av.Frame{emptyCanvas}, []compile.CompositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "canvas is empty") {
 		t.Fatalf("empty canvas err = %v", err)
 	}
 
 	odd := compositeTestI420Frame("a", 3, 3, 9, 8, 7)
-	out, err := compositeI420FramesInto([]*av.Frame{odd}, []compositeLayout{{X: 1, Y: 1}}, 0, 0, "out", dst, video)
+	out, err := compositeI420FramesInto([]*av.Frame{odd}, []compile.CompositeLayout{{X: 1, Y: 1}}, 0, 0, "out", dst, video)
 	if err != nil {
 		t.Fatalf("odd composite error = %v", err)
 	}
@@ -241,7 +242,7 @@ func TestVideoCompositeDirectValidationAndReuseContracts(t *testing.T) {
 	if out.Planes[0].Stride != 4 || len(out.Planes[1].Buffer.Bytes) != 4 || len(out.Planes[2].Buffer.Bytes) != 4 {
 		t.Fatalf("odd planes = %+v", out.Planes)
 	}
-	out, err = compositeI420FramesInto([]*av.Frame{odd}, []compositeLayout{{}}, 0, 0, "out", dst, video)
+	out, err = compositeI420FramesInto([]*av.Frame{odd}, []compile.CompositeLayout{{}}, 0, 0, "out", dst, video)
 	if err != nil {
 		t.Fatalf("reused composite error = %v", err)
 	}
@@ -274,7 +275,7 @@ func TestVideoCompositeCopyPlaneClipsAndGuards(t *testing.T) {
 
 func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 
 	// A kept arm frame is a header over the arm's own bytes, holding a
 	// reference to each pooled plane until the stage recycles it.
@@ -323,7 +324,7 @@ func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
 
 func TestVideoCompositeEOSErrorDuringDrain(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 1, 2, 3)}, &mixTestEmitter{}); err != nil {
 		t.Fatalf("frame error = %v", err)
 	}

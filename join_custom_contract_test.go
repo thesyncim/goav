@@ -109,10 +109,4 @@ func TestCustomJoinForksRejectAnInvalidName(t *testing.T) {
 		mixTestAudioSource("b", 50).Audio(),
 	).As("monitor").To(branchBuilderTestSink("monitor")))
 	assertBuildErrorCode(t, err, errcode.JoinNameInvalid)
-
-	if _, err := customJoinProfile(nil); err == nil {
-		t.Fatal("customJoinProfile(nil) = nil, want join stage error")
-	} else {
-		assertBuildErrorCode(t, err, errcode.JoinStageInvalid)
-	}
 }

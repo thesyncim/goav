@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
@@ -153,7 +154,7 @@ func maxDecodeBounds(a codec.DecodeBounds, b codec.DecodeBounds) codec.DecodeBou
 // already matching are passed through untouched (preserving every optional
 // capability they implement).
 func resolvedProviderSource(source pipeline.Source, name string, detail string) pipeline.Source {
-	if source.Name() == name && describedNodeDetail(source) == detail {
+	if source.Name() == name && compile.DescribedNodeDetail(source) == detail {
 		return source
 	}
 	renamed := renamedSource{source: source, name: name, detail: detail}
@@ -191,4 +192,26 @@ type renamedControllableSource struct {
 
 func (s *renamedControllableSource) Control(ctx context.Context, msg *pipeline.Message) error {
 	return s.source.(pipeline.ControllableSource).Control(ctx, msg)
+}
+
+// applySourceWraps decorates an opened source with the input's WrapSource
+// chain, then re-pins the node's name and described detail to the opened
+// source's values so Describe() ≡ Build() holds no matter what the decorator
+// reports. A decorator that delegates Name() and DescribeNode passes through
+// untouched, keeping every optional capability it implements visible.
+func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
+	if len(s.wraps) == 0 || source == nil {
+		return source
+	}
+	name, detail := source.Name(), compile.DescribedNodeDetail(source)
+	wrapped := source
+	for _, wrap := range s.wraps {
+		if wrap == nil {
+			continue
+		}
+		if next := wrap(wrapped); next != nil {
+			wrapped = next
+		}
+	}
+	return resolvedProviderSource(wrapped, name, detail)
 }

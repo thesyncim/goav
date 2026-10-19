@@ -2,40 +2,24 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/shape"
 )
 
-// tapRef is a typed handle to a stable media attach point.
-type tapRef struct {
-	name   string
-	domain shape.MediaDomain
-}
-
 // packetTapRef names a packet-domain attach point.
-func packetTapRef(name string) tapRef {
-	return tapRef{name: name, domain: shape.DomainPacket}
+func packetTapRef(name string) compile.TapRef {
+	return compile.TapRef{Name: name, Domain: shape.DomainPacket}
 }
 
-// Name returns the tap's stable name, the key LiveTask.Taps and Branch.From use.
-func (t tapRef) Name() string {
-	return t.name
-}
-
-// Domain returns the asserted media domain: frame, packet, or empty when the
-// tap infers its domain from the chain point.
-func (t tapRef) Domain() shape.MediaDomain {
-	return t.domain
-}
-
-func tapWithDomain(tap tapRef, domain shape.MediaDomain) tapRef {
-	if tap.domain == "" {
-		tap.domain = domain
+func tapWithDomain(tap compile.TapRef, domain shape.MediaDomain) compile.TapRef {
+	if tap.Domain == "" {
+		tap.Domain = domain
 	}
 	return tap
 }
 
-func validateTapDomain(operation string, node string, tap tapRef, actual shape.MediaDomain) error {
-	if tap.domain == "" || actual == "" || tap.domain == actual {
+func validateTapDomain(operation string, node string, tap compile.TapRef, actual shape.MediaDomain) error {
+	if tap.Domain == "" || actual == "" || tap.Domain == actual {
 		return nil
 	}
 	return &BuildError{
@@ -45,7 +29,7 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
 		Reason:    "tap domain does not match this stream point",
-		fields:    errDetails(errDetail("tap", tap.name), errDetail("wanted", string(tap.domain)), errDetail("actual", string(actual))),
+		fields:    errDetails(errDetail("tap", tap.Name), errDetail("wanted", string(tap.Domain)), errDetail("actual", string(actual))),
 		fixes: buildErrorFixes([]string{
 			"move .Tap(name) after decode, resize, resample, or custom frame stages to tap frames",
 			"move .Tap(name) before .Decode() or after an encoder to tap packets",

@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
@@ -222,20 +223,20 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 		t.Fatalf("compileStateCustomSourceShape(nil) = %+v %v", got, ok)
 	}
 
-	rawDefault := normalizeCustomSourceShape("raw", shape.Spec{MediaKind: av.MediaAudio})
+	rawDefault := recipeir.NormalizeSourceShape("raw", shape.Spec{MediaKind: av.MediaAudio})
 	if rawDefault.Domain != shape.DomainPacket || rawDefault.StreamID != "raw" {
 		t.Fatalf("raw default shape = %+v", rawDefault)
 	}
-	videoDefault := normalizeCustomSourceShape("", shape.Frame(av.MediaVideo))
+	videoDefault := recipeir.NormalizeSourceShape("", shape.Frame(av.MediaVideo))
 	if videoDefault.StreamID != "video" {
 		t.Fatalf("video default stream = %q, want video", videoDefault.StreamID)
 	}
-	eventDefault := normalizeCustomSourceShape("", shape.Event())
+	eventDefault := recipeir.NormalizeSourceShape("", shape.Event())
 	if eventDefault.StreamID != "stream" {
 		t.Fatalf("event default stream = %q, want stream", eventDefault.StreamID)
 	}
 	mismatched := av.Stream{Codec: av.CodecParameters{ID: av.CodecOpus, SampleRate: 48000}}
-	fillStreamCodecParameters(&mismatched, codec.VP8(codec.ClockRate(90000)))
+	recipeir.FillStreamCodecParameters(&mismatched, codec.VP8(codec.ClockRate(90000)))
 	if mismatched.Codec.ID != av.CodecOpus || mismatched.Codec.ClockRate != 0 {
 		t.Fatalf("mismatched codec facts changed stream: %+v", mismatched.Codec)
 	}

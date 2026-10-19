@@ -10,24 +10,25 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 // newEncodeStageNamed opens the encoder and returns its stage with the stream
 // it emits: config.Stream plus whatever the opened encoder reports.
-func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
+func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request compile.EncodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
 	factory, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID)
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	name = firstNonEmpty(name, encodeNodeName(request))
+	name = firstNonEmpty(name, compile.EncodeNodeName(request))
 	// File inputs reveal their rate and geometry only once opened, so the
 	// descriptor check planning could not run happens here, before the
 	// adapter turns an unsupported config into a bare sentinel.
-	adapterRequest := encodeAdapterRequestFromPreparedStream(codec.Spec{ID: config.Parameters.ID, Type: config.Parameters.Type, Parameters: config.Parameters}, config.Stream)
+	adapterRequest := compile.EncodeAdapterRequestFromPreparedStream(codec.Spec{ID: config.Parameters.ID, Type: config.Parameters.Type, Parameters: config.Parameters}, config.Stream)
 	if descriptors, findErr := b.runtime.codecs.Find(config.Parameters.ID, codec.ModeEncode); findErr == nil && !slices.ContainsFunc(descriptors, func(desc codec.Descriptor) bool {
-		return codecDescriptorSupports(desc, adapterRequest)
+		return compile.CodecDescriptorSupports(desc, adapterRequest)
 	}) {
-		return nil, av.Stream{}, encodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors)
+		return nil, av.Stream{}, publicError(compile.EncodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors))
 	}
 	encoder, err := factory.NewEncoder(ctx, config)
 	if err != nil {
@@ -35,7 +36,7 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 	}
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
 		Name:              name,
-		Detail:            encodeNodeDetail(request),
+		Detail:            compile.EncodeNodeDetail(request),
 		Encoder:           encoder,
 		Result:            encodeResultForStream(config.Stream),
 		OutputStreamID:    config.Stream.ID,
@@ -52,11 +53,11 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 	return stage, reportedStream(config.Stream, encoder), nil
 }
 
-func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) (codec.EncodeConfig, av.Stream, error) {
-	if !streamMatchesSelector(input, request.selector) {
+func prepareEncodeConfig(input av.Stream, request compile.EncodeRequest, realtime bool) (codec.EncodeConfig, av.Stream, error) {
+	if !compile.StreamMatchesSelector(input, request.Selector) {
 		return codec.EncodeConfig{}, av.Stream{}, encodeStreamMismatchError(request, input)
 	}
-	config := request.config
+	config := request.Config
 	targetCodec := config.Parameters.ID
 	if targetCodec == "" {
 		targetCodec = config.Stream.Codec.ID
@@ -104,12 +105,12 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 	return config, stream, nil
 }
 
-func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
+func encodeStreamMismatchError(request compile.EncodeRequest, stream av.Stream) error {
 	return streamRequestMismatchError(
 		encodeStreamMismatchCode,
 		"configure encode",
-		encodeNodeName(request),
-		request.selector,
+		compile.EncodeNodeName(request),
+		request.Selector,
 		stream,
 		[]string{
 			"use the same stream selector for Decode and Encode in the expert builder",
@@ -119,15 +120,15 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 	)
 }
 
-func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
+func encodeTargetMissingError(request compile.EncodeRequest, stream av.Stream) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeDestinationMissingCode),
 		Code:      encodeDestinationMissingCode,
 		Operation: "configure encode",
-		Node:      encodeNodeName(request),
+		Node:      compile.EncodeNodeName(request),
 		Reason:    "no target codec was provided",
-		fields:    errDetails(errNote("selected: " + streamDiagnostic(stream, 0))),
+		fields:    errDetails(errNote("selected: " + compile.StreamDiagnostic(stream, 0))),
 		fixes: buildErrorFixes([]string{
 			"use " + encodeHint(stream.Type) + " in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
@@ -285,40 +286,10 @@ func videoEncodePacketBufferSize(width, height int) int {
 	return int(size)
 }
 
-func encodeNodeName(request encodeRequest) string {
-	if request.name != "" {
-		return "encode-" + request.name
-	}
-	selector := request.selector
-	if selector.Name != "" {
-		return "encode-" + selector.Name
-	}
-	if selector.ID != "" {
-		return "encode-" + string(selector.ID)
-	}
-	if selector.Codec != "" {
-		return "encode-" + string(selector.Codec)
-	}
-	if selector.Type != "" {
-		return "encode-" + string(selector.Type)
-	}
-	if selectorHasIndex(selector) {
-		return "encode-" + strconv.Itoa(selector.Index)
-	}
-	codecID := request.config.Parameters.ID
-	if codecID == "" {
-		codecID = request.config.Stream.Codec.ID
-	}
-	if codecID != "" {
-		return "encode-" + string(codecID)
-	}
-	return "encode"
-}
-
 // encodeOpenError reports an encoder adapter rejecting its config at open as a
 // BuildError naming the node and the stream it was given; errors.Is still
 // reaches the adapter's cause.
-func encodeOpenError(node string, request codecAdapterRequest, cause error) error {
+func encodeOpenError(node string, request compile.CodecAdapterRequest, cause error) error {
 	var buildErr *BuildError
 	if errors.As(cause, &buildErr) {
 		return cause

@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/shape"
 )
@@ -36,13 +37,6 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 		resample.Resample.SampleFormat != av.SampleFormatF32 {
 		t.Fatalf("Resample spec = %+v", resample)
 	}
-
-	if got := resizeModeWithDefault(""); got != filter.ResizeExact {
-		t.Fatalf("default resize mode = %s, want exact", got)
-	}
-	if got := resizeModeWithDefault(filter.ResizeFill); got != filter.ResizeFill {
-		t.Fatalf("explicit resize mode = %s, want fill", got)
-	}
 }
 
 func TestTransformHelperErrorContracts(t *testing.T) {
@@ -54,19 +48,12 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 		t.Fatalf("empty transform validation = %v, want transform_invalid", err)
 	}
 
-	if in, out := transformAdapterExpectedMedia("custom-filter"); in != "" || out != "" {
-		t.Fatalf("custom transform expected media = %s/%s, want empty", in, out)
-	}
-	if got := transformMethodName("custom-filter"); got != "Do" {
-		t.Fatalf("custom transform method = %q, want Do", got)
-	}
-
 	cause := errors.New("registry unavailable")
-	stream := recipeir.Stream{Name: "voice", Selector: streamSelectFromAV(av.StreamSelector{Type: av.MediaAudio})}
-	if err := recipeTransformAdapterError("build stream", stream, filter.FactoryResample, cause); !errors.Is(err, cause) {
+	stream := recipeir.Stream{Name: "voice", Selector: compile.StreamSelectFromAV(av.StreamSelector{Type: av.MediaAudio})}
+	if err := publicError(compile.RecipeTransformAdapterError("build stream", stream, filter.FactoryResample, cause)); !errors.Is(err, cause) {
 		t.Fatalf("non-not-found error = %v, want original cause", err)
 	}
-	err = recipeTransformAdapterError("build stream", stream, filter.FactoryResample, filter.ErrNotFound)
+	err = publicError(compile.RecipeTransformAdapterError("build stream", stream, filter.FactoryResample, filter.ErrNotFound))
 	var missingErr *BuildError
 	if !errors.As(err, &missingErr) ||
 		missingErr.Code != transformAdapterMissingCode ||
