@@ -11,6 +11,8 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- A composite canvas is one pooled block shared by its three planes: one
+  pool round trip per output instead of three.
 - Payloads are shared by reference instead of copied per edge. `av.Buffer`
   is `{Bytes, Owner}`: published bytes are immutable, `av.NewBuffer` returns
   pooled bytes holding one reference, and `Retain`/`Release`/`MakeWritable`

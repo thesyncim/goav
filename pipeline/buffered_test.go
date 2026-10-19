@@ -18,6 +18,8 @@ type bufferedPacketSource struct {
 	afterFirst chan struct{}
 	done       chan struct{}
 	message    Message
+	// err is what Start returns, readable once done is closed.
+	err error
 }
 
 func (s *bufferedPacketSource) Name() string {
@@ -26,6 +28,11 @@ func (s *bufferedPacketSource) Name() string {
 
 func (s *bufferedPacketSource) Start(ctx context.Context, emitter Emitter) error {
 	defer close(s.done)
+	s.err = s.emit(ctx, emitter)
+	return s.err
+}
+
+func (s *bufferedPacketSource) emit(ctx context.Context, emitter Emitter) error {
 	for i := range s.packets {
 		if i == 1 && s.afterFirst != nil {
 			select {
@@ -755,8 +762,16 @@ func runBufferedBurstWithStats(policy BufferPolicy) ([]byte, GraphStats, error) 
 	<-sink.started
 	close(afterFirst)
 	<-source.done
-	close(sink.release)
-	err = <-errs
+	if source.err != nil {
+		// The source failed (strict backpressure): that failure cancels the
+		// run, and the cancellation, not a release racing it, must end the
+		// sink's blocked Handle.
+		err = <-errs
+		close(sink.release)
+	} else {
+		close(sink.release)
+		err = <-errs
+	}
 
 	sink.mu.Lock()
 	values := append([]byte(nil), sink.values...)

@@ -259,7 +259,7 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compositeLayout, floor
 	dst.Planes = dst.Planes[:3]
 	// Each output canvas is new pooled memory: the previous one may still be
 	// queued or kept downstream.
-	y, u, v := av.NewBuffer(canvasW*canvasH), av.NewBuffer(chromaW*chromaH), av.NewBuffer(chromaW*chromaH)
+	y, u, v := i420Canvas(canvasW*canvasH, chromaW*chromaH)
 	yPlane, uPlane, vPlane := y.Bytes, u.Bytes, v.Bytes
 	// Paint the uncovered canvas video black (Y=16, U=V=128 in limited range).
 	// Zeroed chroma would render every gap between arms green.
@@ -453,3 +453,17 @@ func fillPlane(plane []byte, value byte) {
 }
 
 func (s *videoCompositeStage) enableAdmission() { s.sync.enableAdmission() }
+
+// i420Canvas carves the Y, U, and V planes of one canvas out of a single
+// pooled block: one pool round trip per output instead of three. Each plane
+// holds its own reference, as av.Frame.Release expects.
+func i420Canvas(lumaSize, chromaSize int) (y, u, v av.Buffer) {
+	block := av.NewBuffer(lumaSize + 2*chromaSize)
+	block.Retain()
+	block.Retain()
+	bytes := block.Bytes
+	y = av.Buffer{Bytes: bytes[:lumaSize:lumaSize], Owner: block.Owner}
+	u = av.Buffer{Bytes: bytes[lumaSize : lumaSize+chromaSize : lumaSize+chromaSize], Owner: block.Owner}
+	v = av.Buffer{Bytes: bytes[lumaSize+chromaSize:], Owner: block.Owner}
+	return y, u, v
+}
