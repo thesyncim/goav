@@ -77,10 +77,10 @@ func TestSelectForwardsDefaultArmToSink(t *testing.T) {
 		return nil
 	}))
 
-	task, err := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
-	).To(sink).Build(ctx)
+	task, err := mustNew().Build(ctx, Select(
+		selectTestOneShotSource("a", 100).Audio(),
+		selectTestOneShotSource("b", 200).Audio(),
+	).To(sink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,10 +118,10 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 		return nil
 	}))
 
-	task, err := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
-	).To(firstSink, secondSink).Build(ctx)
+	task, err := mustNew().Build(ctx, Select(
+		selectTestOneShotSource("a", 100).Audio(),
+		selectTestOneShotSource("b", 200).Audio(),
+	).To(firstSink, secondSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,9 +138,8 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 }
 
 func TestSelectRequiresTwoArms(t *testing.T) {
-	_, err := legacySelect(recipeFrom(selectTestOneShotSource("a", 1)).Audio()).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Select(selectTestOneShotSource("a", 1).Audio()).
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "select_inputs" {
 		t.Fatalf("err = %v, want select_inputs", err)
@@ -149,11 +148,10 @@ func TestSelectRequiresTwoArms(t *testing.T) {
 
 func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 	dup := selectTestOneShotSource("dup", 1)
-	_, err := legacySelect(
-		recipeFrom(dup).Audio(),
-		recipeFrom(dup).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Select(
+		dup.Audio(),
+		dup.Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "select_arm" {
 		t.Fatalf("err = %v, want select_arm (distinct ids enforced)", err)
@@ -161,11 +159,10 @@ func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 }
 
 func TestSelectRequiresSinkDestination(t *testing.T) {
-	_, err := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 1)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 2)).Audio(),
-	).To(Write("selected.ogg", io.Discard)).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Select(
+		selectTestOneShotSource("a", 1).Audio(),
+		selectTestOneShotSource("b", 2).Audio(),
+	).To(Write("selected.ogg", io.Discard)))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != encodeMissingCode || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)

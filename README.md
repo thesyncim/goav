@@ -14,11 +14,11 @@ your service still ships as one static binary.
 
 ```sh
 go get github.com/thesyncim/goav@latest   # Go 1.27+
-GOEXPERIMENT=simd go build ./...         # always: SIMD codec paths, about 2x faster
+GOEXPERIMENT=simd go build ./...         # always: enables the SIMD codec paths
 ```
 
 Build, test, and run with `GOEXPERIMENT=simd`. It switches the codecs onto Go 1.27's
-portable SIMD paths; without it they fall back to scalar code.
+portable SIMD paths; without it they fall back to scalar code. On one machine (Apple M4 Max, 128x96 test clips) that cut codec benchmark time by roughly half; treat it as a direction, not a guarantee ([measurements and scope](docs/PERFORMANCE.md)).
 
 ## Quick start
 
@@ -172,7 +172,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 - **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
   over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
 - **Fast without assembly.** Graph, codec, and filter stages allocate nothing per message,
-  and with `GOEXPERIMENT=simd` Go 1.27's SIMD paths cut real-codec time by about 45%.
+  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths (faster in our 128x96 microbenchmarks on one machine; not a general claim).
   See [Performance](docs/PERFORMANCE.md).
 
 ## Modules

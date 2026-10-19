@@ -38,10 +38,10 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 
 	// arm "a" at top-left, arm "b" offset 4px right: the canvas is 8x4 and each
 	// 4x4 input lands at its Region.
-	task, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).Build(ctx)
+	task, err := mustNew().Build(ctx, Composite(
+		At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0),
+		At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0),
+	).To(sink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,9 +69,8 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 }
 
 func TestCompositeRequiresTwoArms(t *testing.T) {
-	_, err := legacyComposite(recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video()).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Composite(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video()).
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_inputs" {
 		t.Fatalf("err = %v, want composite_inputs", err)
@@ -82,11 +81,10 @@ func errorsAsComposite(err error, target **BuildError) bool { return errors.As(e
 
 func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
 	dup := compositeTestVideoSource("dup", 4, 4, 100, 10, 20)
-	_, err := legacyComposite(
-		recipeFrom(dup).Video().Region(0, 0),
-		recipeFrom(dup).Video().Region(4, 0),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Composite(
+		At(dup.Video(), 0, 0),
+		At(dup.Video(), 4, 0),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_arm" {
 		t.Fatalf("err = %v, want composite_arm (distinct stream ids)", err)
@@ -94,11 +92,10 @@ func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
 }
 
 func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
-	_, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(Write("canvas.ivf", io.Discard)).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Composite(
+		At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0),
+		At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0),
+	).To(Write("canvas.ivf", io.Discard)))
 	var buildErr *BuildError
 	if !errorsAsComposite(err, &buildErr) || buildErr.Code != encodeMissingCode || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)

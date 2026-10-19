@@ -265,11 +265,9 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(record)).
-		Audio().Copy().To(mainSink).
-		UseRuntime(rt).
-		BuildLive(ctx)
+	task, err := rt.Build(ctx,
+		input.OnStream(MatchMedia(av.MediaAudio)).As("record").To(record),
+		input.Audio().To(mainSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,10 +390,9 @@ func TestOnStreamLateBranchReceivesFramesFromFrameSource(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).
-		OnStream(MatchStreamID(late.ID), newBranch("watch").To(monitor)).
-		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		input.OnStream(MatchStreamID(late.ID)).As("watch").To(monitor),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,14 +474,24 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).
-		OnStream(MatchStreamID(late.ID), newBranch("enc").
-			Auto(shape.AllowResample()).
-			Encode(codec.Opus(codec.Bitrate(96_000))).
-			To(encodedSink)).
-		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		BuildLive(ctx)
+	// A second fork of the rule needs its own conversion, to 16kHz: each
+	// branch's inserted resample is its own node.
+	var lowRate atomic.Int32
+	lowSink := Sink(SinkFunc("low", func(_ context.Context, msg Message) error {
+		if msg.Kind == pipeline.MessageFrame && msg.Frame != nil && msg.Frame.Audio != nil {
+			lowRate.Store(int32(msg.Frame.Audio.SampleRate))
+		}
+		return nil
+	}))
+	rule := input.OnStream(MatchStreamID(late.ID)).Auto(shape.AllowResample())
+	task, err := solverTestOpusRuntime(testBundleFilters()).Build(ctx,
+		rule.Encode(codec.Opus(codec.Bitrate(96_000))).
+			As("enc").
+			To(encodedSink),
+		rule.Require(shape.Frame(av.MediaAudio, shape.Audio(16_000, codec.Stereo, ""))).
+			As("low").
+			To(lowSink),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,6 +510,16 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 		return false
 	})
 	waitForCount(t, "encoded late packets", 1, encoded.Load)
+	waitForCondition(t, "16kHz frames on the low fork", func() bool { return lowRate.Load() == 16_000 })
+	resamples := 0
+	for _, node := range task.Describe().Nodes {
+		if strings.Contains(node.Name, "-late-mic") && strings.Contains(node.Name, "resample") {
+			resamples++
+		}
+	}
+	if resamples != 2 {
+		t.Fatalf("resample nodes = %d, want one per rule branch:\n%s", resamples, specText(task.Describe()))
+	}
 	close(stop)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
@@ -523,11 +540,9 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	job := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(monitor)).
-		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil })))
-
-	report, err := job.Explain(ctx)
+	report, err := mustNew().Explain(ctx,
+		input.OnStream(MatchMedia(av.MediaAudio)).As("record").To(monitor),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,11 +580,9 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	state := &syncObjectState{}
 	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
 
-	task, err := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("bad").Copy().To(bad)).
-		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		BuildLive(ctx)
+	task, err := rt.Build(ctx,
+		input.OnStream(MatchMedia(av.MediaAudio)).As("bad").To(bad),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,11 +644,10 @@ func TestOnStreamMultipleRulesAllApply(t *testing.T) {
 		}))
 	}
 
-	task, err := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("media").Copy().To(count("media-sink", &byMedia))).
-		OnStream(MatchCodec(av.CodecOpus), newBranch("codec").Copy().To(count("codec-sink", &byCodec))).
-		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		input.OnStream(MatchMedia(av.MediaAudio)).As("media").To(count("media-sink", &byMedia)),
+		input.OnStream(MatchCodec(av.CodecOpus)).As("codec").To(count("codec-sink", &byCodec)),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -683,10 +695,9 @@ func TestOnStreamMatchFirstLimitsRuntimeAttachments(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio).First(1), newBranch("limited").Copy().To(limitedSink)).
-		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		input.OnStream(MatchMedia(av.MediaAudio).First(1)).As("limited").To(limitedSink),
+		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,9 +735,9 @@ func TestOnStreamValidation(t *testing.T) {
 		)
 	}
 
-	requireRuleError := func(t *testing.T, job *testJob, fragment string) {
+	requireRuleError := func(t *testing.T, outs []Output, fragment string) {
 		t.Helper()
-		_, err := job.BuildLive(ctx)
+		_, err := mustNew().Build(ctx, outs...)
 		var buildErr *BuildError
 		if !errors.As(err, &buildErr) || buildErr.Code != "stream_rule_invalid" {
 			t.Fatalf("err = %v, want stream_rule_invalid", err)
@@ -737,10 +748,8 @@ func TestOnStreamValidation(t *testing.T) {
 	}
 
 	t.Run("empty matcher", func(t *testing.T) {
-		job := recipeFrom(source("mic")).
-			OnStream(StreamMatch{}, newBranch("late").Copy().To(monitor)).
-			Audio().Copy().To(main)
-		requireRuleError(t, job, "no matcher")
+		mic := source("mic")
+		requireRuleError(t, []Output{mic.OnStream(StreamMatch{}).As("late").To(monitor), mic.Audio().To(main)}, "no matcher")
 	})
 }
 
@@ -801,11 +810,9 @@ func TestOnStreamBranchReceivesEveryPacketOfDiscoveredStream(t *testing.T) {
 				return nil
 			}))
 
-			task, err := recipeFrom(input).
-				OnStream(MatchStreamID(late.ID), newBranch("record").Copy().To(record)).
-				Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-				UseRuntime(mustNew(WithBufferPolicy(mode.policy))).
-				BuildLive(ctx)
+			task, err := mustNew(WithBufferPolicy(mode.policy)).Build(ctx,
+				input.OnStream(MatchStreamID(late.ID)).As("record").To(record),
+				input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 			if err != nil {
 				t.Fatal(err)
 			}

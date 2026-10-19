@@ -32,10 +32,10 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	))
 
 	var main [][]int16
-	task, err := legacyMix(
-		recipeFrom(tapArmTestPacketSource("a", pcm, 100, 200)).Audio().Decode().Tap(frameTapRef("music")),
-		recipeFrom(mixTestAudioSource("live", 50, -50)).Audio(),
-	).To(joinTestCollectSink("out", &main)).UseRuntime(rt).BuildLive(ctx)
+	task, err := rt.Build(ctx, Mix(
+		tapArmTestPacketSource("a", pcm, 100, 200).Audio().Decode().Tap("music"),
+		mixTestAudioSource("live", 50, -50).Audio(),
+	).To(joinTestCollectSink("out", &main)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +63,8 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 
 	// A runtime branch attached from the arm tap receives the DECODED music.
 	var tapped [][]int16
-	attachment, err := legacyAttach(task, ctx, newBranch("monitor").
-		From(frameTapRef("music")).
+	attachment, err := task.Attach(ctx, task.Tap("music").
+		As("monitor").
 		To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {
 		t.Fatal(err)
@@ -92,11 +92,10 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 // and .Tap(...) — anything else used to be silently dropped and is now an
 // error naming the alternatives.
 func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio().Resample(48000, 1),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Mix(
+		mixTestAudioSource("a", 1).Audio().Resample(48000, 1),
+		mixTestAudioSource("b", 1).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" {
@@ -110,11 +109,10 @@ func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
 // TestMixArmChainErrorSurfaces: a builder error recorded on an arm chain (an
 // empty tap name here) fails the join compile instead of being dropped.
 func TestMixArmChainErrorSurfaces(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio().Tap(frameTapRef("")),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+	_, err := mustNew().Build(context.Background(), Mix(
+		mixTestAudioSource("a", 1).Audio().Tap(""),
+		mixTestAudioSource("b", 1).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "tap_invalid" {

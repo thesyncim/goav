@@ -276,6 +276,11 @@ func streamLayers(streams []Stream) []Layer {
 }
 
 func newJoinStream(kind joinKind, name string, stage pipeline.Stage, layers []Layer) Stream {
+	for i, layer := range layers {
+		if layer == nil {
+			return Stream{node: &streamNode{err: joinLayerNilError(firstNonEmpty(string(kind), name), i)}}
+		}
+	}
 	return Stream{node: &streamNode{root: &streamRoot{join: &streamJoin{
 		kind:   kind,
 		name:   name,

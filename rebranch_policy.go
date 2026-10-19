@@ -198,7 +198,10 @@ func gatedBranchSpecs(specs []attachBranch, group *switchGroup) []attachBranch {
 	for i := range specs {
 		out[i] = specs[i]
 		operations := make([]recipeir.Operation, 0, len(specs[i].operations)+1)
-		operations = append(operations, opStage(group.gate()))
+		gate := opStage(group.gate())
+		// The gate is the replacement's own node, not one of the Streams'.
+		gate.Node = -1
+		operations = append(operations, gate)
 		operations = append(operations, specs[i].operations...)
 		out[i].operations = operations
 	}

@@ -124,29 +124,6 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
-// branchSource is the anchor a branch hangs from: a tap reference names a stable
-// tap, input.Track(...) names one stream from a recipe input, and an expert graph
-// handle (expert.GraphNode, expert.GraphOutlet) names a graph node through its
-// Route capability. The bound is structural — From validates the anchor and
-// refuses values that are neither.
-type branchSource interface {
-	// Name reports the anchor's name: the tap, source node, or graph node name.
-	Name() string
-}
-
-// graphRouteAnchor is the capability expert graph handles expose: the route
-// (node, policy, label) a branch anchored on them reads from. Asserted
-// structurally so the root never imports the expert package.
-type graphRouteAnchor interface {
-	Route() pipeline.Route
-}
-
-// tapAnchor is the sealed capability tap references and the internal graph handles
-// implement directly.
-type tapAnchor interface {
-	branchSource() branchSourceBinding
-}
-
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
 		Phase:     phaseBuild,

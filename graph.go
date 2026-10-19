@@ -36,10 +36,6 @@ func (n graphNode) Name() string {
 	return n.name
 }
 
-func (n graphNode) branchSource() branchSourceBinding {
-	return branchSourceBinding{from: n.name, policy: pipeline.RouteAll}
-}
-
 // In returns the node's inlet for Connect.
 func (n graphNode) In() graphInlet {
 	return graphInlet(n)

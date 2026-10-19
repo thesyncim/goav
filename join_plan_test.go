@@ -17,20 +17,20 @@ import (
 // equal the built graph node-for-node and edge-for-edge. No hand-assembled
 // join graph exists to drift from the plan.
 
-func joinPlanGuard(t *testing.T, job *testJob) pipeline.Spec {
+func joinPlanGuard(t *testing.T, rt *Runtime, outs ...Output) pipeline.Spec {
 	t.Helper()
-	planned, err := job.Describe()
+	planned, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), outs...)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	built := task.Describe()
 	if specText(planned) != specText(built) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	return planned
 }
@@ -56,15 +56,14 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 			return push.EOS()
 		})
 
-	job := legacyMix(
-		recipeFrom(packetArm).Audio().Decode(),
-		recipeFrom(mixTestAudioSourceRate("b", 24000)).Audio(),
-	).Tap(frameTapRef("mixed")).
+	out := Mix(
+		packetArm.Audio().Decode(),
+		mixTestAudioSourceRate("b", 24000).Audio(),
+	).Tap("mixed").
 		Encode(codec.Opus()).
-		To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).
-		UseRuntime(rt)
+		To(Write("mix.ogg", io.Discard, Format(av.FormatOgg)))
 
-	planned := joinPlanGuard(t, job)
+	planned := joinPlanGuard(t, rt, out)
 	text := specText(planned)
 	for _, want := range []string{
 		"mix-decode-a",          // packet arm explicit decode
@@ -89,17 +88,16 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
 	)
 
-	job := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
+	out := Mix(
+		mixTestAudioSource("a", 100).Audio(),
+		mixTestAudioSource("b", 50).Audio(),
 	).Encode(codec.Opus()).
 		To(
 			Write("first.ogg", io.Discard, Format(av.FormatOgg)),
 			Write("second.ogg", io.Discard, Format(av.FormatOgg)),
-		).
-		UseRuntime(rt)
+		)
 
-	planned := joinPlanGuard(t, job)
+	planned := joinPlanGuard(t, rt, out)
 	text := specText(planned)
 	for _, want := range []string{
 		"encode-mix -> first.ogg",
@@ -112,12 +110,12 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 }
 
 func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
-	job := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	out := Composite(
+		At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0),
+		At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0),
 	).To(Sink(SinkFunc("canvas", func(context.Context, Message) error { return nil })))
 
-	planned := joinPlanGuard(t, job)
+	planned := joinPlanGuard(t, mustNew(), out)
 	text := specText(planned)
 	if !strings.Contains(text, "composite -> canvas") {
 		t.Fatalf("planned composite spec missing joined chain:\n%s", text)
@@ -129,13 +127,13 @@ func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
 // feeding the selector directly (the control entry row SelectActive broadcasts
 // to) and equal the built graph.
 func TestJoinDescribeEqualsBuildSelect(t *testing.T) {
-	job := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(frameTapRef("switched")).
+	out := Select(
+		selectTestOneShotSource("a", 100).Audio(),
+		selectTestOneShotSource("b", 200).Audio(),
+	).Tap("switched").
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
-	planned := joinPlanGuard(t, job)
+	planned := joinPlanGuard(t, mustNew(), out)
 	entries := 0
 	for _, edge := range planned.Edges {
 		if (edge.From == "a" || edge.From == "b") && edge.To == "select" {

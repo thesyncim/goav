@@ -16,26 +16,19 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 	sink := Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))
 	tests := []struct {
 		name string
-		job  *testJob
+		out  Output
 		code errcode.Code
 	}{
 		{
 			name: "direct decode",
-			job: recipeFrom(source).Audio().
+			out: source.Audio().
 				Decode().
 				To(sink),
 			code: sourceShapeMismatchCode,
 		},
 		{
-			name: "flow decode",
-			job: recipeFrom(source).Audio().
-				Apply(newFlow("decode").Audio().Decode()).
-				To(sink),
-			code: sourceShapeMismatchCode,
-		},
-		{
 			name: "copy through encode helper",
-			job: recipeFrom(source).Audio().
+			out: source.Audio().
 				Encode(codec.Copy()).
 				To(sink),
 			code: encodeParameterInvalidCode,
@@ -43,7 +36,7 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.job.Build(ctx)
+			_, err := mustNew().Build(ctx, tt.out)
 			assertBuildErrorCode(t, err, tt.code)
 		})
 	}
@@ -58,19 +51,19 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 	})
 	tests := []struct {
 		name string
-		job  *testJob
+		out  Output
 		code errcode.Code
 	}{
 		{
 			name: "nil stage",
-			job: recipeFrom(source).Audio().
+			out: source.Audio().
 				Do(nil).
 				To(sink),
 			code: stageMissingCode,
 		},
 		{
 			name: "shape after encode",
-			job: recipeFrom(source).Audio().
+			out: source.Audio().
 				Encode(codec.Opus()).
 				Shape(shape.Frame(av.MediaAudio)).
 				To(sink),
@@ -78,7 +71,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 		},
 		{
 			name: "stage after encode",
-			job: recipeFrom(source).Audio().
+			out: source.Audio().
 				Encode(codec.Opus()).
 				Do(meter).
 				To(sink),
@@ -86,15 +79,15 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 		},
 		{
 			name: "empty tap",
-			job: recipeFrom(source).Audio().
-				Tap(frameTapRef("")).
+			out: source.Audio().
+				Tap("").
 				To(sink),
 			code: errcode.TapInvalid,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.job.Build(ctx)
+			_, err := mustNew().Build(ctx, tt.out)
 			assertBuildErrorCode(t, err, tt.code)
 		})
 	}

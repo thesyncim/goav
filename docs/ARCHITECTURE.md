@@ -64,7 +64,7 @@ The compiler is one pipeline:
 
 ```text
 Outputs -> recipe DAG -> branches -> one lowering -> WorkPlan + pipeline.Spec  // build
-Outputs -> recipe DAG -> attach branches -> WorkPatch                          // task.Attach
+Outputs -> recipe DAG -> branches -> one lowering -> graph patch               // task.Attach
 ```
 
 Every Stream value is one node of the recipe DAG (`internal/recipeir.Graph`):
@@ -79,12 +79,14 @@ a join arm may read a stream other work reads.
 `shape.Spec` is the public compatibility contract for branch, tap, sink,
 byte destination, shared destination, and custom source shapes. `WorkPlan`
 owns ordered operations, shape transitions, taps, destinations, branch buffer
-policy, detach policy, and lifecycle expectations. `WorkPatch` uses the same
-branch plan as initial build, anchored downstream of existing typed taps.
+policy, detach policy, and lifecycle expectations.
 
-Runtime attach is not a separate graph language: `task.Attach` compiles its
-Outputs through the same DAG and validator, anchored on the task's taps,
-tracks, or graph routes.
+Runtime attach is not a separate graph language or planner: `task.Attach`
+compiles its Outputs through the same DAG, validator, and lowering, rooted at
+the task's taps, tracks, or graph routes, and opens each planned node through
+the build's opener. Work and destinations its Outputs share are one node, a
+branch's own nodes are named under the branch (`voice/encode-voice`), and the
+planned patch is the applied one (`TestAttachPatchDescribeEqualsBuild`).
 
 Inputs and destinations open through one extension point per side: every input
 kind (file, URI, RTP, WebRTC, custom source) resolves through one source

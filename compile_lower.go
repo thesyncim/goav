@@ -76,6 +76,9 @@ type composeNode struct {
 	request   encodeRequest
 	// owner is the branch that alone reads the node, or -1.
 	owner int
+	// routes are the routes an attached node reads its inputs by, aligned
+	// with inputs; empty for a build, which reads every input whole.
+	routes []anchorRoute
 	// output indexes a destination.
 	output int
 	// join is the join a join-tree node belongs to, arm the arm it serves,
@@ -115,19 +118,42 @@ func (g composeGraph) emit(spec pipeline.Spec) (pipeline.Spec, error) {
 			return pipeline.Spec{}, err
 		}
 	}
-	consumers := make(map[pipeline.NodeRef][]pipeline.NodeRef, len(g.nodes))
+	consumers := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(g.nodes))
+	// An attached group's anchors are nodes of the running graph, not of
+	// the schedule: their edges lead.
+	var producers []pipeline.NodeRef
 	for _, node := range g.nodes {
-		for _, input := range node.inputs {
-			consumers[input] = append(consumers[input], pipeline.NodeRef(node.name))
+		for i, input := range node.inputs {
+			if _, ok := planned[input.String()]; !ok && !slices.Contains(producers, input) {
+				producers = append(producers, input)
+			}
+			route := node.route(i)
+			consumers[input] = append(consumers[input], pipeline.EdgeSpec{From: input, To: pipeline.NodeRef(node.name), Policy: route.policy, Label: route.label})
 		}
 	}
 	for _, node := range g.nodes {
-		from := pipeline.NodeRef(node.name)
-		for _, to := range consumers[from] {
-			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: from, To: to, Policy: pipeline.RouteAll})
-		}
+		producers = append(producers, pipeline.NodeRef(node.name))
+	}
+	for _, from := range producers {
+		spec.Edges = append(spec.Edges, consumers[from]...)
 	}
 	return spec, nil
+}
+
+// anchorRoute is the route a node reads an input by.
+type anchorRoute struct {
+	policy pipeline.RoutePolicy
+	label  string
+}
+
+// route is the route the node reads its input at index by: an attached
+// node reads a live anchor by the anchor's own policy and label, and every
+// other input whole.
+func (n composeNode) route(index int) anchorRoute {
+	if index < len(n.routes) && n.routes[index].policy != "" {
+		return n.routes[index]
+	}
+	return anchorRoute{policy: pipeline.RouteAll}
 }
 
 // recipeLowering plans one recipe's composeGraph.
@@ -151,13 +177,27 @@ type recipeLowering struct {
 	nodeNames map[recipeir.NodeID]string
 	// sourceNames are the planned source node names, by input.
 	sourceNames []string
+	// attach is set when the recipe is an attach group.
+	attach *attachLowering
 }
 
-func (s *recipeCompileState) lower() error {
-	if s.runtime == nil && s.options.preflight {
-		return nil
-	}
-	l := &recipeLowering{
+// attachLowering is what lowering an attach group adds to a build's: its
+// roots are anchors on the running task — a live node, or a tap an earlier
+// branch of the group declares — and its nodes are named under the branch
+// that alone reads them, or the attachment when several do.
+type attachLowering struct {
+	name string
+	// anchors are the live nodes anchor roots read, and routes the routes
+	// they read them by.
+	anchors map[recipeir.NodeID]pipeline.NodeRef
+	routes  map[recipeir.NodeID]anchorRoute
+	// pending are the tap operations anchor roots on a tap the group itself
+	// declares read.
+	pending map[recipeir.NodeID]recipeir.NodeID
+}
+
+func newRecipeLowering(s *recipeCompileState) *recipeLowering {
+	return &recipeLowering{
 		s:            s,
 		refs:         map[recipeir.NodeID]pipeline.NodeRef{},
 		sources:      map[int]pipeline.NodeRef{},
@@ -169,6 +209,13 @@ func (s *recipeCompileState) lower() error {
 		nodeNames:    map[recipeir.NodeID]string{},
 		sourceNames:  graphSourceNodeNames(s.inputAttachments),
 	}
+}
+
+func (s *recipeCompileState) lower() error {
+	if s.runtime == nil && s.options.preflight {
+		return nil
+	}
+	l := newRecipeLowering(s)
 	if err := l.plan(); err != nil {
 		return err
 	}
@@ -277,9 +324,27 @@ func (l *recipeLowering) source(input int) pipeline.NodeRef {
 	return ref
 }
 
+// named is the name of a planned node owner alone reads (or -1): an attach
+// group names a branch's own nodes under the branch, and the nodes several
+// of its branches share under the attachment.
+func (l *recipeLowering) named(owner int, name string) string {
+	switch {
+	case l.attach == nil:
+		return name
+	case owner >= 0:
+		return runtimeBranchNodeName(l.s.recipe.Streams[owner].Name, name)
+	default:
+		return runtimeBranchNodeName(l.attach.name, name)
+	}
+}
+
 // scope is the name a root's shared nodes are named in: an input stream's
-// kind, qualified by its input when the recipe has several, or a join's name.
+// kind, qualified by its input when the recipe has several, a join's name,
+// or an attached stream's own name.
 func (l *recipeLowering) scope(stream recipeir.Stream) string {
+	if l.attach != nil {
+		return stream.Name
+	}
 	if stream.Input < 0 {
 		return l.s.joinNames[stream.Root]
 	}
@@ -294,6 +359,19 @@ func selectGroupKey(stream recipeir.Stream) string {
 // root plans a root: an input stream's select, the decode right after it,
 // and the work every branch of the root shares; or a join.
 func (l *recipeLowering) root(root recipeir.NodeID, first int) error {
+	if l.attach != nil {
+		// An attached root reads a live node, or the node before a tap an
+		// earlier branch of the group declares.
+		ref, ok := l.attach.anchors[root]
+		if !ok {
+			var err error
+			if ref, err = l.ensure(l.attach.pending[root]); err != nil {
+				return err
+			}
+		}
+		l.refs[root] = ref
+		return l.trunk(root, first)
+	}
 	s := l.s
 	stream := s.recipe.Streams[first]
 	if stream.Input < 0 {
@@ -473,13 +551,16 @@ func (l *recipeLowering) operation(index int, operation recipeir.Operation) (pip
 		selector := recipeIRStreamSelector(stream)
 		node = composeNode{
 			kind:     composeDecode,
-			name:     l.unique("decode-" + l.scope(stream)),
+			name:     l.unique(l.named(owner, "decode-"+l.scope(stream))),
 			detail:   decodeRequestDetail(decodeRequest{selector: selector}),
 			selector: selector,
 			decode:   cloneCodecSpec(operation.Decode),
+			// An attached decoder forwards no stream events: the anchor's
+			// own consumers saw them.
+			dropEvents: l.attach != nil,
 		}
 	case plan.OpTransform, plan.OpStage:
-		transform, err := l.transform(name, operation)
+		transform, err := l.transform(name, owner, operation)
 		if err != nil {
 			return "", err
 		}
@@ -489,12 +570,15 @@ func (l *recipeLowering) operation(index int, operation recipeir.Operation) (pip
 		if owner < 0 {
 			request.name = name
 		}
-		node = composeNode{kind: composeEncode, name: l.unique(encodeNodeName(request)), detail: encodeNodeDetail(request), request: request}
+		node = composeNode{kind: composeEncode, name: l.unique(l.named(owner, encodeNodeName(request))), detail: encodeNodeDetail(request), request: request}
 	default:
 		// Copies, taps, annotations, names, and queues plan no node.
 		return "", nil
 	}
 	node.inputs = []pipeline.NodeRef{input}
+	if l.attach != nil {
+		node.routes = []anchorRoute{l.anchorRoute(index, input)}
+	}
 	node.owner = owner
 	ref := l.add(node)
 	l.refs[operation.Node] = ref
@@ -505,18 +589,18 @@ func (l *recipeLowering) operation(index int, operation recipeir.Operation) (pip
 // transform names and configures one step: a stage keeps its own name (a
 // sync or playout gate is named for its stream and policy), a transform is
 // named for its adapter and its stream, numbered from its second.
-func (l *recipeLowering) transform(name string, operation recipeir.Operation) (mediaTransform, error) {
+func (l *recipeLowering) transform(name string, owner int, operation recipeir.Operation) (mediaTransform, error) {
 	if operation.Kind == plan.OpStage {
 		if operation.Stage == nil {
 			return mediaTransform{}, branchChainStepError(name, "branch stage operation has no stage")
 		}
 		switch gate := operation.Stage.(type) {
 		case *syncGate:
-			return mediaTransform{name: l.unique(syncStageName(name + "-" + gate.policy.Name())), stage: operation.Stage}, nil
+			return mediaTransform{name: l.unique(l.named(owner, syncStageName(name+"-"+gate.policy.Name()))), stage: operation.Stage}, nil
 		case *playoutGate:
-			return mediaTransform{name: l.unique(playoutStageName(name + "-" + gate.policy.Name())), stage: operation.Stage}, nil
+			return mediaTransform{name: l.unique(l.named(owner, playoutStageName(name+"-"+gate.policy.Name()))), stage: operation.Stage}, nil
 		}
-		return mediaTransform{name: operation.Stage.Name(), stage: operation.Stage}, nil
+		return mediaTransform{name: l.named(owner, operation.Stage.Name()), stage: operation.Stage}, nil
 	}
 	l.counts[name]++
 	suffix := ""
@@ -527,11 +611,11 @@ func (l *recipeLowering) transform(name string, operation recipeir.Operation) (m
 	case recipeir.TransformResize:
 		resize := operation.Transform.Resize
 		factory := firstNonEmpty(operation.Component, filter.FactoryResize)
-		return mediaTransform{name: l.unique(factory + "-" + name + suffix), factory: factory, video: &resize}, nil
+		return mediaTransform{name: l.unique(l.named(owner, factory+"-"+name+suffix)), factory: factory, video: &resize}, nil
 	case recipeir.TransformResample:
 		resample := operation.Transform.Resample
 		factory := firstNonEmpty(operation.Component, filter.FactoryResample)
-		return mediaTransform{name: l.unique(factory + "-" + name + suffix), factory: factory, audio: &resample}, nil
+		return mediaTransform{name: l.unique(l.named(owner, factory+"-"+name+suffix)), factory: factory, audio: &resample}, nil
 	default:
 		return mediaTransform{}, branchChainStepError(name, "branch transform operation is empty")
 	}
@@ -560,11 +644,13 @@ func (s *recipeCompileState) encodeRequest(index int, operation recipeir.Operati
 func (l *recipeLowering) destination(dest int) {
 	s := l.s
 	var inputs []pipeline.NodeRef
+	var routes []anchorRoute
 	var feeds []int
 	for i := range s.recipe.Streams {
 		for _, d := range s.facts[i].dests {
 			if d == dest {
 				inputs = append(inputs, l.leaves[i])
+				routes = append(routes, l.anchorRoute(i, l.leaves[i]))
 				feeds = append(feeds, i)
 			}
 		}
@@ -575,14 +661,37 @@ func (l *recipeLowering) destination(dest int) {
 		owner = feeds[0]
 	}
 	if spec.sink != nil {
-		l.add(composeNode{kind: composeSink, name: destinationSinkNodeName(spec, s.outputDestinationNames[dest], dest), detail: describedNodeDetail(spec.sink), inputs: inputs, output: dest, owner: owner})
+		l.add(composeNode{kind: composeSink, name: l.destinationNamed(owner, destinationSinkNodeName(spec, s.outputDestinationNames[dest], dest)), detail: describedNodeDetail(spec.sink), inputs: inputs, routes: routes, output: dest, owner: owner})
 		return
 	}
 	output := destinationSpecOutput(spec)
 	if output.Name == "" {
 		output.Name = s.outputDestinationNames[dest]
 	}
-	l.add(composeNode{kind: composeMux, name: muxNodeName(output, dest), detail: outputNodeDetailWithFormat(output, destinationGraphFormat(spec)), inputs: inputs, output: dest, owner: owner})
+	l.add(composeNode{kind: composeMux, name: l.destinationNamed(owner, muxNodeName(output, dest)), detail: outputNodeDetailWithFormat(output, destinationGraphFormat(spec)), inputs: inputs, routes: routes, output: dest, owner: owner})
+}
+
+// destinationNamed names a destination node: an attach group names a
+// destination one branch alone feeds under the branch, and keeps the name
+// of one several branches share.
+func (l *recipeLowering) destinationNamed(owner int, name string) string {
+	if owner < 0 {
+		return name
+	}
+	return l.named(owner, name)
+}
+
+// anchorRoute is the route the branch at index reads input by: its live
+// anchor's own policy and label when input is that anchor.
+func (l *recipeLowering) anchorRoute(index int, input pipeline.NodeRef) anchorRoute {
+	if l.attach == nil {
+		return anchorRoute{}
+	}
+	root := l.s.recipe.Streams[index].Root
+	if ref, ok := l.attach.anchors[root]; ok && ref == input {
+		return l.attach.routes[root]
+	}
+	return anchorRoute{}
 }
 
 // destinationSinkNodeName names a sink node: the sink's own name, else the
@@ -730,75 +839,30 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 				return err
 			}
 			streams[ref] = selected
-		case composeDecode:
-			selected := streams[node.inputs[0]]
-			decodeBounds := codec.DecodeBounds{}
-			if len(bounds) != 0 {
-				decodeBounds = providerDecodeBoundsForStream(selected, bounds)
-			}
-			stage, err := service.newDecodeStageNamed(ctx, node.name, decodeRequest{selector: node.selector, config: node.decode}, selected, realtime, node.dropEvents, decodeBounds)
-			if err != nil {
-				return err
-			}
-			if err := addComposeStage(graph, stage, bufferOf(node), node.inputs); err != nil {
-				return err
-			}
-			streams[ref] = selected
-		case composeStep:
-			stage, out, err := service.newBranchComposeStepStageNamed(ctx, node.name, node.transform, streams[node.inputs[0]], realtime)
-			if err != nil {
-				return err
-			}
-			if err := addComposeStage(graph, stage, bufferOf(node), node.inputs); err != nil {
-				return err
-			}
-			streams[ref] = out
-		case composeEncode:
-			config, _, err := prepareEncodeConfig(streams[node.inputs[0]], node.request, realtime)
-			if err != nil {
-				return err
-			}
-			_, encoded, err := service.compileEncodeStageNamed(ctx, graph, node.name, node.inputs[0], node.request, config, bufferOf(node))
-			if err != nil {
-				return err
-			}
-			streams[ref] = encoded
-		case composeSink, composeRemuxSink:
-			sink := s.outputAttachments[node.output].sink
-			if node.name != sink.Name() {
-				sink = namedSink{name: node.name, sink: sink}
-			}
-			sinkRef, err := graph.AddSink(sink, bufferOf(node))
-			if err != nil {
-				return err
-			}
-			if err := connectComposeInputs(graph, node.inputs, sinkRef); err != nil {
-				return err
-			}
-		case composeMux, composeRemuxMux:
-			var muxed []av.Stream
+		case composeDecode, composeStep, composeEncode, composeSink, composeRemuxSink, composeMux, composeRemuxMux:
+			var in []av.Stream
 			if node.kind == composeRemuxMux {
 				for _, from := range node.inputs {
 					input := sourceInputs[from]
-					muxed = append(muxed, qualifyStreams(sourceStreams[input], qualifiers[input])...)
+					in = append(in, qualifyStreams(sourceStreams[input], qualifiers[input])...)
 				}
 			} else {
 				for _, input := range node.inputs {
-					muxed = append(muxed, streams[input])
+					in = append(in, streams[input])
 				}
 			}
-			destination := s.outputAttachments[node.output]
-			muxStage, err := service.openMuxDestinationStage(ctx, destination, node.output, muxed, destinationOpenFormat(destination), destinationGraphFormat(destination))
+			decodeBounds := codec.DecodeBounds{}
+			if node.kind == composeDecode && len(bounds) != 0 {
+				decodeBounds = providerDecodeBoundsForStream(in[0], bounds)
+			}
+			opened, err := openComposeNode(ctx, service, node, in, s.outputAttachments, realtime, decodeBounds)
 			if err != nil {
 				return err
 			}
-			stage := pipeline.Stage(muxStage)
-			if node.name != muxStage.Name() {
-				stage = namedStage{name: node.name, stage: muxStage}
-			}
-			if err := addComposeStage(graph, stage, bufferOf(node), node.inputs); err != nil {
+			if err := opened.install(graph, bufferOf(node), node.inputs); err != nil {
 				return err
 			}
+			streams[ref] = opened.stream
 		default:
 			in.sourceStreams = sourceStreams
 			in.qualifiers = qualifiers
@@ -810,6 +874,78 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 		}
 	}
 	return nil
+}
+
+// openedNode is the component one planned node opened as, and the stream it
+// emits.
+type openedNode struct {
+	stage  pipeline.Stage
+	sink   pipeline.Sink
+	stream av.Stream
+	// owned marks a stage the lowering opened (a decoder, filter, encoder,
+	// or muxer), which a failed build or attach closes; a caller's own
+	// stages and sinks stay the caller's.
+	owned bool
+}
+
+// openComposeNode opens the component a decode, step, encode, sink, or mux
+// node lowers to against the streams its inputs carry. The build and an
+// attach open every such node through it.
+func openComposeNode(ctx context.Context, service *builder, node composeNode, in []av.Stream, dests []destinationSpec, realtime bool, bounds codec.DecodeBounds) (openedNode, error) {
+	switch node.kind {
+	case composeDecode:
+		stage, err := service.newDecodeStageNamed(ctx, node.name, decodeRequest{selector: node.selector, config: node.decode}, in[0], realtime, node.dropEvents, bounds)
+		if err != nil {
+			return openedNode{}, err
+		}
+		return openedNode{stage: stage, stream: in[0], owned: true}, nil
+	case composeStep:
+		stage, out, err := service.newBranchComposeStepStageNamed(ctx, node.name, node.transform, in[0], realtime)
+		if err != nil {
+			return openedNode{}, err
+		}
+		return openedNode{stage: stage, stream: out, owned: node.transform.stage == nil}, nil
+	case composeEncode:
+		config, _, err := prepareEncodeConfig(in[0], node.request, realtime)
+		if err != nil {
+			return openedNode{}, err
+		}
+		stage, encoded, err := service.newEncodeStageNamed(ctx, node.name, node.request, config)
+		if err != nil {
+			return openedNode{}, err
+		}
+		return openedNode{stage: stage, stream: encoded, owned: true}, nil
+	case composeSink, composeRemuxSink:
+		sink := dests[node.output].sink
+		if node.name != sink.Name() {
+			sink = namedSink{name: node.name, sink: sink}
+		}
+		return openedNode{sink: sink}, nil
+	default:
+		destination := dests[node.output]
+		muxStage, err := service.openMuxDestinationStage(ctx, destination, node.output, in, destinationOpenFormat(destination), destinationGraphFormat(destination))
+		if err != nil {
+			return openedNode{}, err
+		}
+		stage := pipeline.Stage(muxStage)
+		if node.name != muxStage.Name() {
+			stage = namedStage{name: node.name, stage: muxStage}
+		}
+		return openedNode{stage: stage, owned: true}, nil
+	}
+}
+
+// install adds the opened node to the graph and connects its inputs,
+// closing the stage if the graph refuses it.
+func (o openedNode) install(graph pipeline.Graph, buffer pipeline.BufferPolicy, inputs []pipeline.NodeRef) error {
+	if o.sink == nil {
+		return addComposeStage(graph, o.stage, buffer, inputs)
+	}
+	ref, err := graph.AddSink(o.sink, buffer)
+	if err != nil {
+		return err
+	}
+	return connectComposeInputs(graph, inputs, ref)
 }
 
 // selectStream is the stream a select picks from its input's streams.

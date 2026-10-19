@@ -17,10 +17,6 @@ const (
 	defaultVideoDecodeHeight = 1080
 )
 
-func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
-	return b.newDecodeStageNamed(ctx, decodeNodeName(request.selector), request, stream, realtime, dropInputEvents, bounds)
-}
-
 func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	planned := recipeir.Stream{

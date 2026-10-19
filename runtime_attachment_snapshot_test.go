@@ -65,13 +65,13 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 			Name: "preview-packets",
 			Node: pipeline.NodeRef("preview-copy"),
 		}},
-		work: workPatch{Destinations: []workDestination{{
+		destinations: []workDestination{{
 			Name:      "preview.ivf",
 			Operation: plan.OpMux,
 			Component: "custom-mux",
 			Format:    av.FormatIVF,
 			Branches:  []string{"preview"},
-		}}},
+		}},
 	}
 	if got := attachment.ID(); got != "branch-42" {
 		t.Fatalf("ID = %q, want branch-42", got)
@@ -129,7 +129,7 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 		attachment.anchorNode != "legacy-node" ||
 		attachment.nodes[0] != "preview-copy" ||
 		attachment.taps[0].Name != "preview-packets" ||
-		attachment.work.Destinations[0].Branches[0] != "preview" {
+		attachment.destinations[0].Branches[0] != "preview" {
 		t.Fatalf("snapshot mutation leaked into attachment: %#v", attachment)
 	}
 

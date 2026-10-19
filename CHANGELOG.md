@@ -24,12 +24,48 @@ methodology changes, and migration notes.
   goroutine per read). goh264 (`goav_goh264`): reordered and flushed frames
   carry their own picture's PTS, duration, and epoch, pinned by a committed
   12-frame B-frame fixture checked against ffmpeg's per-frame md5.
+
+- An attached branch connects to the running graph last: its nodes and
+  internal edges are installed first, and the edges from its anchors follow,
+  one route per anchor. A `Rebranch` with `SwitchAt(NextKeyframe())` no longer
+  loses the switching keyframe to a gate whose encoder was not connected yet.
+- A detach whose context ends while it stops dependent branches returns the
+  cancellation instead of spinning while holding the task's attach lock.
+
+- `FuzzRecipe` builds random value-grammar recipes (inputs, forks, joins,
+  operations, taps, shared destinations) and an Output attached at a tap,
+  and checks Describe never panics, Describe equals Build whenever the recipe
+  builds, and the planned attach patch equals the applied one. CI's fuzz
+  smoke runs it.
+
+- A nil layer in `goav.Composite` (or a nil arm of any join) is refused as
+  `stream_invalid` naming `goav.At(...)`, instead of panicking Describe,
+  Explain, and Build.
+
+- Removed the `branch_source_invalid` code: only the test-only builder
+  spelling could raise it.
+
+- `task.Attach` lowers through the build's compiler: the attached Outputs
+  are branches rooted at the task's taps, tracks, or routes, planned by the
+  same lowering and opened by the same per-node opener, and the planned patch
+  is the applied one. The attach-only planner (`work_patch.go`, the attach
+  group's shared sink and mux machinery, and the per-branch step walk) is
+  gone, about 600 lines net. Behavior changes: work
+  several attached Outputs share runs once, as at build (`a+b/resample-a`);
+  shared destinations are added after the branches' own work; attached
+  sync and playout gates and custom-factory transforms are named as the build
+  names them; an attached decoder's detail names its media only; and a
+  failed attach now aborts a muxer it opened behind a renamed node.
+
+- Fix adoption: nested modules (`rtpav`, `webrtcav`, `playoutav`, `goavtest/expect`) now require a resolvable root pseudo-version instead of `v0.0.0` (the `replace` stays for local work), and CI installs each from a clean directory. The AAC descriptor reports `unsupported-target` where the goaac backend is a stub (only darwin/arm64 and linux/arm64 decode). The README states the SIMD speedup with its scope (128x96 microbenchmarks, one machine).
 - Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
   limit instead of panicking (offset+length wrapped negative). Found by the
   fuzz smoke.
-- The attach-under-load allocation ceiling is twice its baseline: the benchmark
-  counts the concurrent load's allocations too, which vary with scheduling
-  (Linux CI measured 681-703 where the attach path itself measures ~510).
+- `BenchmarkAttachDetachUnderLoad` measures attach and detach alone: its
+  traffic flows through the attached branch with the timer stopped, so the
+  load no longer adds scheduling-dependent allocations (about 440-700 per op
+  before, a steady 244 now), and its ratchet ceiling is back to the standard
+  cold slack.
 
 - One compiler: Outputs compile into one recipe DAG, and Describe, Explain,
   Build, and `task.Attach` all read it. A Stream used twice is one node, so

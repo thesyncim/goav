@@ -98,6 +98,8 @@ func solveRecipeIROperationShapes(operation string, rt *Runtime, stream recipeir
 				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			conversion.operation.Shared = next.Shared
+			// An inserted conversion is no Stream's node: callers give it one.
+			conversion.operation.Node = -1
 			solved = append(solved, conversion.operation)
 			diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, target))
 			diagnostics = append(diagnostics, prefDiags...)
@@ -116,6 +118,7 @@ func solveRecipeIROperationShapes(operation string, rt *Runtime, stream recipeir
 						return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, desired)
 					}
 					conversion.operation.Shared = next.Shared
+					conversion.operation.Node = -1
 					solved = append(solved, conversion.operation)
 					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, desired))
 					diagnostics = append(diagnostics, prefDiags...)

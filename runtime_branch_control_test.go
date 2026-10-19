@@ -52,7 +52,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := recipeFrom(input).Audio().Copy().Tap(packetTapRef("pkts")).To(mainSink).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("pkts").To(mainSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 		}
 		return nil
 	}))
-	att, err := legacyAttach(task, ctx, newBranch("watch").From(packetTapRef("pkts")).Copy().To(branchSink))
+	att, err := task.Attach(ctx, task.Tap("pkts").As("watch").To(branchSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +141,12 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 			return nil
 		}))
 	}
-	task, err := recipeFrom(input).Audio().Copy().Tap(packetTapRef("pkts")).To(count(&mainCount)).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("pkts").To(count(&mainCount)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := legacyAttach(task, ctx, newBranch("a").From(packetTapRef("pkts")).Copy().To(count(&aCount)))
+	attA, err := task.Attach(ctx, task.Tap("pkts").As("a").To(count(&aCount)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	// Rebranch A -> B (different sink) on the live task.
-	if _, err := attA.Rebranch(ctx, newBranch("b").From(packetTapRef("pkts")).Copy().To(count(&bCount)).on(task)); err != nil {
+	if _, err := attA.Rebranch(ctx, task.Tap("pkts").As("b").To(count(&bCount))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,12 +264,12 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).Audio().Copy().Tap(packetTapRef("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("pkts").To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := legacyAttach(task, ctx, newBranch("a").From(packetTapRef("pkts")).Copy().To(aSink))
+	attA, err := task.Attach(ctx, task.Tap("pkts").As("a").To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	attB, err := attA.Rebranch(ctx,
-		newBranch("b").From(packetTapRef("pkts")).Copy().To(bSink).on(task),
+		task.Tap("pkts").As("b").To(bSink),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err != nil {
@@ -388,12 +388,12 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).Audio().Tap(frameTapRef("frames")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("frames").To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := legacyAttach(task, ctx, newBranch("a").From(frameTapRef("frames")).To(aSink))
+	attA, err := task.Attach(ctx, task.Tap("frames").As("a").To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 	waitForCount(t, "frame1 a", 1, aCount.Load)
 
 	if _, err := attA.Rebranch(ctx,
-		newBranch("b").From(frameTapRef("frames")).To(bSink).on(task),
+		task.Tap("frames").As("b").To(bSink),
 		lifecycle.SwitchAt(lifecycle.NextFrame()),
 	); err != nil {
 		t.Fatal(err)
@@ -454,12 +454,12 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 		return nil
 	}))
 
-	task, err := recipeFrom(input).Audio().Copy().Tap(packetTapRef("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("pkts").To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := legacyAttach(task, ctx, newBranch("a").From(packetTapRef("pkts")).Copy().To(aSink))
+	attA, err := task.Attach(ctx, task.Tap("pkts").As("a").To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	next, err := attA.Rebranch(ctx,
-		newBranch("bad").From(packetTapRef("missing")).Copy().To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))).on(task),
+		task.Tap("missing").As("bad").To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err == nil {
@@ -507,13 +507,13 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	sink := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	task, err := recipeFrom(input).Audio().Copy().Tap(packetTapRef("pkts")).To(sink("main")).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, input.Audio().Tap("pkts").To(sink("main")))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	attA, err := legacyAttach(task, ctx, newBranch("a").From(packetTapRef("pkts")).Copy().To(sink("a-sink")))
+	attA, err := task.Attach(ctx, task.Tap("pkts").As("a").To(sink("a-sink")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +535,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 
 	// Drain: the replaced branch's destination commits.
 	attB, err := attA.Rebranch(ctx,
-		newBranch("b").From(packetTapRef("pkts")).Copy().To(sink("b-sink")).on(task),
+		task.Tap("pkts").As("b").To(sink("b-sink")),
 		lifecycle.DrainOldBranch(),
 	)
 	if err != nil {
@@ -547,7 +547,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 
 	// Abort: the replaced branch's destination aborts.
 	attC, err := attB.Rebranch(ctx,
-		newBranch("c").From(packetTapRef("pkts")).Copy().To(sink("c-sink")).on(task),
+		task.Tap("pkts").As("c").To(sink("c-sink")),
 		lifecycle.AbortOldBranch(),
 	)
 	if err != nil {

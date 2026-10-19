@@ -66,6 +66,24 @@ say why.
 | CI artifacts | Coverage, fuzz-smoke, benchmark/perf-lab, benchstat, CodeQL, govulncheck, and release artifacts are present for the release candidate. |
 | Performance claims | `docs/PERFORMANCE.md` classifies claims as proven, measured, experimental, or not proven; release notes avoid comparative leadership without reproducible numbers; any release performance claim cites a perf-lab manifest generated with `PERF_RELEASE_QUALITY=true`. |
 
+## Nested-module root pin
+
+`rtpav`, `webrtcav`, `playoutav`, and `goavtest/expect` require the root at a
+pseudo-version of a commit on `main` (and `webrtcav` requires `rtpav` the same
+way), with a `replace` for local development. Consumers ignore `replace`, so
+the pin must resolve. The CI job `consumer-install` fetches every nested module
+at the PR head into an empty directory with `GOWORK=off` and builds it.
+
+Bump the pin when a nested module needs newer root API, and before each tag
+(see Tags):
+
+```sh
+go list -m -json github.com/thesyncim/goav@main        # Version = new pin
+go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
+```
+
+Edit the `require` lines (keep the `replace`), then run the module's tests.
+
 ## Tags
 
 Use signed tags when cutting an actual release:

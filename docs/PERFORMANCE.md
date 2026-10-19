@@ -135,7 +135,7 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkComposite` | 2-arm video composite (1 alloc/op steady state per push) |
 | `BenchmarkCopyPlaneKernel`, `BenchmarkCompositeI420BlitKernel` | root-local I420 composite blit benches: clipped row copy, inside-canvas row copy, and two-arm canvas paint |
 | `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (1 alloc/op steady state per push) |
-| `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op while live traffic flows (a cold-path control operation, measured against load) |
+| `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op on a live graph; traffic flows through the branch between the timed calls, so allocs/op are the attach and detach alone (a cold-path control operation) |
 | `BenchmarkLiveRoomAttachDetachSoak` | live-room sync plus attach/detach churn: packet taps stay live while monitor branches attach/detach; reports p50/p95/p99, source/sync/graph drops, delivered messages, max A/V drift, and `max_rss_B` in the perf-lab JSON when the OS memory wrapper exposes it |
 | `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: source.Push into a DropOldest vs Blocking queue (bounded by `TestSourcePushDeliveryAllocs`) |
 | `BenchmarkLatencyRecordPackets` | packet-record path with p50/p95/p99 `source.Push.Packet` acceptance metrics |

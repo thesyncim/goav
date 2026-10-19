@@ -136,7 +136,21 @@ func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 	}
 }
 
-func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
+// encodeContractNode opens an encode node through the lowering's opener and
+// installs it behind upstream.
+func encodeContractNode(rt *Runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+	node := composeNode{kind: composeEncode, name: name, request: encodeRequest{selector: testSelectAudio(), config: config}}
+	opened, err := openComposeNode(context.Background(), &builder{runtime: rt}, node, []av.Stream{config.Stream}, nil, false, codec.DecodeBounds{})
+	if err != nil {
+		return "", err
+	}
+	if err := opened.install(graph, rt.buffer, []pipeline.NodeRef{upstream}); err != nil {
+		return "", err
+	}
+	return pipeline.NodeRef(name), nil
+}
+
+func TestEncodeNodeConnectsNamedStage(t *testing.T) {
 	factory := &encodeTestEncoderFactory{}
 	rt := mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "encode-contract"})
@@ -150,7 +164,7 @@ func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	ref, _, err := compileEncodeStageNamed(context.Background(), &builder{runtime: rt}, graph, "encode-contract", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	ref, err := encodeContractNode(rt, graph, "encode-contract", sourceRef, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +177,7 @@ func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 	}
 }
 
-func TestCompileEncodeStageNamedClosesStageWhenGraphRefusesIt(t *testing.T) {
+func TestEncodeNodeClosesStageWhenGraphRefusesIt(t *testing.T) {
 	encoder := &encodeTestEncoder{}
 	factory := &encodeTestEncoderFactory{encoder: encoder}
 	rt := mustNew(
@@ -181,9 +195,9 @@ func TestCompileEncodeStageNamedClosesStageWhenGraphRefusesIt(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	_, _, err = compileEncodeStageNamed(context.Background(), &builder{runtime: rt}, graph, "encode-buffered", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	_, err = encodeContractNode(rt, graph, "encode-buffered", sourceRef, config)
 	if !errors.Is(err, pipeline.ErrBufferedEdgesUnsupported) {
-		t.Fatalf("compileEncodeStageNamed() error = %v, want buffered-edge refusal", err)
+		t.Fatalf("encode node error = %v, want buffered-edge refusal", err)
 	}
 	if !encoder.closed {
 		t.Fatal("encoder was not closed after graph AddStage refusal")

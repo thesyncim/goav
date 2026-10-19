@@ -194,12 +194,10 @@ func TestDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
 		},
 	}, decoderFactory))
 
-	_, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(mustNew(formats, codecs)).
+	_, err := mustNew(formats, codecs).Build(context.Background(), FileInput("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(context.Background())
+		To(Sink(&runtimeTestSink{name: "frames"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "decode_adapter_incompatible" ||
@@ -240,12 +238,10 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
-		UseRuntime(mustNew(WithRealtime(true), formats, codecs)).
+	task, err := mustNew(WithRealtime(true), formats, codecs).Build(context.Background(), FileInput("input.ivf", strings.NewReader("")).
 		Video().
 		Decode().
-		To(Sink(sink)).
-		Build(context.Background())
+		To(Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
