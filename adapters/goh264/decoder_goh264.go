@@ -45,7 +45,22 @@ type Decoder struct {
 	dropDamagedVideo bool
 	dropUntilSync    bool
 	closed           bool
+	// pending holds the timing of each packet fed to the backend whose
+	// picture has not come out yet, in arrival order. See popTiming.
+	pending []frameTiming
 }
+
+// frameTiming is the identity a packet hands to the picture it carries.
+type frameTiming struct {
+	pts      av.Timestamp
+	duration av.Duration
+	streamID av.StreamID
+	epoch    av.Epoch
+}
+
+// maxPendingTimings bounds pending: the H.264 DPB delays at most 16
+// pictures, and the margin absorbs packets that carry no picture.
+const maxPendingTimings = 32
 
 func (d *Decoder) Descriptor() codec.Descriptor {
 	return activeDescriptor()
@@ -65,6 +80,9 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
 	d.dropUntilSync = false
 	d.closed = false
+	if cap(d.pending) == 0 {
+		d.pending = make([]frameTiming, 0, maxPendingTimings)
+	}
 	return d.resetDecoder(d.stream.Codec.ExtraData.Bytes)
 }
 
@@ -101,11 +119,16 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 		d.dropUntilSync = false
 	}
 
+	// An empty packet carries no picture (the backend reads it as a flush).
+	pushed := len(pkt.Payload.Bytes) != 0 && d.pushTiming(pkt)
 	frames, err := d.decoder.DecodeFrames(pkt.Payload.Bytes)
 	if err != nil {
+		if pushed {
+			d.pending = d.pending[:len(d.pending)-1]
+		}
 		return err
 	}
-	return d.appendDecodedFrames(pkt, frames, out)
+	return d.appendDecodedFrames(frames, out)
 }
 
 func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error {
@@ -125,7 +148,9 @@ func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error 
 	if err != nil {
 		return err
 	}
-	return d.appendDecodedFrames(nil, frames, out)
+	err = d.appendDecodedFrames(frames, out)
+	d.pending = d.pending[:0]
+	return err
 }
 
 func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
@@ -160,6 +185,7 @@ func (d *Decoder) Close() error {
 
 func (d *Decoder) resetDecoder(extra []byte) error {
 	d.decoder = goh264lib.NewDecoder()
+	d.pending = d.pending[:0]
 	if len(extra) == 0 {
 		return nil
 	}
@@ -212,7 +238,7 @@ func normalizeStream(stream av.Stream) av.Stream {
 	return stream
 }
 
-func (d *Decoder) appendDecodedFrames(pkt *av.Packet, frames []*goh264lib.Frame, out *codec.DecodeResult) error {
+func (d *Decoder) appendDecodedFrames(frames []*goh264lib.Frame, out *codec.DecodeResult) error {
 	needed := 0
 	for i := range frames {
 		if frames[i] != nil {
@@ -220,32 +246,41 @@ func (d *Decoder) appendDecodedFrames(pkt *av.Packet, frames []*goh264lib.Frame,
 		}
 	}
 	if len(out.Frames)+needed > cap(out.Frames) {
+		// The pictures are lost; so are their timings.
+		for range needed {
+			d.popTiming()
+		}
 		return codec.ErrResultFull
 	}
 	for i := range frames {
 		if frames[i] == nil {
 			continue
 		}
-		if err := d.appendDecodedFrame(pkt, frames[i], out); err != nil {
+		timing, ok := d.popTiming()
+		var timed *frameTiming
+		if ok {
+			timed = &timing
+		}
+		if err := d.appendDecodedFrame(timed, frames[i], out); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *Decoder) appendDecodedFrame(pkt *av.Packet, src *goh264lib.Frame, out *codec.DecodeResult) error {
+func (d *Decoder) appendDecodedFrame(timing *frameTiming, src *goh264lib.Frame, out *codec.DecodeResult) error {
 	index := len(out.Frames)
 	out.Frames = out.Frames[:index+1]
 	frame := &out.Frames[index]
 	frame.Reset()
-	if err := d.fillDecodedFrame(pkt, src, frame); err != nil {
+	if err := d.fillDecodedFrame(timing, src, frame); err != nil {
 		out.Frames = out.Frames[:index]
 		return err
 	}
 	return nil
 }
 
-func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *goh264lib.Frame, frame *av.Frame) error {
+func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, frame *av.Frame) error {
 	if src.BitDepthLuma != 8 || src.BitDepthChroma != 8 {
 		return codec.ErrUnsupportedFormat
 	}
@@ -283,17 +318,63 @@ func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *goh264lib.Frame, frame *
 	frame.CodecEpoch = d.stream.Epoch
 	frame.Type = av.MediaVideo
 	frame.Video = &d.video
-	if pkt != nil {
-		if pkt.StreamID != "" {
-			frame.StreamID = pkt.StreamID
+	if timing != nil {
+		if timing.streamID != "" {
+			frame.StreamID = timing.streamID
 		}
-		if pkt.CodecEpoch != 0 {
-			frame.CodecEpoch = pkt.CodecEpoch
+		if timing.epoch != 0 {
+			frame.CodecEpoch = timing.epoch
 		}
-		frame.PTS = pkt.PTS
-		frame.Duration = pkt.Duration
+		frame.PTS = timing.pts
+		frame.Duration = timing.duration
 	}
 	return nil
+}
+
+// The backend carries no timestamps: it returns pictures in presentation
+// order, held back by the stream's reorder delay, with the tail only at
+// flush. So a picture's timing is not the packet being decoded when it comes
+// out. Each packet fed in queues its timing, and each picture out takes the
+// earliest pending presentation timestamp — presentation order is output
+// order. Packets with a timestamp already pending (a parameter-set packet
+// stamped like its picture, or the second field of a pair) queue nothing.
+func (d *Decoder) pushTiming(pkt *av.Packet) bool {
+	if pkt.PTS.Base.Valid() {
+		for i := range d.pending {
+			if gap, ok := pkt.PTS.Sub(d.pending[i].pts); ok && gap.Value == 0 && d.pending[i].pts.Base.Valid() {
+				return false
+			}
+		}
+	}
+	if len(d.pending) == cap(d.pending) {
+		// The oldest entry belongs to a packet whose picture never came.
+		copy(d.pending, d.pending[1:])
+		d.pending = d.pending[:len(d.pending)-1]
+	}
+	d.pending = append(d.pending, frameTiming{
+		pts:      pkt.PTS,
+		duration: pkt.Duration,
+		streamID: pkt.StreamID,
+		epoch:    pkt.CodecEpoch,
+	})
+	return true
+}
+
+// popTiming removes and returns the pending timing with the earliest
+// presentation timestamp; untimed entries leave in arrival order.
+func (d *Decoder) popTiming() (frameTiming, bool) {
+	if len(d.pending) == 0 {
+		return frameTiming{}, false
+	}
+	best := 0
+	for i := 1; i < len(d.pending); i++ {
+		if gap, ok := d.pending[i].pts.Sub(d.pending[best].pts); ok && gap.Value < 0 && d.pending[i].pts.Base.Valid() {
+			best = i
+		}
+	}
+	timing := d.pending[best]
+	d.pending = append(d.pending[:best], d.pending[best+1:]...)
+	return timing, true
 }
 
 func (d *Decoder) appendKeyframeRequest(out *codec.DecodeResult, reason string) error {

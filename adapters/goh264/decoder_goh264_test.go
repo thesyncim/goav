@@ -143,17 +143,17 @@ func TestFillDecodedFrameAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := decodedH264TestFrame(t)
-	packet := av.Packet{
-		StreamID:   "video",
-		CodecEpoch: 4,
-		PTS:        av.Timestamp{Value: 180, Base: av.RTPTimeBase(90000)},
-		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
+	timing := frameTiming{
+		streamID: "video",
+		epoch:    4,
+		pts:      av.Timestamp{Value: 180, Base: av.RTPTimeBase(90000)},
+		duration: av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 	}
 	frame := av.Frame{Planes: make([]av.Plane, 3)}
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		frame.Reset()
-		if err := decoder.fillDecodedFrame(&packet, src, &frame); err != nil {
+		if err := decoder.fillDecodedFrame(&timing, src, &frame); err != nil {
 			t.Fatal(err)
 		}
 	}); allocs != 0 {
