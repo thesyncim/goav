@@ -121,7 +121,7 @@ func sendPacket(t *testing.T, sink pipeline.Sink, stream av.StreamID, i int, pay
 
 // TestSendOverUDP runs Send against a loopback receiver: VP8 frames arrive
 // and depacketize, a sender report maps the stream to the wall clock, a NACK
-// gets its packet again, PLI asks for a keyframe, REMB retargets the
+// gets its packet again at once, with no packet to send behind it, PLI asks for a keyframe, REMB retargets the
 // bitrate, and Close says BYE.
 func TestSendOverUDP(t *testing.T) {
 	receiver := listenUDPPair(t)
@@ -178,8 +178,7 @@ func TestSendOverUDP(t *testing.T) {
 	if _, err := receiver.rtcp.WriteToUDP(nack, from); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
-	sendPacket(t, sink, "v", 3, frame)
+	// No packet follows: the retransmission answers the NACK itself.
 	resent := receiver.readRTP(t)
 	if resent.SequenceNumber != first.SequenceNumber || !bytes.Equal(resent.Payload, first.Payload) {
 		t.Fatalf("after NACK got seq %d, want the retransmitted %d", resent.SequenceNumber, first.SequenceNumber)
@@ -290,5 +289,131 @@ func TestSendToAnAbsentReceiver(t *testing.T) {
 	for i := range 20 {
 		sendPacket(t, sink, av.StreamID(av.CodecVP8), i, []byte{0x9c, 0x01, 0x02})
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// rtcpFedWriter is a PacketWriter fed RTCP by the test; it counts the RTP
+// it is handed, from any goroutine.
+type rtcpFedWriter struct {
+	rtcp  chan []rtcp.Packet
+	mu    sync.Mutex
+	sent  []uint16
+	close sync.Once
+	done  chan struct{}
+}
+
+func newRTCPFedWriter() *rtcpFedWriter {
+	return &rtcpFedWriter{rtcp: make(chan []rtcp.Packet), done: make(chan struct{})}
+}
+
+func (w *rtcpFedWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sent = append(w.sent, packet.SequenceNumber)
+	return nil
+}
+
+func (w *rtcpFedWriter) WriteRTCP(context.Context, []rtcp.Packet) error { return nil }
+
+func (w *rtcpFedWriter) ReadRTCP(ctx context.Context) ([]rtcp.Packet, error) {
+	select {
+	case packets := <-w.rtcp:
+		return packets, nil
+	case <-w.done:
+		return nil, ErrClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (w *rtcpFedWriter) Close() error {
+	w.close.Do(func() { close(w.done) })
+	return nil
+}
+
+// TestSendCapsBitrateEstimates pins the REMB retarget bounds: an estimate
+// above the recipe's configured bitrate asks for that bitrate, one below it
+// for itself, one within a tenth of the last target for nothing, and one
+// below the floor for the floor; a stream with no configured bitrate stops
+// at 2.5 Mb/s.
+func TestSendCapsBitrateEstimates(t *testing.T) {
+	writer := newRTCPFedWriter()
+	sink := Send(writer, WithSSRC("hd", 1), WithSSRC("sd", 2))
+	ctl := &controls{hit: make(chan struct{}, 8)}
+	sink.(interface {
+		UseControl(func(context.Context, control.Control) error)
+	}).UseControl(ctl.send)
+	hd := videoTestStream(av.CodecVP8)
+	hd.ID, hd.Metadata = "hd", av.Metadata{av.MetadataBitrate: "500000"}
+	sd := videoTestStream(av.CodecVP8)
+	sd.ID = "sd"
+	if err := sink.(interface {
+		OpenStreams(context.Context, []av.Stream) error
+	}).OpenStreams(context.Background(), []av.Stream{hd, sd}); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.Close()
+	remb := func(bitrate float32, ssrc uint32) {
+		writer.rtcp <- []rtcp.Packet{&rtcp.ReceiverEstimatedMaximumBitrate{Bitrate: bitrate, SSRCs: []uint32{ssrc}}}
+	}
+	expect := func(stream av.StreamID, bitrate int) {
+		t.Helper()
+		if got := ctl.wait(t); got.Type() != control.BitrateType || got.StreamID() != stream || got.Bitrate() != bitrate {
+			t.Fatalf("control = %v %q %d, want %q at %d", got.Type(), got.StreamID(), got.Bitrate(), stream, bitrate)
+		}
+	}
+	remb(5_000_000, 1)
+	expect("hd", 500_000)
+	remb(300_000, 1)
+	expect("hd", 300_000)
+	remb(290_000, 1) // within a tenth: no control
+	remb(10, 1)
+	expect("hd", minEstimateBitrate)
+	remb(50_000_000, 2)
+	expect("sd", defaultMaxEstimateBitrate)
+	select {
+	case <-ctl.hit:
+		t.Fatalf("an extra control: %v", ctl.got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestSendRetransmitsWhileItSends races the data path against NACKs for
+// the packets it just sent: under -race the history's handoff holds, and
+// every NACK is answered from the feedback loop.
+func TestSendRetransmitsWhileItSends(t *testing.T) {
+	writer := newRTCPFedWriter()
+	sink := Send(writer, WithSSRC("v", 7), WithReportInterval(0))
+	stream := videoTestStream(av.CodecVP8)
+	stream.ID = "v"
+	if err := sink.(interface {
+		OpenStreams(context.Context, []av.Stream) error
+	}).OpenStreams(context.Background(), []av.Stream{stream}); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.Close()
+	sendPacket(t, sink, "v", 0, []byte{0x9c, 0x01, 0x02, 0x03})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 400 {
+			writer.mu.Lock()
+			seq := writer.sent[len(writer.sent)-1]
+			writer.mu.Unlock()
+			writer.rtcp <- []rtcp.Packet{&rtcp.TransportLayerNack{MediaSSRC: 7, Nacks: []rtcp.NackPair{{PacketID: seq - uint16(i%8), LostPackets: 0x3}}}}
+		}
+	}()
+	for i := 1; ; i++ {
+		select {
+		case <-done:
+			writer.mu.Lock()
+			defer writer.mu.Unlock()
+			if len(writer.sent) <= i {
+				t.Fatalf("%d writes for %d packets: no retransmission", len(writer.sent), i)
+			}
+			return
+		default:
+		}
+		sendPacket(t, sink, "v", i, []byte{0x9c, 0x01, 0x02, 0x03})
 	}
 }

@@ -40,10 +40,14 @@ func DialUDP(address string) (PacketWriter, error) {
 	return w, nil
 }
 
+// marshalBuffers is the RTP marshal scratch writers share.
+var marshalBuffers = sync.Pool{New: func() any {
+	buf := make([]byte, 0, 1500)
+	return &buf
+}}
+
 type udpWriter struct {
 	rtp, rtcp net.Conn
-	// buf is the marshal scratch of WriteRTP, which the one data path calls.
-	buf       []byte
 	feedback  chan []rtcp.Packet
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -51,15 +55,19 @@ type udpWriter struct {
 }
 
 func (w *udpWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
+	// The data path and the feedback loop (retransmitting) write at once, each
+	// with marshal scratch of its own.
+	buf := marshalBuffers.Get().(*[]byte)
+	defer marshalBuffers.Put(buf)
 	size := packet.MarshalSize()
-	if cap(w.buf) < size {
-		w.buf = make([]byte, size)
+	if cap(*buf) < size {
+		*buf = make([]byte, size)
 	}
-	n, err := packet.MarshalTo(w.buf[:size])
+	n, err := packet.MarshalTo((*buf)[:size])
 	if err != nil {
 		return err
 	}
-	_, err = w.rtp.Write(w.buf[:n])
+	_, err = w.rtp.Write((*buf)[:n])
 	return unrefused(err)
 }
 
