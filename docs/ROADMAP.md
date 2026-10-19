@@ -209,14 +209,6 @@ this list:
   offline file inputs by time, which backpressure cannot do, is an internal
   runner policy, not an API (`TestSeveralFileInputsInterleaveDeterministically`). The rest
   of the time domain is landed and cited in "The settled model" above.
-- **Internal-package layering**: measured on the cross-file reference graph
-  and still not ready for a package split. The data-transfer boundary has
-  started with `internal/recipeir`; normal recipe work-plan handoffs,
-  branch-composition planning, media input selection, OnStream branch facts,
-  and runtime attach/rebranch branch, operation, and destination facts now
-  cross explicit DTOs, but root-only attachments remain before planner
-  internals can move behind enforced package boundaries
-  (`docs/ARCHITECTURE.md` "Package layering").
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `task.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
