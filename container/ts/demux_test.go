@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,5 +246,26 @@ func TestDemuxDeliversWithoutReadingAhead(t *testing.T) {
 	case <-got:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the last audio frame waits for bytes after it")
+	}
+}
+
+// TestDemuxRefusesUnreadPrograms names the stream types of a program
+// without one goav reads (MPEG-2 video, AC-3).
+func TestDemuxRefusesUnreadPrograms(t *testing.T) {
+	streams, packets := syntheticAV(t, 90000, 4)
+	data := muxBytes(t, MuxerOptions{}, streams, packets)
+	for i := 0; i < len(data); i += packetSize {
+		p := data[i : i+packetSize]
+		if pid := int(p[1]&0x1f)<<8 | int(p[2]); pid != pidPMT {
+			continue
+		}
+		s := p[5:]
+		n := 3 + (int(s[1]&0x0f)<<8 | int(s[2]))
+		s[12], s[17] = 0x02, 0x81 // the two stream types
+		crc := bitwiseCRC(s[:n-4])
+		s[n-4], s[n-3], s[n-2], s[n-1] = byte(crc>>24), byte(crc>>16), byte(crc>>8), byte(crc)
+	}
+	if _, err := demux(data); !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "0x02 0x81") {
+		t.Fatalf("%v, want ErrUnsupported naming the stream types", err)
 	}
 }

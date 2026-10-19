@@ -53,6 +53,7 @@ type FormatDemuxer struct {
 	byPID     [pidNull + 1]uint8 // index+1 into streams
 	declared  []av.Stream
 	nextIndex int
+	skipped   []byte // the stream types of the PMT goav does not read
 
 	queue []unit
 	head  int
@@ -134,6 +135,9 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	}
 	if d.pmtVersion < 0 {
 		return fmt.Errorf("%w: no program in the first %d bytes", ErrInvalidData, d.read)
+	}
+	if len(d.streams) == 0 {
+		return fmt.Errorf("%w: the program carries stream types % #x, none of them H.264, HEVC, AAC, or Opus", ErrUnsupported, d.skipped)
 	}
 	for _, st := range d.streams {
 		st.announced = true
@@ -416,8 +420,12 @@ func (d *FormatDemuxer) onPMT(b []byte) {
 	}
 	d.pmtVersion, d.pcrPID = int(sec.version), int(pcrPID)
 	var streams []*demuxStream
+	d.skipped = d.skipped[:0]
 	for _, es := range list {
 		codec, media := codecOf(es)
+		if codec == "" {
+			d.skipped = append(d.skipped, es.streamType)
+		}
 		if codec == "" || streamIndex(streams, es.pid) >= 0 {
 			continue
 		}
