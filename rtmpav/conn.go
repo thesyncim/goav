@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thesyncim/goav/internal/amf0"
+	"github.com/thesyncim/goav/container/flv/amf0"
 )
 
 // User control events (section 6.2).

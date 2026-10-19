@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/amf0"
-	"github.com/thesyncim/goav/internal/uri"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
@@ -142,13 +141,16 @@ func (s *Server) forget(nc net.Conn) {
 // serverSession is a publisher the server accepted.
 type serverSession struct {
 	*conn
+	server *Server
 	stream string
 	done   chan struct{}
 	once   sync.Once
 }
 
+// end closes the publish and frees its stream for the next publisher.
 func (p *serverSession) end() error {
 	p.once.Do(func() {
+		p.server.release(p.stream)
 		close(p.done)
 		p.Close()
 	})
@@ -230,7 +232,7 @@ func (s *Server) setup(c *conn) (*serverSession, error) {
 			if i := strings.IndexByte(key, '?'); i >= 0 {
 				key = key[:i]
 			}
-			p := &serverSession{conn: c, stream: strings.Trim(app+"/"+key, "/"), done: make(chan struct{})}
+			p := &serverSession{conn: c, server: s, stream: strings.Trim(app+"/"+key, "/"), done: make(chan struct{})}
 			if !s.take(p) {
 				return nil, status(c, cmd.streamID, "error", "NetStream.Publish.BadName", "no input takes this stream, or it is publishing")
 			}
@@ -303,10 +305,7 @@ func (in *ingestInput) OpenBytes(ctx context.Context) (io.ReadCloser, error) {
 	in.server.mu.Unlock()
 	select {
 	case p := <-stream.arrive:
-		return newTagReader(p.next, func() error {
-			defer in.server.release(in.stream)
-			return p.end()
-		}), nil
+		return newTagReader(p.next, p.end), nil
 	case <-in.server.done:
 		return nil, errServerClosed
 	case <-ctx.Done():
@@ -315,8 +314,17 @@ func (in *ingestInput) OpenBytes(ctx context.Context) (io.ReadCloser, error) {
 }
 
 // next returns the publisher's next media or data message, or the error
-// that ends the publish.
+// that ends the publish, which frees the stream for the next publisher
+// before the input reopens.
 func (p *serverSession) next() (message, error) {
+	msg, err := p.nextMessage()
+	if err != nil {
+		p.end()
+	}
+	return msg, err
+}
+
+func (p *serverSession) nextMessage() (message, error) {
 	for {
 		msg, err := p.read(idleTimeout)
 		if err != nil {
@@ -344,7 +352,7 @@ func (p *serverSession) next() (message, error) {
 // redacted names the stream without its key.
 func (p *serverSession) redacted() string {
 	if i := strings.LastIndexByte(p.stream, '/'); i >= 0 {
-		return p.stream[:i+1] + uri.Marker
+		return p.stream[:i+1] + redacted
 	}
-	return uri.Marker
+	return redacted
 }

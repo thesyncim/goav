@@ -14,9 +14,9 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/flv"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/internal/amf0"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
@@ -186,9 +186,9 @@ func TestPlayReconnects(t *testing.T) {
 // errors of a failed connect or a refused publish, not in a running
 // publish's snapshot.
 func TestStreamKeyRedacted(t *testing.T) {
-	const key = "sk-canary-31337"
+	const key, signature = "FB-canary-31337", "AbCdSecret"
 	rt := testRuntime(t)
-	closed := goav.URIInput(fixtures + "vp9_opus.flv").To(goav.URI("rtmp://" + freePort(t) + "/live/" + key + "?sig=s3cr3t"))
+	closed := goav.URIInput(fixtures + "vp9_opus.flv").To(goav.URI("rtmp://" + freePort(t) + "/live/" + key + "?s_bl=1&a=" + signature))
 	spec, err := rt.Describe(closed)
 	if err != nil {
 		t.Fatal(err)
@@ -199,12 +199,12 @@ func TestStreamKeyRedacted(t *testing.T) {
 	}
 	for name, v := range map[string]any{"describe": spec, "explain": report} {
 		data, _ := json.Marshal(v)
-		if bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte("s3cr3t")) {
+		if bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte(signature)) {
 			t.Fatalf("%s shows the key: %s", name, data)
 		}
 	}
 	err = rt.Run(testContext(t), closed)
-	if err == nil || strings.Contains(err.Error(), key) || strings.Contains(err.Error(), "s3cr3t") {
+	if err == nil || strings.Contains(err.Error(), key) || strings.Contains(err.Error(), signature) {
 		t.Fatalf("connect error %v", err)
 	}
 
@@ -281,4 +281,79 @@ func TestCodecNegotiation(t *testing.T) {
 	if err := testRuntime(t).Run(testContext(t), goav.URIInput(fixtures+"vp9_opus.flv").To(goav.URI(h.url("key")))); err != nil {
 		t.Fatalf("vp9 to a server that states nothing: %v", err)
 	}
+}
+
+// What goav publishes, goav plays back: a VP9 and Opus publish to a relay,
+// then a play of it, decodes every frame.
+func TestPublishThenPlayBack(t *testing.T) {
+	h := newHarness(t, nil)
+	rt := testRuntime(t)
+	if err := rt.Run(testContext(t), goav.URIInput(fixtures+"vp9_opus.flv").To(goav.URI(h.url("relay-key")))); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	<-h.published
+	frames := goavtest.NewCollector()
+	ctx, cancel := context.WithCancel(testContext(t))
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- rt.Run(ctx, goav.URIInput(h.url("relay-key")).Video().Decode().To(frames.Sink())) }()
+	if _, err := frames.WaitFrames(ctx, 10); err != nil {
+		t.Fatalf("frames played back: %v (%d)", err, len(frames.Frames()))
+	}
+	cancel()
+	<-done
+}
+
+// A Listen input under goav.Reconnect waits for the next publisher when
+// one stops: two publishes in a row reach one run.
+func TestListenReconnectsToTheNextPublisher(t *testing.T) {
+	srv, err := Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	rt := testRuntime(t)
+	frames := goavtest.NewCollector()
+	ctx, cancel := context.WithCancel(testContext(t))
+	defer cancel()
+	// Building opens the input, which waits for the first publisher.
+	built := make(chan goav.LiveTask, 1)
+	go func() {
+		task, err := rt.Build(ctx, goav.Input(srv.Input("live/k"), goav.Reconnect(3, 10*time.Millisecond)).Video().Decode().To(frames.Sink()))
+		if err != nil {
+			t.Error(err)
+		}
+		built <- task
+	}()
+	published := make(chan error, 1)
+	go func() {
+		for range 2 {
+			if err := rt.Run(ctx, goav.URIInput(fixtures+"vp9_opus.flv").To(goav.URI("rtmp://"+srv.Addr().String()+"/live/k"))); err != nil {
+				published <- err
+				return
+			}
+		}
+		published <- nil
+	}()
+	task := <-built
+	if task == nil {
+		t.FailNow()
+	}
+	defer task.Close()
+	watch := task.Watch(goav.WatchTypes(av.EventReconnect))
+	done := make(chan error, 1)
+	go func() { done <- task.Run(ctx) }()
+	if err := <-published; err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	select {
+	case <-watch.Events():
+	case <-ctx.Done():
+		t.Fatal("no reconnect event")
+	}
+	if _, err := frames.WaitFrames(ctx, 20); err != nil {
+		t.Fatalf("frames from both publishers: %v (%d)", err, len(frames.Frames()))
+	}
+	cancel()
+	<-done
 }

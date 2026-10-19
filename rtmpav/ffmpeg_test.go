@@ -17,13 +17,22 @@ import (
 
 // The ffmpeg tests interoperate with FFmpeg's RTMP client and server, the
 // reference most servers and players are checked against; they skip when
-// ffmpeg is not installed.
+// ffmpeg is not installed, or is too old to read Enhanced FLV (FFmpeg 8
+// wrote the fixtures).
 
 func ffmpegPath(t *testing.T) string {
 	t.Helper()
 	path, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg not installed")
+	}
+	probe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe not installed")
+	}
+	out, err := exec.Command(probe, "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", fixtures+"av1_opus.flv").Output()
+	if got := strings.Join(strings.Fields(string(out)), ","); err != nil || got != "av1,opus" {
+		t.Skipf("this ffmpeg reads the E-FLV fixture as %q (%v): too old for Enhanced RTMP", got, err)
 	}
 	return path
 }

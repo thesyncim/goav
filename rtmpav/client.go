@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/amf0"
+	"github.com/thesyncim/goav/container/flv/amf0"
 )
 
 const (

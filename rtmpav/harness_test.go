@@ -17,7 +17,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
-	"github.com/thesyncim/goav/internal/amf0"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
@@ -52,9 +52,9 @@ func fixtureTags(t testing.TB, name string) []message {
 	return out
 }
 
-// harness is a test RTMP server: it serves plays of tags, accepts and
-// drains publishes, and can declare Enhanced RTMP capabilities in its
-// connect result and drop a play part way.
+// harness is a test RTMP server, a one-stream relay: a play gets its tags,
+// which a publish replaces with what it sends. It can declare Enhanced
+// RTMP capabilities in its connect result and drop a play part way.
 type harness struct {
 	t    testing.TB
 	ln   net.Listener
@@ -63,8 +63,9 @@ type harness struct {
 	// dropAfter, when set, ends the first play after that many tags.
 	dropAfter int
 
-	mu    sync.Mutex
-	plays int
+	mu        sync.Mutex
+	plays     int
+	published chan struct{}
 }
 
 func newHarness(t testing.TB, tags []message) *harness {
@@ -73,7 +74,7 @@ func newHarness(t testing.TB, tags []message) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, ln: ln, tags: tags}
+	h := &harness{t: t, ln: ln, tags: tags, published: make(chan struct{}, 1)}
 	t.Cleanup(func() { ln.Close() })
 	go func() {
 		for {
@@ -116,6 +117,8 @@ func (h *harness) serve(nc net.Conn) {
 			_ = c.command(csCommand, 0, "_result", cmd.tx, nil, 1.0)
 		case "publish":
 			_ = status(c, 1, "status", "NetStream.Publish.Start", "")
+			h.record(c)
+			return
 		case "play":
 			h.mu.Lock()
 			h.plays++
@@ -123,8 +126,11 @@ func (h *harness) serve(nc net.Conn) {
 			h.mu.Unlock()
 			_ = status(c, 1, "status", "NetStream.Play.Reset", "")
 			_ = status(c, 1, "status", "NetStream.Play.Start", "")
+			h.mu.Lock()
+			tags := h.tags
+			h.mu.Unlock()
 			start := time.Now()
-			for i, tag := range h.tags {
+			for i, tag := range tags {
 				if first && h.dropAfter > 0 && i == h.dropAfter {
 					return
 				}
@@ -146,6 +152,32 @@ func (h *harness) serve(nc net.Conn) {
 				if _, err := c.read(0); err != nil {
 					return
 				}
+			}
+		}
+	}
+}
+
+// record keeps a publish's media and data, until it unpublishes, as the
+// tags later plays get.
+func (h *harness) record(c *conn) {
+	var tags []message
+	defer func() {
+		h.mu.Lock()
+		h.tags = tags
+		h.mu.Unlock()
+		h.published <- struct{}{}
+	}()
+	for {
+		msg, err := c.read(0)
+		if err != nil {
+			return
+		}
+		switch msg.typ {
+		case typeAudio, typeVideo, typeDataAMF0:
+			tags = append(tags, msg)
+		case typeCommandAMF0:
+			if cmd, err := decodeCommand(msg); err == nil && cmd.name == "deleteStream" {
+				return
 			}
 		}
 	}

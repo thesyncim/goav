@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/thesyncim/goav/internal/uri"
 	"github.com/thesyncim/goav/provider"
 )
 
@@ -90,6 +89,9 @@ func (s scheme) Destination(u *url.URL) (provider.Output, error) {
 	return &publisher{target: t, config: s.config}, nil
 }
 
+// redacted stands for the stream key, and its query, in what goav reports.
+const redacted = "REDACTED"
+
 // target is where a URL points: the server address, the application and
 // stream key the commands name, and the tcUrl connect sends.
 type target struct {
@@ -145,17 +147,44 @@ func parseTarget(u *url.URL) (target, error) {
 		t.key += "?" + u.RawQuery
 	}
 	t.tcURL = (&url.URL{Scheme: strings.ToLower(u.Scheme), Host: u.Host, Path: "/" + app}).String()
-	t.name, _ = uri.Redact(u)
+	t.name = (&url.URL{Scheme: strings.ToLower(u.Scheme), Host: u.Host, Path: "/" + app + "/" + redacted}).String()
 	return t, nil
 }
 
-// scrub replaces the stream key, and its query-less form, wherever a
+// scrub replaces the stream key, with its query and without, wherever a
 // server's text repeats it.
 func (t target) scrub(text string) string {
 	for _, secret := range []string{t.key, strings.SplitN(t.key, "?", 2)[0]} {
-		if secret != "" {
-			text = strings.ReplaceAll(text, secret, uri.Marker)
-		}
+		text = replaceToken(text, secret, redacted)
 	}
 	return text
+}
+
+// replaceToken replaces old in s where it stands alone, not inside a
+// longer word.
+func replaceToken(s, old, with string) string {
+	if old == "" {
+		return s
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(s, old)
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		end := i + len(old)
+		if i > 0 && wordByte(s[i-1]) || end < len(s) && wordByte(s[end]) {
+			b.WriteString(s[:i+1])
+			s = s[i+1:]
+			continue
+		}
+		b.WriteString(s[:i])
+		b.WriteString(with)
+		s = s[end:]
+	}
+}
+
+func wordByte(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' || c == '-'
 }
