@@ -13,6 +13,9 @@ import (
 // node by ownership of its gate (handoff.go), with no lock.
 type directRunner struct {
 	topology[*directNode]
+	// order is the running time order (time_order.go), set for an ordered
+	// run so a delivery into a converging stage can park its source.
+	order atomic.Pointer[timeOrder]
 }
 
 type directNode struct {
@@ -54,6 +57,8 @@ type directSourceRun struct {
 	source  Source
 	emitter *directEmitter
 }
+
+func (r directSourceRun) of() Source { return r.source }
 
 func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
 	_, err := e.graph.emitDelivery(ctx, e, msg)
@@ -148,10 +153,12 @@ func (g *directRunner) Run(ctx context.Context) error {
 	g.fail.reset(cancel)
 	// Offline file sources interleave by time instead of racing (time_order.go);
 	// the rest run freely, as every source of a realtime graph does.
-	ordered := timeOrderedSources(g.config.Realtime, g.snap.Load(), sources)
+	ordered := timeOrderedSources(g.config.Realtime, false, g.snap.Load(), sources, directSourceRun.of)
 	var order *timeOrder
 	if ordered != nil {
-		order = newTimeOrder(ordered)
+		order = newTimeOrder(ordered, nil)
+		g.order.Store(order)
+		defer g.order.Store(nil)
 	}
 	var runs sync.WaitGroup
 	for i := range sources {
@@ -163,10 +170,11 @@ func (g *directRunner) Run(ctx context.Context) error {
 			continue
 		}
 		emitter := &timeOrderedEmitter{emitter: run.emitter, order: order, index: i}
+		turnCtx := order.context(runCtx, i)
 		runs.Go(func() {
 			defer order.leave(i)
-			order.enter(runCtx, i)
-			g.fail.report(run.source.Start(runCtx, emitter))
+			order.enter(turnCtx, i)
+			g.fail.report(run.source.Start(turnCtx, emitter))
 		})
 	}
 	runs.Wait()

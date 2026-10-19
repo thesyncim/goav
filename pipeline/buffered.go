@@ -80,6 +80,8 @@ type bufferedNode struct {
 
 func (n *bufferedNode) base() *nodeBase { return &n.nodeBase }
 
+func (n *bufferedNode) sourceOf() Source { return n.source }
+
 type bufferedEmitter struct {
 	graph *bufferedRunner
 	from  int
@@ -230,10 +232,26 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.rebuildLocked() // publish the snapshot with queues now open
 	g.mu.Unlock()
 
+	// Offline file sources interleave by time (time_order.go), each packet's
+	// work finishing before the next packet enters.
+	var order *timeOrder
+	if ordered := timeOrderedSources(g.config.Realtime, true, g.snap.Load(), sources, (*bufferedNode).sourceOf); ordered != nil {
+		order = newTimeOrder(ordered, func() { g.pending.wait(runCtx.Done()) })
+	}
 	var runs sync.WaitGroup
-	for _, node := range sources {
+	for i, node := range sources {
+		if order == nil {
+			runs.Go(func() {
+				g.fail.report(node.source.Start(runCtx, &node.emitter))
+			})
+			continue
+		}
+		emitter := &timeOrderedEmitter{emitter: &node.emitter, order: order, index: i}
+		turnCtx := order.context(runCtx, i)
 		runs.Go(func() {
-			g.fail.report(node.source.Start(runCtx, &node.emitter))
+			defer order.leave(i)
+			order.enter(turnCtx, i)
+			g.fail.report(node.source.Start(turnCtx, emitter))
 		})
 	}
 
