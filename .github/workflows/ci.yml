@@ -44,9 +44,17 @@ jobs:
             go: '1.27.x'
             full: false
             goexperiment: ''
+          # Windows runs the suite, not only a cross-compile.
+          - os: windows-latest
+            go: '1.27.x'
+            full: false
+            goexperiment: simd
     runs-on: ${{ matrix.os }}
     env:
       GOEXPERIMENT: ${{ matrix.goexperiment }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
         with:
@@ -178,6 +186,11 @@ jobs:
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzConnection -fuzztime=10s
           (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzDepacketizers -fuzztime=10s)
           CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzRecipe -fuzztime=10s
+          CGO_ENABLED=0 go test ./launch -run '^$' -fuzz='^FuzzCompile$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/matroska -run '^$' -fuzz='^FuzzDemuxer$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/ebml -run '^$' -fuzz='^FuzzDecodeSizeVINT$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/ebml -run '^$' -fuzz='^FuzzReaderHeaders$' -fuzztime=10s
+          (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz='^FuzzPacketizers$' -fuzztime=10s)
 
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
@@ -209,7 +222,7 @@ jobs:
       - name: Govulncheck
         if: matrix.full
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
 
       - name: Gofmt

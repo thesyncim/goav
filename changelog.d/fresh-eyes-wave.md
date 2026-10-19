@@ -73,3 +73,7 @@
   benchmark workloads, the real buffer options, a WebM custom-destination
   example the bundle can run, live provider transcode as working, RTP and
   WebRTC as in-and-out modules, and every nested module in the README.
+- CI runs the suite on Windows, fuzz-smokes the CLI language (`FuzzCompile`),
+  the Matroska demuxer, the EBML reader, and the RTP packetizers too, and pins
+  govulncheck; the repository gains `.gitattributes` (LF), Dependabot,
+  CODEOWNERS, and a bug-report form.

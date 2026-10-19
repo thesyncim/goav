@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /rtpav
+      - /webrtcav
+      - /playoutav
+      - /player
+      - /libcodec
+      - /gplcodec
+      - /goavtest/expect
+      - /cmd/goav
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ['*']
