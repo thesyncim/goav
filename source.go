@@ -18,10 +18,11 @@ type sourceInputSpec struct {
 	fn    sourcepkg.Func
 }
 
-// inputStreamAnchor is a runtime-attach anchor for one stream produced by an
-// InputSpec. Applications with an explicit track registry use
-// input.Track(stream) with Branch(...).From(...) when they need to attach a
-// per-track branch before the source starts pushing that track's media.
+// inputStreamAnchor is the runtime-attach anchor for one stream an InputSpec
+// produces or will produce: what task.Track(input, stream) compiles to, so an
+// application that owns its track lifecycle attaches a per-track branch before
+// the source pushes that track's media. The av.Stream supplies the branch's
+// source shape facts, which makes it the deterministic sibling of OnStream.
 type inputStreamAnchor struct {
 	input  InputSpec
 	stream av.Stream
@@ -47,23 +48,13 @@ func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption
 	}), opts)
 }
 
-// Track returns a runtime branch anchor for a stream that this input produces
-// or will produce; task.Track(input, stream) anchors on it, which keeps
-// applications with explicit dynamic tracks on the main grammar:
-//
-//	track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: ...}
-//	task.Attach(ctx, task.Track(input, track).As("track-host").To(out))
-//
-// The av.Stream supplies the branch's source shape facts, so this is the
-// deterministic sibling of OnStream: use it when the application already owns
-// the track lifecycle and wants to attach before sending the first frame or
-// packet for that stream.
-func (s InputSpec) Track(stream av.Stream) inputStreamAnchor {
+// track returns the attach anchor for one stream of this input.
+func (s InputSpec) track(stream av.Stream) inputStreamAnchor {
 	return inputStreamAnchor{input: s, stream: stream}
 }
 
-// Name reports the source node name this stream anchor attaches from.
-func (s inputStreamAnchor) Name() string {
+// name reports the source node name this stream anchor attaches from.
+func (s inputStreamAnchor) name() string {
 	return s.input.graphSourceNodeName()
 }
 

@@ -9,7 +9,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -161,7 +160,7 @@ func TestRebranchAtKeyframeDeliversTheSwitchingKeyframe(t *testing.T) {
 			send(3, true)
 		}
 	}
-	if _, err := old.Rebranch(ctx, live.Tap("pkts").As("b").To(replacement), lifecycle.SwitchAt(lifecycle.NextKeyframe())); err != nil {
+	if _, err := old.Rebranch(ctx, live.Tap("pkts").As("b").To(replacement), SwitchAt(NextKeyframe())); err != nil {
 		t.Fatal(err)
 	}
 	send(4, false)

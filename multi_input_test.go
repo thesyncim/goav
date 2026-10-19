@@ -34,7 +34,7 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	}
 	defer task.Close()
 
-	spec := task.Describe()
+	spec := task.Spec()
 	muxNodes := 0
 	for _, node := range spec.Nodes {
 		if node.Name == "call.ogg" {

@@ -15,11 +15,9 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/compile"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // Internal build-refusal causes. Public build-shape matching lives on
@@ -353,10 +351,10 @@ type task struct {
 	// encoders are the encode stages the build opened; stream-addressed
 	// encoder controls go to the one that produces the stream.
 	encoders           []*codec.EncoderStage
-	taps               []snapshot.Tap
+	taps               []TapSnapshot
 	explainReport      plan.Report
 	explainReportReady bool
-	branchTaps         []snapshot.Tap
+	branchTaps         []TapSnapshot
 	attachMu           sync.Mutex
 	attachments        map[*runtimeAttachment]struct{}
 
@@ -389,20 +387,20 @@ func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDes
 	}
 }
 
-func (t *task) Describe() pipeline.Spec {
+func (t *task) Spec() pipeline.Spec {
 	return t.graph.Spec()
 }
 
 func (t *task) Explain(context.Context) (plan.Report, error) {
 	if t.explainReportReady {
 		report := clonePlanReport(t.explainReport)
-		report.Graph = t.Describe()
+		report.Graph = t.Spec()
 		report.Taps = planTapRows(t.Taps())
 		return report, nil
 	}
 	return plan.Report{
 		Summary: "running media task",
-		Graph:   t.Describe(),
+		Graph:   t.Spec(),
 		Taps:    planTapRows(t.Taps()),
 	}, nil
 }
@@ -451,7 +449,7 @@ func (t *task) MuxerDescriptors() []format.Descriptor {
 }
 
 // planTapRows projects live task taps onto the plan report's tap rows.
-func planTapRows(taps []snapshot.Tap) []plan.Tap {
+func planTapRows(taps []TapSnapshot) []plan.Tap {
 	rows := make([]plan.Tap, 0, len(taps))
 	for i := range taps {
 		rows = append(rows, plan.Tap{
@@ -561,21 +559,21 @@ func (t *task) Stats() pipeline.GraphStats {
 	return t.graph.Stats()
 }
 
-func (t *task) Taps() []snapshot.Tap {
+func (t *task) Taps() []TapSnapshot {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	return t.tapsLocked()
 }
 
-func (t *task) Snapshot() snapshot.Task {
+func (t *task) Snapshot() TaskSnapshot {
 	if t == nil {
-		return snapshot.Task{}
+		return TaskSnapshot{}
 	}
 	state, destinationState := t.lifecycleStates()
 	stats := t.Stats()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	branches := make([]snapshot.Branch, 0, len(t.attachments))
+	branches := make([]BranchSnapshot, 0, len(t.attachments))
 	for attachment := range t.attachments {
 		state := attachment.branchSnapshotLocked(stats)
 		if state.ID == "" && state.Name == "" {
@@ -583,10 +581,10 @@ func (t *task) Snapshot() snapshot.Task {
 		}
 		branches = append(branches, state)
 	}
-	return snapshot.Task{
+	return TaskSnapshot{
 		State:        state,
 		Paused:       t.timeline != nil && t.timeline.pausedNow(),
-		Spec:         t.Describe(),
+		Spec:         t.Spec(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
 		Branches:     branches,
@@ -598,28 +596,28 @@ func (t *task) Snapshot() snapshot.Task {
 // task's still-open destinations from the recorded run/close progress. The
 // destination outcome mirrors finishDestinations: a run that completes without
 // error commits destinations, a failed run aborts them.
-func (t *task) lifecycleStates() (lifecycle.TaskState, lifecycle.DestinationState) {
+func (t *task) lifecycleStates() (TaskState, DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	switch {
 	case t.finished && t.runErr != nil:
-		return lifecycle.TaskFailed, lifecycle.DestinationAborted
+		return TaskFailed, DestinationAborted
 	case t.finished:
-		return lifecycle.TaskClosed, lifecycle.DestinationCommitted
+		return TaskClosed, DestinationCommitted
 	case t.closed:
-		return lifecycle.TaskClosed, lifecycle.DestinationClosed
+		return TaskClosed, DestinationClosed
 	case t.started:
-		return lifecycle.TaskRunning, lifecycle.DestinationOpen
+		return TaskRunning, DestinationOpen
 	default:
-		return lifecycle.TaskBuilt, lifecycle.DestinationOpen
+		return TaskBuilt, DestinationOpen
 	}
 }
 
-func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.Branch) []snapshot.Destination {
+func taskSnapshotDestinations(root []DestinationSnapshot, branches []BranchSnapshot) []DestinationSnapshot {
 	if len(root) == 0 && len(branches) == 0 {
 		return nil
 	}
-	out := make([]snapshot.Destination, 0)
+	out := make([]DestinationSnapshot, 0)
 	seen := make(map[string]struct{})
 	for i := range root {
 		destination := root[i]
@@ -644,7 +642,7 @@ func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.B
 	return out
 }
 
-func (t *task) Detach(ctx context.Context, attachment Attachment, options ...lifecycle.DetachOption) error {
+func (t *task) Detach(ctx context.Context, attachment Attachment, options ...DetachOption) error {
 	input, err := runtimeDetachInputFromArgs(ctx, attachment, options)
 	if err != nil {
 		return err
@@ -666,7 +664,7 @@ func runtimeDetachInputForRuntimeAttachment(attachment *runtimeAttachment, dispo
 	}
 }
 
-func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, options []lifecycle.DetachOption) (runtimeDetachInput, error) {
+func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, options []DetachOption) (runtimeDetachInput, error) {
 	if err := ctx.Err(); err != nil {
 		return runtimeDetachInput{}, err
 	}

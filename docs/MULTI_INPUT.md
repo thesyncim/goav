@@ -44,8 +44,8 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   another input's audio muxed into every rendition, or two files each forked
   into renditions, share each input's select, decode, and steps
   (`TestForksAcrossSeveralInputs`, `TestForksOfTwoFiles`).
-- **Timing.** Joins combine in arrival order. `.SyncByPTS()` on a Mix or
-  Composite aligns inputs by presentation time instead: the earliest input
+- **Timing.** Joins combine in arrival order. `goav.ByPTS()` among a Mix or
+  Composite's arguments aligns inputs by presentation time instead: the earliest input
   leads, inputs within half a frame join it, inputs ahead sit the step out,
   and stale frames drop to catch up (counted under the `"sync"` reason in
   `task.Stats().Nodes["mix"].Dropped`). A seek or segment on one input
@@ -77,7 +77,7 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   between two live mixes (their ids are the sub-joins' names: `mix`, `mix-2`),
   and a sub-canvas is placed with `goav.At(goav.Composite(...), x, y)`. A nested
   join converts like any input (a 24 kHz sub-mix resamples into a 48 kHz outer
-  mix), and its `.SyncByPTS()` scopes to its own inputs. It takes only taps and
+  mix), and its `goav.ByPTS()` scopes to its own inputs. It takes only taps and
   shape policies; other operations go on its inputs or after the outer join.
 
 ## Dynamic Membership Boundary

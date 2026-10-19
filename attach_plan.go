@@ -9,11 +9,9 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // An attach group lowers as a build does. Its branches hang below anchors on
@@ -49,7 +47,7 @@ type attachPlan struct {
 	buffers []pipeline.BufferPolicy
 	// taps are the taps the group installs; declared every named tap its
 	// branches declare, which later branches may anchor on.
-	taps     []snapshot.Tap
+	taps     []TapSnapshot
 	declared map[string]attachDeclaredTap
 }
 
@@ -221,7 +219,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 
 // resolveAnchor finds where a branch reads the running task: a live tap, a
 // node of its graph, or a tap an earlier branch of the group declares.
-func (p *attachPlan) resolveAnchor(recipe recipeir.RuntimeBranch, graphSpec pipeline.Spec, live []snapshot.Tap) (attachAnchor, error) {
+func (p *attachPlan) resolveAnchor(recipe recipeir.RuntimeBranch, graphSpec pipeline.Spec, live []TapSnapshot) (attachAnchor, error) {
 	source := recipe.Source
 	policy := source.Policy
 	if policy == "" {
@@ -241,9 +239,9 @@ func (p *attachPlan) resolveAnchor(recipe recipeir.RuntimeBranch, graphSpec pipe
 		if declared, ok := p.declared[name]; ok {
 			return attachAnchor{key: "tap\x00" + name, pending: declared.node, tap: name}, nil
 		}
-		taps := append([]snapshot.Tap(nil), live...)
+		taps := append([]TapSnapshot(nil), live...)
 		for name, declared := range p.declared {
-			taps = append(taps, snapshot.Tap{Name: name, Domain: declared.domain})
+			taps = append(taps, TapSnapshot{Name: name, Domain: declared.domain})
 		}
 		return attachAnchor{}, runtimeBranchTapMissingError(name, taps)
 	}
@@ -810,20 +808,20 @@ func attachDestinationsHaveMux(destinations []attachDestination) bool {
 	return false
 }
 
-func destinationSnapshotsFromWork(destinations []compile.WorkDestination, state lifecycle.DestinationState) []snapshot.Destination {
+func destinationSnapshotsFromWork(destinations []compile.WorkDestination, state DestinationState) []DestinationSnapshot {
 	if len(destinations) == 0 {
 		return nil
 	}
-	out := make([]snapshot.Destination, 0, len(destinations))
+	out := make([]DestinationSnapshot, 0, len(destinations))
 	for i := range destinations {
-		out = append(out, snapshot.Destination{
+		out = append(out, DestinationSnapshot{
 			Name:      destinations[i].Name,
 			Operation: destinations[i].Operation,
 			Component: destinations[i].Component,
 			Format:    destinations[i].Format,
 			Branches:  append([]string(nil), destinations[i].Branches...),
 			State:     state,
-			Open:      state == lifecycle.DestinationOpen,
+			Open:      state == DestinationOpen,
 		})
 	}
 	return out

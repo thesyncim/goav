@@ -13,6 +13,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/expertgraph"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -43,14 +44,14 @@ func Graph(runtime *goav.Runtime) GraphBuilder {
 	if runtime == nil {
 		return &graphBuilder{err: ErrRuntimeRequired}
 	}
-	if core, ok := runtime.ExpertGraph().(graphCore); ok {
+	if core, ok := expertgraph.Open(runtime).(graphCore); ok {
 		return &graphBuilder{core: core}
 	}
 	return &graphBuilder{err: ErrRuntimeRequired}
 }
 
-// graphCore is the structural bridge a goav runtime provides behind its
-// ExpertGraph capability: string-named node registration plus Describe and
+// graphCore is the structural bridge a goav runtime provides through
+// internal/expertgraph: string-named node registration plus Describe and
 // Build. Root exposes it without importing this package; this package
 // asserts it without naming root internals.
 type graphCore interface {

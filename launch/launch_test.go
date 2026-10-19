@@ -208,6 +208,14 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			},
 		},
 		{
+			name:    "mix by pts",
+			program: `mix(mic ! audio, music ! audio, sync=pts) ! encode opus ! file mix.webm`,
+			gofor: func() []goav.Output {
+				mixed := goav.Mix(mic.Audio(), music.Audio(), goav.ByPTS())
+				return []goav.Output{mixed.Encode(codec.Opus()).To(goav.Write("mix.webm", w()))}
+			},
+		},
+		{
 			name:    "composite",
 			program: `composite(cam ! video, screen ! video ! at 32 24) ! encode vp8 ! file pip.webm`,
 			gofor: func() []goav.Output {
@@ -382,6 +390,8 @@ func TestRefusalsPointAtTheMistake(t *testing.T) {
 		{"mix(file a.webm ! audio ! decode file b.webm) ! file m.webm", []string{"decode takes no settings", "separate a join's inputs with ,"}},
 		{"mix(file a.webm ! audio, file b.webm ! audio ! file m.webm", []string{"mix( is not closed"}},
 		{"mix(file a.webm ! audio ! decode) ! file m.webm", []string{"mix needs at least two streams"}},
+		{"mix(file a.webm ! audio ! decode, file b.webm ! audio ! decode, sync=late) ! file m.webm", []string{"mix sync \"late\" is not arrival or pts"}},
+		{"select(file a.webm ! audio, file b.webm ! audio, sync=pts) ! file m.webm", []string{"select takes no settings"}},
 		{"resize 640x360 ! file out.webm", []string{"resize cannot start a pipeline", "put it after one"}},
 		{"file in.webm ! video ! resize ! file out.webm", []string{"resize needs a size"}},
 		{"file in.webm ! video ! encode acme ! file out.webm", []string{"which media acme encodes", "media=video"}},

@@ -8,7 +8,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -133,7 +132,7 @@ func (t *task) startQoSPolicy(policy func(av.Event) []control.Control) {
 	go t.runQoSPolicy(sub, policy)
 }
 
-func (t *task) runQoSPolicy(sub inspect.Subscription, policy func(av.Event) []control.Control) {
+func (t *task) runQoSPolicy(sub Subscription, policy func(av.Event) []control.Control) {
 	for event := range sub.Events() {
 		if _, _, ok := av.EventQoSReport(&event); !ok {
 			continue

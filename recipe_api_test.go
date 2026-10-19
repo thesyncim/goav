@@ -509,6 +509,9 @@ func TestRuntimeConcreteKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	if _, ok := runtimeType.MethodByName("Graph"); ok {
 		t.Fatal("Runtime exposes Graph; use expert.Graph(runtime) for expert graph wiring")
 	}
+	if _, ok := runtimeType.MethodByName("ExpertGraph"); ok {
+		t.Fatal("Runtime exposes the ExpertGraph seam; expert reaches the runtime through internal/expertgraph")
+	}
 	if reflect.TypeOf(expert.Graph).Kind() != reflect.Func {
 		t.Fatal("expert.Graph should expose the expert graph entry point")
 	}

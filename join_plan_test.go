@@ -28,7 +28,7 @@ func joinPlanGuard(t *testing.T, rt *Runtime, outs ...Output) pipeline.Spec {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if specText(planned) != specText(built) {
 		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}

@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thesyncim/goav"
+
 	"github.com/thesyncim/goav/graphrender"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func ExampleRenderSnapshotFlowchart() {
-	snap := snapshot.Task{
+	snap := goav.TaskSnapshot{
 		Spec: pipeline.Spec{
 			Name: "live",
 			Nodes: []pipeline.NodeSpec{
@@ -24,9 +24,9 @@ func ExampleRenderSnapshotFlowchart() {
 				{From: "meter", To: "archive"},
 			},
 		},
-		Branches: []snapshot.Branch{{
+		Branches: []goav.BranchSnapshot{{
 			Name:  "recording",
-			State: lifecycle.BranchAttached,
+			State: goav.BranchAttached,
 			Nodes: []pipeline.NodeRef{"meter", "archive"},
 		}},
 	}
@@ -43,9 +43,9 @@ func ExampleRenderSnapshotFlowchart() {
 }
 
 func ExampleRenderBranchFlowchart() {
-	branch := snapshot.Branch{
+	branch := goav.BranchSnapshot{
 		Name:  "preview",
-		State: lifecycle.BranchAttached,
+		State: goav.BranchAttached,
 		Spec: pipeline.Spec{
 			Nodes: []pipeline.NodeSpec{
 				{Name: "preview-copy", Kind: pipeline.NodeStage, Detail: "copy"},

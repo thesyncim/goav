@@ -665,8 +665,8 @@ const (
 	// default.
 	JoinSyncArrival JoinSyncMode = iota
 	// joinSyncPTS aligns arm frames by presentation time on a common
-	// nanosecond clock — opt-in via LegacyMix(...).SyncByPTS() and
-	// LegacyComposite(...).SyncByPTS().
+	// nanosecond clock — opt-in via goav.Mix(..., goav.ByPTS()) and
+	// goav.Composite(..., goav.ByPTS()).
 	JoinSyncPTS
 )
 

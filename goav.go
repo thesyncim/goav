@@ -23,11 +23,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
-	"github.com/thesyncim/goav/inspect"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // Task is the minimal runnable media composition accepted by code that only
@@ -50,15 +47,20 @@ type LiveTask interface {
 	// Explain reports the planned workflow before any resource opens: inputs,
 	// branches, destinations, taps, shapes, planner decisions, and warnings.
 	Explain(context.Context) (plan.Report, error)
-	// Describe returns the structured graph spec — the same nodes and edges
-	// Run executes, node for node. Rendering lives outside core (graphrender).
-	Describe() pipeline.Spec
+	// Spec returns the structured graph spec — the same nodes and edges Run
+	// executes, node for node, and what Runtime.Describe predicted for the same
+	// Outputs. Stats reports over the same node set, as Attachment.Spec and
+	// Attachment.Stats do for a branch. Rendering lives outside core
+	// (graphrender).
+	Spec() pipeline.Spec
 	// Taps lists the stable attach points runtime branches can anchor from.
-	Taps() []snapshot.Tap
+	Taps() []TapSnapshot
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
-	Snapshot() snapshot.Task
+	Snapshot() TaskSnapshot
 	// Stats returns per-node counters — packets, frames, drops by reason —
-	// readable while the task runs (lock-free atomic reads).
+	// over the node set Spec reports, with removed nodes counted only in
+	// the graph totals. They are readable while the task runs (lock-free atomic
+	// reads).
 	Stats() pipeline.GraphStats
 	// Tap is the stream at one of the task's taps; Outputs built from it are
 	// added to the running task with Attach.
@@ -76,7 +78,7 @@ type LiveTask interface {
 	// Detach removes a runtime branch and any dependent branches anchored on
 	// its taps. By default destinations finalize as closed; DrainBranch or
 	// AbortBranch records a commit/abort outcome for the detached branch.
-	Detach(context.Context, Attachment, ...lifecycle.DetachOption) error
+	Detach(context.Context, Attachment, ...DetachOption) error
 	// Control injects an out-of-band control into the running graph, delivered to a
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.
@@ -104,5 +106,5 @@ type LiveTask interface {
 	// block on a slow consumer. Subscription channels close when the task closes
 	// or Subscription.Close unsubscribes them. Use an unfiltered Watch() when
 	// every event should be delivered.
-	Watch(filters ...inspect.EventFilter) inspect.Subscription
+	Watch(filters ...EventFilter) Subscription
 }

@@ -44,10 +44,11 @@
 // CHANNELS; tap NAME; as NAME; buffer block|drop-oldest|drop-newest N,
 // buffer latest|unbounded [max_bytes= max_delay=]; sync NAME [tolerance=]
 // [drop_late] (one timeline per name); playout [NAME]; auto [resample]
-// [resize] [convert]; syncbypts; at X Y (a composite input's position).
+// [resize] [convert]; at X Y (a composite input's position).
 //
 // Joins: mix(a, b, ...), composite(a, b ! at X Y, ...), select(a, b, ...).
-// Each input is a pipeline yielding a stream.
+// Each input is a pipeline yielding a stream. Mix and composite take
+// sync=arrival|pts (sync=pts is goav.ByPTS()): mix(a, b, sync=pts).
 //
 // Destinations: file PATH [format=], null.
 //

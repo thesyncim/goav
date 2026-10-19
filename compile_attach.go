@@ -7,7 +7,6 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -25,9 +24,9 @@ type attachBranch struct {
 	dests      []destinationRef
 }
 
-// RebranchArg lets an attach branch ride the lifecycle.RebranchArg list
+// rebranchArg lets an attach branch ride the RebranchArg list
 // Attachment.Rebranch accepts, as a replacement.
-func (attachBranch) RebranchArg() {}
+func (attachBranch) rebranchArg() {}
 
 // Attach adds Outputs fed from the task's taps, tracks, and graph routes to
 // the running task.
@@ -82,7 +81,7 @@ func (g *recipeGraph) anchorSource(anchor recipeir.NodeID, taps map[string]shape
 	case root.tap != "":
 		return branchSourceBinding{tap: root.tap, tapDomain: taps[root.tap]}
 	case root.track != nil:
-		return root.input.Track(*root.track).branchSource()
+		return root.input.track(*root.track).branchSource()
 	default:
 		route := *root.route
 		policy := route.Policy
@@ -111,9 +110,9 @@ func (h *compileHandles) attachBranch(plan compile.AttachBranchPlan, source bran
 
 // rebranchArgs replaces each Output among args with the branches it attaches
 // as, so Rebranch takes the Outputs Attach does.
-func (t *task) rebranchArgs(args []lifecycle.RebranchArg) ([]lifecycle.RebranchArg, error) {
+func (t *task) rebranchArgs(args []RebranchArg) ([]RebranchArg, error) {
 	var outs []Output
-	mapped := make([]lifecycle.RebranchArg, 0, len(args))
+	mapped := make([]RebranchArg, 0, len(args))
 	for _, arg := range args {
 		if out, ok := arg.(Output); ok {
 			outs = append(outs, out)
@@ -134,9 +133,9 @@ func (t *task) rebranchArgs(args []lifecycle.RebranchArg) ([]lifecycle.RebranchA
 	return mapped, nil
 }
 
-// RebranchArg lets an Output ride the lifecycle.RebranchArg list
+// rebranchArg lets an Output ride the RebranchArg list
 // Attachment.Rebranch accepts, as a replacement.
-func (Output) RebranchArg() {}
+func (Output) rebranchArg() {}
 
 // --- stream rules ---
 

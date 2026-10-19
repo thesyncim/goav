@@ -120,7 +120,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(spec, built) {
+	if built := task.Spec(); !reflect.DeepEqual(spec, built) {
 		t.Fatalf("planned = %+v, built = %+v", spec, built)
 	}
 }

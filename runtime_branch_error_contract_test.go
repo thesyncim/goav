@@ -9,7 +9,6 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestRuntimeBranchStructuredErrorContracts(t *testing.T) {
@@ -28,7 +27,7 @@ func TestRuntimeBranchStructuredErrorContracts(t *testing.T) {
 		{name: "anchor missing", err: runtimeBranchAnchorMissingError("old-node"), code: runtimeBranchAnchorMissingCode, cause: pipeline.ErrUnknownNode},
 		{
 			name: "tap missing",
-			err: runtimeBranchTapMissingError("preview.frames", []snapshot.Tap{
+			err: runtimeBranchTapMissingError("preview.frames", []TapSnapshot{
 				{Name: "encoded", Domain: shape.DomainPacket, MediaKind: av.MediaVideo},
 			}),
 			code:  runtimeBranchTapMissingCode,

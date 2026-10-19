@@ -11,12 +11,11 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
 
-func waitQoSEvent(t *testing.T, sub inspect.Subscription) av.Event {
+func waitQoSEvent(t *testing.T, sub Subscription) av.Event {
 	t.Helper()
 	select {
 	case event, ok := <-sub.Events():
@@ -47,7 +46,7 @@ func TestQoSReportsLateness(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer live.Close()
-	sub := live.Watch(inspect.WatchTypes(av.EventQoS))
+	sub := live.Watch(WatchTypes(av.EventQoS))
 	defer sub.Close()
 
 	runErr := make(chan error, 1)
@@ -211,7 +210,7 @@ func TestQoSPolicyRefusalSurfacesThroughWatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer live.Close()
-	sub := live.Watch(inspect.WatchTypes(av.EventQoS))
+	sub := live.Watch(WatchTypes(av.EventQoS))
 	defer sub.Close()
 
 	runErr := make(chan error, 1)

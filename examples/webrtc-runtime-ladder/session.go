@@ -12,7 +12,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -142,7 +141,7 @@ func (s *session) runTask(kind string, task goav.LiveTask) {
 }
 
 func (s *session) drainTaskEvents(task interface {
-	Watch(...inspect.EventFilter) inspect.Subscription
+	Watch(...goav.EventFilter) goav.Subscription
 }) {
 	events := task.Watch().Events()
 	for {
@@ -196,10 +195,10 @@ func (s *session) stateLocked() stateResponse {
 		out.Branches = append(out.Branches, view)
 	}
 	if s.videoTask != nil {
-		out.VideoGraph = graphFromSpec("video", s.videoTask.Describe())
+		out.VideoGraph = graphFromSpec("video", s.videoTask.Spec())
 	}
 	if s.audioTask != nil {
-		out.AudioGraph = graphFromSpec("audio", s.audioTask.Describe())
+		out.AudioGraph = graphFromSpec("audio", s.audioTask.Spec())
 	}
 	out.Debug = s.debugLocked(out.VideoGraph, out.AudioGraph)
 	out.Events = append([]debugEvent(nil), s.events...)

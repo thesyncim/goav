@@ -7,9 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/internal/compile"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -46,29 +44,29 @@ func TestTaskSnapshotReportsTypedTaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != lifecycle.TaskBuilt {
-		t.Fatalf("built state = %q, want %q", state, lifecycle.TaskBuilt)
+	if state := task.Snapshot().State; state != TaskBuilt {
+		t.Fatalf("built state = %q, want %q", state, TaskBuilt)
 	}
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 	<-started
-	if state := task.Snapshot().State; state != lifecycle.TaskRunning {
-		t.Fatalf("running state = %q, want %q", state, lifecycle.TaskRunning)
+	if state := task.Snapshot().State; state != TaskRunning {
+		t.Fatalf("running state = %q, want %q", state, TaskRunning)
 	}
 	close(release)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != lifecycle.TaskClosed {
-		t.Fatalf("finished state = %q, want %q", state, lifecycle.TaskClosed)
+	if state := task.Snapshot().State; state != TaskClosed {
+		t.Fatalf("finished state = %q, want %q", state, TaskClosed)
 	}
 
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != lifecycle.TaskClosed {
-		t.Fatalf("closed state = %q, want %q", state, lifecycle.TaskClosed)
+	if state := task.Snapshot().State; state != TaskClosed {
+		t.Fatalf("closed state = %q, want %q", state, TaskClosed)
 	}
 }
 
@@ -83,8 +81,8 @@ func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if state := task.Snapshot().State; state != lifecycle.TaskClosed {
-		t.Fatalf("closed-before-run state = %q, want %q", state, lifecycle.TaskClosed)
+	if state := task.Snapshot().State; state != TaskClosed {
+		t.Fatalf("closed-before-run state = %q, want %q", state, TaskClosed)
 	}
 }
 
@@ -99,7 +97,7 @@ func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
 	defer task.Close()
 
 	before, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
-	if !ok || before.State != lifecycle.DestinationOpen || !before.Open {
+	if !ok || before.State != DestinationOpen || !before.Open {
 		t.Fatalf("root destination before run = %+v, want open base destination", before)
 	}
 
@@ -107,7 +105,7 @@ func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
-	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
+	if !ok || committed.State != DestinationCommitted || committed.Open {
 		t.Fatalf("root destination after run = %+v, want committed base destination", committed)
 	}
 }
@@ -131,7 +129,7 @@ func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
 		t.Fatalf("Run err = %v, want %v", err, sourceErr)
 	}
 	aborted, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
-	if !ok || aborted.State != lifecycle.DestinationAborted || aborted.Open {
+	if !ok || aborted.State != DestinationAborted || aborted.Open {
 		t.Fatalf("root destination after failed run = %+v, want aborted base destination", aborted)
 	}
 }
@@ -155,11 +153,11 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, ok := destinationSnapshotByName(task.Snapshot().Destinations, "rec")
-	if !ok || before.State != lifecycle.DestinationOpen || !before.Open {
+	if !ok || before.State != DestinationOpen || !before.Open {
 		t.Fatalf("destination before run = %+v, want open rec destination", before)
 	}
 	baseBefore, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
-	if !ok || baseBefore.State != lifecycle.DestinationOpen || !baseBefore.Open {
+	if !ok || baseBefore.State != DestinationOpen || !baseBefore.Open {
 		t.Fatalf("root destination before run = %+v, want open base destination alongside branch", baseBefore)
 	}
 
@@ -167,19 +165,19 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap := task.Snapshot()
-	if snap.State != lifecycle.TaskClosed {
-		t.Fatalf("task state = %q, want %q", snap.State, lifecycle.TaskClosed)
+	if snap.State != TaskClosed {
+		t.Fatalf("task state = %q, want %q", snap.State, TaskClosed)
 	}
 	branch, ok := branchSnapshotByName(snap.Branches, "rec")
-	if !ok || branch.State != lifecycle.BranchAttached {
+	if !ok || branch.State != BranchAttached {
 		t.Fatalf("branch = %+v, want attached rec branch", branch)
 	}
 	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
-	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
+	if !ok || committed.State != DestinationCommitted || committed.Open {
 		t.Fatalf("destination after run = %+v, want committed rec destination", committed)
 	}
 	baseCommitted, ok := destinationSnapshotByName(snap.Destinations, "base")
-	if !ok || baseCommitted.State != lifecycle.DestinationCommitted || baseCommitted.Open {
+	if !ok || baseCommitted.State != DestinationCommitted || baseCommitted.Open {
 		t.Fatalf("root destination after run = %+v, want committed base destination alongside branch", baseCommitted)
 	}
 
@@ -187,11 +185,11 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	detached := attachment.Snapshot()
-	if detached.State != lifecycle.BranchDetached {
-		t.Fatalf("detached branch state = %q, want %q", detached.State, lifecycle.BranchDetached)
+	if detached.State != BranchDetached {
+		t.Fatalf("detached branch state = %q, want %q", detached.State, BranchDetached)
 	}
 	closed, ok := destinationSnapshotByName(detached.Destinations, "rec")
-	if !ok || closed.State != lifecycle.DestinationClosed || closed.Open {
+	if !ok || closed.State != DestinationClosed || closed.Open {
 		t.Fatalf("destination after detach = %+v, want closed rec destination", closed)
 	}
 }
@@ -208,7 +206,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
+	events := task.Watch(WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
 	attachment, err := task.Attach(ctx, task.Tap("audio.packets").
 		As("rec").
 		To(lifecycleTestSink("rec")))
@@ -227,7 +225,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 		t.Fatalf("attached metadata includes detach disposition: %#v", attached.Metadata)
 	}
 
-	if err := task.Detach(ctx, attachment, lifecycle.DrainBranch()); err != nil {
+	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
 		t.Fatal(err)
 	}
 	detached := recvWatchEvent(t, events)
@@ -253,14 +251,14 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
+	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 	attachment, err := task.Attach(ctx, task.Tap("audio.packets").
 		As("rec").
 		To(lifecycleTestSink("rec")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.Detach(ctx, attachment, lifecycle.DrainBranch()); err != nil {
+	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
 		t.Fatal(err)
 	}
 	event := recvWatchEvent(t, events)
@@ -281,7 +279,7 @@ func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
 	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []compile.WorkDestination{{Name: "commit-error.ivf"}}, transaction)
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
+	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 	task.finishDestinations(commitErr)
 	event := recvWatchEvent(t, events)
 	if event.Type != av.EventDestinationCommitError {
@@ -307,11 +305,11 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 	tests := []struct {
 		name    string
 		dest    string
-		options []lifecycle.DetachOption
-		want    lifecycle.DestinationState
+		options []DetachOption
+		want    DestinationState
 	}{
-		{name: "rec-drain", dest: "rec-drain", options: []lifecycle.DetachOption{lifecycle.DrainBranch()}, want: lifecycle.DestinationCommitted},
-		{name: "rec-abort", dest: "rec-abort", options: []lifecycle.DetachOption{lifecycle.AbortBranch()}, want: lifecycle.DestinationAborted},
+		{name: "rec-drain", dest: "rec-drain", options: []DetachOption{DrainBranch()}, want: DestinationCommitted},
+		{name: "rec-abort", dest: "rec-abort", options: []DetachOption{AbortBranch()}, want: DestinationAborted},
 	}
 	for _, tt := range tests {
 		attachment, err := task.Attach(ctx, task.Tap("audio.packets").
@@ -357,11 +355,11 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 		t.Fatalf("run err = %v, want %v", err, sourceErr)
 	}
 	snap := task.Snapshot()
-	if snap.State != lifecycle.TaskFailed {
-		t.Fatalf("task state = %q, want %q", snap.State, lifecycle.TaskFailed)
+	if snap.State != TaskFailed {
+		t.Fatalf("task state = %q, want %q", snap.State, TaskFailed)
 	}
 	aborted, ok := destinationSnapshotByName(snap.Destinations, "rec")
-	if !ok || aborted.State != lifecycle.DestinationAborted || aborted.Open {
+	if !ok || aborted.State != DestinationAborted || aborted.Open {
 		t.Fatalf("destination after failed run = %+v, want aborted rec destination", aborted)
 	}
 }

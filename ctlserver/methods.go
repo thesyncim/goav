@@ -13,10 +13,8 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/graphrender"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/internal/spelling"
 	"github.com/thesyncim/goav/launch"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -126,7 +124,7 @@ func builtinMethods() []*method {
 		define("describe", "the task's graph", func(_ context.Context, s *Server, _ *session, p describeParams) (any, error) {
 			switch p.Format {
 			case "", "json":
-				return s.task.Describe(), nil
+				return s.task.Spec(), nil
 			case "text", "dot", "mermaid":
 				target := "goav:graph"
 				if p.Format != "text" {
@@ -216,13 +214,13 @@ func builtinMethods() []*method {
 			if err != nil {
 				return nil, err
 			}
-			var opts []lifecycle.DetachOption
+			var opts []goav.DetachOption
 			switch p.Outcome {
 			case "", "close":
 			case "drain":
-				opts = append(opts, lifecycle.DrainBranch())
+				opts = append(opts, goav.DrainBranch())
 			case "abort":
-				opts = append(opts, lifecycle.AbortBranch())
+				opts = append(opts, goav.AbortBranch())
 			default:
 				return nil, invalidParams("detach: outcome is close, drain, or abort")
 			}
@@ -241,29 +239,29 @@ func builtinMethods() []*method {
 			if err != nil {
 				return nil, err
 			}
-			args := make([]lifecycle.RebranchArg, 0, len(outs)+2)
+			args := make([]goav.RebranchArg, 0, len(outs)+2)
 			for _, out := range outs {
 				args = append(args, out)
 			}
 			switch p.Switch {
 			case "", "now":
 			case "next-frame":
-				args = append(args, lifecycle.SwitchAt(lifecycle.NextFrame()))
+				args = append(args, goav.SwitchAt(goav.NextFrame()))
 			case "next-keyframe":
-				args = append(args, lifecycle.SwitchAt(lifecycle.NextKeyframe()))
+				args = append(args, goav.SwitchAt(goav.NextKeyframe()))
 			default:
 				at, err := time.ParseDuration(p.Switch)
 				if err != nil {
 					return nil, invalidParams("rebranch: switch is now, next-frame, next-keyframe, or a media position like 2s")
 				}
-				args = append(args, lifecycle.SwitchAt(lifecycle.AtMediaTime(at)))
+				args = append(args, goav.SwitchAt(goav.AtMediaTime(at)))
 			}
 			switch p.Old {
 			case "", "close":
 			case "drain":
-				args = append(args, lifecycle.DrainOldBranch())
+				args = append(args, goav.DrainBranch())
 			case "abort":
-				args = append(args, lifecycle.AbortOldBranch())
+				args = append(args, goav.AbortBranch())
 			default:
 				return nil, invalidParams("rebranch: old is close, drain, or abort")
 			}
@@ -293,16 +291,16 @@ func watch(_ context.Context, s *Server, sess *session, p watchParams) (any, err
 	if sess == nil {
 		return nil, invalidParams("watch streams on a connection; over HTTP, GET /events")
 	}
-	var filters []inspect.EventFilter
+	var filters []goav.EventFilter
 	if len(p.Types) > 0 {
 		types := make([]av.EventType, len(p.Types))
 		for i, t := range p.Types {
 			types[i] = av.EventType(t)
 		}
-		filters = append(filters, inspect.WatchTypes(types...))
+		filters = append(filters, goav.WatchTypes(types...))
 	}
 	if p.Stream != "" {
-		filters = append(filters, inspect.WatchStream(av.StreamID(p.Stream)))
+		filters = append(filters, goav.WatchStream(av.StreamID(p.Stream)))
 	}
 	sub := s.task.Watch(filters...)
 	id := "w" + strconv.FormatUint(s.nextWatch.Add(1), 10)

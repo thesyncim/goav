@@ -18,7 +18,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
@@ -173,7 +172,7 @@ func (s *session) runTask(kind string, task goav.LiveTask) {
 }
 
 func (s *session) drainTaskEvents(kind string, task interface {
-	Watch(...inspect.EventFilter) inspect.Subscription
+	Watch(...goav.EventFilter) goav.Subscription
 }) {
 	events := task.Watch().Events()
 	for {
@@ -323,10 +322,10 @@ func (s *session) stateLocked() stateResponse {
 		out.Branches = append(out.Branches, view)
 	}
 	if s.videoTask != nil {
-		out.VideoGraph = graphFromSpec("video", s.videoTask.Describe())
+		out.VideoGraph = graphFromSpec("video", s.videoTask.Spec())
 	}
 	if s.audioTask != nil {
-		out.AudioGraph = graphFromSpec("audio", s.audioTask.Describe())
+		out.AudioGraph = graphFromSpec("audio", s.audioTask.Spec())
 	}
 	out.Debug = s.debugLocked(out.VideoGraph, out.AudioGraph)
 	if s.audio != nil {

@@ -314,7 +314,7 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	defer task.Close()
 
 	// Describe() ≡ Build(): the one-plan guard, held for an external stage.
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("Describe() != Build():\nplanned: %+v\nbuilt:   %+v", planned, built)
 	}
 	var joinDetail string

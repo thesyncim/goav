@@ -19,7 +19,6 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/internal/spelling"
 	"github.com/thesyncim/goav/launch"
 )
@@ -205,7 +204,7 @@ func splitAddress(address string) (string, string, error) {
 type session struct {
 	mu       sync.Mutex
 	enc      *json.Encoder
-	watches  map[string]inspect.Subscription
+	watches  map[string]goav.Subscription
 	inflight map[string]context.CancelFunc
 }
 
@@ -282,7 +281,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 	})
 	defer stop()
-	sess := &session{enc: json.NewEncoder(conn), watches: map[string]inspect.Subscription{}, inflight: map[string]context.CancelFunc{}}
+	sess := &session{enc: json.NewEncoder(conn), watches: map[string]goav.Subscription{}, inflight: map[string]context.CancelFunc{}}
 	defer sess.close()
 	var calls sync.WaitGroup
 	defer calls.Wait()

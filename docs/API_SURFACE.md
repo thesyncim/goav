@@ -47,7 +47,7 @@ in.Audio() / .Video() / .Stream()         a goav.Stream value (StreamID/StreamIn
   reuse a Stream value, .As("hd")         fanout when work diverges; shared work runs once
   .To(Write|URI|Writer|Custom|Sink)       an Output; reuse one Destination to share a mux/sink
 in.To(dst)                                copy every stream of the input
-rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (default bundle)
+rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (bundle.Default: one process-wide runtime)
 Task: Run, Close
 goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime
 errors: *goav.BuildError matched with errors.As; branch on Family first; Detail[T](key) for typed facts; DetailLines/FixLines for rendered diagnostics
@@ -73,8 +73,8 @@ Normal recipes also read these vocabulary packages:
 The grammar's values and option types are exported, sealed vocabulary:
 `InputSpec` (an input), `Stream` (an immutable stream value from an input, a
 join — `Mix`/`Composite`/`Select`/`Join` — or an operation), `Output` (a
-Stream routed to destinations), the `Layer` interface (a Stream, or
-`At(stream, x, y)`, as a Composite input), and the option types `StreamOption`
+Stream routed to destinations), the `JoinArg` interface (a Stream,
+`At(stream, x, y)`, or `ByPTS()`, as a Mix or Composite argument), and the option types `StreamOption`
 (StreamID/StreamIndex), `InputOption`, `DestinationOption`, and `MediaOption`
 (Name/MIME/Metadata). They are exported so godoc can link them and callers can
 name variables and helpers; each is sealed — unexported fields or methods — so
@@ -83,8 +83,23 @@ values compile into (`internal/recipeir`) is internal; the package's external
 tests reach the few internals they pin through `export_test.go`.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
-`control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
-and `runconfig`.
+`control`, `ctlserver`, `plan`, `flow`, and `runconfig`.
+
+The live-task vocabulary is root, beside the `LiveTask` and `Attachment` that
+return and take it (governed pre-v1 with runtime `Attach`/`Detach`/`Rebranch`):
+four concepts, each sealed where it is an argument.
+
+- Views: `TaskSnapshot`, `BranchSnapshot`, `DestinationSnapshot`, and
+  `TapSnapshot`, with their states `TaskState`, `BranchState`, and
+  `DestinationState` (`TaskBuilt`, `BranchAttached`, `DestinationCommitted`, ...).
+- Watch filters: `EventFilter`, `WatchTypes`, `WatchStream`, and the
+  `Subscription` that `Watch` returns.
+- Detach outcome: `DetachOption` from `DrainBranch()` or `AbortBranch()`,
+  taken by `Detach` for the detached branch and by `Rebranch` for the
+  replaced one.
+- Rebranch arguments: `RebranchArg` (replacement Outputs, a `DetachOption`, or
+  `SwitchAt(boundary)` with `NextFrame()`, `NextKeyframe()`, or
+  `AtMediaTime(d)` building the `SwitchBoundary`).
 
 ## B. Extension Points
 
@@ -160,8 +175,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`,
   `WithCloseWaitTimeout`, `WithMediaPools`, `WithShapeDelta`.
   `goav.Runtime` is a concrete type with unexported fields; its methods are
-  `Run`, `Build`, `Describe`, `Explain`, `Probe` (format lookup), and the
-  tier-C `ExpertGraph` bridge.
+  `Run`, `Build`, `Describe`, `Explain`, and `Probe` (format lookup);
+  `expert.Graph(runtime)` reaches it through an internal hook, not a method.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`, `NewBuffer`,
   `BufferOwner`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
@@ -238,8 +253,8 @@ it, and v1 does not freeze its shape.
   `goav:graph` URI; `RenderTaskFlowchart(task)` renders a running task-like
   value's current snapshot as a Mermaid flowchart, with runtime branch-owned
   nodes annotated by branch name/state; `RenderTaskURI` keeps the same URI
-  format selection for live tasks. A leaf outside the core import graph,
-  surface-pinned like the vocabulary packages.
+  format selection for live tasks. It sits above the root (it reads
+  `goav.TaskSnapshot`/`BranchSnapshot`), and the root never imports it.
 - `launch`: the pipeline language. `Compile(program, options...)` returns
   ordinary `goav.Output` values (the same graph the Go recipe builds);
   `Files`, `Task`, and `Use` grant file access, a running task's taps, and a
@@ -287,7 +302,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Attach vs Detach vs Rebranch** (governed pre-v1, see
   [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): `task.Attach` adds ordinary Outputs (from
   `task.Tap`/`task.Track`) to a running task; `task.Detach(ctx, h)` removes that attached branch, with
-  `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
+  `goav.DrainBranch()` and `goav.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch(ctx, outputs..., options...)` takes the same
   Outputs and is attach-new-then-detach-old, with lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
@@ -328,7 +343,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Pause/Resume vs Rate** (governed pre-v1, `LiveTask` methods):
   `Pause(ctx)`/`Resume(ctx)` freeze/continue the shared task timeline that
   `control.Rate` scales; nothing-paced tasks refuse like Rate.
-  `snapshot.Task.Paused` reports the fact; `av.EventTaskReady` on `Watch` is
+  `goav.TaskSnapshot.Paused` reports the fact; `av.EventTaskReady` on `Watch` is
   the readiness (preroll) signal. Contract prose: `docs/FLOW_CONTROL.md`.
 - **recipe vs expert**: the recipe grammar (tier A) is the normal surface;
   `expert.Graph(runtime)` opens the handle-based graph layer (tier C) for
@@ -401,14 +416,15 @@ example modules. The module boundary is the dependency boundary:
 ## Compatibility
 
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
-five clusters off the root: the live control vocabulary is `control`
+four clusters off the root: the live control vocabulary is `control`
 (`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
-`SelectActive`, `Deliver`, `Must`), event subscription and structural helpers
-are `inspect` (`EventFilter`, `Subscription`, `WatchTypes`, `WatchStream`;
-render graphs with `graphrender`), the error catalog is `errcode` (renamed from
+`SelectActive`, `Deliver`, `Must`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,
 `GraphBuilder`, handles, `ErrRuntimeRequired`) bridged structurally so the
-root imports neither. New exported symbols in governed packages require a
+root imports neither. The task-domain noun packages that wave also made
+(`inspect`, `snapshot`, `lifecycle`) folded back into the root: each held one
+facet of the task the root already returns, and three imports for one concept
+was the wrong split. New exported symbols in governed packages require a
 matching tier entry in this document in the same change.

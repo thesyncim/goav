@@ -261,9 +261,9 @@ func TestInputStreamAnchorCarriesRuntimeBranchShape(t *testing.T) {
 		},
 	}
 
-	anchor := input.Track(stream)
-	if anchor.Name() != "room" {
-		t.Fatalf("anchor name = %q, want room", anchor.Name())
+	anchor := input.track(stream)
+	if anchor.name() != "room" {
+		t.Fatalf("anchor name = %q, want room", anchor.name())
 	}
 	source := anchor.branchSource()
 	if source.from != "room" ||
@@ -291,7 +291,7 @@ func TestInputStreamAnchorRequiresStreamID(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16)),
 		func(context.Context, SourcePush) error { return nil },
 	)
-	spec := attachBranch{name: "bad", source: input.Track(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}}).branchSource()}
+	spec := attachBranch{name: "bad", source: input.track(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}}).branchSource()}
 
 	err := validateAttachBranchSpec(spec, nil)
 	if err == nil || !strings.Contains(err.Error(), "stream id is empty") {

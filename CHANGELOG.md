@@ -11,6 +11,63 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: `LiveTask.Describe()` is now `LiveTask.Spec()`, the same name
+  `Attachment.Spec()` and the snapshots' `Spec` field use, beside `Stats` at
+  every level. `Runtime.Describe(outputs...)` keeps its name: it predicts the
+  graph before a build, and a built task's `Spec()` equals it. Migration:
+  `task.Describe()` becomes `task.Spec()`.
+- `Spec` and `Stats` report one node set at every level: the task, each
+  `Attachment`, and `TaskSnapshot`/`BranchSnapshot`. A detached
+  `Attachment`'s `Spec` used to go empty while its `Stats` kept the final
+  counters; it now keeps the final spec too. Pinned by
+  `TestSpecAndStatsAgreeAcrossTaskBranchAndSnapshot` through attach/detach
+  churn.
+- Break: the `inspect`, `snapshot`, and `lifecycle` packages folded into the
+  root beside `LiveTask` and `Attachment`, so a live application imports one
+  package for the task, its views, and its policies. Renames:
+  `snapshot.Task`/`Branch`/`Destination`/`Tap` become
+  `goav.TaskSnapshot`/`BranchSnapshot`/`DestinationSnapshot`/`TapSnapshot`
+  (JSON unchanged); `lifecycle.X` becomes `goav.X` for the states
+  (`TaskState`, `TaskRunning`, `DestinationCommitted`, ...) and the policies
+  (`DetachOption`, `DrainBranch`, `AbortBranch`, `RebranchArg`, `SwitchAt`,
+  `SwitchBoundary`, `NextFrame`, `NextKeyframe`, `AtMediaTime`); and
+  `inspect.X` becomes `goav.X` for `EventFilter`, `Subscription`,
+  `WatchTypes`, and `WatchStream`. `DrainOldBranch`/`AbortOldBranch` are
+  gone: `DrainBranch()`/`AbortBranch()` are accepted by both `Detach` and
+  `Rebranch`. `RebranchArg` and `DetachOption` are now sealed, so
+  `Output.RebranchArg()`, `DetachOption.DetachDisposition()`, and the
+  `SwitchBoundary.Kind()`/`MediaTime()` accessors are no longer exported.
+  `graphrender` now imports the root to read snapshots; its renderer moved to
+  `internal/specrender` with no API change. Migration: drop the three
+  imports, rename as above, and replace `lifecycle.DrainOldBranch()` with
+  `goav.DrainBranch()` (likewise `AbortOldBranch`).
+- Break: `Stream.SyncByPTS()` is gone; PTS alignment is a join option,
+  `goav.ByPTS()`, passed among a Mix's or Composite's arguments. `Mix` and
+  `Composite` take `...goav.JoinArg` (a Stream, `At(stream, x, y)`, or
+  `ByPTS()`), which replaces `goav.Layer`; `Select` and `Join` still take
+  `...Stream`, so PTS sync on them no longer type-checks instead of being
+  refused at build. `At` inside a `Mix` is refused with `stream_invalid`.
+  The launch language spells it `mix(a, b, sync=pts)`; the `syncbypts`
+  operation is gone. Migration: `goav.Mix(a, b).SyncByPTS()` becomes
+  `goav.Mix(a, b, goav.ByPTS())`; a `[]goav.Layer` becomes `[]goav.JoinArg`,
+  and a `[]goav.Stream` spread into `Mix`/`Composite` is copied into a
+  `[]goav.JoinArg` first.
+- Break: `goav.StreamOption` is a sealed interface like `InputOption` and
+  `DestinationOption`, not a `func` over an unexported config; godoc now links
+  each option type to its constructors. Migration: none for callers of
+  `StreamID`/`StreamIndex`; code that called a `StreamOption` as a function
+  had no supported use.
+- Break: `InputSpec.Track` is gone; it returned an unexported anchor type and
+  duplicated `task.Track(input, stream)`. Migration: write
+  `task.Track(input, stream)`.
+- `bundle.Default` now documents that it is one process-wide runtime, built
+  on first use and shared for the life of the process.
+
+- Break: `Runtime.ExpertGraph()` is gone; the expert package reaches the
+  runtime through an internal hook, so `Runtime`'s method set is `Run`,
+  `Build`, `Describe`, `Explain`, and `Probe`. Migration: call
+  `expert.Graph(runtime)`, which was the only supported use.
+
 - The recipe compiler moved out of the root package into `internal/compile`
   (validation, shape solving, join planning, lowering, and the spec and work
   plan it emits); the root keeps the grammar, `Runtime`, the task, attach, and

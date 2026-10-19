@@ -13,7 +13,6 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // These pin refusals and deferrals the compiler-pass contract tests covered
@@ -109,17 +108,17 @@ func TestAttachMediaMismatchRefusesBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer built.Close()
-	built.(*task).taps = []snapshot.Tap{{
+	built.(*task).taps = []TapSnapshot{{
 		Name: "video.frames", MediaKind: av.MediaVideo, Domain: shape.DomainFrame, Node: "source",
 		Shape: shape.Spec{Domain: shape.DomainFrame, MediaKind: av.MediaVideo, StreamID: "video", Width: 640, Height: 360, PixelFormat: av.PixelFormatYUV420P},
 	}}
-	before := built.Describe()
+	before := built.Spec()
 	_, err = built.Attach(ctx, built.Tap("video.frames").Resample(16_000, codec.Mono).As("voice").To(discardSink("voice")))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != operationShapeMismatchCode || buildErr.Operation != "attach runtime branch" {
 		t.Fatalf("err = %v, want operation_shape_mismatch from attach", err)
 	}
-	if after := built.Describe(); !reflect.DeepEqual(before, after) {
+	if after := built.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph changed after a refused attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 }

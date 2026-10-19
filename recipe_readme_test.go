@@ -188,7 +188,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 	defer task.Close()
 
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -220,7 +220,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 	defer task.Close()
 
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }

@@ -23,7 +23,6 @@ import (
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // TestProviderRTPDescribePinsLegacyConstructorStrings pins the Describe()
@@ -178,7 +177,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -707,7 +706,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -956,7 +955,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 	}
 	defer task.Close()
 
-	var copiedTap snapshot.Tap
+	var copiedTap goav.TapSnapshot
 	for _, tap := range task.Taps() {
 		if tap.Name == "audio.copied" {
 			copiedTap = tap

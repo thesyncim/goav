@@ -192,12 +192,12 @@ func TestValueGrammarRefusals(t *testing.T) {
 		outs []goav.Output
 		code string
 	}{
-		"no outputs":             {code: "stream_invalid"},
-		"zero stream":            {outs: []goav.Output{goav.Stream{}.To(sink)}, code: "stream_invalid"},
-		"no destination":         {outs: []goav.Output{in.Video().To()}, code: "stream_invalid"},
-		"sync on a plain stream": {outs: []goav.Output{in.Video().SyncByPTS().To(sink)}, code: "stream_invalid"},
-		"copy beside a stream":   {outs: []goav.Output{in.To(sink), in.Video().To(sink)}, code: "stream_invalid"},
-		"two forks named alike":  {outs: []goav.Output{in.Video().Encode(codec.VP8()).As("x").To(sink), in.Video().Encode(codec.VP9()).As("x").To(sink)}, code: "stream_invalid"},
+		"no outputs":            {code: "stream_invalid"},
+		"zero stream":           {outs: []goav.Output{goav.Stream{}.To(sink)}, code: "stream_invalid"},
+		"no destination":        {outs: []goav.Output{in.Video().To()}, code: "stream_invalid"},
+		"at outside composite":  {outs: []goav.Output{goav.Mix(in.Video(), goav.At(in.Video(), 8, 8)).To(sink)}, code: "stream_invalid"},
+		"copy beside a stream":  {outs: []goav.Output{in.To(sink), in.Video().To(sink)}, code: "stream_invalid"},
+		"two forks named alike": {outs: []goav.Output{in.Video().Encode(codec.VP8()).As("x").To(sink), in.Video().Encode(codec.VP9()).As("x").To(sink)}, code: "stream_invalid"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := offlineRuntime().Describe(tc.outs...)

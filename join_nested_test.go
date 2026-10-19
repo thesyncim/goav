@@ -369,15 +369,14 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 }
 
 // TestJoinDescribeEqualsBuildNestedMix is the nested Describe() ≡ BuildLive()
-// guard: a sub-mix arm (with its own SyncByPTS) under an outer mix that
+// guard: a sub-mix arm (with its own ByPTS) under an outer mix that
 // resamples the sub-mix output, planned and built from the one plan.
 func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 	rt := mustNew(testBundleFilters())
 	outs := []Output{
 		Mix(
 			mixTestAudioSourceRate("a", 48000).Audio(),
-			Mix(mixTestAudioSourceRate("b", 24000).Audio(), mixTestAudioSourceRate("c", 24000).Audio()).
-				SyncByPTS(),
+			Mix(mixTestAudioSourceRate("b", 24000).Audio(), mixTestAudioSourceRate("c", 24000).Audio(), ByPTS()),
 		).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
 	}
@@ -385,7 +384,7 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 	planned := joinPlanGuard(t, rt, outs...)
 	text := specText(planned)
 	for _, want := range []string{
-		"mix-2 [sync=pts]",            // the nested join node, SyncByPTS scoped to ITS arms
+		"mix-2 [sync=pts]",            // the nested join node, ByPTS scoped to ITS arms
 		"b -> mix-2",                  // sub-mix convergence
 		"c -> mix-2",                  //
 		"mix-2 -> mix-resample-mix-2", // outer join resamples the sub-mix OUTPUT

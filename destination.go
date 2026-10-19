@@ -266,7 +266,7 @@ func (w nopDestinationWriter) Close() error {
 }
 
 // MediaOption is a direction-agnostic option accepted by both input and
-// destination constructors. Name, MIME, and Metadata state the same fact
+// destination constructors. [Name], [MIME], and [Metadata] state the same fact
 // about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
 // and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed:
 // only goav option constructors implement it.

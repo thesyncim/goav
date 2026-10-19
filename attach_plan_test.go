@@ -12,7 +12,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -121,7 +120,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 			var planned pipeline.Spec
 			var attachment goav.Attachment
 			if tc.rebranch {
-				args := []lifecycle.RebranchArg{lifecycle.SwitchAt(lifecycle.NextKeyframe())}
+				args := []goav.RebranchArg{goav.SwitchAt(goav.NextKeyframe())}
 				for _, out := range tc.attach(task, in) {
 					args = append(args, out)
 				}

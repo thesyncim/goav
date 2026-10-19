@@ -16,8 +16,6 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/inspect"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -209,11 +207,11 @@ func ExampleMix() {
 	// Output: <nil> [[150 150]]
 }
 
-// ExampleMix_syncByPTS aligns join arms by timestamp instead of arrival order:
+// ExampleByPTS aligns join arms by timestamp instead of arrival order:
 // arm two starts one 20ms frame later, so the leading step plays arm one
 // alone, the PTS-matched frames sum, and the trailing step plays arm two
 // alone.
-func ExampleMix_syncByPTS() {
+func ExampleByPTS() {
 	var mixed [][]int16
 	var pts []int64
 	out := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
@@ -227,8 +225,8 @@ func ExampleMix_syncByPTS() {
 	err := mustRuntime().Run(context.Background(), goav.Mix(
 		pcmSourceAt("song-a", 48_000, 1, []int64{0, 20}, []int16{10, 10}, []int16{20, 20}).Audio(),
 		pcmSourceAt("song-b", 48_000, 1, []int64{20, 40}, []int16{1, 1}, []int16{2, 2}).Audio(),
+		goav.ByPTS(),
 	).
-		SyncByPTS().
 		To(out))
 
 	fmt.Println(err, mixed, pts)
@@ -372,8 +370,8 @@ func ExampleAttachment_rebranch() {
 	// drains so part-001 commits complete.
 	if _, err := rec.Rebranch(ctx,
 		task.Tap("video.encoded").As("rec").To(goav.Write("part-002.ivf", &part2)),
-		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
-		lifecycle.DrainOldBranch(),
+		goav.SwitchAt(goav.NextKeyframe()),
+		goav.DrainBranch(),
 	); err != nil {
 		fmt.Println(err)
 	}
@@ -422,7 +420,7 @@ func ExampleTask_watch() {
 		return
 	}
 
-	eos := task.Watch(inspect.WatchTypes(av.EventEndOfStream)).Events()
+	eos := task.Watch(goav.WatchTypes(av.EventEndOfStream)).Events()
 
 	if err := task.Run(ctx); err != nil {
 		fmt.Println(err)

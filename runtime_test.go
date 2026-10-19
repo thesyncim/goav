@@ -14,7 +14,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/graphrender"
+	"github.com/thesyncim/goav/internal/specrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -210,7 +210,7 @@ func specMermaid(spec pipeline.Spec) string {
 }
 
 func specRenderURI(spec pipeline.Spec, target string) string {
-	out, err := graphrender.RenderURI(spec, target)
+	out, err := specrender.RenderURI(spec, target)
 	if err != nil {
 		return err.Error()
 	}
@@ -468,7 +468,7 @@ func TestRuntimeBuilderExplicitGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if len(spec.Nodes) != 4 || len(spec.Edges) != 3 {
 		t.Fatalf("nodes=%d edges=%d", len(spec.Nodes), len(spec.Edges))
 	}
@@ -521,8 +521,8 @@ func TestRuntimeBuilderExplicitGraphWithBufferPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if specText(planned) != specText(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(planned) != specText(task.Spec()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -588,7 +588,7 @@ func TestRuntimeBuilderDescribeBeforeBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	built := task.Describe()
+	built := task.Spec()
 	if specText(planned) != specText(built) || specMermaid(planned) != specMermaid(built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
@@ -658,7 +658,7 @@ func TestRuntimeBuilderExplicitRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if len(spec.Edges) != 2 {
 		t.Fatalf("edges=%d, want 2", len(spec.Edges))
 	}
@@ -695,7 +695,7 @@ func TestRuntimeBuilderExplicitFanout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if len(spec.Edges) != 3 {
 		t.Fatalf("edges=%d, want 3", len(spec.Edges))
 	}
@@ -736,7 +736,7 @@ func TestRuntimeBuilderExplicitStreamFanout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if !strings.Contains(specText(spec), "source -> record [stream=video]") ||
 		!strings.Contains(specText(spec), "source -> preview [stream=video]") {
 		t.Fatalf("spec:\n%s", specText(spec))
@@ -773,7 +773,7 @@ func TestRuntimeBuilderExplicitRoutesHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if !strings.Contains(specText(spec), "source -> record [stream=video]") ||
 		!strings.Contains(specText(spec), "source -> preview [stream=video]") {
 		t.Fatalf("spec:\n%s", specText(spec))
@@ -838,7 +838,7 @@ func TestRuntimeBuilderExplicitRouteByEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	if !strings.Contains(specText(spec), "source -> stats [event=stats]") {
 		t.Fatalf("spec:\n%s", specText(spec))
 	}

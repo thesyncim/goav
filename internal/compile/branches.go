@@ -486,18 +486,6 @@ func StreamInvalidError(node string, reason string) error {
 	}
 }
 
-func StreamSyncByPTSError() error {
-	return &builderr.Refusal{
-		Phase:     builderr.PhaseBuild,
-		Family:    errcode.FamilyForCode(builderr.StreamInvalidCode),
-		Code:      builderr.StreamInvalidCode,
-		Operation: "build recipe",
-		Reason:    "SyncByPTS aligns a Mix or Composite's inputs; call it on goav.Mix(...) or goav.Composite(...) output",
-		Fixes:     builderr.Fixes([]string{"goav.Mix(a, b).SyncByPTS()", "goav.Composite(a, goav.At(b, x, y)).SyncByPTS()"}),
-		Cause:     builderr.ErrUnsupportedBuild,
-	}
-}
-
 // validateStreamOperations is the one validator over a branch's operations:
 // it walks them from the root tracking the stream's domain and refuses an
 // operation its stream cannot feed. It also fixes each tap's domain and

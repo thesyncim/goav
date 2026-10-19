@@ -57,7 +57,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	spec := task.Describe()
+	spec := task.Spec()
 	if len(spec.Nodes) != 2 || spec.Nodes[1].Name != "recording.ogg" || spec.Nodes[1].Detail != "mux, protocol=file" {
 		t.Fatalf("built spec = %+v, want inferred format hidden from mux detail", spec)
 	}
@@ -250,7 +250,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -303,7 +303,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if len(planned.Nodes) != len(built.Nodes) || len(planned.Edges) != len(built.Edges) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
@@ -366,7 +366,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -399,7 +399,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	spec := task.Describe()
+	spec := task.Spec()
 	if !specHasNode(spec, "meter") {
 		t.Fatalf("built spec = %+v, want custom stage node", spec)
 	}
@@ -423,7 +423,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -453,7 +453,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -495,7 +495,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
@@ -539,7 +539,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
@@ -584,7 +584,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
@@ -626,7 +626,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 		t.Fatalf("resolved.Build() error = %v", err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }

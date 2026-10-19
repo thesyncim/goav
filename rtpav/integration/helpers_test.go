@@ -12,16 +12,15 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
+	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	runconfig "github.com/thesyncim/goav/runconfig"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // runtimeRTPReceiver is a scripted rtpav.PacketReader: fixed streams, a fixed
@@ -477,13 +476,13 @@ func (w *fileDestinationWriteCloser) Close() error {
 // taskHasBranch reports whether the task snapshot carries an attached branch
 // with the given name.
 type taskSnapshotter interface {
-	Snapshot() snapshot.Task
+	Snapshot() goav.TaskSnapshot
 }
 
 func taskHasBranch(task taskSnapshotter, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
-		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {
+		if branches[i].Name == name && branches[i].State == goav.BranchAttached {
 			return true
 		}
 	}

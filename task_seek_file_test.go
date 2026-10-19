@@ -14,7 +14,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -257,7 +256,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	assertSeekFileLog(t, sink.snapshot(), want)
 
 	committed, ok := destinationSnapshotByName(task.Snapshot().Destinations, "rec")
-	if !ok || committed.State != lifecycle.DestinationCommitted {
+	if !ok || committed.State != DestinationCommitted {
 		t.Fatalf("destination after segment run = %+v, want committed rec destination", committed)
 	}
 }

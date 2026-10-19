@@ -21,7 +21,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -214,8 +213,8 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		Mix(
 			Input(&crossSeekArmProvider{source: seekable, codec: pcm}).Audio().Decode(),
 			mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+			ByPTS(),
 		).
-			SyncByPTS().
 			To(sink),
 	)
 	if err != nil {
@@ -230,7 +229,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	select {
 	case <-mixedReady:
 	case <-ctx.Done():
-		t.Logf("spec:\n%s", specText(task.Describe()))
+		t.Logf("spec:\n%s", specText(task.Spec()))
 		t.Logf("stats: %+v", task.Stats().Nodes)
 		t.Fatal(ctx.Err())
 	}
@@ -455,11 +454,11 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	}
 
 	snap := task.Snapshot()
-	if snap.State != lifecycle.TaskClosed {
-		t.Fatalf("task state = %q, want %q", snap.State, lifecycle.TaskClosed)
+	if snap.State != TaskClosed {
+		t.Fatalf("task state = %q, want %q", snap.State, TaskClosed)
 	}
 	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
-	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
+	if !ok || committed.State != DestinationCommitted || committed.Open {
 		t.Fatalf("mid-window destination after run = %+v, want committed rec destination", committed)
 	}
 	if got := recorded.Load(); got != 3 {
@@ -822,8 +821,8 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != text {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, specText(task.Describe()))
+	if specText(task.Spec()) != text {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, specText(task.Spec()))
 	}
 }
 
@@ -854,7 +853,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if built := specText(task.Describe()); built != text {
+	if built := specText(task.Spec()); built != text {
 		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -915,7 +914,7 @@ func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if built := specText(task.Describe()); built != text {
+	if built := specText(task.Spec()); built != text {
 		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
 	}
 	if err := task.Run(context.Background()); err != nil {

@@ -299,7 +299,6 @@ var compileBoundary = map[string][]string{
 	"RecipeTransformAdapterError":                {"attach_plan.go"},
 	"StreamInvalidError":                         {"compile_attach.go", "recipe_graph.go"},
 	"StreamRuleInvalidError":                     {"runtime_stream_rule.go"},
-	"StreamSyncByPTSError":                       {"stream_errors.go"},
 	"ValidateDecodeAdapterDescriptors":           {"attach_plan.go", "runtime_decode.go"},
 	"ValidateEncodeAdapterDescriptors":           {"attach_plan.go"},
 	"ValidateRecipeEncode":                       {"attach_plan.go"},

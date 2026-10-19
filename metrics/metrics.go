@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -75,7 +74,7 @@ func collect(task goav.LiveTask) []*family {
 	snap := task.Snapshot()
 
 	ts := add("task_state", "Task lifecycle state, one-hot.", "gauge")
-	for _, s := range []lifecycle.TaskState{lifecycle.TaskBuilt, lifecycle.TaskRunning, lifecycle.TaskClosed, lifecycle.TaskFailed} {
+	for _, s := range []goav.TaskState{goav.TaskBuilt, goav.TaskRunning, goav.TaskClosed, goav.TaskFailed} {
 		put(ts, b2f(snap.State == s), "state", string(s))
 	}
 	put(add("task_paused", "1 while the task timeline is paused.", "gauge"), b2f(snap.Paused))
@@ -123,13 +122,13 @@ func collect(task goav.LiveTask) []*family {
 
 	bs := add("branch_state", "Runtime branch state, one-hot.", "gauge")
 	for _, b := range snap.Branches {
-		for _, s := range []lifecycle.BranchState{lifecycle.BranchAttached, lifecycle.BranchDetached} {
+		for _, s := range []goav.BranchState{goav.BranchAttached, goav.BranchDetached} {
 			put(bs, b2f(b.State == s), "branch", b.Name, "state", string(s))
 		}
 	}
 	ds := add("destination_state", "Destination state, one-hot.", "gauge")
 	for _, d := range snap.Destinations {
-		for _, s := range []lifecycle.DestinationState{lifecycle.DestinationOpen, lifecycle.DestinationCommitted, lifecycle.DestinationAborted, lifecycle.DestinationClosed} {
+		for _, s := range []goav.DestinationState{goav.DestinationOpen, goav.DestinationCommitted, goav.DestinationAborted, goav.DestinationClosed} {
 			put(ds, b2f(d.State == s), "destination", d.Name, "state", string(s))
 		}
 	}

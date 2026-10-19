@@ -165,7 +165,7 @@ func TestMixDescribeShowsConvergentJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer spec.Close()
-	graph := spec.Describe()
+	graph := spec.Spec()
 	var into int
 	var mixNode string
 	for _, n := range graph.Nodes {
