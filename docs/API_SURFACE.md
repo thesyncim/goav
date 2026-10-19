@@ -39,7 +39,7 @@ outside this first-screen map.
 One-screen shape:
 
 ```
-in := goav.FileInput(name, r)             inputs: FileInput, Input(provider), Source(fn)
+in := goav.FileInput(name, r)             inputs: FileInput, URIInput(url), Input(provider), Source(fn)
 in.Audio() / .Video() / .Stream()         a goav.Stream value (StreamID/StreamIndex narrow it)
   .Decode()                               packets -> frames; leave it out to copy packets
   .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
@@ -148,6 +148,9 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `component.SinkFunc`; reuse one destination value when several Outputs should
   share one mux/sink.
+- **URL schemes**: `provider.Scheme`/`ByteSource`, `runconfig.Scheme`, `bundle.Schemes`, package
+  `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`), `webrtcav.WHEP` (`WHEPOption`,
+  `WHEPToken`, `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`), `goav.Reconnect`, `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`

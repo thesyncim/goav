@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- URLs are inputs and destinations: `goav.URIInput` and `goav.URI` resolve through
+  `runconfig.Scheme`; `bundle` registers `file` and `http(s)` (package `scheme`), and
+  `webrtcav.WHEP` plays WHEP. Reports redact URLs; live inputs take `goav.Reconnect`;
+  launch reads `uri "..."` under `launch.URIs`. Migration: `goav.URI` needs a registered
+  scheme, and `goav.Input` takes a `provider.Input` (every `provider.Source` is one).
+
 - The goav CLI module now requires the main commit with the player sync
   fixes, so `go install github.com/thesyncim/goav/cmd/goav@latest` plays in
   sync and seeks while paused.

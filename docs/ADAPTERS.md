@@ -1,7 +1,7 @@
 # Adapters
 
-Adapters keep codec, container, and filter implementations out of the core
-import graph. Use this page to see what ships today, which paths are narrow by
+Adapters keep codec, container, filter, and URL scheme implementations out of
+the core import graph. Use this page to see what ships today, which paths are narrow by
 design, and where to start if you need to add another implementation.
 
 Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
@@ -142,6 +142,22 @@ proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 All adapters are intentionally narrow; richer features (SVC controls, color
 metadata, high bit depth, floating-point PCM, higher-quality scalers, H264
 parsing/demux/encode) are future slices.
+
+## URL schemes
+
+`goav.URIInput(url)` and `goav.URI(url)` resolve through the `provider.Scheme`s
+a runtime registers with `runconfig.Scheme`, last wins, never in `init()`. A
+scheme binds a URL, without I/O, to a `provider.Source`, a `provider.ByteSource`
+(bytes the runtime demuxes), or a `provider.Destination`. Unknown schemes refuse
+naming the registered ones and the providing module; reports redact URLs; live
+inputs take `goav.Reconnect`. RTMP, SRT, and HLS inputs are future schemes
+(FLV, MPEG-TS, or segment bytes as a `ByteSource`; media as a `Source`).
+
+| Scheme | Provider | Notes |
+| --- | --- | --- |
+| `file`, bare paths | `scheme.File()`, in `bundle.Schemes` | in and out, random access |
+| `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback, 10 redirects |
+| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WHEPToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725), trickle PATCH, DELETE on close |
 
 ## Descriptor-only boundaries
 
