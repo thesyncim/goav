@@ -120,6 +120,9 @@ type Runtime struct {
 	// qos is the per-task reporter recipe builds thread to lowering-time gates
 	// next to the timeline; nil on the shared runtime and explicit-graph paths.
 	qos *qosReporter
+	// controls is the per-task control seam media sinks bind at lowering
+	// time (UseControl); nil like qos.
+	controls *taskControls
 	// schemes resolve URIInput and URI values (runconfig.Scheme).
 	schemes map[string]provider.Scheme
 }

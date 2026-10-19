@@ -102,7 +102,7 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 			streams[ref] = selected
 		case compile.ComposeDecode, compile.ComposeStep, compile.ComposeEncode, compile.ComposeSink, compile.ComposeRemuxSink, compile.ComposeMux, compile.ComposeRemuxMux:
 			var in []av.Stream
-			if node.Kind == compile.ComposeRemuxMux {
+			if node.Kind == compile.ComposeRemuxMux || node.Kind == compile.ComposeRemuxSink {
 				for _, from := range node.Inputs {
 					input := sourceInputs[from]
 					in = append(in, qualifyStreams(sourceStreams[input], qualifiers[input])...)
@@ -144,8 +144,9 @@ type openedNode struct {
 	sink   pipeline.Sink
 	stream av.Stream
 	// owned marks a stage the lowering opened (a decoder, filter, encoder,
-	// or muxer), which a failed build or attach closes; a caller's own
-	// stages and sinks stay the caller's.
+	// or muxer), or a media sink whose streams it opened, which a failed
+	// build or attach closes; a caller's own stages and sinks stay the
+	// caller's.
 	owned bool
 }
 
@@ -178,10 +179,19 @@ func openComposeNode(ctx context.Context, service *builder, node compile.Compose
 		return openedNode{stage: stage, stream: encoded, owned: true}, nil
 	case compile.ComposeSink, compile.ComposeRemuxSink:
 		sink := dests[node.Output].sink
+		if err := validateMediaSinkStreams(node.Name, dests[node.Output], in, node.Kind == compile.ComposeRemuxSink); err != nil {
+			return openedNode{}, err
+		}
+		// A media destination learns its streams and binds the task's
+		// control path; once it opened them, goav closes it either way.
+		opened, err := openMediaSink(ctx, sink, in, service.runtime.controlFunc())
+		if err != nil {
+			return openedNode{}, err
+		}
 		if node.Name != sink.Name() {
 			sink = namedSink{name: node.Name, sink: sink}
 		}
-		return openedNode{sink: sink}, nil
+		return openedNode{sink: sink, owned: opened}, nil
 	default:
 		destination := dests[node.Output]
 		muxStage, err := service.openMuxDestinationStage(ctx, destination, node.Output, in, destinationOpenFormat(destination), destinationGraphFormat(destination))
@@ -204,6 +214,9 @@ func (o openedNode) install(graph pipeline.Graph, buffer pipeline.BufferPolicy, 
 	}
 	ref, err := graph.AddSink(o.sink, buffer)
 	if err != nil {
+		if o.owned {
+			o.sink.Close()
+		}
 		return err
 	}
 	return connectComposeInputs(graph, inputs, ref)

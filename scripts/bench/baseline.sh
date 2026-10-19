@@ -33,6 +33,9 @@ export CGO_ENABLED
 root_regex="${BENCH_BASELINE_ROOT_REGEX:-Benchmark(RecordPackets|RemuxPackets|DecodeToFrameSink|DecodeEncode|Resample|Resize|BranchFanout|SharedMuxGroup|Mix|Composite|SelectPassthrough|LatencyRecordPackets|SustainedRecordMemory|SourcePush|AttachDetachUnderLoad|SoakRecordDrift|LiveRoomSync)$}"
 pipeline_regex="${BENCH_BASELINE_PIPELINE_REGEX:-Benchmark(DirectFanout|BufferedFanout)$}"
 soak_regex="${BENCH_BASELINE_SOAK_REGEX:-Benchmark(SoakRecordDrift|LiveRoomSync|AttachDetachUnderLoad)$}"
+# The packetize hot path lives in the rtpav nested module, run from its own
+# directory.
+rtpav_regex="${BENCH_BASELINE_RTPAV_REGEX:-Benchmark(Packetize|Send)$}"
 
 cleanup() {
   if [ -z "${BENCH_BASELINE_TMP:-}" ]; then
@@ -47,8 +50,13 @@ run_suite() {
   local kind="$1"
   local pkg="$2"
   local regex="$3"
+  local dir="${4:-.}"
   local out="$tmp_dir/${kind}.txt"
-  CGO_ENABLED="$CGO_ENABLED" go test -run '^$' -bench "$regex" -benchmem -benchtime "$benchtime" -count "$count" "$pkg" > "$out"
+  local target="$pkg"
+  if [ "$dir" != . ]; then
+    target=.
+  fi
+  (cd "$dir" && CGO_ENABLED="$CGO_ENABLED" go test -run '^$' -bench "$regex" -benchmem -benchtime "$benchtime" -count "$count" "$target") > "$out"
   echo "$out"
 }
 
@@ -57,7 +65,7 @@ collect_suite() {
   local pkg="$2"
   local regex="$3"
   local out
-  out="$(run_suite "$kind" "$pkg" "$regex")"
+  out="$(run_suite "$kind" "$pkg" "$regex" "${4:-.}")"
   go run ./scripts/bench/internal/benchbaseline collect \
     -kind "$kind" \
     -package "$pkg" \
@@ -83,13 +91,14 @@ check_suite() {
   local kind="$1"
   local pkg="$2"
   local regex="$3"
+  local dir="${4:-.}"
   local baseline="$reference_dir/${kind}.json"
   if [ ! -s "$baseline" ]; then
     echo "$baseline is missing; run scripts/bench/baseline.sh generate" >&2
     exit 1
   fi
   local out
-  out="$(run_suite "$kind" "$pkg" "$regex")"
+  out="$(run_suite "$kind" "$pkg" "$regex" "$dir")"
   go run ./scripts/bench/internal/benchbaseline check -baseline "$baseline" -current "$out"
 }
 
@@ -98,11 +107,13 @@ case "$mode" in
     collect_suite root . "$root_regex"
     collect_suite pipeline ./pipeline "$pipeline_regex"
     collect_suite soak . "$soak_regex"
+    collect_suite rtpav ./rtpav "$rtpav_regex" rtpav
     ;;
   check)
     check_suite root . "$root_regex"
     check_suite pipeline ./pipeline "$pipeline_regex"
     check_suite soak . "$soak_regex"
+    check_suite rtpav ./rtpav "$rtpav_regex" rtpav
     ;;
   *)
     echo "usage: scripts/bench/baseline.sh [generate|check]" >&2

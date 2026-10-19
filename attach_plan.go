@@ -651,6 +651,9 @@ func (p *attachPlan) close() {
 			markPipelineStageFailed(opened.stage)
 			_ = opened.stage.Close()
 		}
+		if opened.owned && opened.sink != nil {
+			_ = opened.sink.Close()
+		}
 	}
 }
 

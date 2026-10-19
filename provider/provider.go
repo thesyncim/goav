@@ -98,6 +98,20 @@ type DestinationScheme interface {
 // takes the muxed bytes of a container (a file, an upload, FLV over RTMP),
 // or a pipeline.Sink, which takes the media itself (RTP out, WHIP) under its
 // own node name. goav refuses an Output that is neither.
+//
+// A media sink, here or behind goav.Sink, may also implement, discovered by
+// type assertion:
+//
+//   - InputShapes() shape.Set — what it takes, in preference order: the
+//     planner encodes frames to the first codec it can encode, and refuses
+//     other packets with the fix.
+//   - UseControl(func(context.Context, control.Control) error) — the task's
+//     control path, bound before OpenStreams: a receiver's keyframe request
+//     becomes control.Keyframe(stream) on the encoder feeding the stream.
+//   - OpenStreams(context.Context, []av.Stream) error — the streams routed
+//     to it, codec parameters and extradata included, before the first
+//     message. After it succeeds goav closes the sink, even if the build
+//     fails.
 type Output interface {
 	Name() string
 }

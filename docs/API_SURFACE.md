@@ -144,11 +144,13 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `provider.Destination` + `provider.Contract`/`provider.Info`, `goav.Writer`
   (`provider.OpenFunc`), transactional uploads via
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `component.SinkFunc`; reuse one destination value when several Outputs should
-  share one mux/sink.
+  `component.SinkFunc`, media sinks `rtpav.Send` (`NewPacketizer`, `Packetizer`,
+  `PacketizeResult`, `PacketWriter`, `DialUDP`, `SendOption`) and
+  `webrtcav.LocalTrack`; reuse one destination value when several Outputs
+  should share one mux/sink.
 - **URL schemes**: `goav.URIInput`/`URI`/`Live`/`Reconnect` (`av.EventReconnect`); `provider.Scheme`/`InputScheme`/`DestinationScheme`/`Input`/`Output`/`ByteSource`;
   `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
-  `webrtcav.WHEP` (`WHEPOption`, `WHEPToken`, `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
+  `webrtcav.WHEP`, `WHIP` (`Option`, `Token`, `HTTPClient`, `PeerConfig`, `StatusError`, `ErrWHEPDisconnected`, `ErrWHIPDisconnected`, `ErrWHIPCodecRefused`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`

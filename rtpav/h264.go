@@ -1,6 +1,7 @@
 package rtpav
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 
@@ -279,3 +280,274 @@ func h264HasIDR(payload []byte) bool {
 	}
 	return false
 }
+
+const (
+	h264NALUSPS    = byte(7)
+	h264NALUPPS    = byte(8)
+	h264NALUAUD    = byte(9)
+	h264NALUFiller = byte(12)
+)
+
+// h264Packetizer sends Annex B access units in packetization mode 1 (RFC
+// 6184): NAL units that fit share STAP-A packets, larger ones split into
+// FU-A fragments, and an IDR missing its parameter sets gets the last ones
+// seen (in band, or the stream's extradata) at the head of its access unit.
+type h264Packetizer struct {
+	budget int
+	clock  uint32
+	sps    []byte
+	pps    []byte
+	// nalus and pending are reused scratch: the access unit's NAL units, and
+	// the run waiting to share a packet.
+	nalus   [][]byte
+	pending [][]byte
+}
+
+func newH264Packetizer(stream av.Stream, budget int) *h264Packetizer {
+	p := &h264Packetizer{budget: budget, clock: clockOr(stream.Codec.ClockRate, defaultVideoClockRate)}
+	extra := stream.Codec.ExtraData.Bytes
+	if len(extra) > 0 && extra[0] == 1 {
+		p.learnAVCC(extra)
+	} else {
+		h264EachNALU(extra, func(nalu []byte) { p.learn(nalu) })
+	}
+	return p
+}
+
+func (p *h264Packetizer) Codec() av.CodecID { return av.CodecH264 }
+
+func (p *h264Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, payload PayloadCodec, out *PacketizeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ts, err := rtpTimestamp(packet, payload, p.clock)
+	if err != nil {
+		return err
+	}
+	p.nalus = p.nalus[:0]
+	idr, sps, pps := false, false, false
+	invalid := false
+	h264EachNALU(packet.Payload.Bytes, func(nalu []byte) {
+		switch nalType := nalu[0] & h264NALUTypeMask; {
+		case nalu[0]&0x80 != 0 || nalType == 0 || nalType >= h264NALUSTAPA:
+			invalid = true
+		case nalType == h264NALUAUD || nalType == h264NALUFiller:
+			// Delimiters and filler carry nothing a WebRTC receiver uses.
+		default:
+			idr = idr || nalType == h264NALUIDR
+			sps = sps || nalType == h264NALUSPS
+			pps = pps || nalType == h264NALUPPS
+			p.learn(nalu)
+			p.nalus = append(p.nalus, nalu)
+		}
+	})
+	if invalid || len(p.nalus) == 0 {
+		return ErrInvalidPayload
+	}
+	if idr && (!sps || !pps) {
+		// The missing sets open the access unit (an in-band SPS keeps its
+		// place ahead of a PPS put after it), before any SEI that refers to
+		// them.
+		at := 0
+		for i, nalu := range p.nalus {
+			if sps && nalu[0]&h264NALUTypeMask == h264NALUSPS {
+				at = i + 1
+			}
+		}
+		p.nalus = p.withParameterSets(at, !sps, !pps)
+	}
+	for _, nalu := range p.nalus {
+		switch {
+		case len(nalu) > p.budget:
+			p.flush(out, payload.PayloadType, ts)
+			p.fragment(out, payload.PayloadType, ts, nalu)
+		case h264AggregateSize(p.pending, nalu) > p.budget:
+			p.flush(out, payload.PayloadType, ts)
+			p.pending = append(p.pending, nalu)
+		default:
+			p.pending = append(p.pending, nalu)
+		}
+	}
+	p.flush(out, payload.PayloadType, ts)
+	out.seal(true)
+	return nil
+}
+
+// withParameterSets inserts the missing cached parameter sets before the
+// NAL unit at i.
+func (p *h264Packetizer) withParameterSets(i int, sps, pps bool) [][]byte {
+	inserted := 0
+	if sps && len(p.sps) != 0 {
+		inserted++
+	}
+	if pps && len(p.pps) != 0 {
+		inserted++
+	}
+	if inserted == 0 {
+		return p.nalus
+	}
+	nalus := p.nalus
+	for range inserted {
+		nalus = append(nalus, nil)
+	}
+	copy(nalus[i+inserted:], nalus[i:len(nalus)-inserted])
+	if sps && len(p.sps) != 0 {
+		nalus[i] = p.sps
+		i++
+	}
+	if pps && len(p.pps) != 0 {
+		nalus[i] = p.pps
+	}
+	return nalus
+}
+
+// flush sends the pending run: one NAL unit alone, several as a STAP-A.
+func (p *h264Packetizer) flush(out *PacketizeResult, payloadType uint8, ts uint32) {
+	switch len(p.pending) {
+	case 0:
+		return
+	case 1:
+		out.open(payloadType, ts)
+		out.write(p.pending[0]...)
+		out.close()
+	default:
+		var f, nri byte
+		for _, nalu := range p.pending {
+			f |= nalu[0] & 0x80
+			nri = max(nri, nalu[0]&h264NALUNRIMask)
+		}
+		out.open(payloadType, ts)
+		out.write(f | nri | h264NALUSTAPA)
+		for _, nalu := range p.pending {
+			out.write(byte(len(nalu)>>8), byte(len(nalu)))
+			out.write(nalu...)
+		}
+		out.close()
+	}
+	clear(p.pending)
+	p.pending = p.pending[:0]
+}
+
+// fragment sends one NAL unit too large for a packet as FU-A fragments.
+func (p *h264Packetizer) fragment(out *PacketizeResult, payloadType uint8, ts uint32, nalu []byte) {
+	indicator := nalu[0]&(0x80|h264NALUNRIMask) | h264NALUFUA
+	nalType := nalu[0] & h264NALUTypeMask
+	data := nalu[1:]
+	chunk := evenChunk(len(data), p.budget-2)
+	for offset := 0; offset < len(data); offset += chunk {
+		header := nalType
+		if offset == 0 {
+			header |= h264FUStartMask
+		}
+		end := min(offset+chunk, len(data))
+		if end == len(data) {
+			header |= h264FUEndMask
+		}
+		out.open(payloadType, ts)
+		out.write(indicator, header)
+		out.write(data[offset:end]...)
+		out.close()
+	}
+}
+
+// learn keeps a copy of an SPS or PPS for later IDRs that lack one.
+func (p *h264Packetizer) learn(nalu []byte) {
+	switch nalu[0] & h264NALUTypeMask {
+	case h264NALUSPS:
+		p.sps = append(p.sps[:0], nalu...)
+	case h264NALUPPS:
+		p.pps = append(p.pps[:0], nalu...)
+	}
+}
+
+// learnAVCC reads the parameter sets of an avcC decoder configuration
+// record (ISO/IEC 14496-15); a malformed record seeds nothing.
+func (p *h264Packetizer) learnAVCC(record []byte) {
+	if len(record) < 6 {
+		return
+	}
+	pos := 5
+	read := func(count int) bool {
+		for range count {
+			if pos+2 > len(record) {
+				return false
+			}
+			size := int(binary.BigEndian.Uint16(record[pos:]))
+			pos += 2
+			if size == 0 || pos+size > len(record) {
+				return false
+			}
+			p.learn(record[pos : pos+size])
+			pos += size
+		}
+		return true
+	}
+	count := int(record[pos] & 0x1f)
+	pos++
+	if !read(count) || pos >= len(record) {
+		return
+	}
+	count = int(record[pos])
+	pos++
+	read(count)
+}
+
+// h264AggregateSize is the STAP-A size of pending plus next.
+func h264AggregateSize(pending [][]byte, next []byte) int {
+	size := 1 + 2 + len(next)
+	for _, nalu := range pending {
+		size += 2 + len(nalu)
+	}
+	return size
+}
+
+// h264EachNALU calls fn with each NAL unit of an Annex B access unit, start
+// codes removed; data without a leading start code is one bare NAL unit.
+func h264EachNALU(data []byte, fn func([]byte)) {
+	start, width := h264StartCode(data, 0)
+	if start < 0 {
+		start, width = len(data), 0
+	}
+	if lead := h264TrimZeros(data[:start]); len(lead) != 0 {
+		fn(lead)
+	}
+	for start < len(data) {
+		begin := start + width
+		next, nextWidth := h264StartCode(data, begin)
+		if next < 0 {
+			next, nextWidth = len(data), 0
+		}
+		if nalu := h264TrimZeros(data[begin:next]); len(nalu) != 0 {
+			fn(nalu)
+		}
+		start, width = next, nextWidth
+	}
+}
+
+// h264TrimZeros drops trailing zero bytes, which belong to the next start
+// code (or the byte stream), not the NAL unit.
+func h264TrimZeros(data []byte) []byte {
+	end := len(data)
+	for end > 0 && data[end-1] == 0 {
+		end--
+	}
+	return data[:end]
+}
+
+// h264StartCode finds the next 3- or 4-byte start code at or after offset.
+func h264StartCode(data []byte, offset int) (int, int) {
+	if offset >= len(data) {
+		return -1, 0
+	}
+	i := bytes.Index(data[offset:], h264StartCode3)
+	if i < 0 {
+		return -1, 0
+	}
+	i += offset
+	if i > offset && data[i-1] == 0 {
+		return i - 1, 4
+	}
+	return i, 3
+}
+
+var h264StartCode3 = []byte{0, 0, 1}

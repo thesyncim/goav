@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "kind": "rtpav",
+  "generated_at": "2026-10-19T19:20:14Z",
+  "go_version": "go version go1.27.2 darwin/arm64",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "package": "./rtpav",
+  "bench_regex": "Benchmark(Packetize|Send)$",
+  "benchtime": "100x",
+  "count": "1",
+  "source": "scripts/bench/baseline.sh rtpav ./rtpav",
+  "thresholds": {
+    "bytes_per_op_slack_ratio": 0.05,
+    "bytes_per_op_slack_min": 1024,
+    "bytes_per_op_cold_slack_ratio": 0.25,
+    "allocs_per_op_slack": 0,
+    "allocs_per_op_slack_ratio": 0.05,
+    "allocs_per_op_slack_min": 4,
+    "allocs_per_op_cold_threshold": 100,
+    "allocs_per_op_cold_slack_ratio": 0.5,
+    "allocs_per_op_cold_slack_min": 64
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkPacketize/av1",
+      "metrics": {
+        "B/op": 1565,
+        "allocs/op": 0,
+        "ns/op": 1825
+      },
+      "ceilings": {
+        "B/op": 2589,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkPacketize/h264",
+      "metrics": {
+        "B/op": 1566,
+        "allocs/op": 0,
+        "ns/op": 3281
+      },
+      "ceilings": {
+        "B/op": 2590,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkPacketize/opus",
+      "metrics": {
+        "B/op": 3,
+        "allocs/op": 0,
+        "ns/op": 87.08
+      },
+      "ceilings": {
+        "B/op": 1027,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkPacketize/vp8",
+      "metrics": {
+        "B/op": 1613,
+        "allocs/op": 0,
+        "ns/op": 1761
+      },
+      "ceilings": {
+        "B/op": 2637,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkPacketize/vp9",
+      "metrics": {
+        "B/op": 1613,
+        "allocs/op": 0,
+        "ns/op": 1605
+      },
+      "ceilings": {
+        "B/op": 2637,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkSend",
+      "metrics": {
+        "B/op": 470,
+        "allocs/op": 0,
+        "ns/op": 1204
+      },
+      "ceilings": {
+        "B/op": 1494,
+        "allocs/op": 0
+      }
+    }
+  ]
+}

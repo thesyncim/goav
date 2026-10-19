@@ -17,8 +17,16 @@ var (
 	// ErrDepacketizerNotFound reports a codec with no registered depacketizer.
 	ErrDepacketizerNotFound = errors.New("rtpav: depacketizer not found")
 	// ErrFrameTooLarge reports a reassembled frame exceeding the configured
-	// maximum video frame size.
+	// maximum video frame size, or an Opus packet too large for the MTU.
 	ErrFrameTooLarge = errors.New("rtpav: frame too large")
 	// ErrResultFull reports a result slice at capacity.
 	ErrResultFull = errors.New("rtpav: result capacity full")
+	// ErrPacketizerNotFound reports a codec with no built-in packetizer.
+	ErrPacketizerNotFound = errors.New("rtpav: packetizer not found")
+	// ErrNoTimestamp reports a packet to send with neither a PTS nor a DTS.
+	ErrNoTimestamp = errors.New("rtpav: packet has no timestamp")
+	// ErrNilWriter reports a nil PacketWriter handed to Send.
+	ErrNilWriter = errors.New("rtpav: nil writer")
+	// ErrUnknownStream reports a packet for a stream Send was not opened with.
+	ErrUnknownStream = errors.New("rtpav: unknown stream")
 )

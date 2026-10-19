@@ -161,7 +161,7 @@ func TestWHEPPlaysAServerSession(t *testing.T) {
 	for _, trickle := range []bool{false, true} {
 		server := &whepServer{t: t, stop: make(chan struct{})}
 		srv := httptest.NewServer(server)
-		scheme := WHEP(WHEPToken("tok"), WHEPSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
+		scheme := WHEP(Token("tok"), PeerConfig(SessionConfig{API: loopbackAPI()})).(whepScheme)
 		if trickle {
 			scheme.config.gather = 0
 		}
@@ -223,7 +223,7 @@ func TestWHEPRefusals(t *testing.T) {
 		http.Error(w, "no", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
-	rt := bundle.MustNew(runconfig.Scheme("whep+http", WHEP(WHEPSession(SessionConfig{API: loopbackAPI()}))))
+	rt := bundle.MustNew(runconfig.Scheme("whep+http", WHEP(PeerConfig(SessionConfig{API: loopbackAPI()}))))
 	_, err := rt.Build(context.Background(), goav.URIInput("whep+http://"+strings.TrimPrefix(srv.URL, "http://")+"/live?token=SECRET").Video().To(goavtest.NewCollector().Sink()))
 	if err == nil || !strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("err = %v, want a redacted 401", err)
@@ -238,8 +238,8 @@ func TestWHEPStartsWithTheFirstTrack(t *testing.T) {
 	srv := httptest.NewServer(server)
 	defer srv.Close()
 	defer close(server.stop)
-	scheme := WHEP(WHEPSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
-	scheme.config.tracks = 300 * time.Millisecond
+	scheme := WHEP(PeerConfig(SessionConfig{API: loopbackAPI()})).(whepScheme)
+	scheme.config.connect = 300 * time.Millisecond
 	rt := bundle.MustNew(runconfig.Scheme("whep+http", scheme))
 	in := goav.URIInput("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam")
 	video, audio := goavtest.NewCollector(), goavtest.NewCollector()
@@ -270,7 +270,7 @@ func TestWHEPUsesLinkedICEServers(t *testing.T) {
 	srv := httptest.NewServer(server)
 	defer srv.Close()
 	defer close(server.stop)
-	scheme := WHEP(WHEPSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
+	scheme := WHEP(PeerConfig(SessionConfig{API: loopbackAPI()})).(whepScheme)
 	scheme.config.gather = 200 * time.Millisecond
 	rt := bundle.MustNew(runconfig.Scheme("whep+http", scheme))
 	host := strings.TrimPrefix(srv.URL, "http://")

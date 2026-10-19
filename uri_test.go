@@ -91,6 +91,10 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 		!strings.Contains(fixes, "github.com/thesyncim/goav/webrtcav") {
 		t.Fatalf("fixes do not name the whep provider:\n%s", fixes)
 	}
+	_, err = bundle.Describe(goavtest.Video(16, 16, 1).Video().To(goav.URI("whips://media.example/live")))
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" || !strings.Contains(strings.Join(buildErr.FixLines(), "\n"), `runconfig.Scheme("whips", webrtcav.WHIP())`) {
+		t.Fatalf("whips err = %v, want the fix naming the WHIP client", err)
+	}
 
 	// A bare runtime registers no schemes at all.
 	rt, err := goav.New()

@@ -288,6 +288,8 @@ var compileBoundary = map[string][]string{
 	"DestinationInvalidError":                    {"destination.go"},
 	"DestinationNameClashError":                  {"recipe_graph.go"},
 	"DestinationShapeMismatchError":              {"runtime_attach.go"},
+	"ValidateSinkRemux":                          {"media_sink.go"},
+	"ValidateSinkShape":                          {"media_sink.go", "runtime_attach.go"},
 	"EmptyTransformSpecError":                    {"transform.go"},
 	"EncodeAdapterIncompatibleErrorAt":           {"runtime_encode.go"},
 	"GraphPlanInvalidError":                      {"graph_plan.go"},

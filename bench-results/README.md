@@ -12,6 +12,7 @@ bench-results/
   reference/root.json                    # committed alloc/B-op ratchet: root suite
   reference/pipeline.json                # committed alloc/B-op ratchet: deterministic fanout rows
   reference/soak.json                    # committed alloc/B-op ratchet: soak/control smoke rows
+  reference/rtpav.json                   # committed alloc/B-op ratchet: packetize and send rows (rtpav)
   baseline/<timestamp>/<machine>.txt      # full benchmark and RSS transcript
   latency/<scenario>-<timestamp>.json     # p50/p95/p99 and ns/op summary
   rss/<scenario>-<timestamp>.json         # heap/sys/max-RSS summary

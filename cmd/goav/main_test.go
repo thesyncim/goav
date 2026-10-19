@@ -571,3 +571,17 @@ func TestRunReadsURLs(t *testing.T) {
 		t.Fatalf("copy.ivf = %v", err)
 	}
 }
+
+// TestRunGrantsWHIP pins that the CLI grants and registers the WHIP client:
+// a program publishes test video to a whips URL, encoded to VP8 for it, and
+// the token in the URL stays out of the graph.
+func TestRunGrantsWHIP(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"describe", `testsrc video size=64x64 ! uri "whips://media.example/live?token=SECRET"`}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	text := stdout.String()
+	if !strings.Contains(text, "codec=vp8") || !strings.Contains(text, "sink whip [whip publish]") || strings.Contains(text, "SECRET") {
+		t.Fatalf("describe =\n%s", text)
+	}
+}
