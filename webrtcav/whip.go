@@ -64,7 +64,7 @@ func (s whipScheme) Destination(u *url.URL) (provider.Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &egress{name: "whip", accepts: egressCodecs.Clone()}
+	e := &egress{name: "whip", detail: "whip publish", accepts: egressCodecs.Clone()}
 	e.open = func(ctx context.Context, streams []av.Stream) (*trackWriter, []rtpav.SendOption, error) {
 		session, err := negotiate(ctx, s.servers, endpoint.Host, s.config.session.Configuration, func(ctx context.Context, config webrtc.Configuration) (*whipSession, error) {
 			return s.offer(ctx, endpoint, config, streams, e)

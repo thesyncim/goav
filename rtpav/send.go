@@ -137,6 +137,11 @@ type sentPacket struct {
 
 func (s *sender) Name() string { return "rtp-out" }
 
+// DescribeNode details the node in Describe output.
+func (s *sender) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.Name(), Kind: pipeline.NodeSink, Detail: "rtp send"}
+}
+
 // InputShapes is what Send accepts: packets of a codec it can packetize, or
 // of the codecs WithPayloads names, in preference order.
 func (s *sender) InputShapes() shape.Set {

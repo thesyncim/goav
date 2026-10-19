@@ -33,6 +33,7 @@ func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pip
 	id, media := codecIDFromMIME(capability.MimeType)
 	return &egress{
 		name:    "webrtc-track",
+		detail:  "webrtc send, codec=" + string(id),
 		accepts: shape.Set{shape.Packet(media, id)},
 		open: func(ctx context.Context, streams []av.Stream) (*trackWriter, []rtpav.SendOption, error) {
 			if track == nil {
@@ -56,13 +57,19 @@ func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pip
 // sender over it, which does the packetizing and the feedback.
 type egress struct {
 	name    string
+	detail  string
 	accepts shape.Set
 	open    func(context.Context, []av.Stream) (*trackWriter, []rtpav.SendOption, error)
 	control func(context.Context, control.Control) error
 	sender  pipeline.Sink
 }
 
-func (e *egress) Name() string           { return e.name }
+func (e *egress) Name() string { return e.name }
+
+// DescribeNode details the node in Describe output.
+func (e *egress) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: e.name, Kind: pipeline.NodeSink, Detail: e.detail}
+}
 func (e *egress) InputShapes() shape.Set { return e.accepts }
 
 func (e *egress) UseControl(fn func(context.Context, control.Control) error) { e.control = fn }

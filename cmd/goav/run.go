@@ -409,12 +409,15 @@ func encodeJSON(stdout, stderr io.Writer, v any) int {
 }
 
 // cliURIs lets programs open the network URLs the CLI's runtime resolves,
-// beside the files Files grants: uri "https://cdn/in.mp4" ! ..., or a
-// whep:// stream.
-var cliURIs = launch.URIs("http", "https", "whep", "whep+http")
+// beside the files Files grants: uri "https://cdn/in.mp4" ! ..., a whep://
+// stream, or a whip:// (whips://) destination.
+var cliURIs = launch.URIs("http", "https", "whep", "whep+http", "whip", "whips", "whip+http")
 
-// withCLISchemes adds the WHEP client to the bundle's file and http(s)
-// schemes.
+// withCLISchemes adds the WHEP and WHIP clients to the bundle's file and
+// http(s) schemes, one of each under all its names.
 func withCLISchemes(options ...runconfig.Option) []runconfig.Option {
-	return append(options, runconfig.Scheme("whep", webrtcav.WHEP()), runconfig.Scheme("whep+http", webrtcav.WHEP()))
+	whep, whip := webrtcav.WHEP(), webrtcav.WHIP()
+	return append(options,
+		runconfig.Scheme("whep", whep), runconfig.Scheme("whep+http", whep),
+		runconfig.Scheme("whip", whip), runconfig.Scheme("whips", whip), runconfig.Scheme("whip+http", whip))
 }
