@@ -100,7 +100,7 @@ func TestDataPlaneTakesNoMutex(t *testing.T) {
 	if len(violations) > 0 {
 		t.Fatalf("the message path takes a lock:\n\t%s", strings.Join(violations, "\n\t"))
 	}
-	for _, want := range []string{"directRunner.deliver", "directRunner.release", "bufferedRunner.enqueue", "bufferedNode.await", "ring.push", "timeOrder.yield"} {
+	for _, want := range []string{"directRunner.deliver", "directRunner.release", "bufferedRunner.enqueue", "bufferedNode.waitSlot", "bufferedNode.pumpSlots", "ring.push", "timeOrder.yield"} {
 		if !seen[want] {
 			t.Fatalf("walk never reached %s; the call resolution is broken", want)
 		}
@@ -301,7 +301,7 @@ func TestNodesHoldNoMutex(t *testing.T) {
 	lockFree := map[string]bool{
 		"nodeBase": true, "directNode": true, "bufferedNode": true, "directEmitter": true,
 		"bufferedEmitter": true, "ring": true, "ringCell": true, "waiterQueue": true,
-		"directWaiter": true, "parkQueue": true, "mpscQueue": true, "parkedProducer": true, "dropController": true,
+		"directWaiter": true, "parkLine": true, "mpscQueue": true, "parkedProducer": true, "dropController": true,
 		"nodeCounters": true, "dropCounts": true, "timeOrder": true, "timeTurn": true,
 		"bufferedMessage": true, "inflight": true,
 	}

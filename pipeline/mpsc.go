@@ -11,10 +11,10 @@ type linked[T any] interface {
 
 // mpscQueue is Dmitry Vyukov's intrusive multi-producer single-consumer
 // FIFO. Producers push with one atomic swap; one consumer at a time pops,
-// and whatever hands the consumer role on (the direct gate's atomics, the
-// park queue's flag) orders its plain head field from one consumer to the
-// next. It allocates nothing: the records are the links. A popped record is
-// out of the queue and may be pushed again.
+// and whatever hands the consumer role on (the direct gate's atomics)
+// orders its plain head field from one consumer to the next. It allocates
+// nothing: the records are the links. A popped record is out of the queue
+// and may be pushed again.
 type mpscQueue[T any, P linked[T]] struct {
 	tail atomic.Pointer[T]
 	head *T
@@ -61,7 +61,3 @@ func (q *mpscQueue[T, P]) pop() *T {
 	}
 	return nil
 }
-
-// empty reports whether no record is queued or being pushed. Any goroutine
-// may call it: it reads only the tail.
-func (q *mpscQueue[T, P]) empty() bool { return q.tail.Load() == &q.stub }

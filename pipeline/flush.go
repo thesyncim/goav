@@ -125,5 +125,5 @@ func (g *bufferedRunner) flushNodeQueue(node *bufferedNode) {
 	}
 	q.unlock()
 	node.wakeWorker()
-	node.wakeParked()
+	node.spaceLine.wakeAll()
 }

@@ -6,33 +6,33 @@ import (
 	"sync/atomic"
 )
 
-// parkedProducer is a producer parked on a buffered node, with a wake
-// channel of its own: a waker wakes exactly that producer, so a busy worker
-// never contends on a channel lock with other producers parking and
-// unparking. Each emitter caches one (made once at attach), so parking
-// allocates nothing.
+// parkedProducer is a producer waiting in one of a buffered node's lines,
+// with a wake channel of its own, so a waker wakes exactly that producer and
+// a busy worker never contends on a channel lock with producers parking and
+// unparking. A slot handed to a producer waiting for one rides along in
+// slot. Each emitter caches one (made once at attach), so waiting allocates
+// nothing.
 type parkedProducer struct {
-	next  atomic.Pointer[parkedProducer] // the park queue's link
 	state atomic.Uint32
-	wake  chan struct{} // capacity 1: one token per park
-	inUse atomic.Bool   // an emitter's cached record is taken
+	wake  chan struct{}    // capacity 1: one token per wait
+	slot  *bufferedMessage // handed over before the token, read after it
+	inUse atomic.Bool      // an emitter's cached record is taken
 }
 
 const (
-	parkIdle      uint32 = iota // not queued
-	parkWaiting                 // queued, its producer waits on wake
-	parkWoken                   // popped and woken: its token is sent
+	parkIdle      uint32 = iota // not in a line
+	parkWaiting                 // in a line, its producer waits on wake
+	parkWoken                   // taken out of the line: its token is sent
 	parkCancelled               // its producer left on ctx; skip it
 )
-
-func (p *parkedProducer) link() *atomic.Pointer[parkedProducer] { return &p.next }
 
 func newParkedProducer() *parkedProducer {
 	return &parkedProducer{wake: make(chan struct{}, 1)}
 }
 
-// parkedProducers backs a producer with no emitter of its own (Inject) and
-// one emitter parking from several goroutines at once.
+// parkedProducers backs a producer with no emitter of its own (Inject), one
+// emitter waiting from several goroutines at once, and an emitter whose own
+// record was left in a line by a cancelled wait.
 var parkedProducers = sync.Pool{New: func() any { return newParkedProducer() }}
 
 func takeParked(cached *parkedProducer) *parkedProducer {
@@ -43,6 +43,7 @@ func takeParked(cached *parkedProducer) *parkedProducer {
 }
 
 func putParked(cached, p *parkedProducer) {
+	p.state.Store(parkIdle)
 	if p == cached {
 		p.inUse.Store(false)
 		return
@@ -50,76 +51,104 @@ func putParked(cached, p *parkedProducer) {
 	parkedProducers.Put(p)
 }
 
-// parkQueue is a node's parked producers, in the order they parked. Waking
-// is first come, first served, so no producer waits out the others: one
-// parked behind k others is woken after at most k wakeups.
-//
-// Any number of goroutines may ask for a wakeup at once (the worker, a
-// releasing producer, a close), but the queue has one consumer at a time.
-// Asking adds a credit and then tries to take the popping turn with a CAS;
-// a goroutine that loses never waits, since the holder sees its credit
-// before it lets go: after giving the turn up, the holder looks once more
-// and takes it back while credits and parked producers both remain. A
-// credit nobody can use yet stays until a producer parks, and that parker
-// takes the turn itself, so a wakeup that comes just before a producer parks
-// is not lost.
-type parkQueue struct {
-	queue   mpscQueue[parkedProducer, *parkedProducer]
-	credits atomic.Int64
-	popping atomic.Bool
+// hand gives p a slot and wakes it.
+func (p *parkedProducer) hand(s *bufferedMessage) {
+	p.slot = s
+	p.wake <- struct{}{}
 }
 
-func (q *parkQueue) init() { q.queue.init() }
+// handed takes the slot a waker handed p, nil when it was woken without one.
+func (p *parkedProducer) handed() *bufferedMessage {
+	s := p.slot
+	p.slot = nil
+	return s
+}
 
-// park queues p and delivers any wakeup already waiting; with room, it asks
-// for one so the oldest parked producer, perhaps p itself, takes the room.
-func (q *parkQueue) park(p *parkedProducer, room bool) {
-	p.state.Store(parkWaiting)
-	q.queue.push(p)
-	if room {
-		q.credits.Add(1)
+// parkLineSize is how many producers one line holds; more wait for room in
+// it, yielding, which takes that many producers parked on one node at once.
+const parkLineSize = 256
+
+// parkLine is a first come, first served line of waiting producers: a
+// lock-free MPMC ring of their records (ring.go), made the first time
+// anyone waits. Producers join at the back; any number of wakers take from
+// the front at once, each record exactly once, so a producer that waits
+// behind k others is woken after at most k wakeups of its line. A producer
+// that gives up on ctx marks its record cancelled and leaves it in place;
+// wakers skip it.
+type parkLine struct {
+	line atomic.Pointer[ring[parkedProducer]]
+	// waiting counts the producers that announced themselves for this
+	// line, so wakers pay one load when nobody waits.
+	waiting atomic.Int32
+}
+
+func (l *parkLine) ring() *ring[parkedProducer] {
+	if r := l.line.Load(); r != nil {
+		return r
 	}
-	q.deliver()
+	r := new(ring[parkedProducer])
+	r.reset(parkLineSize)
+	if l.line.CompareAndSwap(nil, r) {
+		return r
+	}
+	return l.line.Load()
 }
 
-// wake asks for n parked producers to be woken, oldest first.
-func (q *parkQueue) wake(n int64) {
-	q.credits.Add(n)
-	q.deliver()
+func (l *parkLine) occupied() bool { return l.waiting.Load() > 0 }
+
+// ready reports whether a record, waiting or cancelled, is at the front.
+func (l *parkLine) ready() bool {
+	r := l.line.Load()
+	return r != nil && r.ready()
+}
+
+func (l *parkLine) join(p *parkedProducer) {
+	p.state.Store(parkWaiting)
+	r := l.ring()
+	for r.push(p, false) != ringOK {
+		runtime.Gosched()
+	}
+}
+
+// next takes the oldest waiting producer out of the line, or nil.
+func (l *parkLine) next() *parkedProducer {
+	r := l.line.Load()
+	if r == nil {
+		return nil
+	}
+	for {
+		p := r.pop()
+		if p == nil {
+			return nil
+		}
+		if p.state.CompareAndSwap(parkWaiting, parkWoken) {
+			return p
+		}
+	}
+}
+
+// wakeOne wakes the oldest producer in the line.
+func (l *parkLine) wakeOne() {
+	if p := l.next(); p != nil {
+		p.wake <- struct{}{}
+	}
+}
+
+// wakeAll wakes every producer in the line.
+func (l *parkLine) wakeAll() {
+	for p := l.next(); p != nil; p = l.next() {
+		p.wake <- struct{}{}
+	}
 }
 
 // cancel takes p out after its producer gave up waiting, and reports whether
-// p must be abandoned: still queued, it is skipped by the next pop and must
-// not be reused before then. When a waker got there first, cancel takes the
-// token it sent, and p is free again.
-func (q *parkQueue) cancel(p *parkedProducer) (abandoned bool) {
+// p was still in line: it then stays there, skipped by the next waker, and
+// must not be reused. Otherwise a waker took it first, and cancel takes the
+// token (and any slot) it sent.
+func (l *parkLine) cancel(p *parkedProducer) (abandoned bool) {
 	if p.state.CompareAndSwap(parkWaiting, parkCancelled) {
 		return true
 	}
 	<-p.wake
 	return false
-}
-
-func (q *parkQueue) deliver() {
-	for q.popping.CompareAndSwap(false, true) {
-		for q.credits.Load() > 0 {
-			p := q.queue.pop()
-			if p == nil {
-				break
-			}
-			if !p.state.CompareAndSwap(parkWaiting, parkWoken) {
-				continue // cancelled: its producer left
-			}
-			q.credits.Add(-1)
-			p.wake <- struct{}{}
-		}
-		q.popping.Store(false)
-		if q.credits.Load() <= 0 || q.queue.empty() {
-			return
-		}
-		// A producer parked (or is linking itself in) while this goroutine
-		// held the turn: take it back. A push between its swap and its link
-		// lasts a few instructions; yield so it can finish.
-		runtime.Gosched()
-	}
 }

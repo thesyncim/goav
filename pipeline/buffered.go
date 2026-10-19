@@ -62,11 +62,12 @@ type bufferedNode struct {
 	// sleeping is set by the worker before it parks on wake, so a producer
 	// pays one load per message and a channel send only to an idle worker.
 	sleeping atomic.Bool
-	// waiters counts parked producers, so the worker and slot releases pay
-	// one load per message and signal only when it is nonzero.
-	waiters atomic.Int32
-	// parked holds the parked producers, first come, first woken.
-	parked parkQueue
+	// slotLine holds the DropBlock producers waiting for a slot, spaceLine
+	// the ones holding a slot and waiting for a queue position (or any
+	// producer waiting out a flush); both first come, first served. The
+	// worker and slot releases read each one's count, one load per message.
+	slotLine  parkLine
+	spaceLine parkLine
 	// queuedBytes is the payload bytes of queued messages, maintained only
 	// when policy.MaxBytes > 0: a producer reserves before queuing (one CAS
 	// that also checks the budget), releaseSlot subtracts.
@@ -132,7 +133,6 @@ func (g *bufferedRunner) newNode(policy BufferPolicy) (*bufferedNode, error) {
 	// Closed until the queue opens: an emit before Run sheds.
 	n.queue.reset(0)
 	n.free.reset(0)
-	n.parked.init()
 	return n, nil
 }
 
@@ -379,7 +379,6 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 	}
 	node.drop.reset(node.policy)
 	node.queuedBytes.Store(0)
-	node.parked.credits.Store(0) // a close left a wake for everyone
 	node.sleeping.Store(false)
 	node.queue.reset(node.policy.Capacity)
 	node.opened = true
@@ -498,14 +497,14 @@ func countTargets(snap *snapshot[*bufferedNode], fromNode *snapshotNode[*buffere
 // budget, dropping policy) — counted where applicable, silent to the producer
 // on the plain Emit path, surfaced through Delivery on the EmitDelivery path.
 //
-// It takes no lock. Each pass reads the queue's tail once and lets the drop
-// policy decide on what it saw; admitting takes a free slot, binds the
-// message into it (header and references, outside any critical section),
-// and claims a queue position with one CAS. When a concurrent producer or a
-// close got there first, the CAS fails and the policy decides again on the
-// new state, keeping the bound slot. A DropBlock producer parks (await) and
-// never holds a slot while it waits, so it cannot starve the node's pool.
-// park is the producer's own parking record, nil for Inject.
+// It takes no lock. Each pass reads the queue's tail once; admitting takes a
+// free slot, binds the message into it (header and references, outside any
+// critical section), and claims a queue position with one CAS. When a
+// concurrent producer or a close got there first, the CAS fails and the pass
+// starts over on the new state, keeping the bound slot. A DropBlock producer
+// waits instead of shedding (see enqueueBlocking); the other policies decide
+// on what the pass saw. park is the producer's own parking record, nil for
+// Inject.
 func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message, park *parkedProducer) (bool, error) {
 	if node.paused.Load() {
 		// Branch paused: skip this node without touching the source or siblings.
@@ -526,7 +525,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	// bytes is the payload counted against MaxBytes; held is how much of it
 	// this enqueue has counted in queuedBytes. The budget is checked once, on
 	// entry, as one CAS that also counts it; a producer gives it back before it
-	// parks, so it never sheds others while it waits, and counts it again,
+	// waits, so it never sheds others while it waits, and counts it again,
 	// without a second check, when the message is admitted.
 	var bytes, held int64
 	if node.policy.MaxBytes > 0 {
@@ -538,61 +537,36 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		}
 		held = bytes
 	}
+	if node.policy.Drop == DropBlock {
+		return g.enqueueBlocking(ctx, node, msg, park, bytes, held)
+	}
 	var slot *bufferedMessage // bound to msg, not yet queued
-	parked := false
 	for {
 		t := q.tail.Load()
 		if t&ringClosed != 0 {
-			g.abandon(node, slot, held, parked)
+			g.abandon(node, slot, held)
 			return false, nil
 		}
 		if t&ringLocked != 0 {
-			// A flush is rewriting the queue: wait it out, holding no slot.
-			slot = node.giveBack(slot)
-			parked = true
+			// A flush is rewriting the queue: wait it out.
 			held = node.unhold(held)
-			if err := node.await(ctx, awaitUnlock, park); err != nil {
-				g.abandon(node, nil, held, parked)
+			if err := node.waitSpace(ctx, park, awaitUnlock); err != nil {
+				g.abandon(node, slot, held)
 				return false, err
 			}
 			continue
 		}
 		switch node.drop.decide(q.fullAt(t), msg) {
 		case bufferAdmit:
-			if !parked && node.policy.Drop == DropBlock && node.waiters.Load() > 0 {
-				// Producers are parked here: queue behind them rather than take
-				// the room one of them is woken for, so a producer that keeps
-				// running cannot starve the parked ones. Wake one for this room
-				// first, then park until a wakeup reaches this producer.
-				slot = node.giveBack(slot)
-				parked = true
-				held = node.unhold(held)
-				if err := node.await(ctx, awaitTurn, park); err != nil {
-					g.abandon(node, nil, held, parked)
-					return false, err
-				}
-				continue
-			}
 			if slot == nil {
 				if slot = node.free.popWait(); slot == nil {
 					// Every slot is queued, in delivery, or bound by another
-					// producer that is about to queue it: the shortage passes
-					// as the worker drains, so a blocking producer waits for
-					// a slot and any other policy reports backpressure.
-					if node.policy.Drop != DropBlock {
-						g.abandon(node, nil, held, parked)
-						return false, ErrBackpressure
-					}
-					parked = true
-					held = node.unhold(held)
-					if err := node.await(ctx, awaitSlot, park); err != nil {
-						g.abandon(node, nil, held, parked)
-						return false, err
-					}
-					continue
+					// producer: report backpressure.
+					g.abandon(node, nil, held)
+					return false, ErrBackpressure
 				}
 				if err := slot.bind(msg, node.policy); err != nil {
-					g.abandon(node, slot, held, parked)
+					g.abandon(node, slot, held)
 					return false, err
 				}
 			}
@@ -604,24 +578,13 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 			g.pending.add()
 			if q.push(slot, false) == ringOK {
 				node.wakeWorker()
-				if parked {
-					node.notifyWaiters() // pass the wakeup on
-				}
 				return true, nil
 			}
 			slot.bytes = 0
 			g.pending.done()
 			// Full, locked, or closed since the tail was read: decide again.
-		case bufferBlock:
-			slot = node.giveBack(slot)
-			parked = true
-			held = node.unhold(held)
-			if err := node.await(ctx, awaitSpace, park); err != nil {
-				g.abandon(node, nil, held, parked)
-				return false, err
-			}
 		case bufferDropIncoming:
-			g.abandon(node, slot, held, parked)
+			g.abandon(node, slot, held)
 			observeDrop(node.counters, node.policy.Drop, &g.cold)
 			return false, nil
 		case bufferDropOldest:
@@ -635,41 +598,123 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 				runtime.Gosched()
 			}
 		default:
-			g.abandon(node, slot, held, parked)
+			g.abandon(node, slot, held)
 			return false, ErrBackpressure
 		}
 	}
 }
 
+// enqueueBlocking is enqueue for DropBlock: true backpressure, first come,
+// first served. A producer needs a slot and then a queue position, and
+// waits for either rather than shed:
+//
+//   - A slot comes from the free list, unless producers already wait for
+//     one: then it queues behind them, and a released slot is handed to the
+//     oldest of them directly (pumpSlots), so no producer that keeps running
+//     can take slots ahead of parked ones. A producer that waited for one
+//     takes from the free list whenever it gets to look.
+//   - Holding a bound slot, it waits for a position when the queue is full;
+//     the worker's next take wakes the oldest such producer. With Capacity+1
+//     slots and Capacity positions, a full queue while a producer holds a
+//     slot only lasts until that take.
+//
+// Waiting polls nothing and allocates nothing (park.go).
+func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message, park *parkedProducer, bytes, held int64) (bool, error) {
+	q := &node.queue
+	var slot *bufferedMessage // bound to msg, not yet queued
+	waited := false           // has waited for a slot: may take one from the free list
+	lined := false            // has waited in the space line: may push
+	for {
+		t := q.tail.Load()
+		if t&ringClosed != 0 {
+			g.abandon(node, slot, held)
+			return false, nil
+		}
+		if t&ringLocked != 0 {
+			held = node.unhold(held)
+			if err := node.waitSpace(ctx, park, awaitUnlock); err != nil {
+				g.abandon(node, slot, held)
+				return false, err
+			}
+			continue
+		}
+		if slot == nil {
+			if waited || !node.slotLine.occupied() {
+				slot = node.free.popWait()
+			}
+			if slot == nil {
+				held = node.unhold(held)
+				s, err := node.waitSlot(ctx, park)
+				waited = true
+				if err != nil {
+					g.abandon(node, nil, held)
+					return false, err
+				}
+				if s == nil {
+					continue // closed: the next pass sheds
+				}
+				slot = s
+			}
+			if err := slot.bind(msg, node.policy); err != nil {
+				g.abandon(node, slot, held)
+				return false, err
+			}
+		}
+		if !lined && node.spaceLine.occupied() {
+			// Producers holding slots wait for a position: queue behind them
+			// rather than take the next one ahead of them.
+			lined = true
+			held = node.unhold(held)
+			if err := node.waitSpace(ctx, park, awaitTurn); err != nil {
+				g.abandon(node, slot, held)
+				return false, err
+			}
+			continue
+		}
+		if held != bytes {
+			node.queuedBytes.Add(bytes - held)
+			held = bytes
+		}
+		slot.bytes = bytes
+		g.pending.add()
+		switch q.push(slot, false) {
+		case ringOK:
+			node.wakeWorker()
+			return true, nil
+		case ringFull:
+			slot.bytes = 0
+			g.pending.done()
+			lined = true
+			held = node.unhold(held)
+			if err := node.waitSpace(ctx, park, awaitSpace); err != nil {
+				g.abandon(node, slot, held)
+				return false, err
+			}
+		default:
+			// Locked or closed since the tail was read: look again.
+			slot.bytes = 0
+			g.pending.done()
+		}
+	}
+}
+
 // abandon undoes an enqueue that did not queue its message: the bound slot
-// goes back to the pool, the counted bytes are returned, and a producer that
-// parked passes the wakeup on, so a token it consumed is not lost to the
-// other parked producers.
-func (g *bufferedRunner) abandon(node *bufferedNode, slot *bufferedMessage, held int64, parked bool) {
+// goes back to the pool (or to a producer waiting for one), and the counted
+// bytes are returned.
+func (g *bufferedRunner) abandon(node *bufferedNode, slot *bufferedMessage, held int64) {
 	if slot != nil {
 		node.releaseSlot(slot)
 	}
 	node.unhold(held)
-	if parked {
-		node.notifyWaiters()
-	}
 }
 
 // unhold returns the bytes an enqueue counted against MaxBytes before it
-// parks or gives up, and reports what it still holds: nothing.
+// waits or gives up, and reports what it still holds: nothing.
 func (n *bufferedNode) unhold(held int64) int64 {
 	if held != 0 {
 		n.queuedBytes.Add(-held)
 	}
 	return 0
-}
-
-// giveBack returns a bound, unqueued slot to the pool before a wait.
-func (n *bufferedNode) giveBack(slot *bufferedMessage) *bufferedMessage {
-	if slot != nil {
-		n.releaseSlot(slot)
-	}
-	return nil
 }
 
 // reserveBytes claims b bytes of the MaxBytes budget, or reports false when
@@ -687,94 +732,123 @@ func (n *bufferedNode) reserveBytes(b int64) bool {
 	}
 }
 
-// awaitCond is what a parked producer waits for.
+// awaitCond is what a producer in the space line waits for.
 type awaitCond uint8
 
 const (
 	awaitSpace  awaitCond = iota // a queue position (full DropBlock queue)
-	awaitSlot                    // a free slot
+	awaitTurn                    // a position, behind the producers already waiting
 	awaitUnlock                  // the end of a flush
-	awaitTurn                    // a wakeup of its own (queued behind parked producers)
 )
-
-// await parks a producer until cond may hold, ctx ends, or the queue closes.
-// It polls nothing and allocates nothing: the producer announces itself in
-// waiters, joins the node's park queue on its own wake channel, and sleeps.
-// Whatever can satisfy cond (the worker taking a message, a slot returning,
-// a flush ending, the queue closing) changes the queue state first and then
-// reads waiters, so either the producer's check (made after announcing)
-// sees the change and asks for a wakeup itself, or the signaler sees the
-// producer and asks for one; the queue delivers it to the oldest parked
-// producer (both sides are sequentially consistent atomics). The caller
-// re-runs its policy decision after every wakeup, so a spurious one only
-// costs a recheck. cached is the producer's own record, nil for Inject.
-func (n *bufferedNode) await(ctx context.Context, cond awaitCond, cached *parkedProducer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	p := takeParked(cached)
-	n.waiters.Add(1)
-	// A producer queuing behind others (awaitTurn) saw room; a wakeup for it
-	// goes to whoever parked first.
-	n.parked.park(p, cond == awaitTurn || n.ready(cond))
-	select {
-	case <-p.wake:
-		n.waiters.Add(-1)
-		putParked(cached, p)
-		return nil
-	case <-ctx.Done():
-		n.waiters.Add(-1)
-		if !n.parked.cancel(p) {
-			putParked(cached, p)
-		}
-		return ctx.Err()
-	}
-}
 
 func (n *bufferedNode) ready(cond awaitCond) bool {
 	t := n.queue.tail.Load()
 	if t&ringClosed != 0 {
 		return true
 	}
-	switch cond {
-	case awaitSpace:
+	if cond == awaitSpace || cond == awaitTurn {
 		return t&ringLocked != 0 || !n.queue.fullAt(t)
-	case awaitSlot:
-		return n.free.ready()
-	case awaitTurn:
-		return false
-	default:
-		return t&ringLocked == 0
+	}
+	return t&ringLocked == 0
+}
+
+// waitSlot queues the producer in the slot line and returns the slot a
+// release hands it, oldest first, or nil once the queue closed. The
+// producer announces itself, joins the line, and then pumps (pumpSlots), so
+// a slot freed before it joined still reaches the oldest in line; a close
+// that came before it joined is caught by the closed check after joining.
+func (n *bufferedNode) waitSlot(ctx context.Context, cached *parkedProducer) (*bufferedMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p := takeParked(cached)
+	n.slotLine.waiting.Add(1)
+	n.slotLine.join(p)
+	n.pumpSlots()
+	if n.queue.closed() {
+		n.wakeAllWaiters()
+	}
+	select {
+	case <-p.wake:
+	case <-ctx.Done():
+		n.slotLine.waiting.Add(-1)
+		if n.slotLine.cancel(p) {
+			return nil, ctx.Err() // p stays in line until skipped: not reused
+		}
+		if s := p.handed(); s != nil {
+			n.releaseSlot(s) // to the next in line
+		}
+		putParked(cached, p)
+		return nil, ctx.Err()
+	}
+	n.slotLine.waiting.Add(-1)
+	s := p.handed()
+	putParked(cached, p)
+	return s, nil
+}
+
+// pumpSlots hands free slots to the producers in the slot line, oldest
+// first. Any number of goroutines may pump at once: each pairs one free slot
+// with one producer from the line, both taken from lock-free rings. A pump
+// that finds the line empty puts its slot back and looks once more, because
+// a producer may have joined (and pumped, finding no slot) meanwhile; the
+// put-back and the join are each published before the other side's look.
+func (n *bufferedNode) pumpSlots() {
+	for n.slotLine.occupied() {
+		s := n.free.pop()
+		if s == nil {
+			return
+		}
+		p := n.slotLine.next()
+		if p == nil {
+			n.free.pushWait(s)
+			if n.slotLine.ready() {
+				continue
+			}
+			return
+		}
+		p.hand(s)
 	}
 }
 
-// notifyWaiters wakes the oldest parked producer when one can proceed: the
-// queue has a free position and the pool a free slot (an admit needs both),
-// or the queue closed or locked. Called on every queue take and slot return,
-// it costs one load when nobody waits. Whichever of the take and the return
-// completes the pair sees the other's change (each publishes its own and
-// then reads the other's), so the last one wakes.
-func (n *bufferedNode) notifyWaiters() {
-	if n.waiters.Load() > 0 && n.hasRoom() {
-		n.parked.wake(1)
+// waitSpace queues the producer in the space line until cond may hold: the
+// worker's next take wakes the oldest in line (a full queue), a flush's end
+// or a close wakes everyone. It checks cond after announcing itself and
+// again after joining, waking the oldest in line itself when cond holds by
+// then, so a change that came meanwhile is never lost.
+func (n *bufferedNode) waitSpace(ctx context.Context, cached *parkedProducer, cond awaitCond) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if n.spaceLine.waiting.Add(1) == 1 && cond != awaitTurn && n.ready(cond) {
+		// Alone in the line and the change already came: no need to wait.
+		n.spaceLine.waiting.Add(-1)
+		return nil
+	}
+	defer n.spaceLine.waiting.Add(-1)
+	p := takeParked(cached)
+	n.spaceLine.join(p)
+	if n.ready(cond) {
+		n.spaceLine.wakeOne()
+	}
+	select {
+	case <-p.wake:
+		putParked(cached, p)
+		return nil
+	case <-ctx.Done():
+		if n.spaceLine.cancel(p) {
+			return ctx.Err() // p stays in line until skipped: not reused
+		}
+		putParked(cached, p)
+		return ctx.Err()
 	}
 }
 
-func (n *bufferedNode) hasRoom() bool {
-	t := n.queue.tail.Load()
-	return t&(ringClosed|ringLocked) != 0 || (!n.queue.fullAt(t) && n.free.ready())
-}
-
-// wakeAllWaiters wakes every parked producer, and every one that parks
-// later, because the queue closed: each sheds.
+// wakeAllWaiters wakes every producer in either line: the queue closed, so
+// each sheds. One that joins later sees the close after joining.
 func (n *bufferedNode) wakeAllWaiters() {
-	n.parked.wake(1 << 40)
-}
-
-// wakeParked wakes the producers parked now, because a flush ended and each
-// must look again.
-func (n *bufferedNode) wakeParked() {
-	n.parked.wake(int64(n.waiters.Load()) + 1)
+	n.slotLine.wakeAll()
+	n.spaceLine.wakeAll()
 }
 
 // wakeWorker hands the token to a worker parked on an empty queue. The
@@ -840,9 +914,11 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode) {
 			}
 			continue
 		}
-		// Taking a message frees a queue position a parked DropBlock producer
-		// may be waiting on, even while this slot stays held through delivery.
-		node.notifyWaiters()
+		// Taking a message frees a queue position a DropBlock producer holding
+		// a slot may be waiting on.
+		if node.spaceLine.occupied() {
+			node.spaceLine.wakeOne()
+		}
 		switch {
 		case g.fail.failed.Load():
 			// The run failed; shed without delivering.
@@ -946,7 +1022,7 @@ func qosStreamID(msg *Message) av.StreamID {
 }
 
 // releaseSlot drops the references a slot holds and returns it to the free
-// list, waking a producer parked for one.
+// list, handing it straight on to the oldest producer waiting for one.
 func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	if slot == nil {
 		return
@@ -957,7 +1033,9 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	}
 	slot.release()
 	n.free.pushWait(slot)
-	n.notifyWaiters()
+	if n.slotLine.occupied() {
+		n.pumpSlots()
+	}
 }
 
 // slotPlanes is the plane capacity each slot reserves up front, enough for

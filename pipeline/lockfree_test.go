@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -425,7 +426,7 @@ func onMessagePath(frames []string) bool {
 		if !strings.Contains(f, "goav/pipeline.") {
 			continue
 		}
-		for _, fn := range []string{".Emit", ".EmitDelivery", ".emitDelivery", ".deliver", ".enqueue", ".runNode", ".own", ".queue", ".release", ".handle", ".await", ".yield"} {
+		for _, fn := range []string{".Emit", ".EmitDelivery", ".emitDelivery", ".deliver", ".enqueue", ".runNode", ".own", ".queue", ".release", ".handle", ".enqueueBlocking", ".waitSlot", ".waitSpace", ".pumpSlots", ".releaseSlot", ".yield"} {
 			if strings.Contains(f, fn+"+") || strings.HasSuffix(f, fn) {
 				return true
 			}
@@ -642,7 +643,7 @@ func TestGraphBufferedParkedProducersAllocs(t *testing.T) {
 		emitters[i] = source.emitter
 	}
 	node := runner.nodes[runner.index["sink"]]
-	sink.probe = func() bool { return node.waiters.Load() > 0 }
+	sink.probe = func() bool { return node.slotLine.occupied() || node.spaceLine.occupied() }
 	pool := newProducerPool(emitters, perRound)
 	mallocs := mallocsOver(t, pool, rounds, func() { sink.saw.Store(false); sink.hold.Store(true) })
 	t.Logf("%d allocations over %d messages", mallocs, producers*perRound*rounds)
@@ -721,19 +722,100 @@ func TestBufferedBlockingDiamondCompletes(t *testing.T) {
 	}
 }
 
-// TestParkedProducersAllProgress pins fair, bounded waiting for parked
-// producers: 24 DropBlock producers outpace a slow sink on a one-slot queue,
-// so most of them are parked at any time. Parked producers are woken first
-// come, first served, and a producer that has not parked yet queues behind
-// them instead of taking the room, so no producer waits out the others: by
-// the time the first producer finishes, every one has made real progress.
+// TestParkLinesServeInJoinOrder pins the order a buffered node serves its
+// waiting producers in, deterministically: released slots are handed to the
+// slot line in exactly the order its producers joined, skipping one that
+// gave up, and the space line wakes its oldest first. A producer that joins
+// behind k others is served after exactly k grants.
+func TestParkLinesServeInJoinOrder(t *testing.T) {
+	node := &bufferedNode{}
+	node.free.reset(8)
+	slots := make([]bufferedMessage, 4)
+	in := make([]*parkedProducer, 5)
+	for i := range in {
+		in[i] = newParkedProducer()
+		node.slotLine.waiting.Add(1)
+		node.slotLine.join(in[i])
+	}
+	if !node.slotLine.cancel(in[2]) {
+		t.Fatal("cancel of a producer still in line reported a handoff")
+	}
+	node.slotLine.waiting.Add(-1)
+	served := []int{}
+	for i := range slots {
+		node.free.pushWait(&slots[i])
+		node.pumpSlots()
+		for j, p := range in {
+			if len(p.wake) == 1 {
+				<-p.wake
+				if p.handed() != &slots[i] {
+					t.Fatalf("producer %d woke without slot %d", j, i)
+				}
+				node.slotLine.waiting.Add(-1)
+				served = append(served, j)
+			}
+		}
+	}
+	if want := []int{0, 1, 3, 4}; !slices.Equal(served, want) {
+		t.Fatalf("slots went to producers %v, want %v (join order, the cancelled one skipped)", served, want)
+	}
+
+	node.queue.reset(1)
+	space := make([]*parkedProducer, 3)
+	for i := range space {
+		space[i] = newParkedProducer()
+		node.spaceLine.join(space[i])
+	}
+	for i := range space {
+		node.spaceLine.wakeOne()
+		for j, p := range space {
+			if got := len(p.wake); (j == i) != (got == 1) {
+				t.Fatalf("wakeup %d: producer %d holds %d tokens, want the oldest woken first", i, j, got)
+			}
+		}
+		<-space[i].wake
+	}
+}
+
+// gatedSleepSink holds every Handle until gate closes, then sleeps a moment
+// per message. Sleeping (not spinning) parks the worker on a timer: a
+// worker and the producer it just woke cannot then keep handing the P to
+// each other through the scheduler's runnext slot and starve the producers
+// queued behind it, so the pace below measures the pipeline's order, not
+// the scheduler's.
+type gatedSleepSink struct {
+	name  string
+	gate  chan struct{}
+	delay time.Duration
+}
+
+func (s *gatedSleepSink) Name() string { return s.name }
+func (s *gatedSleepSink) Close() error { return nil }
+
+func (s *gatedSleepSink) Handle(context.Context, *Message) error {
+	<-s.gate
+	time.Sleep(s.delay)
+	return nil
+}
+
+// TestParkedProducersAllProgress pins that producers parked on one node are
+// served in turn, on any number of CPUs. 24 DropBlock producers feed a slow
+// sink through a one-slot queue; the sink holds its first message until all
+// 24 are waiting in the node's lines, so the measured phase starts with
+// every producer in line. From there a slot goes to whoever waited longest,
+// and a producer that got through queues behind the rest for its next one
+// (TestParkLinesServeInJoinOrder pins that order), so they take turns: by
+// the time the first producer has done 30 more emits, every one has done at
+// least three quarters as many. A producer that ran ahead of waiting ones,
+// or one left waiting while others came round, fails it. Every producer also
+// completes.
 func TestParkedProducersAllProgress(t *testing.T) {
-	const producers, perProducer = 24, 300
+	const producers, perProducer, measured = 24, 60, 30
 	graph, err := NewGraph(GraphConfig{Name: "fair-park", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink := &contendedSink{name: "sink", spin: 3000}
+	sink := &gatedSleepSink{name: "sink", gate: make(chan struct{}), delay: 5 * time.Microsecond}
 	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
@@ -752,34 +834,56 @@ func TestParkedProducersAllProgress(t *testing.T) {
 	for _, source := range sources {
 		<-source.ready
 	}
+	node := graph.(*bufferedRunner).nodes[0]
 
 	progress := make([]atomic.Int64, producers)
+	var base []int64
 	first := make(chan []int64, 1)
+	measuring := make(chan struct{})
 	var wg sync.WaitGroup
-	start := make(chan struct{})
 	for i, source := range sources {
 		wg.Go(func() {
 			packet := av.Packet{StreamID: "fair", Payload: av.Buffer{Bytes: make([]byte, 64)}}
 			msg := Message{Kind: MessagePacket, Packet: &packet}
-			<-start
+			reported := false
 			for range perProducer {
 				if err := source.emitter.Emit(context.Background(), &msg); err != nil {
 					t.Error(err)
 					return
 				}
-				progress[i].Add(1)
-			}
-			snapshot := make([]int64, producers)
-			for j := range progress {
-				snapshot[j] = progress[j].Load()
-			}
-			select {
-			case first <- snapshot:
-			default:
+				n := progress[i].Add(1)
+				select {
+				case <-measuring:
+					if !reported && n-base[i] >= measured {
+						reported = true
+						snapshot := make([]int64, producers)
+						for j := range progress {
+							snapshot[j] = progress[j].Load() - base[j]
+						}
+						select {
+						case first <- snapshot:
+						default:
+						}
+					}
+				default:
+				}
 			}
 		})
 	}
-	close(start)
+	// The sink holds its first message: wait until every producer waits in
+	// a line, then start measuring and let the sink go.
+	for deadline := time.Now().Add(10 * time.Second); node.slotLine.waiting.Load()+node.spaceLine.waiting.Load() < producers; {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d producers ever waited", node.slotLine.waiting.Load()+node.spaceLine.waiting.Load(), producers)
+		}
+		runtime.Gosched()
+	}
+	base = make([]int64, producers)
+	for i := range progress {
+		base[i] = progress[i].Load()
+	}
+	close(measuring)
+	close(sink.gate)
 	wg.Wait()
 	for _, source := range sources {
 		close(source.release)
@@ -790,13 +894,15 @@ func TestParkedProducersAllProgress(t *testing.T) {
 	if err := graph.Close(); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := <-first
-	slowest := snapshot[0]
-	for _, n := range snapshot {
-		slowest = min(slowest, n)
+	for i := range progress {
+		if got := progress[i].Load(); got != perProducer {
+			t.Fatalf("producer %d completed %d of %d emits", i, got, perProducer)
+		}
 	}
-	t.Logf("slowest producer at %d of %d when the first finished", slowest, perProducer)
-	if slowest < perProducer/2 {
-		t.Fatalf("when the first producer finished %d messages, the slowest had %d: some producers starve (%v)", perProducer, slowest, snapshot)
+	snapshot := <-first
+	slowest := slices.Min(snapshot)
+	t.Logf("slowest producer at %d when the first had done %d more emits", slowest, measured)
+	if slowest < measured*3/4 {
+		t.Fatalf("when the first producer had done %d more emits, the slowest had %d: parked producers are not served in turn (%v)", measured, slowest, snapshot)
 	}
 }

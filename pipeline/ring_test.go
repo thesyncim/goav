@@ -248,6 +248,8 @@ func TestRingNeverReportsSpuriousFull(t *testing.T) {
 		for !done.Load() || !r.drained() {
 			if r.pop() != nil {
 				popped.Add(1)
+			} else {
+				runtime.Gosched() // one P: let the pusher run
 			}
 		}
 	})
