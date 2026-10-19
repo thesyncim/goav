@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The nested modules now require the main commit with the URI follow-ups
+  (#216), so installing the CLI or webrtcav picks up split schemes and WHEP
+  ice-servers.
 - Fix: offline joins and buffered graphs over several files write the same
   bytes on every run and at any GOMAXPROCS. A Mix or Composite (arrival or
   ByPTS) beside another file's stream and two files into one mux behind a
