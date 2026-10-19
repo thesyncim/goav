@@ -147,11 +147,18 @@ func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 		source.pacer = newDemuxPacer(clock)
 	}
 	source.initStreamEvents(config.Demuxer.Streams())
-	if seeker, ok := config.Demuxer.(Seeker); ok {
+	if seeker, ok := config.Demuxer.(Seeker); ok && inputCanSeek(config.Demuxer) {
 		source.seeker = seeker
 		return &controllableDemuxSource{DemuxSource: source}, nil
 	}
 	return source, nil
+}
+
+// inputCanSeek is false for a Seeker whose open input cannot reposition
+// (CanSeek, see Seeker).
+func inputCanSeek(demuxer Demuxer) bool {
+	checker, ok := demuxer.(interface{ CanSeek() bool })
+	return !ok || checker.CanSeek()
 }
 
 // controllableDemuxSource is the pipeline.ControllableSource face of a

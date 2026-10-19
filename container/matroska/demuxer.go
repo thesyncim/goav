@@ -148,7 +148,13 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 		return err
 	}
 	d.reader = ebml.NewReader(r, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
-	d.seeker, _ = r.(io.ReadSeeker)
+	// A reader with a Seek method may still not reposition (an *os.File over
+	// a pipe): ask it where it is, which a pipe refuses.
+	if seeker, ok := r.(io.ReadSeeker); ok {
+		if _, err := seeker.Seek(0, io.SeekCurrent); err == nil {
+			d.seeker = seeker
+		}
+	}
 	if d.groupReader == nil {
 		d.groupReader = ebml.NewReader(&d.groupLimit, ebml.ReaderOptions{MaxElementSize: opts.MaxElementSize})
 	}
@@ -210,6 +216,10 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.clearLace()
 	return d.readPreamble()
 }
+
+// CanSeek reports whether the reader can reposition: it is an io.Seeker
+// that knows its position, which a pipe does not.
+func (d *Demuxer) CanSeek() bool { return d != nil && d.seeker != nil }
 
 func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if d == nil || d.reader == nil {

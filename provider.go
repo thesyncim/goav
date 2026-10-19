@@ -58,6 +58,9 @@ func (s InputSpec) withProvider(src provider.Input) InputSpec {
 			s.input.Name = named.Name()
 			s.name = s.input.Name
 		}
+		if protocol, ok := src.(interface{ Protocol() av.ProtocolID }); ok && s.input.Protocol == "" {
+			s.input.Protocol = protocol.Protocol()
+		}
 	default:
 		s.err = errProviderInputKind
 		return s

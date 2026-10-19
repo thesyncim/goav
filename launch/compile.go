@@ -338,7 +338,7 @@ func (c *compiler) fileInput(ref fileRef, t *termNode) (value, error) {
 	}
 	in := goav.URIInput(ref.uri)
 	if ref.uri == "" {
-		in = goav.FileInput(ref.path, &lazyReader{fs: c.cfg.files, name: ref.path})
+		in = goav.Input(fileBytes{fs: c.cfg.files, name: ref.path})
 	}
 	c.inputs[ref.key()] = in
 	return value{kind: kindInput, input: in}, nil

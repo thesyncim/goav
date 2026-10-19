@@ -157,6 +157,15 @@ func (d qualifiedSeekDemuxer) Seek(ctx context.Context, position time.Duration) 
 	return d.seeker.Seek(ctx, position)
 }
 
+func (d qualifiedSeekDemuxer) CanSeek() bool { return canSeek(d.seeker) }
+
+// canSeek forwards a wrapped Seeker's CanSeek (format.Seeker): true unless
+// the seeker reports its input cannot reposition.
+func canSeek(seeker format.Seeker) bool {
+	checker, ok := seeker.(interface{ CanSeek() bool })
+	return !ok || checker.CanSeek()
+}
+
 func newQualifiedDemuxer(demuxer format.Demuxer, qualifier string) format.Demuxer {
 	q := &qualifiedDemuxer{Demuxer: demuxer, qualifier: qualifier, ids: map[av.StreamID]av.StreamID{}}
 	for _, stream := range demuxer.Streams() {

@@ -18,8 +18,10 @@ import (
 // requested reposition in Control and applies it from its pump loop between
 // reads, so implementations need no locking against their own read path.
 //
-// A demuxer whose input cannot reposition (its reader is not an io.Seeker)
-// reports an error wrapping ErrNotSeekable instead of pretending.
+// A demuxer whose seeking depends on its input also implements CanSeek()
+// bool, answered once it is open: false (a pipe, a plain io.Reader) makes the
+// source it feeds refuse seeks up front with ErrNotSeekable and keep playing.
+// Seek on such input reports an error wrapping ErrNotSeekable.
 type Seeker interface {
 	Seek(ctx context.Context, position time.Duration) error
 }

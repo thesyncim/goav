@@ -22,3 +22,11 @@
 - Attaching `task.Tap(name)` for a tap the task does not have is refused as
   `runtime_branch_tap_missing` even when the branch encodes or resamples,
   instead of a misleading packet-domain shape error.
+- A seek or segment control on a source that cannot reposition is refused when
+  it is asked, wrapping `format.ErrNotSeekable` with the fix, and the task plays
+  on; it used to return nil and then stop the task. A demuxer whose seeking
+  depends on its input reports it through `CanSeek() bool` (Matroska and WebM
+  do, and probe the reader, so a pipe behind an `*os.File` counts as
+  unseekable). CLI `file` inputs open when the run starts and keep the file's
+  capabilities, so `goav ctl seek` works on them; a `provider.ByteSource` may
+  also implement `Protocol() av.ProtocolID`.

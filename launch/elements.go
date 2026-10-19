@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -10,9 +11,11 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // Element is one name a program can use: a source that starts a pipeline, an
@@ -287,31 +290,38 @@ func (f rootFiles) Create(name string) (io.Writer, error) {
 func (f rootFiles) Rename(oldname, newname string) error { return f.root.Rename(oldname, newname) }
 func (f rootFiles) Remove(name string) error             { return f.root.Remove(name) }
 
-// lazyReader opens its file on the first read, so compiling or describing a
-// program opens nothing.
-type lazyReader struct {
+// fileBytes is a program's file input: the runtime opens it when the run
+// starts, so compiling or describing a program opens nothing, and the file
+// it opens keeps its own capabilities: a regular file seeks, a pipe does not.
+type fileBytes struct {
 	fs   FileSystem
 	name string
-	r    io.Reader
-	err  error
 }
 
-func (l *lazyReader) Read(p []byte) (int, error) {
-	if l.r == nil && l.err == nil {
-		l.r, l.err = l.fs.Open(l.name)
+func (f fileBytes) Name() string            { return f.name }
+func (f fileBytes) Protocol() av.ProtocolID { return av.ProtocolFile }
+func (f fileBytes) SourceShape() shape.Spec { return shape.Spec{} }
+
+func (f fileBytes) OpenBytes(ctx context.Context) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if l.err != nil {
-		return 0, l.err
+	reader, err := f.fs.Open(f.name)
+	if err != nil {
+		return nil, err
 	}
-	return l.r.Read(p)
+	if closer, ok := reader.(io.ReadCloser); ok {
+		return closer, nil
+	}
+	if seeker, ok := reader.(io.ReadSeeker); ok {
+		return nopSeekCloser{seeker}, nil
+	}
+	return io.NopCloser(reader), nil
 }
 
-func (l *lazyReader) Close() error {
-	if c, ok := l.r.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
-}
+type nopSeekCloser struct{ io.ReadSeeker }
+
+func (nopSeekCloser) Close() error { return nil }
 
 // lazyWriter creates its file on the first write, so compiling or describing
 // a program creates nothing.

@@ -77,6 +77,8 @@ func (d byteInputSeekDemuxer) Seek(ctx context.Context, position time.Duration) 
 	return d.seeker.Seek(ctx, position)
 }
 
+func (d byteInputSeekDemuxer) CanSeek() bool { return canSeek(d.seeker) }
+
 func newByteInputDemuxer(demuxer format.Demuxer, reader io.Closer) format.Demuxer {
 	d := &byteInputDemuxer{Demuxer: demuxer, reader: reader}
 	if seeker, ok := demuxer.(format.Seeker); ok {
