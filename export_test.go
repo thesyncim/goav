@@ -1,9 +1,65 @@
 package goav
 
 import (
+	"context"
+
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/lifecycle"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
+
+// AttachPlannedForTest attaches outs to a running task as Attach does and
+// returns, beside the attachment, the graph patch the attach planned before
+// it touched the graph: the attach twin of Describe.
+func AttachPlannedForTest(ctx context.Context, live LiveTask, outs ...Output) (pipeline.Spec, Attachment, error) {
+	t := live.(*task)
+	branches, err := t.attachBranches(outs)
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	input, err := runtimeAttachInputFromBranchSpecs(branches)
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	return t.attachPlanned(ctx, input)
+}
+
+// RebranchPlannedForTest plans and attaches the replacements a Rebranch with
+// args attaches, leaving the replaced branch in place.
+func RebranchPlannedForTest(ctx context.Context, live LiveTask, args ...lifecycle.RebranchArg) (pipeline.Spec, Attachment, error) {
+	t := live.(*task)
+	args, err := t.rebranchArgs(args)
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	input, err := runtimeRebranchInputFromArgs(ctx, args)
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	return t.attachPlanned(ctx, input.attach)
+}
+
+func (t *task) attachPlanned(ctx context.Context, input runtimeAttachInput) (pipeline.Spec, Attachment, error) {
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	p, err := t.planAttach(ctx, input)
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	planned, err := p.spec()
+	if err != nil {
+		p.close()
+		return pipeline.Spec{}, nil, err
+	}
+	attachment, err := p.apply()
+	if err != nil {
+		return pipeline.Spec{}, nil, err
+	}
+	t.trackAttachmentLocked(attachment)
+	t.addAttachmentTapsLocked(attachment.taps)
+	return planned, attachment, nil
+}
 
 // operationContract is the shape.Contract of one planned operation, for the
 // shape-contract tests.

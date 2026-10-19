@@ -212,10 +212,14 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		return nil
 	}))
 
-	task, err := legacyMix(
-		recipeFrom(Input(&crossSeekArmProvider{source: seekable, codec: pcm})).Audio().Decode(),
-		recipeFrom(mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(sink).UseRuntime(rt).BuildLive(ctx)
+	task, err := rt.Build(ctx,
+		Mix(
+			Input(&crossSeekArmProvider{source: seekable, codec: pcm}).Audio().Decode(),
+			mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+		).
+			SyncByPTS().
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,10 +297,13 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := legacyMix(
-		recipeFrom(tapArmTestPacketSource("a", pcm, 100, 100)).Audio().Decode(),
-		recipeFrom(crossGatedFrameSource("b", release, []int16{1, 1}, []int16{2, 2})).Audio(),
-	).To(sink).UseRuntime(rt).BuildLive(ctx)
+	task, err := rt.Build(ctx,
+		Mix(
+			tapArmTestPacketSource("a", pcm, 100, 100).Audio().Decode(),
+			crossGatedFrameSource("b", release, []int16{1, 1}, []int16{2, 2}).Audio(),
+		).
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,10 +417,12 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	source := &crossSegmentGatedSource{stream: "audio", ready: make(chan struct{}), resume: make(chan struct{})}
-	task, err := recipeFrom(Input(&crossSegmentGatedProvider{source: source})).
-		Audio().Copy().
-		Tap(packetTapRef("audio.packets")).
-		To(lifecycleTestSink("base")).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Input(&crossSegmentGatedProvider{source: source}).
+			Audio().
+			Tap("audio.packets").
+			To(lifecycleTestSink("base")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,15 +441,14 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	var recorded atomic.Int32
-	if _, err := legacyAttach(task, ctx, newBranch("rec").
-		From(packetTapRef("audio.packets")).
-		Copy().
-		To(Sink(SinkFunc("rec", func(_ context.Context, msg Message) error {
+	if _, err := task.Attach(ctx,
+		task.Tap("audio.packets").As("rec").To(Sink(SinkFunc("rec", func(_ context.Context, msg Message) error {
 			if msg.Kind == pipeline.MessagePacket {
 				recorded.Add(1)
 			}
 			return nil
-		})))); err != nil {
+		}))),
+	); err != nil {
 		t.Fatal(err)
 	}
 	close(source.resume)
@@ -561,18 +569,20 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 	releaseA := make(chan struct{}, 2)
 	releaseB := make(chan struct{}, 2)
 	var main, old, replacement crossLockedFrames
-	task, err := legacyMix(
-		recipeFrom(crossGatedFrameSource("a", releaseA, []int16{100, 100}, []int16{200, 200})).Audio(),
-		recipeFrom(crossGatedFrameSource("b", releaseB, []int16{1, 1}, []int16{2, 2})).Audio(),
-	).Tap(frameTapRef("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
+	task, err := crossLiveJoinRuntime().Build(ctx,
+		Mix(
+			crossGatedFrameSource("a", releaseA, []int16{100, 100}, []int16{200, 200}).Audio(),
+			crossGatedFrameSource("b", releaseB, []int16{1, 1}, []int16{2, 2}).Audio(),
+		).
+			Tap("mixed").
+			To(main.sink("out")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	attachment, err := legacyAttach(task, ctx, newBranch("watch").
-		From(frameTapRef("mixed")).
-		To(old.sink("old")))
+	attachment, err := task.Attach(ctx, task.Tap("mixed").As("watch").To(old.sink("old")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,17 +638,19 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 	releaseA := make(chan struct{}, 3)
 	releaseB := make(chan struct{}, 3)
 	var main, watched crossLockedFrames
-	task, err := legacyMix(
-		recipeFrom(crossGatedFrameSource("a", releaseA, []int16{10}, []int16{20}, []int16{30})).Audio(),
-		recipeFrom(crossGatedFrameSource("b", releaseB, []int16{1}, []int16{2}, []int16{3})).Audio(),
-	).Tap(frameTapRef("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
+	task, err := crossLiveJoinRuntime().Build(ctx,
+		Mix(
+			crossGatedFrameSource("a", releaseA, []int16{10}, []int16{20}, []int16{30}).Audio(),
+			crossGatedFrameSource("b", releaseB, []int16{1}, []int16{2}, []int16{3}).Audio(),
+		).
+			Tap("mixed").
+			To(main.sink("out")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attachment, err := legacyAttach(task, ctx, newBranch("watch").
-		From(frameTapRef("mixed")).
-		To(watched.sink("watch")))
+	attachment, err := task.Attach(ctx, task.Tap("mixed").As("watch").To(watched.sink("watch")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,10 +713,13 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 	releaseA := make(chan struct{}, 2)
 	bEnded := make(chan struct{})
 	var got crossLockedFrames
-	task, err := legacySelect(
-		recipeFrom(crossGatedFrameSource("a", releaseA, []int16{100}, []int16{200})).Audio(),
-		recipeFrom(crossSignaledFrameSource("b", bEnded, 7)).Audio(),
-	).To(got.sink("out")).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Select(
+			crossGatedFrameSource("a", releaseA, []int16{100}, []int16{200}).Audio(),
+			crossSignaledFrameSource("b", bEnded, 7).Audio(),
+		).
+			To(got.sink("out")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,14 +794,18 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	}
 	rt := solverTestOpusRuntime(testBundleFilters())
 
-	job := recipeFrom(
-		solverTestAudioSource("micA", 44_100, codec.Stereo, av.SampleFormatS16),
-		solverTestAudioSource("micB", 44_100, codec.Stereo, av.SampleFormatS16),
-	).
-		Audio(selectInputName("micA")).Auto(shape.AllowResample()).Encode(codec.Opus(codec.Bitrate(96_000))).To(sinkDest("outA")).
-		Audio(selectInputName("micB")).Encode(codec.Opus(codec.Bitrate(96_000))).To(sinkDest("outB")).
-		UseRuntime(rt)
-	planned, err := job.Describe()
+	outs := []Output{
+		solverTestAudioSource("micA", 44_100, codec.Stereo, av.SampleFormatS16).
+			Audio().
+			Auto(shape.AllowResample()).
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(sinkDest("outA")),
+		solverTestAudioSource("micB", 44_100, codec.Stereo, av.SampleFormatS16).
+			Audio().
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(sinkDest("outB")),
+	}
+	planned, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
@@ -800,7 +819,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	if strings.Contains(text, "select-audio@micB -> resample") {
 		t.Fatalf("chain B must not borrow chain A's Auto grant:\n%s", text)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), outs...)
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}
@@ -813,22 +832,16 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
-	job := legacyMix(
-		recipeFrom(mixTestAudioSourceRate("a", 44_100)).Audio(),
-		recipeFrom(mixTestAudioSourceRate("b", 44_100)).Audio(),
-	).Branches(
-		newBranch("enc").
-			Auto(shape.AllowResample()).
-			Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
-			To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
-				if m.Kind == pipeline.MessagePacket && m.Packet != nil {
-					packets++
-				}
-				return nil
-			}))),
-	).UseRuntime(rt)
+	outs := []Output{
+		Mix(mixTestAudioSourceRate("a", 44_100).Audio(), mixTestAudioSourceRate("b", 44_100).Audio()).Auto(shape.AllowResample()).Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).As("enc").To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
+			if m.Kind == pipeline.MessagePacket && m.Packet != nil {
+				packets++
+			}
+			return nil
+		}))),
+	}
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
@@ -838,7 +851,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 		!strings.Contains(text, "resample-enc -> encode-enc") {
 		t.Fatalf("joined branch output was not solved before encode:\n%s", text)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), outs...)
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}
@@ -855,14 +868,11 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 }
 
 func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSourceRate("a", 44_100)).Audio(),
-		recipeFrom(mixTestAudioSourceRate("b", 44_100)).Audio(),
-	).
-		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
-		To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		Build(context.Background())
+	_, err := solverTestOpusRuntime(testBundleFilters()).Build(context.Background(),
+		Mix(mixTestAudioSourceRate("a", 44_100).Audio(), mixTestAudioSourceRate("b", 44_100).Audio()).
+			Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
+			To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))),
+	)
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
@@ -883,21 +893,16 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
-	job := legacyMix(
-		recipeFrom(mixTestAudioSourceRate("a", 44_100)).Audio(),
-		recipeFrom(mixTestAudioSourceRate("b", 44_100)).Audio(),
-	).
-		Auto(shape.AllowResample()).
-		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
-		To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
+	outs := []Output{
+		Mix(mixTestAudioSourceRate("a", 44_100).Audio(), mixTestAudioSourceRate("b", 44_100).Audio()).Auto(shape.AllowResample()).Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
 			if m.Kind == pipeline.MessagePacket && m.Packet != nil {
 				packets++
 			}
 			return nil
-		}))).
-		UseRuntime(rt)
+		}))),
+	}
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
@@ -907,7 +912,7 @@ func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 		!strings.Contains(text, "resample-mix -> encode-mix") {
 		t.Fatalf("joined terminal encode was not solved before encode:\n%s", text)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), outs...)
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}

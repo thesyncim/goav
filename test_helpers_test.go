@@ -97,3 +97,13 @@ func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16
 			return push.EOS()
 		})
 }
+
+// compileOutputs compiles Outputs on rt with options, as Describe or Build
+// does, for tests that read the compiled recipe.
+func compileOutputs(rt *Runtime, options recipeCompileOptions, outs ...Output) (recipeResolved, error) {
+	g, err := compileGraph(outs)
+	if err != nil {
+		return recipeResolved{}, err
+	}
+	return compileRecipe(g, rt, options)
+}

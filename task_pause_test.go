@@ -27,10 +27,8 @@ func TestTaskPauseFreezesPacedFlow(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx, playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,10 +84,8 @@ func TestTaskPauseSnapshotAndCloseContract(t *testing.T) {
 	clock := &recordingTestClock{}
 	log := newPlayoutArrivalLog(clock)
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,11 +261,9 @@ func TestTaskSeekWhilePausedAppliesAtNextReadBoundary(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	step := newPauseStepSink()
 	clock := &paceFileClock{}
-	task, err := recipeFrom(FileInput("seek.mkv", bytes.NewReader(data))).
-		UseRuntime(mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock))).
-		Audio().Copy().
-		To(Sink(SinkFunc("rec", step.record))).
-		BuildLive(ctx)
+	task, err := mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock)).Build(ctx, FileInput("seek.mkv", bytes.NewReader(data)).
+		Audio().
+		To(Sink(SinkFunc("rec", step.record))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,11 +350,9 @@ func TestTaskReadinessEventFires(t *testing.T) {
 	video := &countingPacketSink{}
 	audio := &countingPacketSink{}
 
-	task, err := recipeFrom(Input(&timelinePacedProvider{source: cam}), Input(&timelinePacedProvider{source: mic})).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Copy().To(Sink(SinkFunc("video", video.record))).
-		Audio().Copy().To(Sink(SinkFunc("audio", audio.record))).
-		BuildLive(ctx)
+	task, err := mustNew(WithClock(clock)).Build(ctx,
+		Input(&timelinePacedProvider{source: cam}).Video().To(Sink(SinkFunc("video", video.record))),
+		Input(&timelinePacedProvider{source: mic}).Audio().To(Sink(SinkFunc("audio", audio.record))))
 	if err != nil {
 		t.Fatal(err)
 	}

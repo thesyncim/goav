@@ -22,7 +22,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		),
 	)...)
-	job := recipeFrom(
+	outs := []Output{
 		Input(&liveTestProvider{
 			name:    "audio",
 			media:   av.MediaAudio,
@@ -35,10 +35,10 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 					Type: av.MediaAudio,
 				},
 			}},
-		}),
-	).Copy().To(destinationHandle(fileDestination("recording.ogg", io.Discard))).UseRuntime(runtime)
+		}).To(destinationHandle(fileDestination("recording.ogg", io.Discard))),
+	}
 
-	resolved, err := compileJobRecipeForBuild(job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(context.Background()), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
@@ -64,18 +64,18 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	web := destinationHandle(fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
-	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
-		Video().
-		Decode().
-		Tap(frameTapRef("video.decoded")).
-		Branches(
-			newBranch("360p").
-				Resize(640, 360).
-				Encode(codec.VP9(codec.Bitrate(600_000))).
-				To(web),
-		)
+	outs := []Output{
+		FileInput("input.ivf", strings.NewReader("")).
+			Video().
+			Decode().
+			Tap("video.decoded").
+			Resize(640, 360).
+			Encode(codec.VP9(codec.Bitrate(600_000))).
+			As("360p").
+			To(web),
+	}
 
-	resolved, err := compileJobRecipe(job)
+	resolved, err := compileOutputs(mustNew(), recipeCompileOptions{}, outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
@@ -116,11 +116,12 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 }
 
 func TestGraphPlanViewsAreImmutable(t *testing.T) {
-	job := recipeFrom(
-		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
+	outs := []Output{
+		FileInput("input.ivf", strings.NewReader("")).
+			To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))),
+	}
 
-	resolved, err := compileJobRecipe(job)
+	resolved, err := compileOutputs(mustNew(), recipeCompileOptions{}, outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
@@ -179,14 +180,19 @@ func graphPlanOperationTargetPresent(operations []workOperation, target string) 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	voice := destinationHandle(fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
 	archive := destinationHandle(fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
-	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).
-		Audio().
-		Branches(
-			newBranch("voice").Apply(newFlow("voice").Audio().Decode().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
-			newBranch("archive").Apply(newFlow("archive").Audio().Decode().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
-		)
+	fork := Input(liveAudioOpusProvider("audio")).Audio()
+	outs := []Output{
+		fork.Decode().
+			Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
+			As("voice").
+			To(voice),
+		fork.Decode().
+			Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo))).
+			As("archive").
+			To(archive),
+	}
 
-	resolved, err := compileJobRecipe(job)
+	resolved, err := compileOutputs(mustNew(), recipeCompileOptions{}, outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
@@ -220,13 +226,17 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Tap(frameTapRef("audio.decoded")).
-		Branches(newBranch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			Tap("audio.decoded").
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			As("main").
+			To(destinationHandle(fileDestination("archive.ogg", io.Discard))),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -249,17 +259,13 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
 	}))
-	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
-		Video().
-		Decode().
-		Resize(1280, 720).
-		Tap(frameTapRef("video.720p.frames")).
-		Branches(
-			newBranch("web").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
-			newBranch("thumb").Resize(320, 180).To(thumbnail),
-		)
+	fork := FileInput("input.ivf", strings.NewReader("")).Video().Decode().Resize(1280, 720).Tap("video.720p.frames")
+	outs := []Output{
+		fork.Encode(codec.VP9(codec.Bitrate(2_000_000))).As("web").To(web),
+		fork.Resize(320, 180).As("thumb").To(thumbnail),
+	}
 
-	resolved, err := compileJobRecipe(job)
+	resolved, err := compileOutputs(mustNew(), recipeCompileOptions{}, outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
@@ -277,11 +283,13 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 }
 
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
-	job := recipeFrom(
-		Input(liveVideoVP8Provider("video")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testBundleRuntime())
+	rt := testBundleRuntime()
+	outs := []Output{
+		Input(liveVideoVP8Provider("video")).
+			To(destinationHandle(fileDestination("recording.ivf", io.Discard))),
+	}
 
-	resolved, err := compileJobRecipe(job)
+	resolved, err := compileOutputs(rt, recipeCompileOptions{}, outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
@@ -312,10 +320,10 @@ func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) 
 			testFormatMuxer(av.FormatOgg, muxers),
 		),
 	)
-	task, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Copy().
-		To(destinationHandle(fileDestination("recording.ogg", io.Discard))).
-		Build(ctx)
+	task, err := runtime.Build(ctx,
+		FileInput("input.ogg", strings.NewReader("")).
+			To(destinationHandle(fileDestination("recording.ogg", io.Discard))),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,12 +345,14 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 		),
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"}))
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			To(Sink(&runtimeTestSink{name: "frames"})),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -371,13 +381,15 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 		),
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Do(&runtimeTestStage{name: "meter"}).
-		To(Sink(&runtimeTestSink{name: "frames"}))
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			Do(&runtimeTestStage{name: "meter"}).
+			To(Sink(&runtimeTestSink{name: "frames"})),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -395,12 +407,9 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	runtime := mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
-	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"}))
+	outs := []Output{Input(liveAudioOpusProvider("audio")).Audio().Decode().To(Sink(&runtimeTestSink{name: "frames"}))}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -428,12 +437,9 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Copy().
-		To(Sink(&runtimeTestSink{name: "packets"}))
+	outs := []Output{FileInput("input.ogg", strings.NewReader("")).Audio().To(Sink(&runtimeTestSink{name: "packets"}))}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -466,14 +472,16 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Do(&runtimeTestStage{name: "meter"}).
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			Do(&runtimeTestStage{name: "meter"}).
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(destinationHandle(fileDestination("archive.ogg", io.Discard))),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -509,13 +517,15 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(&runtimeTestSink{name: "packets"}))
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(Sink(&runtimeTestSink{name: "packets"})),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -552,16 +562,15 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(
-			destinationHandle(fileDestination("archive.ogg", io.Discard)),
-			Sink(&runtimeTestSink{name: "packets"}),
-		)
+	outs := []Output{
+		FileInput("input.ogg", strings.NewReader("")).
+			Audio().
+			Decode().
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(destinationHandle(fileDestination("archive.ogg", io.Discard)), Sink(&runtimeTestSink{name: "packets"})),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
@@ -595,13 +604,15 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
-		Audio().
-		Decode().
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
+	outs := []Output{
+		Input(liveAudioOpusProvider("audio")).
+			Audio().
+			Decode().
+			Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(destinationHandle(fileDestination("archive.ogg", io.Discard))),
+	}
 
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
+	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}

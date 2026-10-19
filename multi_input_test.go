@@ -25,13 +25,10 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	)
 
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	task, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 100, 200),
-	).UseRuntime(rt).
-		Video().Encode(codec.VP9(codec.Bitrate(1_000_000))).To(out).
-		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(out).
-		BuildLive(ctx)
+	task, err := rt.Build(ctx,
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9(codec.Bitrate(1_000_000))).To(out),
+		mixTestAudioSource("mic", 100, 200).Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(out),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,13 +101,10 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 	)
 
 	out := Write("call.webm", io.Discard, Format(av.FormatWebM))
-	err := recipeFrom(
-		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)),
-		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)),
-	).UseRuntime(rt).
-		Video().Decode().Encode(codec.VP9(codec.Bitrate(1_000_000))).To(out).
-		Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(out).
-		Run(ctx)
+	err := rt.Run(ctx,
+		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)).Video().Decode().Encode(codec.VP9(codec.Bitrate(1_000_000))).To(out),
+		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(out),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +120,10 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 	ctx := context.Background()
 	var gotA, gotB [][]int16
-	task, err := recipeFrom(
-		mixTestAudioSource("mic-a", 11, 22),
-		mixTestAudioSource("mic-b", 33, 44),
-	).
-		Audio(selectInputName("mic-a")).To(joinTestCollectSink("sink-a", &gotA)).
-		Audio(selectInputName("mic-b")).To(joinTestCollectSink("sink-b", &gotB)).
-		BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		mixTestAudioSource("mic-a", 11, 22).Audio().To(joinTestCollectSink("sink-a", &gotA)),
+		mixTestAudioSource("mic-b", 33, 44).Audio().To(joinTestCollectSink("sink-b", &gotB)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,12 +144,7 @@ func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 5, 6),
-	).
-		Audio().To(joinTestCollectSink("sink", &got)).
-		BuildLive(ctx)
+	task, err := mustNew().Build(ctx, mixTestAudioSource("mic", 5, 6).Audio().To(joinTestCollectSink("sink", &got)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,14 +163,11 @@ func TestBranchesForkOneOfSeveralInputs(t *testing.T) {
 	sink := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	spec, err := recipeFrom(
-		mixTestAudioSource("a", 1),
-		mixTestAudioSource("b", 1),
-	).UseRuntime(mustNew()).
-		Audio(selectInputName("a")).
-		Branches(newBranch("mon").To(sink("out")), newBranch("rec").To(sink("rec"))).
-		Audio(selectInputName("b")).To(sink("other")).
-		Describe()
+	a := mixTestAudioSource("a", 1).Audio()
+	spec, err := mustNew().Describe(
+		a.As("mon").To(sink("out")), a.As("rec").To(sink("rec")),
+		mixTestAudioSource("b", 1).Audio().To(sink("other")),
+	)
 	if err != nil {
 		t.Fatalf("describe: %v", err)
 	}
@@ -203,13 +186,10 @@ func TestBranchesForkOneOfSeveralInputs(t *testing.T) {
 func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 	first := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	second := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	_, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(first).
-		Audio().Encode(codec.Opus()).To(second).
-		BuildLive(context.Background())
+	_, err := mustNew().Build(context.Background(),
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(first),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(second),
+	)
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
@@ -220,13 +200,10 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 // A multi-chain job routing one explicit destination dedupes it to one mux.
 func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	job := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(out).
-		Audio().Encode(codec.Opus()).To(out)
-	spec, err := job.Describe()
+	spec, err := mustNew().Describe(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(out),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(out),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,14 +224,10 @@ func TestWithKeepsHandleIdentity(t *testing.T) {
 	out := Write("call.ogg", io.Discard)
 	videoOut := out.With(Format(av.FormatOgg))
 	audioOut := out.With(Format(av.FormatOgg))
-	job := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(videoOut).
-		Audio().Encode(codec.Opus()).To(audioOut)
-
-	spec, err := job.Describe()
+	spec, err := mustNew().Describe(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(videoOut),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(audioOut),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,13 +248,10 @@ func TestOneHandleWithConflictingConfigFailsClearly(t *testing.T) {
 	out := Write("call.ogg", io.Discard)
 	videoOut := out.With(Format(av.FormatOgg))
 	audioOut := out.With(Format(av.FormatWebM))
-	_, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(videoOut).
-		Audio().Encode(codec.Opus()).To(audioOut).
-		Describe()
+	_, err := mustNew().Describe(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(videoOut),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(audioOut),
+	)
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
@@ -297,13 +267,10 @@ func TestOneHandleWithConflictingConfigFailsClearly(t *testing.T) {
 // "one output file" recipe needs no grouping call.
 func TestSameHandleSharesOneMux(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	spec, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(out).
-		Audio().Encode(codec.Opus()).To(out).
-		Describe()
+	spec, err := mustNew().Describe(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(out),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(out),
+	)
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -327,13 +294,10 @@ func TestSameHandleSharesOneMux(t *testing.T) {
 // separately constructed destinations that happen to share a name are a
 // mistake, not a mux.
 func TestDistinctHandlesWithOneNameAreRefused(t *testing.T) {
-	_, err := recipeFrom(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))).
-		Audio().Encode(codec.Opus()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))).
-		Describe()
+	_, err := mustNew().Describe(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20).Video().Encode(codec.VP9()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))),
+		mixTestAudioSource("mic", 1).Audio().Encode(codec.Opus()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))),
+	)
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {

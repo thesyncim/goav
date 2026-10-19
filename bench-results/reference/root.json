@@ -25,13 +25,13 @@
     {
       "name": "BenchmarkAttachDetachUnderLoad",
       "metrics": {
-        "B/op": 1063014,
-        "allocs/op": 468,
-        "ns/op": 77626
+        "B/op": 942718,
+        "allocs/op": 242,
+        "ns/op": 77376
       },
       "ceilings": {
-        "B/op": 1328768,
-        "allocs/op": 702
+        "B/op": 1178398,
+        "allocs/op": 363
       }
     },
     {

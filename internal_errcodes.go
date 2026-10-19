@@ -6,7 +6,6 @@ const (
 	compilerPassFailedCode              errcode.Code = "compiler_pass_failed"
 	graphPlanInvalidCode                errcode.Code = "graph_plan_invalid"
 	bufferBudgetMissingCode             errcode.Code = "buffer_budget_missing"
-	branchSourceInvalidCode             errcode.Code = "branch_source_invalid"
 	branchDecodeDuplicateCode           errcode.Code = "branch_decode_duplicate"
 	branchDecodeDomainMismatchCode      errcode.Code = "branch_decode_domain_mismatch"
 	branchTransformMediaMismatchCode    errcode.Code = "branch_transform_media_mismatch"

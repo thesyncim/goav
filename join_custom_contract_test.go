@@ -61,10 +61,10 @@ func TestCustomJoinTapsAndForks(t *testing.T) {
 	ctx := context.Background()
 
 	stage := newCustomJoinTestStage("funnel", 2)
-	joined := legacyJoin("funnel", stage,
-		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
-	).Tap(frameTapRef("funnel.frames"))
+	joined := Join("funnel", stage,
+		mixTestAudioSource("a", 100).Audio(),
+		mixTestAudioSource("b", 50).Audio(),
+	).Tap("funnel.frames")
 
 	var got [][]int16
 	collect := Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {
@@ -73,9 +73,7 @@ func TestCustomJoinTapsAndForks(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := joined.Branches(
-		newBranch("monitor").From(frameTapRef("funnel.frames")).To(collect),
-	).BuildLive(ctx)
+	task, err := mustNew().Build(ctx, joined.As("monitor").To(collect))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +104,10 @@ func TestCustomJoinTapsAndForks(t *testing.T) {
 }
 
 func TestCustomJoinForksRejectAnInvalidName(t *testing.T) {
-	_, err := legacyJoin("bad-name", newCustomJoinTestStage("bad-name", 2),
-		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
-	).Branches(
-		newBranch("monitor").To(branchBuilderTestSink("monitor")),
-	).BuildLive(context.Background())
+	_, err := mustNew().Build(context.Background(), Join("bad-name", newCustomJoinTestStage("bad-name", 2),
+		mixTestAudioSource("a", 100).Audio(),
+		mixTestAudioSource("b", 50).Audio(),
+	).As("monitor").To(branchBuilderTestSink("monitor")))
 	assertBuildErrorCode(t, err, errcode.JoinNameInvalid)
 
 	if _, err := customJoinProfile(nil); err == nil {

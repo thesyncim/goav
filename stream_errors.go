@@ -236,3 +236,20 @@ func streamSelectFromAV(selector av.StreamSelector) plan.StreamSelect {
 		Name:     selector.Name,
 	}
 }
+
+// joinLayerNilError refuses a nil Composite layer: every layer is a Stream
+// or a Stream placed with At.
+func joinLayerNilError(join string, index int) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamInvalidCode),
+		Code:      streamInvalidCode,
+		Operation: "build recipe",
+		Node:      join,
+		Reason:    fmt.Sprintf("%s input %d is nil", join, index+1),
+		fixes: buildErrorFixes([]string{
+			"pass every Composite layer as a Stream or a placed Stream: goav.Composite(cam, goav.At(screen, 640, 0))",
+		}),
+		cause: errUnsupportedBuild,
+	}
+}

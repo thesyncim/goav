@@ -114,10 +114,8 @@ func TestPlayoutSinkDeliversWhenDue(t *testing.T) {
 	clock := &recordingTestClock{}
 	log := newPlayoutArrivalLog(clock)
 
-	err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0, 20*time.Millisecond, 40*time.Millisecond)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		Run(ctx)
+	err := mustNew(WithClock(clock)).Run(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0, 20*time.Millisecond, 40*time.Millisecond).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,10 +138,8 @@ func TestPlayoutSinkFreezesOnPause(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx, playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,14 +191,10 @@ func TestPlayoutAlignsBranchesSharingPolicy(t *testing.T) {
 	audio := make(chan struct{})
 	policy := flow.Playout("room")
 
-	live, err := recipeFrom(
-		playoutFrameSource("cam", av.MediaVideo, video, 0, 40*time.Millisecond, 80*time.Millisecond),
-		playoutFrameSource("mic", av.MediaAudio, audio, 20*time.Millisecond, 60*time.Millisecond),
-	).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(policy).To(log.sink("video-out")).
-		Audio().Playout(policy).To(log.sink("audio-out")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx,
+		playoutFrameSource("cam", av.MediaVideo, video, 0, 40*time.Millisecond, 80*time.Millisecond).Video().Playout(policy).To(log.sink("video-out")),
+		playoutFrameSource("mic", av.MediaAudio, audio, 20*time.Millisecond, 60*time.Millisecond).Audio().Playout(policy).To(log.sink("audio-out")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,10 +230,8 @@ func TestPlayoutRateChangeRetimesDelivery(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 100*time.Millisecond, 200*time.Millisecond)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx, playoutFrameSource("cam", av.MediaVideo, release, 0, 100*time.Millisecond, 200*time.Millisecond).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,13 +418,11 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		Drop:       pipeline.DropBlock,
 		MaxLatency: 50 * time.Millisecond,
 	}))
-	report, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
-		UseRuntime(rt).
+	report, err := rt.Explain(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0).
 		Video().
 		Sync(flow.Sync("room", flow.SyncTolerance(40*time.Millisecond))).
-		Playout(flow.Playout("preview").WithOffset(200 * time.Millisecond)).
-		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))).
-		Explain(ctx)
+		Playout(flow.Playout("preview").WithOffset(200*time.Millisecond)).
+		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,11 +451,9 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		}
 	}
 
-	ungated, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
-		UseRuntime(rt).
+	ungated, err := rt.Explain(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0).
 		Video().
-		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))).
-		Explain(ctx)
+		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}

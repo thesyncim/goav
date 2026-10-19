@@ -11,15 +11,6 @@ type tapRef struct {
 	domain shape.MediaDomain
 }
 
-func (t tapRef) branchSource() branchSourceBinding {
-	return branchSourceBinding{tap: t.name, tapDomain: t.domain}
-}
-
-// frameTapRef names a frame-domain attach point.
-func frameTapRef(name string) tapRef {
-	return tapRef{name: name, domain: shape.DomainFrame}
-}
-
 // packetTapRef names a packet-domain attach point.
 func packetTapRef(name string) tapRef {
 	return tapRef{name: name, domain: shape.DomainPacket}
@@ -58,22 +49,6 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 		fixes: buildErrorFixes([]string{
 			"move .Tap(name) after decode, resize, resample, or custom frame stages to tap frames",
 			"move .Tap(name) before .Decode() or after an encoder to tap packets",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func branchSourceInvalidError(node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(branchSourceInvalidCode),
-		Code:      branchSourceInvalidCode,
-		Operation: "build branch",
-		Node:      firstNonEmpty(node, "branch"),
-		Reason:    "branch source must be a task tap, track, or expert graph route",
-		fixes: buildErrorFixes([]string{
-			"start the Output from task.Tap(name) for tap branches",
-			"use task.Route(node.Out().Route()) only for expert graph-handle attachments",
 		}),
 		cause: errUnsupportedBuild,
 	}

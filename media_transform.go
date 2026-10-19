@@ -34,10 +34,6 @@ func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name strin
 	return b.newMediaTransformStageNamed(ctx, name, transform, stream, realtime)
 }
 
-func (b *builder) newMediaTransformStage(ctx context.Context, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
-	return b.newMediaTransformStageNamed(ctx, "", transform, stream, realtime)
-}
-
 func (b *builder) newMediaTransformStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (*filter.Stage, av.Stream, error) {
 	outputStream, err := applyMediaTransformToStream(stream, transform)
 	if err != nil {

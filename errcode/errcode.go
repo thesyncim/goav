@@ -102,7 +102,7 @@ func FamilyForCode(code Code) Family {
 		Code("destination_mux_incompatible"), Code("destination_shape_mismatch"):
 		return FamilyDestination
 	case
-		Code("branch_source_invalid"), Code("branch_decode_duplicate"),
+		Code("branch_decode_duplicate"),
 		Code("branch_decode_domain_mismatch"),
 		Code("branch_transform_media_mismatch"),
 
