@@ -9,13 +9,15 @@ import (
 )
 
 // ErrUnavailable reports a backend that cannot run here: its library or
-// framework did not load, a symbol is missing, the version is unsupported,
-// or the platform has none. errors.Is also matches codec.ErrUnavailable.
+// framework did not load, a symbol is missing, the version is outside its
+// window, the platform has none, or the backend is turned off. errors.Is
+// also matches codec.ErrUnavailable.
 var ErrUnavailable = errors.New("libcodec backend unavailable")
 
 // Error is a libcodec backend failure with the exact fix: what failed (Op:
-// load, symbol, version, platform, open, encode, decode, control), on which
-// library, symbol, or setting (Name), and what to do about it.
+// load, symbol, version, platform, disabled, open, encode, decode,
+// control), on which library, symbol, or setting (Name), and what to do
+// about it.
 type Error struct {
 	Backend string
 	Op      string
@@ -48,7 +50,7 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() []error {
 	switch e.Op {
-	case "load", "symbol", "version", "platform":
+	case "load", "symbol", "version", "platform", "disabled":
 		return []error{ErrUnavailable, codec.ErrUnavailable, e.Err}
 	}
 	return []error{e.Err}

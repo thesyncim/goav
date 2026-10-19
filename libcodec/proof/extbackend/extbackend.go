@@ -24,25 +24,29 @@ type symbols struct {
 	bound      func(srcLen uint64) uint64                                                   `sym:"compressBound"`
 }
 
+// zlibPaths are where macOS and the Linux distributions install zlib.
+var zlibPaths = []string{"/usr/lib/libz.1.dylib", "/lib/x86_64-linux-gnu/libz.so.1",
+	"/usr/lib/x86_64-linux-gnu/libz.so.1", "/lib/aarch64-linux-gnu/libz.so.1", "/usr/lib64/libz.so.1"}
+
 // Option registers the backend as zlib/zlib (lib) on a runtime.
-func Option() runconfig.Option {
+func Option() runconfig.Option { return kit.Register(Declaration()) }
+
+// Declaration is the backend, as a plain value.
+func Declaration() kit.Codec {
 	sym := &symbols{}
 	level := codec.Knob{Name: "level", Type: codec.KnobInt, Min: 0, Max: 9, Default: "6", Help: "deflate level"}
-	path := kit.Find("/usr/lib/libz.1.dylib", "/lib/x86_64-linux-gnu/libz.so.1", "/usr/lib/x86_64-linux-gnu/libz.so.1",
-		"/lib/aarch64-linux-gnu/libz.so.1", "/usr/lib/aarch64-linux-gnu/libz.so.1", "/usr/lib64/libz.so.1", "/usr/lib/libz.so.1")
-	return kit.Register(kit.Codec{
+	return kit.Codec{
 		ID: Codec, Media: av.MediaVideo, Backend: "zlib", Kind: codec.KindLib,
-		Module: "github.com/thesyncim/goav/libcodec/proof/extbackend", Package: "github.com/thesyncim/goav/libcodec/proof/extbackend",
-		Platforms:    []string{"darwin", "linux"},
-		Realtime:     true,
-		Knobs:        []codec.Knob{level},
-		DecoderKnobs: []codec.Knob{},
-		Libraries:    []kit.Library{{Name: "libz", Path: path, Fix: "install zlib (zlib1g on Debian and Ubuntu)", Symbols: sym}},
+		Platforms: []string{"darwin", "linux"},
+		Realtime:  true,
+		Knobs:     []codec.Knob{level},
+		Libraries: []kit.Library{{Name: "libz", System: zlibPaths, Fix: "install zlib (zlib1g on Debian)", Symbols: sym}},
+		License:   kit.License{Class: kit.LicensePermissive},
 		NewVideoEncoder: func(c kit.VideoConfig) (kit.VideoEncoder, error) {
 			return &encoder{session{sym: sym}, c.Knobs.Int32("level")}, nil
 		},
 		NewVideoDecoder: func(kit.VideoConfig) (kit.VideoDecoder, error) { return &decoder{session{sym: sym}}, nil },
-	})
+	}
 }
 
 // session is what an encoder and a decoder share: the symbols and scratch.

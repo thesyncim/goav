@@ -21,45 +21,42 @@ func Library(path string) Option {
 	return func(o *options) { o.library = path }
 }
 
-func apply(opts []Option) options {
+// OpenH264 registers Cisco's OpenH264 as an h264 encoder and decoder
+// (h264/openh264, lib). A libopenh264 from 2.3 up to 3 binds when the
+// runtime is built; without it the backend registers as not-installed and
+// selection passes it over.
+func OpenH264(opts ...Option) runconfig.Option {
 	var o options
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&o)
 		}
 	}
-	return o
-}
-
-// OpenH264 registers Cisco's OpenH264 as an h264 encoder and decoder
-// (h264/openh264, lib). libopenh264 2.3 or later binds when the runtime
-// is built; without it the backend registers as not-installed and
-// selection passes it over.
-func OpenH264(opts ...Option) runconfig.Option {
-	return kit.Register(openh264.Codec(resolve(apply(opts).library, openh264.SystemPaths())))
+	c := openh264.Codec()
+	if o.library != "" {
+		c.Libraries[0].Path = o.library
+	}
+	return kit.Register(c)
 }
 
 // AudioToolbox registers Apple's AAC-LC encoder and decoder
 // (aac/audiotoolbox, lib) on macOS; elsewhere it registers as
-// unsupported-platform and selection passes it over.
+// not-installed and selection passes it over.
 func AudioToolbox() runconfig.Option {
-	return kit.Register(audiotoolbox.Codec(audiotoolbox.Path))
+	return kit.Register(audiotoolbox.Codec())
 }
 
 // VideoToolbox registers the hardware H.264 and HEVC encoders and decoders
 // of macOS (h264/videotoolbox and hevc/videotoolbox, hardware). Each checks
 // for its hardware when the runtime is built; a Mac without it, or another
-// OS, registers it unavailable and selection passes it over. HEVC is codec
-// id kit.CodecHEVC ("hevc").
+// OS, registers it not-installed and selection passes it over.
 func VideoToolbox() runconfig.Option {
 	return kit.Register(videotoolbox.Codecs()...)
 }
 
-// resolve picks the library a backend binds: the explicit path, else the
-// first system install kit.Find finds.
-func resolve(explicit string, system []string) string {
-	if explicit != "" {
-		return explicit
-	}
-	return kit.Find(system...)
+// Declarations are the backends this module offers, as plain values: their
+// identities, knobs, licenses, and releases, read without loading anything.
+// Installers, lockfiles, and license pages read them.
+func Declarations() []kit.Codec {
+	return append([]kit.Codec{openh264.Codec(), audiotoolbox.Codec()}, videotoolbox.Codecs()...)
 }

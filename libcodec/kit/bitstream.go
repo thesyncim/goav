@@ -23,11 +23,8 @@ const (
 
 // nalFramed reports a codec and framing the kit handles as NAL units.
 func nalFramed(id av.CodecID, framing Bitstream) bool {
-	return framing != Raw && (id == av.CodecH264 || id == CodecHEVC)
+	return framing != Raw && (id == av.CodecH264 || id == av.CodecHEVC)
 }
-
-// CodecHEVC is H.265/HEVC, which the goav vocabulary does not name yet.
-const CodecHEVC av.CodecID = "hevc"
 
 var errBitstream = errors.New("kit: malformed bitstream")
 
@@ -113,7 +110,7 @@ func nalKind(id av.CodecID, unit []byte) int {
 	if len(unit) == 0 {
 		return -1
 	}
-	if id == CodecHEVC {
+	if id == av.CodecHEVC {
 		return int(unit[0]>>1) & 0x3f
 	}
 	return int(unit[0] & 0x1f)
@@ -122,7 +119,7 @@ func nalKind(id av.CodecID, unit []byte) int {
 // parameterSet reports a VPS, SPS, or PPS.
 func parameterSet(id av.CodecID, unit []byte) bool {
 	kind := nalKind(id, unit)
-	if id == CodecHEVC {
+	if id == av.CodecHEVC {
 		return kind >= 32 && kind <= 34
 	}
 	return kind == 7 || kind == 8
@@ -131,7 +128,7 @@ func parameterSet(id av.CodecID, unit []byte) bool {
 // randomAccess reports an IDR (H.264) or IRAP (HEVC) slice.
 func randomAccess(id av.CodecID, unit []byte) bool {
 	kind := nalKind(id, unit)
-	if id == CodecHEVC {
+	if id == av.CodecHEVC {
 		return kind >= 16 && kind <= 23
 	}
 	return kind == 5
@@ -156,7 +153,7 @@ func configParameterSets(id av.CodecID, config []byte) ([][]byte, error) {
 		return nil, nil
 	case hasStartCode(config):
 		return parameterSetsOf(id, nalUnits(config)), nil
-	case id == CodecHEVC:
+	case id == av.CodecHEVC:
 		return hvcCParameterSets(config)
 	default:
 		return avcCParameterSets(config)

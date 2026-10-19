@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -34,10 +35,10 @@ func TestAnnexBAndAVCCRoundTrip(t *testing.T) {
 	if !randomAccess(av.CodecH264, testIDR) || randomAccess(av.CodecH264, testSPS) || !parameterSet(av.CodecH264, testPPS) {
 		t.Fatal("H.264 NAL classification")
 	}
-	if !randomAccess(CodecHEVC, []byte{19 << 1, 1}) || !parameterSet(CodecHEVC, []byte{33 << 1, 1}) {
+	if !randomAccess(av.CodecHEVC, []byte{19 << 1, 1}) || !parameterSet(av.CodecHEVC, []byte{33 << 1, 1}) {
 		t.Fatal("HEVC NAL classification")
 	}
-	if nalFramed(av.CodecAV1, AnnexB) || nalFramed(av.CodecH264, Raw) || !nalFramed(CodecHEVC, AVCC) {
+	if nalFramed(av.CodecAV1, AnnexB) || nalFramed(av.CodecH264, Raw) || !nalFramed(av.CodecHEVC, AVCC) {
 		t.Fatal("NAL framing applies only to H.264 and HEVC")
 	}
 }
@@ -62,7 +63,7 @@ func TestCodecConfigurationRecords(t *testing.T) {
 		hvcc = append(hvcc, set[0]>>1&0x3f, 0, 1, 0, byte(len(set)))
 		hvcc = append(hvcc, set...)
 	}
-	sets, err = configParameterSets(CodecHEVC, hvcc)
+	sets, err = configParameterSets(av.CodecHEVC, hvcc)
 	if err != nil || !slices.EqualFunc(sets, [][]byte{vps, sps, pps}, bytes.Equal) {
 		t.Fatalf("hvcC sets = %x, %v", sets, err)
 	}
@@ -201,7 +202,7 @@ func TestReorderPresentsInPTSOrder(t *testing.T) {
 		NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) {
 			return &decodeOrder{y: make([]byte, 16), c: make([]byte, 4)}, nil
 		}}
-	d := &videoDecoder{c: c, desc: c.descriptor(codec.ModeDecode, "")}
+	d := &videoDecoder{c: c, desc: c.descriptor(codec.ModeDecode)}
 	base := av.TimeBase{Num: 1, Den: 1}
 	if err := d.Open(t.Context(), codec.DecodeConfig{Stream: av.Stream{TimeBase: base, Codec: av.CodecParameters{ID: av.CodecAV1}}}); err != nil {
 		t.Fatal(err)
@@ -254,7 +255,7 @@ func TestDamagedUnitIsDroppedAndHealedByAKeyframe(t *testing.T) {
 		NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) {
 			return &damagedAt{decodeOrder{y: make([]byte, 16), c: make([]byte, 4)}, []int64{2, 3, 5}}, nil
 		}}
-	d := &videoDecoder{c: c, desc: c.descriptor(codec.ModeDecode, "")}
+	d := &videoDecoder{c: c, desc: c.descriptor(codec.ModeDecode)}
 	base := av.TimeBase{Num: 1, Den: 1}
 	config := codec.DecodeConfig{Stream: av.Stream{TimeBase: base, Codec: av.CodecParameters{ID: av.CodecAV1}}}
 	config.Resilience.RequestKeyframes = true
@@ -282,5 +283,105 @@ func TestDamagedUnitIsDroppedAndHealedByAKeyframe(t *testing.T) {
 	}
 	if !slices.Equal(decoded, []int64{0, 1, 4, 6}) || requests != 2 {
 		t.Fatalf("decoded %v with %d keyframe requests, want [0 1 4 6] and 2", decoded, requests)
+	}
+}
+
+func TestWindowComparesNumbers(t *testing.T) {
+	w := Window{From: "2.3", Before: "3"}
+	for version, want := range map[string]bool{"2.3.0": true, "2.10.1": true, "2.2.9": false, "3": false, "3.0.1": false} {
+		if w.Contains(version) != want {
+			t.Errorf("%v contains %s = %v", w, version, !want)
+		}
+	}
+	if !(Window{}).Contains("0.1") || !(Window{From: "1"}).Contains("10") {
+		t.Error("an open bound refused a version")
+	}
+}
+
+// zlib is a library every macOS and Linux host has, to bind for real.
+type zlib struct {
+	bound func(uint64) uint64 `sym:"compressBound"`
+}
+
+func zlibLibrary(t *testing.T, symbols *zlib) Library {
+	t.Helper()
+	path := find("/usr/lib/libz.1.dylib", "/lib/x86_64-linux-gnu/libz.so.1", "/usr/lib/x86_64-linux-gnu/libz.so.1", "/lib/aarch64-linux-gnu/libz.so.1", "/usr/lib/aarch64-linux-gnu/libz.so.1", "/usr/lib64/libz.so.1")
+	if path == "" {
+		t.Skip("no zlib")
+	}
+	return Library{Name: "libz", Path: path, Fix: "install zlib", Symbols: symbols}
+}
+
+// TestLibrariesBindOncePerFile registers many declarations of one library,
+// each with its own symbols, and pins that the file binds once.
+func TestLibrariesBindOncePerFile(t *testing.T) {
+	path := zlibLibrary(t, &zlib{}).Path
+	for range 50 {
+		symbols := &zlib{}
+		c := Codec{ID: "fake", Media: av.MediaVideo, Backend: "fake", Libraries: []Library{zlibLibrary(t, symbols)},
+			NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) { return nil, nil }}
+		if err := c.bind(); err != nil || symbols.bound(100) < 100 {
+			t.Fatalf("bind = %v", err)
+		}
+	}
+	files := 0
+	boundLibraries.Range(func(key, _ any) bool {
+		if key.(boundKey).path == path {
+			files++
+		}
+		return true
+	})
+	if files != 1 {
+		t.Fatalf("%s bound %d times", path, files)
+	}
+}
+
+// TestStatusesSayWhyABackendCannotServe pins the status vocabulary and the
+// fix each status carries.
+func TestStatusesSayWhyABackendCannotServe(t *testing.T) {
+	declare := func(lib Library, abi Window) Codec {
+		return Codec{ID: "fake", Media: av.MediaVideo, Backend: "fake", Libraries: []Library{lib}, ABI: abi,
+			Version:         func() (string, error) { return "1.2", nil },
+			Releases:        []Release{{Version: "2.0"}},
+			NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) { return nil, nil }}
+	}
+	installed := zlibLibrary(t, &zlib{})
+	missing := Library{Name: "libfake", System: []string{filepath.Join(t.TempDir(), "libfake.so")}, Fix: "install libfake", Symbols: &zlib{}}
+	for _, tc := range []struct {
+		c              Codec
+		disable        string
+		status, reason string
+	}{
+		{declare(installed, Window{}), "", statusActive, ""},
+		{declare(missing, Window{}), "", statusNotInstalled, "fix: goav codecs install fake, or install libfake"},
+		{declare(installed, Window{From: "2"}), "", statusOutsideWindow, "1.2 is outside the releases this backend mirrors (2 or later)"},
+		{declare(installed, Window{}), "other, fake", statusDisabled, "is turned off by " + disableEnv},
+	} {
+		t.Setenv(disableEnv, tc.disable)
+		err := tc.c.bind()
+		status := statusActive
+		if err != nil {
+			status = statusOf(err)
+		}
+		if status != tc.status || (tc.reason != "" && (err == nil || !strings.Contains(err.Error(), tc.reason))) {
+			t.Errorf("status %s (%v), want %s (%s)", status, err, tc.status, tc.reason)
+		}
+	}
+}
+
+// TestDeclarationsReadTheirOriginAndTakeOnlyTheirKnobs pins two things a
+// backend author no longer writes: where the code lives, read from the
+// constructors, and that a backend declaring no knobs takes no settings.
+func TestDeclarationsReadTheirOriginAndTakeOnlyTheirKnobs(t *testing.T) {
+	c := Codec{ID: "fake", Media: av.MediaVideo, Backend: "fake", NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) { return nil, nil }}
+	if err := c.bind(); err != nil {
+		t.Fatal(err)
+	}
+	desc := c.descriptor(codec.ModeDecode)
+	if desc.Backend.Package != "github.com/thesyncim/goav/libcodec/kit" || desc.Backend.Module != "github.com/thesyncim/goav/libcodec" {
+		t.Errorf("origin %s in %s", desc.Backend.Package, desc.Backend.Module)
+	}
+	if err := desc.Check(codec.Need{Settings: map[string]string{"speed": "4"}}); err == nil {
+		t.Error("a backend without knobs took a setting")
 	}
 }

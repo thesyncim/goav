@@ -13,7 +13,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/libcodec/kit"
 	"github.com/thesyncim/goav/runconfig"
 )
 
@@ -51,8 +50,8 @@ func Run(t *testing.T, options ...runconfig.Option) {
 	for _, desc := range missing {
 		t.Run(string(desc.ID)+"/"+desc.Backend.Name, func(t *testing.T) {
 			reason := desc.Backend.Status
-			if err := kit.Probe(options...); err != nil {
-				reason = err.Error()
+			if desc.Backend.Unavailable != nil {
+				reason = desc.Backend.Unavailable.Error()
 			}
 			if required(desc.Backend.Name) {
 				t.Fatalf("%s/%s is required (GOAV_LIBCODEC_REQUIRE) but %s", desc.ID, desc.Backend.Name, reason)
