@@ -7,7 +7,7 @@ toolchain go1.27.2
 require (
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/rtp v1.10.5
-	github.com/thesyncim/goav v0.0.0-20261019171325-bfa663d2ff70
+	github.com/thesyncim/goav v0.0.0-20261019173036-63f331a6b98f
 	github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c
 )
 

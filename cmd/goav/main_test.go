@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -540,5 +541,33 @@ func TestControlAddressDefaultsToUnix(t *testing.T) {
 		if got := controlAddress(in); got != want {
 			t.Errorf("controlAddress(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestRunReadsURLs pins that goav run grants the network schemes: a program
+// reads an https-style URL (here plain http) where it would read a file.
+func TestRunReadsURLs(t *testing.T) {
+	clip := make([]byte, 32, 47)
+	copy(clip, "DKIF")
+	binary.LittleEndian.PutUint16(clip[6:], 32)
+	copy(clip[8:], "VP80")
+	binary.LittleEndian.PutUint16(clip[12:], 16)
+	binary.LittleEndian.PutUint16(clip[14:], 16)
+	binary.LittleEndian.PutUint32(clip[16:], 1000)
+	binary.LittleEndian.PutUint32(clip[20:], 1)
+	clip = binary.LittleEndian.AppendUint32(clip, 3)
+	clip = append(clip, make([]byte, 8)...)
+	clip = append(clip, 0x10, 0x20, 0x30)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "clip.ivf", time.Unix(1700000000, 0), bytes.NewReader(clip))
+	}))
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "copy.ivf")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"run", fmt.Sprintf("%q ! video ! file %q", srv.URL+"/clip.ivf", out)}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	if data, err := os.ReadFile(out); err != nil || !bytes.HasPrefix(data, []byte("DKIF")) {
+		t.Fatalf("copy.ivf = %v", err)
 	}
 }

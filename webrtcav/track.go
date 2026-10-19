@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -548,7 +549,7 @@ func codecParametersFromWebRTC(codec webrtc.RTPCodecParameters) av.CodecParamete
 		ID:         id,
 		Type:       media,
 		ClockRate:  codec.ClockRate,
-		SampleRate: int(codec.ClockRate),
+		SampleRate: sampleRateFromClock(codec.ClockRate),
 		Channels:   int(codec.Channels),
 		Attributes: av.Metadata{
 			"mime_type": codec.MimeType,
@@ -616,4 +617,13 @@ func mergeMetadata(base av.Metadata, overlay av.Metadata) av.Metadata {
 	maps.Copy(out, base)
 	maps.Copy(out, overlay)
 	return out
+}
+
+// sampleRateFromClock reports an audio clock rate as a sample rate, or 0 when
+// the negotiated rate does not fit an int on this platform.
+func sampleRateFromClock(clock uint32) int {
+	if clock <= math.MaxInt32 {
+		return int(clock)
+	}
+	return 0
 }

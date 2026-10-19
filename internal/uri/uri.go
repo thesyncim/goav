@@ -1,7 +1,7 @@
-// Package redact is the one URL redaction goav applies to everything it
-// reports: names without credentials, URLs with their secrets replaced, and
-// source text with its secrets masked in place.
-package redact
+// Package uri is goav's one URL handling for what it reports and reads:
+// the scheme a value names, names without credentials, URLs with their
+// secrets replaced, and source text with its secrets masked in place.
+package uri
 
 import (
 	"net/url"
@@ -11,10 +11,10 @@ import (
 // Marker replaces a redacted secret.
 const Marker = "REDACTED"
 
-// URL renders u for reports: name is scheme://host/path with no userinfo,
+// Redact renders u for reports: name is scheme://host/path with no userinfo,
 // query, or fragment; full keeps the query with secret values replaced and
 // userinfo as Marker.
-func URL(u *url.URL) (name, full string) {
+func Redact(u *url.URL) (name, full string) {
 	shown := *u
 	shown.User = nil
 	shown.RawQuery, shown.ForceQuery = "", false
@@ -111,4 +111,24 @@ func fill(b []byte) {
 	for i := range b {
 		b[i] = '*'
 	}
+}
+
+// Scheme returns the lower-case scheme raw names, or "" for a path: a value
+// whose prefix before ":" is not an RFC 3986 scheme of two or more letters (a
+// Windows drive letter is one) names a file, whatever else it contains.
+func Scheme(raw string) string {
+	colon := strings.IndexByte(raw, ':')
+	if colon < 2 {
+		return ""
+	}
+	for i := 0; i < colon; i++ {
+		c := raw[i]
+		switch {
+		case c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
+		case i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'):
+		default:
+			return ""
+		}
+	}
+	return strings.ToLower(raw[:colon])
 }

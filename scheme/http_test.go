@@ -342,3 +342,97 @@ func TestHTTPReaderHonorsClose(t *testing.T) {
 		t.Fatal("Close did not end the blocked read")
 	}
 }
+
+// TestHTTPSeekAwayFromAStalledRange pins that abandoning a range whose server
+// stalled costs the connection, not a stall: the drain is bounded.
+func TestHTTPSeekAwayFromAStalledRange(t *testing.T) {
+	data := bytes.Repeat([]byte{7}, 4<<20)
+	stall := make(chan struct{})
+	var first sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stalled := false
+		first.Do(func() { stalled = true })
+		if !stalled {
+			http.ServeContent(w, r, "big.bin", time.Unix(1700000000, 0), bytes.NewReader(data))
+			return
+		}
+		// The first range promises 256 KiB, sends all but 16 KiB, and stalls.
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", 256<<10-1, len(data)))
+		w.Header().Set("Content-Length", strconv.Itoa(256<<10))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(data[:240<<10])
+		w.(http.Flusher).Flush()
+		<-stall
+	}))
+	defer func() { close(stall); srv.Close() }()
+	u, _ := url.Parse(srv.URL + "/big.bin")
+	in, _ := scheme.HTTP().Input(u)
+	reader, err := in.(provider.ByteSource).OpenBytes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	at := reader.(io.ReaderAt)
+	buf := make([]byte, 230<<10)
+	if _, err := at.ReadAt(buf, 0); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := at.ReadAt(buf[:1024], 2<<20); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Fatalf("seeking away from the stalled range took %s", waited)
+	}
+}
+
+// TestHTTPLiveStreamReconnects pins live detection: a stream with no length
+// and no ranges (here an Icecast-style one) opens live, its end is a drop,
+// and goav.Reconnect reopens it; a finite file refuses the policy.
+func TestHTTPLiveStreamReconnects(t *testing.T) {
+	var mu sync.Mutex
+	sessions := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sessions++
+		n := sessions
+		mu.Unlock()
+		if r.URL.Path == "/file.ivf" {
+			http.ServeContent(w, r, "file.ivf", time.Unix(1700000000, 0), bytes.NewReader(liveIVF()))
+			return
+		}
+		if n > 2 {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Icy-Name", "door camera")
+		w.WriteHeader(http.StatusOK)
+		w.Write(liveIVF())
+		w.(http.Flusher).Flush()
+	}))
+	defer srv.Close()
+	video := goavtest.NewCollector()
+	err := bundle.Run(context.Background(), goav.URIInput(srv.URL+"/live.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
+	if err == nil || !strings.Contains(err.Error(), "gave up after 1 reconnect attempts") || len(video.Packets()) != 2 {
+		t.Fatalf("err = %v, packets = %d: want two sessions, then the cap", err, len(video.Packets()))
+	}
+	err = bundle.Run(context.Background(), goav.URIInput(srv.URL+"/file.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
+	if err == nil || !strings.Contains(err.Error(), "opened as a finite resource") {
+		t.Fatalf("finite err = %v, want the live-only refusal", err)
+	}
+}
+
+// liveIVF is an IVF header and one VP8 frame.
+func liveIVF() []byte {
+	data := make([]byte, 32, 47)
+	copy(data, "DKIF")
+	binary.LittleEndian.PutUint16(data[6:], 32)
+	copy(data[8:], "VP80")
+	binary.LittleEndian.PutUint16(data[12:], 16)
+	binary.LittleEndian.PutUint16(data[14:], 16)
+	binary.LittleEndian.PutUint32(data[16:], 1000)
+	binary.LittleEndian.PutUint32(data[20:], 1)
+	frame := make([]byte, 12)
+	binary.LittleEndian.PutUint32(frame, 3)
+	return append(append(data, frame...), 0x10, 0x20, 0x30)
+}

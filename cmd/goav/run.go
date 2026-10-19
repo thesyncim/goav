@@ -27,6 +27,7 @@ import (
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/runconfig"
+	"github.com/thesyncim/goav/webrtcav"
 )
 
 // programArgs are the flags run, describe, and explain share, and the
@@ -104,11 +105,11 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 func runtimeNamed(name string) (*goav.Runtime, error) {
 	switch name {
 	case "default", "bundle":
-		return bundle.New()
+		return bundle.New(withCLISchemes()...)
 	case "demo":
 		// The bundled adapters on a deterministic clock: live sources run as
 		// fast as the graph allows, for reproducible demos and tests.
-		return bundle.New(runconfig.WithClock(goavtest.NewClock()))
+		return bundle.New(withCLISchemes(runconfig.WithClock(goavtest.NewClock()))...)
 	case "test":
 		return goavtest.Runtime(), nil
 	}
@@ -196,7 +197,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 	}
 	files := &cliFiles{}
 	win := newWindow()
-	options := []launch.Option{launch.Files(files), launch.Use(win.Element())}
+	options := []launch.Option{launch.Files(files), cliURIs, launch.Use(win.Element())}
 	var served *http.Server
 	if args.serve != "" {
 		// The program's hls outputs package into a server, served while the
@@ -369,7 +370,7 @@ func explainCommand(argv []string, stdout, stderr io.Writer) int {
 // compileFor compiles a program for describe or explain: files are named
 // but never opened or created.
 func compileFor(args programArgs, stderr io.Writer) ([]goav.Output, *goav.Runtime, int) {
-	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}), launch.Use(newWindow().Element()))
+	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}), cliURIs, launch.Use(newWindow().Element()))
 	if err != nil {
 		printErr(stderr, err)
 		return nil, nil, 2
@@ -405,4 +406,15 @@ func encodeJSON(stdout, stderr io.Writer, v any) int {
 		return 1
 	}
 	return 0
+}
+
+// cliURIs lets programs open the network URLs the CLI's runtime resolves,
+// beside the files Files grants: uri "https://cdn/in.mp4" ! ..., or a
+// whep:// stream.
+var cliURIs = launch.URIs("http", "https", "whep", "whep+http")
+
+// withCLISchemes adds the WHEP client to the bundle's file and http(s)
+// schemes.
+func withCLISchemes(options ...runconfig.Option) []runconfig.Option {
+	return append(options, runconfig.Scheme("whep", webrtcav.WHEP()), runconfig.Scheme("whep+http", webrtcav.WHEP()))
 }

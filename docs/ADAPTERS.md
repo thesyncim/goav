@@ -145,19 +145,18 @@ parsing/demux/encode) are future slices.
 
 ## URL schemes
 
-`goav.URIInput(url)` and `goav.URI(url)` resolve through the `provider.Scheme`s
-a runtime registers with `runconfig.Scheme`, last wins, never in `init()`. A
-scheme binds a URL, without I/O, to a `provider.Source`, a `provider.ByteSource`
-(bytes the runtime demuxes), or a `provider.Destination`. Unknown schemes refuse
-naming the registered ones and the providing module; reports redact URLs; live
-inputs take `goav.Reconnect`. RTMP, SRT, and HLS inputs are future schemes
-(FLV, MPEG-TS, or segment bytes as a `ByteSource`; media as a `Source`).
+`goav.URIInput(url)` and `goav.URI(url)` resolve through schemes registered per runtime
+with `runconfig.Scheme` (last wins, never in `init()`): a `provider.InputScheme` binds a
+URL without I/O to a `Source` or a `ByteSource`, a `provider.DestinationScheme` to a
+`Destination` (bytes) or a `pipeline.Sink` (media: WHIP, RTP out). Refusals name the
+registered schemes and the module, reports redact URLs, and `goav.Live`/`Reconnect` serve
+live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 
 | Scheme | Provider | Notes |
 | --- | --- | --- |
 | `file`, bare paths | `scheme.File()`, in `bundle.Schemes` | in and out, random access |
-| `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback, 10 redirects |
-| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WHEPToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725), trickle PATCH, DELETE on close |
+| `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
+| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WHEPToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
 
 ## Descriptor-only boundaries
 

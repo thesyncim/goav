@@ -26,6 +26,8 @@ type flakyLive struct {
 	fails int
 	// silent sessions after the first drop before delivering anything.
 	silent bool
+	// renamed sessions after the first carry their stream as "audio-b".
+	renamed bool
 }
 
 func (f *flakyLive) SourceShape() shape.Spec {
@@ -36,13 +38,18 @@ func (f *flakyLive) OpenSource(context.Context) (pipeline.Source, []av.Stream, e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.opens++
-	stream := av.Stream{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, SampleRate: 48000, Channels: 2}}
-	return &flakySession{drop: f.opens <= f.fails, silent: f.silent && f.opens > 1, n: f.opens}, []av.Stream{stream}, nil
+	id := av.StreamID("audio")
+	if f.renamed && f.opens > 1 {
+		id = "audio-b"
+	}
+	stream := av.Stream{ID: id, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, SampleRate: 48000, Channels: 2}}
+	return &flakySession{drop: f.opens <= f.fails, silent: f.silent && f.opens > 1, n: f.opens, id: id}, []av.Stream{stream}, nil
 }
 
 type flakySession struct {
 	drop, silent bool
 	n            int
+	id           av.StreamID
 }
 
 var errDropped = errors.New("connection dropped")
@@ -53,7 +60,7 @@ func (s *flakySession) Start(ctx context.Context, emitter pipeline.Emitter) erro
 	if s.silent {
 		return errDropped
 	}
-	packet := &av.Packet{StreamID: "audio", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{byte(s.n)}},
+	packet := &av.Packet{StreamID: s.id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{byte(s.n)}},
 		PTS: av.Timestamp{Value: int64(s.n), Base: av.TimeBase{Num: 1, Den: 48000}}}
 	if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}); err != nil {
 		return err
@@ -122,5 +129,47 @@ func TestReconnectReopensALiveByteInput(t *testing.T) {
 	}
 	if custom.opened != 2 || len(sink.Packets()) != 2 {
 		t.Fatalf("opened = %d packets = %d, want the feed read twice", custom.opened, len(sink.Packets()))
+	}
+}
+
+// TestLiveMarksAnInputLive pins goav.Live: the input plans live before it
+// opens, and a URI input marked live takes a reconnect policy.
+func TestLiveMarksAnInputLive(t *testing.T) {
+	report, err := bundle.Explain(context.Background(), goav.FileInput("pipe.ivf", bytes.NewReader(tinyIVF()), goav.Live()).Video().To(goavtest.NewCollector().Sink()))
+	if err != nil || len(report.Inputs) != 1 || !report.Inputs[0].Realtime {
+		t.Fatalf("report = %+v err = %v, want a live input", report.Inputs, err)
+	}
+	custom := &testScheme{data: tinyIVF(), breakFirst: true}
+	rt := bundle.MustNew(runconfig.Scheme("cam", custom))
+	sink := goavtest.NewCollector()
+	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Live(), goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
+		t.Fatal(err)
+	}
+	if custom.opened != 2 {
+		t.Fatalf("opened = %d, want the live feed reopened", custom.opened)
+	}
+}
+
+// TestReconnectKeepsStreamIDs pins reconciliation: a reopened session whose
+// stream comes back under a new id keeps the id downstream knows, and the
+// recovery event reports the drift.
+func TestReconnectKeepsStreamIDs(t *testing.T) {
+	live := &flakyLive{fails: 1, renamed: true}
+	sink := goavtest.NewCollector()
+	task, err := bundle.Build(context.Background(), goav.Input(live, goav.Reconnect(2, time.Millisecond)).Audio().To(sink.Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	watch := task.Watch(goav.WatchTypes(av.EventReconnect))
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	task.Close()
+	drift := ""
+	for event := range watch.Events() {
+		drift += event.Metadata["drift"]
+	}
+	if len(sink.Packets()) != 2 || sink.Packets()[1].StreamID != "audio" || drift != "audio-b=audio" {
+		t.Fatalf("packets = %d, second id = %q, drift = %q", len(sink.Packets()), sink.Packets()[len(sink.Packets())-1].StreamID, drift)
 	}
 }

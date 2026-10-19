@@ -122,10 +122,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   input kind opens through one internal source boundary into a running
   `pipeline.Source`, and wrap intercepts it there, so externals decorate
   built-in inputs (count, mirror, transform the message stream) without
-  reimplementing them. Node identity is pinned after wrapping
-  (Describe == Build); a `provider.Source`-level wrap was rejected because
-  file/URI inputs have no provider view before the runtime opens them.
-  Destinations need no analog: every destination constructor takes a
+  reimplementing them. Node identity is pinned after wrapping (Describe ==
+  Build); a `provider.Source`-level wrap would miss file inputs. Destinations need no analog: every destination constructor takes a
   caller-held value (io.Writer for `Write`, `provider.Destination` for
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
@@ -148,9 +146,9 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `component.SinkFunc`; reuse one destination value when several Outputs should
   share one mux/sink.
-- **URL schemes**: `goav.URIInput`/`URI`; `provider.Scheme`/`Input`/`ByteSource`; `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`;
-  package `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`); `webrtcav.WHEP` (`WHEPOption`, `WHEPToken`,
-  `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`); `goav.Reconnect` (`av.EventReconnect`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
+- **URL schemes**: `goav.URIInput`/`URI`/`Live`/`Reconnect` (`av.EventReconnect`); `provider.Scheme`/`InputScheme`/`DestinationScheme`/`Input`/`Output`/`ByteSource`;
+  `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
+  `webrtcav.WHEP` (`WHEPOption`, `WHEPToken`, `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thesyncim/goav/internal/redact"
 	"github.com/thesyncim/goav/internal/spelling"
+	"github.com/thesyncim/goav/internal/uri"
 )
 
 // Error is a refusal of a program, located in its source: what is wrong,
@@ -32,7 +32,7 @@ func (e *Error) Error() string {
 	}
 	if e.src != "" && e.Line > 0 {
 		// A URL's credentials are masked in place, so the caret stays aligned.
-		line := redact.Mask(sourceLine(e.src, e.Pos))
+		line := uri.Mask(sourceLine(e.src, e.Pos))
 		width := max(1, min(e.End, e.Pos+len(line)-(e.Column-1))-e.Pos)
 		fmt.Fprintf(&b, "\n    %s\n    %s%s", line, strings.Repeat(" ", visualWidth(line[:e.Column-1])), strings.Repeat("^", width))
 	}

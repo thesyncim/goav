@@ -20,9 +20,11 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/metrics"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
@@ -56,8 +58,8 @@ func TestURIFileRoundTrip(t *testing.T) {
 		t.Fatalf("output = %d bytes %q, want a remuxed IVF", len(got), got[:min(4, len(got))])
 	}
 
-	// A bare path is a file too.
-	bare := filepath.Join(dir, "bare.ivf")
+	// A bare path is a file too, whatever it contains.
+	bare := filepath.Join(dir, "100% bare?#.ivf")
 	if err := bundle.Run(context.Background(), goav.URIInput(in).To(goav.URI(bare))); err != nil {
 		t.Fatal(err)
 	}
@@ -102,16 +104,44 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 	}
 }
 
-// TestURISchemeDirectionRefusal pins a one-direction scheme: the other end
-// refuses with the scheme's own reason.
+// TestURISchemeDirectionRefusal pins a one-direction scheme: an InputScheme
+// alone implements no Destination, and that end refuses with the fix.
 func TestURISchemeDirectionRefusal(t *testing.T) {
 	rt := bundle.MustNew(runconfig.Scheme("tape", &testScheme{}))
 	_, err := rt.Describe(goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).To(goav.URI("tape://deck/out.ivf")))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" ||
-		!errors.Is(err, errors.ErrUnsupported) || !strings.Contains(buildErr.Reason, "tape plays media in only") {
-		t.Fatalf("err = %v, want the scheme's direction refusal", err)
+		!errors.Is(err, errors.ErrUnsupported) || !strings.Contains(buildErr.Reason, "the tape scheme writes no destinations") ||
+		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), "on the end its scheme serves") {
+		t.Fatalf("err = %v, want the direction refusal", err)
 	}
+	if _, err := goav.New(runconfig.Scheme("nothing", struct{}{})); err == nil {
+		t.Fatal("a scheme serving no direction registered")
+	}
+}
+
+// TestURIMediaDestination pins a DestinationScheme that returns a
+// pipeline.Sink: the URL is a media destination, fed packets, not bytes.
+func TestURIMediaDestination(t *testing.T) {
+	scheme := &sinkScheme{}
+	rt := bundle.MustNew(runconfig.Scheme("rtp", scheme))
+	if err := rt.Run(context.Background(), goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).Video().To(goav.URI("rtp://239.0.0.1:5004"))); err != nil {
+		t.Fatal(err)
+	}
+	if scheme.packets != 1 {
+		t.Fatalf("packets = %d, want the stream itself", scheme.packets)
+	}
+}
+
+type sinkScheme struct{ packets int }
+
+func (s *sinkScheme) Destination(*url.URL) (provider.Output, error) {
+	return component.SinkFunc("rtp-out", func(_ context.Context, msg component.Message) error {
+		if msg.Kind == pipeline.MessagePacket {
+			s.packets++
+		}
+		return nil
+	}), nil
 }
 
 // TestURISchemeLastRegistrationWins replaces a bundled scheme.
@@ -202,8 +232,8 @@ func TestURIRedactsCredentials(t *testing.T) {
 	}
 }
 
-// testScheme is an in-memory scheme: inputs read data as container bytes,
-// destinations refuse.
+// testScheme is an in-memory input scheme: inputs read data as container
+// bytes.
 type testScheme struct {
 	data []byte
 	live bool
@@ -217,17 +247,6 @@ func (s *testScheme) Input(u *url.URL) (provider.Input, error) {
 	s.seen = u.String()
 	return testBytes{scheme: s}, nil
 }
-
-func (s *testScheme) Destination(*url.URL) (provider.Destination, error) {
-	return nil, errUnsupportedTape
-}
-
-var errUnsupportedTape = &tapeError{}
-
-type tapeError struct{}
-
-func (*tapeError) Error() string        { return "tape plays media in only; write with file://" }
-func (*tapeError) Is(target error) bool { return target == errors.ErrUnsupported }
 
 type testBytes struct{ scheme *testScheme }
 

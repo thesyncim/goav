@@ -369,15 +369,18 @@ func WithClock(clock av.Clock) Option {
 }
 
 // Scheme registers the provider goav.URIInput and goav.URI resolve URLs of
-// one scheme through, per runtime: runconfig.Scheme("whep", webrtcav.WHEP()).
+// one scheme through (a provider.InputScheme, a provider.DestinationScheme,
+// or both), per runtime: runconfig.Scheme("whep", webrtcav.WHEP()).
 // Names are case-insensitive RFC 3986 schemes, and the last registration of
 // a name wins, so a runtime can replace a bundled scheme (an https client
 // with its own transport, say). bundle.Schemes registers file, http, and
 // https.
 func Scheme(name string, scheme provider.Scheme) Option {
 	return func(config *Config) error {
-		if scheme == nil {
-			return fmt.Errorf("scheme %q provider is nil", name)
+		_, input := scheme.(provider.InputScheme)
+		_, destination := scheme.(provider.DestinationScheme)
+		if !input && !destination {
+			return fmt.Errorf("scheme %q provider implements neither provider.InputScheme nor provider.DestinationScheme", name)
 		}
 		key := strings.ToLower(name)
 		if !validScheme(key) {

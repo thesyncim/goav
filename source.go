@@ -262,6 +262,10 @@ func (s InputSpec) openDemuxed(ctx context.Context, service *builder, qualifier 
 		if input, reader, err = openByteInput(ctx, s.bytes, input); err != nil {
 			return graphSourceBuild{}, err
 		}
+		if s.reconnect != nil && !input.Realtime {
+			reader.Close()
+			return graphSourceBuild{}, reconnectNotLiveError(s.inputName("input"), "this one opened as a finite resource")
+		}
 	}
 	build, err := service.openDemuxSource(ctx, input, qualifier, s.pinnedFormat(), reader)
 	if err != nil {

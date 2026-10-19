@@ -62,8 +62,8 @@ func (s InputSpec) withProvider(src provider.Input) InputSpec {
 		s.err = errProviderInputKind
 		return s
 	}
-	s.input.Realtime = spec.Realtime
-	s.realtime = spec.Realtime
+	s.input.Realtime = s.input.Realtime || spec.Realtime
+	s.realtime = s.realtime || spec.Realtime
 	return s
 }
 
@@ -246,9 +246,12 @@ func (s InputSpec) reconnecting(build graphSourceBuild, reopen func(context.Cont
 	if s.reconnect == nil {
 		return build
 	}
-	build.source = newReconnectingSource(build.source, compile.DescribedNodeDetail(build.source), func(ctx context.Context) (pipeline.Source, error) {
+	session := func(build graphSourceBuild) reconnectSession {
+		return reconnectSession{source: build.source, streams: build.streams, qualifier: build.qualifier}
+	}
+	build.source = newReconnectingSource(session(build), compile.DescribedNodeDetail(build.source), func(ctx context.Context) (reconnectSession, error) {
 		next, err := reopen(ctx)
-		return next.source, err
+		return session(next), err
 	}, *s.reconnect, clock, report)
 	return build
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/uri"
 )
 
 // Compile turns a program into the Outputs it describes. The Outputs are
@@ -407,6 +408,9 @@ func quote(s string) string { return "\"" + s + "\"" }
 // parseURIRef reads a uri step's URL: a file URL or bare path is a file,
 // anything else a URL its scheme resolves.
 func parseURIRef(raw string) (fileRef, error) {
+	if uri.Scheme(raw) == "" {
+		return fileRef{path: raw}, nil
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		var urlErr *url.Error
@@ -415,10 +419,8 @@ func parseURIRef(raw string) (fileRef, error) {
 		}
 		return fileRef{}, &Error{Pos: -1, Msg: "not a URL: " + err.Error(), Hint: `write uri "https://host/path", or file PATH`}
 	}
-	switch scheme := strings.ToLower(u.Scheme); {
-	case len(scheme) <= 1:
-		return fileRef{path: raw}, nil
-	case scheme == "file":
+	switch scheme := strings.ToLower(u.Scheme); scheme {
+	case "file":
 		path := u.Path
 		if u.Opaque != "" {
 			path = u.Opaque
