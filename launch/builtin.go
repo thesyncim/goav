@@ -469,7 +469,7 @@ func encodeElement() *element {
 
 func knownCodec(id av.CodecID) bool {
 	switch id {
-	case av.CodecVP8, av.CodecVP9, av.CodecAV1, av.CodecH264, av.CodecOpus:
+	case av.CodecVP8, av.CodecVP9, av.CodecAV1, av.CodecH264, av.CodecHEVC, av.CodecOpus:
 		return true
 	}
 	return false
@@ -487,6 +487,8 @@ func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) codec.Sp
 		return codec.AV1(opts...)
 	case av.CodecH264:
 		return codec.H264(opts...)
+	case av.CodecHEVC:
+		return codec.HEVC(opts...)
 	case av.CodecOpus:
 		return codec.Opus(opts...)
 	}

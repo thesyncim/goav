@@ -15,6 +15,8 @@ func sampleEntryCodec(format string) (av.CodecID, av.MediaType) {
 	switch format {
 	case "avc1", "avc3":
 		return av.CodecH264, av.MediaVideo
+	case "hvc1", "hev1":
+		return av.CodecHEVC, av.MediaVideo
 	case "av01":
 		return av.CodecAV1, av.MediaVideo
 	case "vp08":

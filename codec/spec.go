@@ -64,6 +64,15 @@ func H264(options ...Option) Spec {
 	}, options...)
 }
 
+// HEVC builds an HEVC (H.265) codec spec.
+func HEVC(options ...Option) Spec {
+	return newCodecSpec(av.CodecHEVC, av.MediaVideo, av.CodecParameters{
+		ID:        av.CodecHEVC,
+		Type:      av.MediaVideo,
+		ClockRate: 90000,
+	}, options...)
+}
+
 // AV1 builds an AV1 codec spec.
 func AV1(options ...Option) Spec {
 	return newCodecSpec(av.CodecAV1, av.MediaVideo, av.CodecParameters{

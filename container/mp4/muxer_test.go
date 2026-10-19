@@ -333,3 +333,62 @@ func TestSingleOpusSampleKeepsPreSkip(t *testing.T) {
 		t.Fatalf("samples = %+v, want one at -6.5ms", got)
 	}
 }
+
+// TestMuxHEVCAsHVC1: the stream's hvcC rides in an hvc1 entry, rewritten to
+// 4-byte lengths with its parameter-set arrays marked complete; the samples
+// drop their in-band parameter sets; the demuxer hands back Annex B.
+func TestMuxHEVCAsHVC1(t *testing.T) {
+	vps, sps, pps := []byte{0x40, 0x01, 0x0c}, []byte{0x42, 0x01, 0x01}, []byte{0x44, 0x01, 0xc1}
+	idr, trail := []byte{0x26, 0x01, 0xaf}, []byte{0x02, 0x01, 0xd0}
+	annexB := func(nals ...[]byte) []byte {
+		var out []byte
+		for _, nal := range nals {
+			out = append(append(out, 0, 0, 0, 1), nal...)
+		}
+		return out
+	}
+	record := append(make([]byte, 23), 0)[:23]
+	record[0], record[1], record[12], record[21], record[22] = 1, 0x01, 93, 0x0d, 3 // Main, level 3.1, 2-byte lengths
+	for _, nal := range [][]byte{vps, sps, pps} {
+		record = append(record, nal[0]>>1, 0, 1, 0, byte(len(nal)))
+		record = append(record, nal...)
+	}
+	streams := []av.Stream{{ID: "h", Type: av.MediaVideo, TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{ID: av.CodecHEVC, Type: av.MediaVideo, Width: 64, Height: 48, ExtraData: av.Buffer{Bytes: record}}}}
+	packets := []muxPacket{
+		{stream: "h", key: true, payload: annexB(vps, sps, pps, idr)},
+		{stream: "h", pts: 40 * time.Millisecond, dts: 40 * time.Millisecond, payload: annexB(trail)},
+	}
+	out := &sliceWriteSeeker{}
+	writeMP4(t, out, streams, packets, false)
+	if !bytes.Contains(out.data, []byte("hvc1")) || !bytes.Contains(out.data, []byte("hvcC")) {
+		t.Fatal("the file lacks its hvc1 entry or hvcC")
+	}
+	read, got := readMP4(t, out.data)
+	config := read[0].Codec.ExtraData.Bytes
+	if read[0].Codec.ID != av.CodecHEVC || hvcCLengthSize(config) != 4 || config[23]&0x80 == 0 {
+		t.Fatalf("stream %s, hvcC % x", read[0].Codec.ID, config)
+	}
+	if len(got) != 2 || !bytes.Equal(got[0].payload, annexB(idr)) || !bytes.Equal(got[1].payload, annexB(trail)) {
+		t.Fatalf("samples %v", got)
+	}
+}
+
+// TestMuxRefusesHEVCWithoutAnHVCC: an hvc1 entry needs the record; the
+// refusal says so.
+func TestMuxRefusesHEVCWithoutAnHVCC(t *testing.T) {
+	streams := []av.Stream{{ID: "h", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecHEVC, Type: av.MediaVideo, Width: 64, Height: 48}}}
+	m := &FormatMuxer{}
+	if err := m.Open(context.Background(), format.Output{Writer: &sliceWriteSeeker{}}, streams, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ns := av.TimeBase{Num: 1, Den: 1_000_000_000}
+	packet := av.Packet{StreamID: "h", Keyframe: true, PTS: av.Timestamp{Base: ns}, DTS: av.Timestamp{Base: ns}, Payload: av.Buffer{Bytes: []byte{0, 0, 0, 1, 0x26, 0x01}}}
+	err := m.Write(context.Background(), &packet, nil)
+	if err == nil {
+		err = m.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "no keyframe carried its VPS, SPS, and PPS") {
+		t.Fatalf("err = %v", err)
+	}
+}
