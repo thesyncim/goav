@@ -227,11 +227,11 @@ func DecodeNodeName(selector av.StreamSelector) string {
 	return "decode"
 }
 
-// InputStreamSet is one job input with its name and the streams it is known to
+// inputStreamSet is one job input with its name and the streams it is known to
 // carry. It is the unit of multi-input stream selection: a stream chain selects
 // across the union of all sets, and goav.InputName(...) narrows the search to
 // one set.
-type InputStreamSet struct {
+type inputStreamSet struct {
 	Name    string
 	Domain  shape.MediaDomain
 	Streams []av.Stream
@@ -243,10 +243,10 @@ type InputStreamSet struct {
 // (realtime) input codec intent. Inputs whose streams cannot be known yet (for
 // example a file destination before probing) stay known=false so selection
 // validation skips them instead of guessing.
-func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []InputStreamSet {
-	sets := make([]InputStreamSet, 0, len(inputs))
+func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
+	sets := make([]inputStreamSet, 0, len(inputs))
 	for i := range inputs {
-		set := InputStreamSet{
+		set := inputStreamSet{
 			Name:   recipeIRInputName(inputs[i], i),
 			Domain: shape.DomainPacket,
 		}
@@ -303,14 +303,14 @@ type inputBoundStream struct {
 	Stream     av.Stream
 }
 
-// SelectStreamAcrossInputSets selects exactly one stream across all inputs:
+// selectStreamAcrossInputSets selects exactly one stream across all inputs:
 // the multi-input dual of selectDecodeStream. With inputName set the search is
 // narrowed to that input. ok=false (with nil error) means the inputs' streams
 // are not known yet and selection must be deferred; an error means selection
 // definitively failed (unknown input name, no match, or several matches — the
 // ambiguity error lists every candidate with its input and suggests
 // goav.InputName/goav.StreamID narrowing).
-func SelectStreamAcrossInputSets(sets []InputStreamSet, selector av.StreamSelector, inputName string) (inputBoundStream, bool, error) {
+func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelector, inputName string) (inputBoundStream, bool, error) {
 	candidates := sets
 	if inputName != "" {
 		index := -1
@@ -359,11 +359,11 @@ func SelectStreamAcrossInputSets(sets []InputStreamSet, selector av.StreamSelect
 	case unknown:
 		return inputBoundStream{}, false, nil
 	default:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(builderr.StreamMissingCode, selector, inputName, AllInputBoundStreams(sets))
+		return inputBoundStream{}, false, multiInputStreamSelectionError(builderr.StreamMissingCode, selector, inputName, allInputBoundStreams(sets))
 	}
 }
 
-func inputSetIndex(sets []InputStreamSet, name string) int {
+func inputSetIndex(sets []inputStreamSet, name string) int {
 	for i := range sets {
 		if sets[i].Name == name {
 			return i
@@ -372,7 +372,7 @@ func inputSetIndex(sets []InputStreamSet, name string) int {
 	return 0
 }
 
-func AllInputBoundStreams(sets []InputStreamSet) []inputBoundStream {
+func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
 	out := make([]inputBoundStream, 0, len(sets))
 	for i := range sets {
 		for k := range sets[i].Streams {
@@ -450,7 +450,7 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 	return suggestions
 }
 
-func unknownInputNameError(selector av.StreamSelector, inputName string, sets []InputStreamSet) error {
+func unknownInputNameError(selector av.StreamSelector, inputName string, sets []inputStreamSet) error {
 	details := make([]string, 0, len(sets))
 	for i := range sets {
 		details = append(details, "input="+sets[i].Name)

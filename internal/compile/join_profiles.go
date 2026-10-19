@@ -83,9 +83,9 @@ var joinProfiles = map[JoinKind]joinProfile{
 // table for Mix/Composite/Select, the contract-derived profile for a custom
 // goav.Join (join_custom.go). The unknown-kind refusal guards the internal
 // invariant that every non-custom spec was constructed by a built-in builder.
-func resolveJoinProfile(tree *JoinTreeSnapshot) (joinProfile, error) {
+func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 	if tree.Custom != nil {
-		return CustomJoinProfile(tree.Custom)
+		return customJoinProfile(tree.Custom)
 	}
 	profile, ok := joinProfiles[tree.Kind]
 	if !ok {
@@ -108,12 +108,12 @@ func resolveJoinProfile(tree *JoinTreeSnapshot) (joinProfile, error) {
 	return profile, nil
 }
 
-// JoinTreeSnapshot is the join a planner reads: its kind, arm alignment, and
+// joinTreeSnapshot is the join a planner reads: its kind, arm alignment, and
 // a custom join's stage.
-type JoinTreeSnapshot struct {
+type joinTreeSnapshot struct {
 	Kind   JoinKind
 	Sync   JoinSyncMode
-	Custom *CustomJoinSpec
+	Custom *customJoinSpec
 }
 
 // joinArmSnapshot is what a join's profile reads of one arm: its canvas
@@ -131,18 +131,18 @@ func joinErrorCode(kind string, family string) errcode.Code {
 	return errcode.Code(kind + "_" + family)
 }
 
-// CustomJoinSpec carries the caller-supplied convergence stage behind a
+// customJoinSpec carries the caller-supplied convergence stage behind a
 // joinSpec; customJoinProfile derives the per-kind profile from it.
-type CustomJoinSpec struct {
+type customJoinSpec struct {
 	Name  string
 	Stage pipeline.Stage
 }
 
-// CustomJoinProfile derives a caller-supplied join's profile — everything the
+// customJoinProfile derives a caller-supplied join's profile — everything the
 // built-in table carries, from the stage's declared shape.Contract and the
 // join's validated name. It is the closure proof in code: no per-kind switch
 // consults anything a third party cannot provide.
-func CustomJoinProfile(custom *CustomJoinSpec) (joinProfile, error) {
+func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 	if custom == nil {
 		return joinProfile{}, customJoinStageError("join", "custom join carries no stage")
 	}
@@ -167,7 +167,7 @@ func CustomJoinProfile(custom *CustomJoinSpec) (joinProfile, error) {
 		media:      customJoinMedia(inputs),
 		DecodeArms: decodeArms,
 		joinedStream: func(p *JoinPlan) av.Stream {
-			return CustomJoinedStream(p, contract, decodeArms)
+			return customJoinedStream(p, contract, decodeArms)
 		},
 		sinkOnlyReason: name + " to a non-Sink destination is not supported (a custom join carries no .Encode)",
 		sinkOnlySuggestions: []string{
@@ -336,11 +336,11 @@ func customJoinArmExpected(inputs shape.Set) (shape.Spec, bool) {
 	return expected, true
 }
 
-// CustomJoinedStream derives a custom join's output stream: the first arm's
+// customJoinedStream derives a custom join's output stream: the first arm's
 // facts under the join's name — frame joins rebuild from declared facts like
 // Mix/Composite, passthrough joins forward the arm stream like Select — with
 // the stage contract's declared output facts overlaid when present.
-func CustomJoinedStream(p *JoinPlan, contract shape.Contract, decodeArms bool) av.Stream {
+func customJoinedStream(p *JoinPlan, contract shape.Contract, decodeArms bool) av.Stream {
 	stream, base := p.CustomJoinBaseStream(decodeArms)
 	if contract == nil {
 		return stream
@@ -603,7 +603,7 @@ func compositeJoinedOutputShape(p *JoinPlan) shape.Spec {
 	return spec
 }
 
-func compositeArmFrameShape(arm JoinArmPlan) shape.Spec {
+func compositeArmFrameShape(arm joinArmPlan) shape.Spec {
 	if arm.sub != nil && !arm.late {
 		return shape.FromStream(arm.sub.Joined, arm.sub.joinedDomain)
 	}

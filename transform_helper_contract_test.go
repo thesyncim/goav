@@ -37,13 +37,6 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 		resample.Resample.SampleFormat != av.SampleFormatF32 {
 		t.Fatalf("Resample spec = %+v", resample)
 	}
-
-	if got := compile.ResizeModeWithDefault(""); got != filter.ResizeExact {
-		t.Fatalf("default resize mode = %s, want exact", got)
-	}
-	if got := compile.ResizeModeWithDefault(filter.ResizeFill); got != filter.ResizeFill {
-		t.Fatalf("explicit resize mode = %s, want fill", got)
-	}
 }
 
 func TestTransformHelperErrorContracts(t *testing.T) {
@@ -53,13 +46,6 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 		buildErr.Code != transformInvalidCode ||
 		!strings.Contains(buildErr.Reason, "empty stream transform") {
 		t.Fatalf("empty transform validation = %v, want transform_invalid", err)
-	}
-
-	if in, out := compile.TransformAdapterExpectedMedia("custom-filter"); in != "" || out != "" {
-		t.Fatalf("custom transform expected media = %s/%s, want empty", in, out)
-	}
-	if got := compile.TransformMethodName("custom-filter"); got != "Do" {
-		t.Fatalf("custom transform method = %q, want Do", got)
 	}
 
 	cause := errors.New("registry unavailable")

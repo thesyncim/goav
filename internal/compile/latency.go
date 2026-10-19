@@ -58,7 +58,7 @@ func planPathLatencyDecision(env Env, branchName string, operations []recipeir.O
 		message += "; " + strings.Join(facts, "; ")
 	}
 	return PlanDecision{
-		Code:    DiagnosticPathLatencyBudget,
+		Code:    diagnosticPathLatencyBudget,
 		Branch:  branchName,
 		Message: message,
 	}, true

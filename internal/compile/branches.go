@@ -380,7 +380,7 @@ func joinOutputFrames(req *Request, joinID recipeir.NodeID) bool {
 		return true
 	}
 	if node.Join.Stage != nil {
-		if profile, err := CustomJoinProfile(&CustomJoinSpec{Name: node.Join.Kind, Stage: node.Join.Stage}); err == nil && profile.DecodeArms {
+		if profile, err := customJoinProfile(&customJoinSpec{Name: node.Join.Kind, Stage: node.Join.Stage}); err == nil && profile.DecodeArms {
 			return true
 		}
 	}

@@ -15,7 +15,6 @@ const ComposeTransform
 const DiagnosticBufferedExecution
 const DiagnosticDecodeCodecDeferred
 const DiagnosticExplainPreflightError
-const DiagnosticPathLatencyBudget
 const DiagnosticStreamRule
 const JoinComposite
 const JoinMix
@@ -25,8 +24,6 @@ const JoinSyncPTS
 const RealtimeRecipeBufferCapacity
 const SelectBufferCapacity
 func AddPlannedNode
-func AllInputBoundStreams
-func BindArmNodeDetail
 func CheckKnownMuxCompatibility
 func CloneBuffer
 func CloneCodecSettings
@@ -36,7 +33,6 @@ func ClonePlanDiagnostics
 func CloneWorkDestinations
 func CloneWorkPlan
 func CodecDescriptorSupports
-func CodecIntentName
 func CodecMedia
 func CodecParametersEqual
 func CodecSpecEqual
@@ -44,8 +40,6 @@ func CodecSpecHasParameters
 func Compile
 func ConformedStream
 func CopyMuxStreamFacts
-func CustomJoinProfile
-func CustomJoinedStream
 func DecodeAdapterRequestFromStream
 func DecodeNodeName
 func DecodeRequestDetail
@@ -63,8 +57,6 @@ func FirstNonEmptyMedia
 func GraphPlanInvalidError
 func HumanizeShape
 func JoinArmError
-func JoinArmTransformStream
-func JoinCodecIDs
 func JoinSpecDetail
 func JoinSyncNodeDetail
 func LiveInputStreams
@@ -87,7 +79,6 @@ func OperationsHaveDecode
 func OutputNodeDetailWithFormat
 func PlanAttach
 func PlanShapeConversion
-func PreferenceDropReason
 func ReadableSelector
 func RecipeDecodeAdapterError
 func RecipeEncodeAdapterCodecError
@@ -100,11 +91,8 @@ func RecipeIROperationOutputShapes
 func RecipeIRTransformEmpty
 func RecipeIRTransformFactoryName
 func RecipeTransformAdapterError
-func ResizeModeWithDefault
-func RuntimeMissingError
 func SelectDecodeStream
 func SelectStream
-func SelectStreamAcrossInputSets
 func SolveRecipeIROperationShapes
 func StreamDiagnostic
 func StreamInvalidError
@@ -113,8 +101,6 @@ func StreamRuleInvalidError
 func StreamSelectFromAV
 func StreamSelectFromStream
 func StreamSyncByPTSError
-func TransformAdapterExpectedMedia
-func TransformMethodName
 func TransformResample
 func TransformResize
 func ValidateBranchBuffer
@@ -138,19 +124,15 @@ type ComponentValidator
 type ComposeGraph
 type ComposeNode
 type CompositeLayout
-type CustomJoinSpec
 type DecodeRequest
 type Destination
 type EncodeRequest
 type Env
 type Host
 type Input
-type InputStreamSet
-type JoinArmPlan
 type JoinKind
 type JoinPlan
 type JoinSyncMode
-type JoinTreeSnapshot
 type MediaTransform
 type MuxCompatibilityIssue
 type Output
@@ -159,7 +141,6 @@ type PlannedMuxStream
 type PlannedNode
 type Request
 type Result
-type ShapeAdapterSelectionError
 type StreamRulePlan
 type TapRef
 type WorkBranch
@@ -169,5 +150,3 @@ type WorkOperation
 type WorkPlan
 type WorkStream
 type WorkTap
-var ErrShapeAdapterAmbiguous
-var ErrShapeAdapterMissing

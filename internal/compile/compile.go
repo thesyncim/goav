@@ -579,11 +579,11 @@ func (s *recipeState) selectionNeedsUnion(stream recipeir.Stream) bool {
 }
 
 func (s *recipeState) validateStreamSelectionAcrossInputs(stream recipeir.Stream) error {
-	_, _, err := SelectStreamAcrossInputSets(s.inputStreamSets(), recipeIRStreamSelector(stream), stream.Selector.Input)
+	_, _, err := selectStreamAcrossInputSets(s.inputStreamSets(), recipeIRStreamSelector(stream), stream.Selector.Input)
 	return err
 }
 
-func (s *recipeState) inputStreamSets() []InputStreamSet {
+func (s *recipeState) inputStreamSets() []inputStreamSet {
 	return jobInputStreamSets(s.recipe.Inputs, s.inputProbes)
 }
 
@@ -683,13 +683,13 @@ func (s *recipeState) validateKnownInputDecodeAdapters() error {
 // which owns its adapters, buffers, and clock.
 func (s *recipeState) validateRuntime() error {
 	if s.req.Preflight && !s.env.Present {
-		return RuntimeMissingError(s.operation)
+		return runtimeMissingError(s.operation)
 	}
 	return nil
 }
 
-// RuntimeMissingError is the no-runtime refusal.
-func RuntimeMissingError(operation string) error {
+// runtimeMissingError is the no-runtime refusal.
+func runtimeMissingError(operation string) error {
 	return &builderr.Refusal{
 		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(errcode.RuntimeMissing),

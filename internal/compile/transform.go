@@ -39,7 +39,7 @@ func validateRecipeIRTransformAdapters(operation string, env Env, streams []reci
 }
 
 func ValidateRecipeIRTransformAdapterDescriptor(operation string, stream recipeir.Stream, spec recipeir.Transform, name string, desc filter.Descriptor) error {
-	expectedInput, expectedOutput := TransformAdapterExpectedMedia(name)
+	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
 	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
 	}
@@ -48,7 +48,7 @@ func ValidateRecipeIRTransformAdapterDescriptor(operation string, stream recipei
 	}
 	switch spec.Kind {
 	case recipeir.TransformResize:
-		if mode := ResizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
+		if mode := resizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
 			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
 		}
 		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
@@ -62,7 +62,7 @@ func ValidateRecipeIRTransformAdapterDescriptor(operation string, stream recipei
 	return nil
 }
 
-func ResizeModeWithDefault(mode filter.ResizeMode) filter.ResizeMode {
+func resizeModeWithDefault(mode filter.ResizeMode) filter.ResizeMode {
 	if mode == "" {
 		return filter.ResizeExact
 	}
@@ -87,7 +87,7 @@ func resizeModesToStrings(modes []filter.ResizeMode) []string {
 	return out
 }
 
-func TransformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
+func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 	switch name {
 	case filter.FactoryResize:
 		return av.MediaVideo, av.MediaVideo
@@ -149,13 +149,13 @@ func RecipeTransformAdapterError(operation string, stream recipeir.Stream, name 
 		Fixes: builderr.Fixes([]string{
 			"register a filter adapter that provides " + name,
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), or goav.New(bundle.Filters(), ...) for the bundled resize and resample adapters",
-			"remove ." + TransformMethodName(name) + "(...) when that conversion is not needed",
+			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
 		}),
 		Cause: cause,
 	}
 }
 
-func TransformMethodName(name string) string {
+func transformMethodName(name string) string {
 	switch name {
 	case filter.FactoryResize:
 		return "Resize"

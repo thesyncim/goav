@@ -286,7 +286,7 @@ func descriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
 		parts = append(parts, "media="+joinMediaTypes(desc.Media))
 	}
 	if len(desc.Codecs) != 0 {
-		parts = append(parts, "codecs="+JoinCodecIDs(desc.Codecs))
+		parts = append(parts, "codecs="+joinCodecIDs(desc.Codecs))
 	}
 	if len(parts) == 0 {
 		return string(formatID) + " destination rejected the planned mux group"
@@ -315,7 +315,7 @@ func joinMediaTypes(values []av.MediaType) string {
 	return strings.Join(out, ",")
 }
 
-func JoinCodecIDs(values []av.CodecID) string {
+func joinCodecIDs(values []av.CodecID) string {
 	if len(values) == 0 {
 		return ""
 	}

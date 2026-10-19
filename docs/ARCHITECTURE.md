@@ -198,7 +198,7 @@ entries, the work plan, the compose plan, node naming, shared refusals, mux
 facts, and stream/codec/shape helpers), `TestCompileRefusalsCrossThroughPublicError`,
 `TestRootDeclaresNoCompileAliases`, `TestOnlyRecipeGraphBuildsCompileRequest`,
 `TestGrammarFilesDoNotReadPlannerState`, and the exported-surface golden in
-`internal/compile/testdata/surface.golden` (173 names). Measured at the split
+`internal/compile/testdata/surface.golden` (152 names). Measured at the split
 (2026-10-19): root non-test code 24,354 → 14,684 lines; `internal/compile`
 10,110. The 2026-07 NO-GO measured a 99.5% closure because the entry methods
 lived with the passes; with them in root, the absorbed closure was 37%.

@@ -22,9 +22,9 @@ type joinArmStagePlan struct {
 	stream    av.Stream
 }
 
-// JoinArmPlan is one planned arm: its input, the statically selected stream,
+// joinArmPlan is one planned arm: its input, the statically selected stream,
 // and the planned per-arm nodes (optional decode, optional arm stage).
-type JoinArmPlan struct {
+type joinArmPlan struct {
 	// input indexes the recipe input a leaf arm reads; sourceShape is the
 	// shape that input declares.
 	Input       int
@@ -67,7 +67,7 @@ type JoinArmPlan struct {
 
 // armTapAnchorNode names the planned node a chain arm's taps anchor on: the
 // arm's decode node when the arm decodes, otherwise its bind or source node.
-func (a *JoinArmPlan) armTapAnchorNode() string {
+func (a *joinArmPlan) armTapAnchorNode() string {
 	bind := ""
 	if a.Bind != nil {
 		bind = a.Bind.node
@@ -77,7 +77,7 @@ func (a *JoinArmPlan) armTapAnchorNode() string {
 
 // joinStream is the arm's stream where it meets the join: after its
 // conversion when it conforms.
-func (a *JoinArmPlan) joinStream() av.Stream {
+func (a *joinArmPlan) joinStream() av.Stream {
 	if a.conform != nil {
 		return ConformedStream(a.Stream, a.conform.target)
 	}
@@ -90,13 +90,13 @@ func (a *JoinArmPlan) joinStream() av.Stream {
 // join's branches read like any stream.
 type JoinPlan struct {
 	env     Env
-	Tree    *JoinTreeSnapshot
+	Tree    *joinTreeSnapshot
 	Profile joinProfile
 	Name    string
 	// node is the join's recipe graph node.
 	node recipeir.NodeID
 
-	Arms         []JoinArmPlan
+	Arms         []joinArmPlan
 	Joined       av.Stream
 	joinedDomain shape.MediaDomain
 	// diagnostics records the arm conversions the shape solver inserted, so
@@ -332,14 +332,14 @@ func (p *JoinPlan) solveArmConversion(env Env, stream av.Stream, armName string)
 			Video:   TransformResize(conversion.Transform),
 			Audio:   TransformResample(conversion.Transform),
 		},
-		stream: JoinArmTransformStream(stream, actual.MediaKind),
+		stream: joinArmTransformStream(stream, actual.MediaKind),
 	}, nil
 }
 
-// JoinArmTransformStream is the input stream description the per-arm transform
+// joinArmTransformStream is the input stream description the per-arm transform
 // stage opens against: the arm's selected stream with audio facts normalized
 // (at least one channel, S16 when the arm declared no sample format).
-func JoinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
+func joinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
 	if media != av.MediaAudio {
 		return stream
 	}

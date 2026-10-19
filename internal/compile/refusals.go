@@ -48,7 +48,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
-		Details:   builderr.Details(builderr.Note("step: "+step), builderr.Note("encoder: "+CodecIntentName(encode))),
+		Details:   builderr.Details(builderr.Note("step: "+step), builderr.Note("encoder: "+codecIntentName(encode))),
 		Fixes: builderr.Fixes([]string{
 			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
@@ -120,7 +120,7 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Spec,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
-		Details:   builderr.Details(builderr.Note("first encoder: "+CodecIntentName(first)), builderr.Note("second encoder: "+CodecIntentName(second))),
+		Details:   builderr.Details(builderr.Note("first encoder: "+codecIntentName(first)), builderr.Note("second encoder: "+codecIntentName(second))),
 		Fixes: builderr.Fixes([]string{
 			"choose one output codec for the stream chain",
 			"fork the decoded Stream when one input needs several encodings: v.Encode(...).To(a), v.Encode(...).To(b)",
@@ -145,7 +145,7 @@ func copyEncodeSpellingError(operation string, node string) error {
 	}
 }
 
-func CodecIntentName(spec codec.Spec) string {
+func codecIntentName(spec codec.Spec) string {
 	switch {
 	case spec.Auto:
 		return "auto"

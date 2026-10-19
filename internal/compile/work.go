@@ -259,7 +259,7 @@ func (s *recipeState) selectedStream(stream recipeir.Stream) (av.Stream, bool) {
 	}
 	selector := recipeIRStreamSelector(stream)
 	if s.selectionNeedsUnion(stream) {
-		selected, ok, err := SelectStreamAcrossInputSets(s.inputStreamSets(), selector, stream.Selector.Input)
+		selected, ok, err := selectStreamAcrossInputSets(s.inputStreamSets(), selector, stream.Selector.Input)
 		if err != nil || !ok {
 			return av.Stream{}, false
 		}

@@ -254,7 +254,7 @@ func planShapeConversionFor(env Env, actual shape.Spec, expected shape.Spec, rea
 	}
 	descriptor, candidates, resolved, err := selectShapeConversionAdapter(env, media, transform, realtime, pref)
 	if err != nil {
-		return shapeConversionPlan{}, false, false, &ShapeAdapterSelectionError{Media: media, Needed: needed, Candidates: candidates, Cause: err}
+		return shapeConversionPlan{}, false, false, &shapeAdapterSelectionError{Media: media, Needed: needed, Candidates: candidates, Cause: err}
 	}
 	operation := recipeir.Operation{
 		Kind:      plan.OpTransform,
@@ -298,7 +298,7 @@ func planShapeConversionPreferred(env Env, actual shape.Spec, expected shape.Spe
 	reason := ""
 	switch {
 	case err != nil:
-		reason = PreferenceDropReason(err)
+		reason = preferenceDropReason(err)
 	case !planned:
 		reason = "the preferred conversion cannot be planned"
 	case !policy.Covers(conversion.needed):
@@ -394,16 +394,16 @@ func preferredConversionTarget(media av.MediaType, expected shape.Spec, pref sha
 	return out
 }
 
-// PreferenceDropReason renders why a preferred plan could not be honored.
-func PreferenceDropReason(err error) string {
-	selection, ok := err.(*ShapeAdapterSelectionError)
+// preferenceDropReason renders why a preferred plan could not be honored.
+func preferenceDropReason(err error) string {
+	selection, ok := err.(*shapeAdapterSelectionError)
 	if !ok {
 		return "the preferred conversion cannot be planned"
 	}
 	switch selection.Cause {
-	case ErrShapeAdapterAmbiguous:
+	case errShapeAdapterAmbiguous:
 		return "several registered adapters still match under the preference: " + strings.Join(selection.Candidates, ", ")
-	case ErrShapeAdapterMissing:
+	case errShapeAdapterMissing:
 		return "no registered adapter can perform the preferred conversion"
 	default:
 		return selection.Error()
@@ -441,22 +441,22 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 	}
 }
 
-var ErrShapeAdapterMissing = fmt.Errorf("goav: no conversion adapter")
+var errShapeAdapterMissing = fmt.Errorf("goav: no conversion adapter")
 
-var ErrShapeAdapterAmbiguous = fmt.Errorf("goav: ambiguous conversion adapters")
+var errShapeAdapterAmbiguous = fmt.Errorf("goav: ambiguous conversion adapters")
 
-// ShapeAdapterSelectionError carries adapter-selection context up to the walk,
+// shapeAdapterSelectionError carries adapter-selection context up to the walk,
 // which renders the chain-aware BuildError.
-type ShapeAdapterSelectionError struct {
+type shapeAdapterSelectionError struct {
 	Media      av.MediaType
 	Needed     shape.Policy
 	Candidates []string
 	Cause      error
 }
 
-func (e *ShapeAdapterSelectionError) Error() string { return e.Cause.Error() }
+func (e *shapeAdapterSelectionError) Error() string { return e.Cause.Error() }
 
-func (e *ShapeAdapterSelectionError) Unwrap() error { return e.Cause }
+func (e *shapeAdapterSelectionError) Unwrap() error { return e.Cause }
 
 // selectShapeConversionAdapter picks the registered filter whose declared
 // capabilities cover the synthesized conversion: matching media in and out,
@@ -500,7 +500,7 @@ func selectShapeConversionAdapter(env Env, media av.MediaType, transform recipei
 	}
 	switch len(matched) {
 	case 0:
-		return filter.Descriptor{}, nil, false, ErrShapeAdapterMissing
+		return filter.Descriptor{}, nil, false, errShapeAdapterMissing
 	case 1:
 		return matched[0], []string{matched[0].Name}, resolved, nil
 	default:
@@ -508,7 +508,7 @@ func selectShapeConversionAdapter(env Env, media av.MediaType, transform recipei
 		for i := range matched {
 			names = append(names, matched[i].Name)
 		}
-		return filter.Descriptor{}, names, false, ErrShapeAdapterAmbiguous
+		return filter.Descriptor{}, names, false, errShapeAdapterAmbiguous
 	}
 }
 
@@ -545,7 +545,7 @@ func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType,
 // context: which operation needed the conversion, the source and expected
 // shapes, and the registration (or disambiguation) that fixes it.
 func recipeIRShapeSolverAdapterError(operation string, node string, index int, step recipeir.Operation, actual shape.Spec, expected shape.Spec, err error) error {
-	selection, ok := err.(*ShapeAdapterSelectionError)
+	selection, ok := err.(*shapeAdapterSelectionError)
 	if !ok {
 		return err
 	}
@@ -558,7 +558,7 @@ func recipeIRShapeSolverAdapterError(operation string, node string, index int, s
 		"conversion=" + selection.Needed.String(),
 		"media=" + string(selection.Media),
 	}
-	if selection.Cause == ErrShapeAdapterAmbiguous {
+	if selection.Cause == errShapeAdapterAmbiguous {
 		return &builderr.Refusal{
 			Phase:     builderr.PhaseBuild,
 			Family:    errcode.FamilyForCode(builderr.ShapeAdapterAmbiguousCode),

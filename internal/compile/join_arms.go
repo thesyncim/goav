@@ -108,24 +108,24 @@ type joinConformPlan struct {
 // opens: a demuxed input always does (its stream ids are the container's,
 // which two files share), and so does any input whose streams the plan does
 // not know.
-func joinArmBindsAtOpen(input Input, set InputStreamSet) bool {
+func joinArmBindsAtOpen(input Input, set inputStreamSet) bool {
 	return input.Demuxed || !set.Known || len(set.Streams) == 0
 }
 
 // planJoinBindArm plans an arm bound when its input opens: by the chain's
 // selection (its media kind defaults to the join's), under the input's name
 // as its arm id, with its format left to the build.
-func planJoinBindArm(name string, kind string, profile joinProfile, selector av.StreamSelector, set InputStreamSet) (JoinArmPlan, error) {
+func planJoinBindArm(name string, kind string, profile joinProfile, selector av.StreamSelector, set inputStreamSet) (joinArmPlan, error) {
 	if selector.Type == "" {
 		selector.Type = profile.media
 	}
 	if profile.media != "" && selector.Type != profile.media {
-		return JoinArmPlan{}, JoinArmError(name, set.Name,
+		return joinArmPlan{}, JoinArmError(name, set.Name,
 			fmt.Sprintf("%s arm %q selects %s, want %s", kind, set.Name, selector.Type, profile.media),
 			"select the input's "+string(profile.media)+": input."+mediaSelectorCall(profile.media)+"()")
 	}
 	id := av.StreamID(set.Name)
-	return JoinArmPlan{
+	return joinArmPlan{
 		inputName: set.Name,
 		Stream:    av.Stream{ID: id, Type: selector.Type, Codec: av.CodecParameters{Type: selector.Type}},
 		Domain:    set.Domain,
@@ -143,7 +143,7 @@ func mediaSelectorCall(media av.MediaType) string {
 
 // planArmConform plans an arm's run-time conversion to the join format,
 // against the first arm's planned stream (the arm itself when it is first).
-func (p *JoinPlan) planArmConform(arm JoinArmPlan) *joinConformPlan {
+func (p *JoinPlan) planArmConform(arm joinArmPlan) *joinConformPlan {
 	first := arm.Stream
 	if len(p.Arms) != 0 {
 		first = p.Arms[0].joinStream()
@@ -203,7 +203,7 @@ func ConformedStream(stream av.Stream, target shape.Spec) av.Stream {
 	return out
 }
 
-func BindArmNodeDetail(selector av.StreamSelector) string {
+func bindArmNodeDetail(selector av.StreamSelector) string {
 	return JoinSpecDetail("bind on open", selectorDetail(selector))
 }
 
@@ -231,7 +231,7 @@ func conformNodeDetail(target shape.Spec) string {
 // streams the arm nodes resolved while building.
 func (p *JoinPlan) ResolvedJoinedStream(streams map[pipeline.NodeRef]av.Stream, armRefs []pipeline.NodeRef) av.Stream {
 	resolved := *p
-	resolved.Arms = append([]JoinArmPlan(nil), p.Arms...)
+	resolved.Arms = append([]joinArmPlan(nil), p.Arms...)
 	for i := range resolved.Arms {
 		if i < len(armRefs) {
 			resolved.Arms[i].Stream = streams[armRefs[i]]
