@@ -17,7 +17,7 @@ import (
 //
 // Contract: inputs are I420 (YUV 4:2:0); a non-I420 frame fails the composite
 // step. Arm alignment follows the joinSyncState mode: arrival (default — one
-// frame per arm per step) or PTS (SyncByPTS — arms join the step their head
+// frame per arm per step) or PTS (ByPTS — arms join the step their head
 // timestamp matches; an arm whose head is newer is simply not painted that
 // step, and the canvas keeps covering its last-known extent so the output
 // geometry stays stable across gap steps). An arm that ends keeps the others
@@ -82,7 +82,7 @@ func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamI
 func (s *videoCompositeStage) Name() string { return s.name }
 
 // DescribeNode reports the same detail the join planner records on the planned
-// node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
+// node, keeping Describe() ≡ Build() when ByPTS annotates the join.
 func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
 }

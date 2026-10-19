@@ -38,9 +38,6 @@ func (s *recipeState) planJoin(id recipeir.NodeID, sets []inputStreamSet) (*Join
 	if _, builtin := joinProfiles[JoinKind(kind)]; !builtin || node.Join.Stage != nil {
 		tree.Custom = &customJoinSpec{Name: kind, Stage: node.Join.Stage}
 	}
-	if node.Join.Sync && (JoinKind(kind) == JoinSelect || tree.Custom != nil) {
-		return nil, StreamSyncByPTSError()
-	}
 	profile, err := resolveJoinProfile(tree)
 	if err != nil {
 		return nil, err

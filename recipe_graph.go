@@ -169,13 +169,12 @@ func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 			Sync:  root.join.sync,
 		}}
 		for _, layer := range root.join.layers {
-			stream, x, y, placed := layer.compositeLayer()
-			arm, err := g.stream(stream.node)
+			arm, err := g.stream(layer.stream.node)
 			if err != nil {
 				return 0, err
 			}
 			node.Parents = append(node.Parents, arm)
-			node.Join.At = append(node.Join.At, recipeir.Point{X: x, Y: y, Set: placed})
+			node.Join.At = append(node.Join.At, recipeir.Point{X: layer.x, Y: layer.y, Set: layer.placed})
 		}
 		return g.add(node, root), nil
 	case root.tap != "" || root.track != nil || root.route != nil:

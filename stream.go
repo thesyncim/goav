@@ -53,7 +53,7 @@ type streamJoin struct {
 	kind   string
 	name   string
 	stage  pipeline.Stage
-	layers []Layer
+	layers []joinLayer
 	sync   bool
 }
 
@@ -213,81 +213,98 @@ func (s Stream) As(name string) Stream {
 	return s.then(streamOp{kind: streamOpName, name: name})
 }
 
-// SyncByPTS aligns a Mix or Composite's inputs by presentation time instead
-// of arrival. It applies to a join's output only.
-func (s Stream) SyncByPTS() Stream {
-	if s.node == nil || s.node.root == nil || s.node.root.join == nil {
-		return Stream{node: &streamNode{parent: s.node, err: syncByPTSOutsideJoinError()}}
-	}
-	join := *s.node.root.join
-	join.sync = true
-	root := *s.node.root
-	root.join = &join
-	return Stream{node: &streamNode{root: &root}}
+// JoinArg is one argument of Mix or Composite: a Stream (an input of the
+// join), a Stream placed [At] a position (Composite only), or a join option
+// such as [ByPTS]. It is sealed: only goav values implement it.
+type JoinArg interface {
+	joinArg()
 }
 
-// Layer is one input of a Composite: a Stream, placed at the canvas origin,
-// or a Stream At a position.
-type Layer interface {
-	compositeLayer() (Stream, int, int, bool)
-}
-
-func (s Stream) compositeLayer() (Stream, int, int, bool) { return s, 0, 0, false }
+func (Stream) joinArg() {}
 
 type positionedLayer struct {
 	stream Stream
 	x, y   int
 }
 
-func (l positionedLayer) compositeLayer() (Stream, int, int, bool) { return l.stream, l.x, l.y, true }
+func (positionedLayer) joinArg() {}
+
+// joinOption is the concrete join option (ByPTS).
+type joinOption struct {
+	byPTS bool
+}
+
+func (joinOption) joinArg() {}
 
 // At places a Composite input's top-left corner at (x, y) on the canvas.
-func At(s Stream, x, y int) Layer {
+func At(s Stream, x, y int) JoinArg {
 	return positionedLayer{stream: s, x: x, y: y}
 }
 
-// Mix sums audio streams into one.
-func Mix(streams ...Stream) Stream {
-	return newJoinStream(recipeir.JoinMix, "", nil, streamLayers(streams))
+// ByPTS aligns a Mix or Composite's inputs by presentation time instead of
+// arrival order: goav.Mix(a, b, goav.ByPTS()).
+func ByPTS() JoinArg {
+	return joinOption{byPTS: true}
 }
 
-// Composite draws video streams onto one canvas, in order, each at its Layer
-// position.
-func Composite(layers ...Layer) Stream {
-	return newJoinStream(recipeir.JoinComposite, "", nil, layers)
+// Mix sums audio streams into one. Options such as ByPTS go among the streams.
+func Mix(args ...JoinArg) Stream {
+	return newJoinStream(recipeir.JoinMix, "", nil, args)
+}
+
+// Composite draws video streams onto one canvas, in order, each at its At
+// position (the canvas origin for a bare Stream). Options such as ByPTS go
+// among the streams.
+func Composite(args ...JoinArg) Stream {
+	return newJoinStream(recipeir.JoinComposite, "", nil, args)
 }
 
 // Select forwards one of its streams at a time; control.SelectActive switches
 // which.
 func Select(streams ...Stream) Stream {
-	return newJoinStream(recipeir.JoinSelect, "", nil, streamLayers(streams))
+	return newJoinStream(recipeir.JoinSelect, "", nil, joinArgs(streams))
 }
 
 // Join converges streams into a custom stage whose Name equals name.
 func Join(name string, stage pipeline.Stage, streams ...Stream) Stream {
-	return newJoinStream("", name, stage, streamLayers(streams))
+	return newJoinStream("", name, stage, joinArgs(streams))
 }
 
-func streamLayers(streams []Stream) []Layer {
-	layers := make([]Layer, len(streams))
+func joinArgs(streams []Stream) []JoinArg {
+	args := make([]JoinArg, len(streams))
 	for i := range streams {
-		layers[i] = streams[i]
+		args[i] = streams[i]
 	}
-	return layers
+	return args
 }
 
-func newJoinStream(kind string, name string, stage pipeline.Stage, layers []Layer) Stream {
-	for i, layer := range layers {
-		if layer == nil {
-			return Stream{node: &streamNode{err: joinLayerNilError(firstNonEmpty(kind, name), i)}}
+// joinLayer is one input of a join: a stream and, on a Composite, its
+// position.
+type joinLayer struct {
+	stream Stream
+	x, y   int
+	placed bool
+}
+
+func newJoinStream(kind string, name string, stage pipeline.Stage, args []JoinArg) Stream {
+	join := &streamJoin{kind: kind, name: name, stage: stage}
+	label := firstNonEmpty(kind, name)
+	for i, arg := range args {
+		switch arg := arg.(type) {
+		case Stream:
+			join.layers = append(join.layers, joinLayer{stream: arg})
+		case positionedLayer:
+			if kind != recipeir.JoinComposite {
+				return Stream{node: &streamNode{err: joinAtOutsideCompositeError(label, i)}}
+			}
+			join.layers = append(join.layers, joinLayer{stream: arg.stream, x: arg.x, y: arg.y, placed: true})
+		case joinOption:
+			join.sync = join.sync || arg.byPTS
+		default:
+			return Stream{node: &streamNode{err: joinLayerNilError(label, i)}}
 		}
 	}
-	return Stream{node: &streamNode{root: &streamRoot{join: &streamJoin{
-		kind:   kind,
-		name:   name,
-		stage:  stage,
-		layers: append([]Layer(nil), layers...),
-	}}}}
+	return Stream{node: &streamNode{root: &streamRoot{join: join}}}
 }
 
 // Output routes a Stream to destinations. A runtime runs Outputs together:

@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: `Stream.SyncByPTS()` is gone; PTS alignment is a join option,
+  `goav.ByPTS()`, passed among a Mix's or Composite's arguments. `Mix` and
+  `Composite` take `...goav.JoinArg` (a Stream, `At(stream, x, y)`, or
+  `ByPTS()`), which replaces `goav.Layer`; `Select` and `Join` still take
+  `...Stream`, so PTS sync on them no longer type-checks instead of being
+  refused at build. `At` inside a `Mix` is refused with `stream_invalid`.
+  The launch language spells it `mix(a, b, sync=pts)`; the `syncbypts`
+  operation is gone. Migration: `goav.Mix(a, b).SyncByPTS()` becomes
+  `goav.Mix(a, b, goav.ByPTS())`; a `[]goav.Layer` becomes `[]goav.JoinArg`,
+  and a `[]goav.Stream` spread into `Mix`/`Composite` is copied into a
+  `[]goav.JoinArg` first.
 - Break: `goav.StreamOption` is a sealed interface like `InputOption` and
   `DestinationOption`, not a `func` over an unexported config; godoc now links
   each option type to its constructors. Migration: none for callers of

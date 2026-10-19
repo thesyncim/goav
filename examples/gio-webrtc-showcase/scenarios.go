@@ -55,8 +55,8 @@ func scenarioMixResample(ctx context.Context) scenarioResult {
 	report, err := goavtest.Runtime().Explain(ctx, goav.Mix(
 		goavtest.Audio(48_000, codec.Mono, toneFrame(140), toneFrame(180)).Audio(),
 		goavtest.Audio(24_000, codec.Mono, toneFrame(90), toneFrame(120)).Audio(),
+		goav.ByPTS(),
 	).
-		SyncByPTS().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16))).
 		To(out.Sink()))
 	if err != nil {

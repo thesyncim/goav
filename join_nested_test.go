@@ -376,8 +376,7 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 	outs := []Output{
 		Mix(
 			mixTestAudioSourceRate("a", 48000).Audio(),
-			Mix(mixTestAudioSourceRate("b", 24000).Audio(), mixTestAudioSourceRate("c", 24000).Audio()).
-				SyncByPTS(),
+			Mix(mixTestAudioSourceRate("b", 24000).Audio(), mixTestAudioSourceRate("c", 24000).Audio(), ByPTS()),
 		).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
 	}

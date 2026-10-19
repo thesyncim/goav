@@ -100,7 +100,6 @@ func StreamMatchesSelector
 func StreamRuleInvalidError
 func StreamSelectFromAV
 func StreamSelectFromStream
-func StreamSyncByPTSError
 func TransformResample
 func TransformResize
 func ValidateBranchBuffer

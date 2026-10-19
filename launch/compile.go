@@ -86,7 +86,7 @@ type value struct {
 	input  goav.InputSpec
 	stream goav.Stream
 	dest   goav.Destination
-	layer  goav.Layer
+	layer  goav.JoinArg
 	file   fileRef
 }
 

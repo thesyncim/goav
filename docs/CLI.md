@@ -41,8 +41,8 @@ the one above.
 | --- | --- |
 | Sources | `file PATH`, `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
-| Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto`, `syncbypts` |
-| Joins | `mix(a, b)`, `composite(a, b ! at X Y)`, `select(a, b)` |
+| Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto` |
+| Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! at X Y [, sync=pts])`, `select(a, b)` |
 | Destinations | `file PATH [format=]`, `hls PATH [segment= window= parts=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings

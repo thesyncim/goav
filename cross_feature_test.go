@@ -214,8 +214,8 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		Mix(
 			Input(&crossSeekArmProvider{source: seekable, codec: pcm}).Audio().Decode(),
 			mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+			ByPTS(),
 		).
-			SyncByPTS().
 			To(sink),
 	)
 	if err != nil {

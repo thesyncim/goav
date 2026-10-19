@@ -119,8 +119,8 @@ accepts the same terminal grammar where the constructor supports it:
 | `.To(destinations...)` | All joins. | `Mix` and `Composite` can deliver raw frames to sinks or encoded packets to muxers when `.Encode(...)` is present. `Select` and custom `Join` are sink-first. |
 | `.Encode(codecSpec)` | `Mix` and `Composite`. | Terminal encode for the joined frame stream. Forking after the join's own encode is refused because each fork owns its terminal delivery. |
 | `.Auto(...)`, `.Require(...)`, `.Prefer(...)` | `Mix` and `Composite`. | Shape-solver hints on the joined output before encode or planned forks. |
-| `.SyncByPTS()` | `Mix` and `Composite` output only. | Aligns arms by presentation timestamp instead of arrival order; elsewhere it is refused with `stream_invalid`. |
-| `goav.At(stream, x, y)` | Input streams, nested `Composite` and `Select` joins used as `Composite` layers. | Places the layer's top-left corner on the outer composite canvas. |
+| `goav.ByPTS()` | A `Mix` or `Composite` argument (`goav.Mix(a, b, goav.ByPTS())`); `Select` and `Join` take streams only. | Aligns arms by presentation timestamp instead of arrival order. |
+| `goav.At(stream, x, y)` | Input streams, nested `Composite` and `Select` joins used as `Composite` inputs; refused with `stream_invalid` in a `Mix`. | Places the input's top-left corner on the outer composite canvas. |
 
 ## Explain And Describe
 

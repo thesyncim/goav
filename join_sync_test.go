@@ -338,7 +338,7 @@ func mixSyncTestSource(id av.StreamID, ptsMS []int64, frames [][]int16) InputSpe
 }
 
 // TestMixSyncByPTSEndToEnd runs two offset sources through the full
-// LegacyMix(...).SyncByPTS().To(sink) recipe. Whatever the arrival interleaving, the
+// Mix(..., ByPTS()).To(sink) recipe. Whatever the arrival interleaving, the
 // PTS alignment makes the output deterministic: a leads solo, the matched pair
 // sums, and b finishes solo after a ends.
 func TestMixSyncByPTSEndToEnd(t *testing.T) {
@@ -357,8 +357,8 @@ func TestMixSyncByPTSEndToEnd(t *testing.T) {
 		Mix(
 			mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}}).Audio(),
 			mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+			ByPTS(),
 		).
-			SyncByPTS().
 			To(sink),
 	)
 	if err != nil {
@@ -388,8 +388,8 @@ func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 		Mix(
 			mixSyncTestSource("a", []int64{0, 0, 20}, [][]int16{{10, 10}, {99, 99}, {20, 20}}).Audio(),
 			mixSyncTestSource("b", []int64{0, 20}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+			ByPTS(),
 		).
-			SyncByPTS().
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
 	)
 	if err != nil {
@@ -424,8 +424,8 @@ func TestJoinDescribeEqualsBuildMixSyncByPTS(t *testing.T) {
 		Mix(
 			mixSyncTestSource("a", []int64{0}, [][]int16{{1, 1}}).Audio(),
 			mixSyncTestSource("b", []int64{0}, [][]int16{{2, 2}}).Audio(),
+			ByPTS(),
 		).
-			SyncByPTS().
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
 	}
 

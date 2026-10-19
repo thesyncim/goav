@@ -73,8 +73,8 @@ Normal recipes also read these vocabulary packages:
 The grammar's values and option types are exported, sealed vocabulary:
 `InputSpec` (an input), `Stream` (an immutable stream value from an input, a
 join — `Mix`/`Composite`/`Select`/`Join` — or an operation), `Output` (a
-Stream routed to destinations), the `Layer` interface (a Stream, or
-`At(stream, x, y)`, as a Composite input), and the option types `StreamOption`
+Stream routed to destinations), the `JoinArg` interface (a Stream,
+`At(stream, x, y)`, or `ByPTS()`, as a Mix or Composite argument), and the option types `StreamOption`
 (StreamID/StreamIndex), `InputOption`, `DestinationOption`, and `MediaOption`
 (Name/MIME/Metadata). They are exported so godoc can link them and callers can
 name variables and helpers; each is sealed — unexported fields or methods — so

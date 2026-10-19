@@ -17,7 +17,7 @@ import (
 //
 // Contract: inputs are same-format S16 interleaved. Arm alignment follows the
 // joinSyncState mode: arrival (default — one frame per arm per step) or PTS
-// (SyncByPTS — arms join the step their head timestamp matches; arms whose
+// (ByPTS — arms join the step their head timestamp matches; arms whose
 // head is newer sit the step out, which IS the silence contribution since
 // silence is the summing identity). An arm that ends keeps the others mixing
 // without it. The shape solver plans per-arm conversions at compile time
@@ -75,7 +75,7 @@ func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out
 func (s *audioMixStage) Name() string { return s.name }
 
 // DescribeNode reports the same detail the join planner records on the planned
-// node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
+// node, keeping Describe() ≡ Build() when ByPTS annotates the join.
 func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
 }

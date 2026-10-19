@@ -7,7 +7,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/internal/compile"
 )
 
 // StreamOption narrows the stream selection made by the input selectors
@@ -57,8 +56,8 @@ func StreamIndex(index int) StreamOption {
 	return streamIndexOption(index)
 }
 
-// joinLayerNilError refuses a nil Composite layer: every layer is a Stream
-// or a Stream placed with At.
+// joinLayerNilError refuses a nil join argument: every argument is a Stream,
+// a Stream placed with At, or a join option.
 func joinLayerNilError(join string, index int) error {
 	return &BuildError{
 		Phase:     phaseBuild,
@@ -68,14 +67,26 @@ func joinLayerNilError(join string, index int) error {
 		Node:      join,
 		Reason:    fmt.Sprintf("%s input %d is nil", join, index+1),
 		fixes: buildErrorFixes([]string{
-			"pass every Composite layer as a Stream or a placed Stream: goav.Composite(cam, goav.At(screen, 640, 0))",
+			"pass every join argument as a Stream, a placed Stream, or a join option: goav.Composite(cam, goav.At(screen, 640, 0), goav.ByPTS())",
 		}),
 		cause: errUnsupportedBuild,
 	}
 }
 
-// syncByPTSOutsideJoinError is the refusal of SyncByPTS on a stream that is
-// not a Mix or Composite.
-func syncByPTSOutsideJoinError() error {
-	return publicError(compile.StreamSyncByPTSError())
+// joinAtOutsideCompositeError refuses At outside a Composite: only a canvas
+// places its inputs.
+func joinAtOutsideCompositeError(join string, index int) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamInvalidCode),
+		Code:      streamInvalidCode,
+		Operation: "build recipe",
+		Node:      join,
+		Reason:    fmt.Sprintf("%s input %d is placed with At, which positions Composite inputs only", join, index+1),
+		fixes: buildErrorFixes([]string{
+			"pass the Stream itself: goav.Mix(a, b)",
+			"place inputs on a canvas with goav.Composite(cam, goav.At(screen, 640, 0))",
+		}),
+		cause: errUnsupportedBuild,
+	}
 }
