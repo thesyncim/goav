@@ -56,8 +56,8 @@ func TestURIFileRoundTrip(t *testing.T) {
 		t.Fatalf("output = %d bytes %q, want a remuxed IVF", len(got), got[:min(4, len(got))])
 	}
 
-	// A bare path is a file too.
-	bare := filepath.Join(dir, "bare.ivf")
+	// A bare path is a file too, whatever it contains.
+	bare := filepath.Join(dir, "100% bare?#.ivf")
 	if err := bundle.Run(context.Background(), goav.URIInput(in).To(goav.URI(bare))); err != nil {
 		t.Fatal(err)
 	}

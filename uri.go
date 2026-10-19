@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/redact"
+	urix "github.com/thesyncim/goav/internal/uri"
 	"github.com/thesyncim/goav/provider"
 )
 
@@ -72,6 +72,10 @@ func parseURIRef(uri string) *uriRef {
 	if uri == "" {
 		return nil
 	}
+	if urix.Scheme(uri) == "" {
+		// A path without a scheme is a file, whatever it contains (%, ?, #).
+		return &uriRef{raw: &url.URL{Scheme: "file", Path: uri}, scheme: "file", name: uri, full: uri}
+	}
 	u, err := url.Parse(uri)
 	if err != nil {
 		// A *url.Error quotes the input, credentials and all: keep its cause.
@@ -81,12 +85,8 @@ func parseURIRef(uri string) *uriRef {
 		}
 		return &uriRef{name: "uri", full: "uri", err: fmt.Errorf("not a URL: %w", err)}
 	}
-	if len(u.Scheme) <= 1 {
-		// A bare path, or a Windows drive letter, is a file.
-		return &uriRef{raw: &url.URL{Scheme: "file", Path: uri}, scheme: "file", name: uri, full: uri}
-	}
 	ref := &uriRef{raw: u, scheme: strings.ToLower(u.Scheme)}
-	ref.name, ref.full = redact.URL(u)
+	ref.name, ref.full = urix.Redact(u)
 	return ref
 }
 
