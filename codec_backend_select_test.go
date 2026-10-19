@@ -199,3 +199,35 @@ func TestMisspelledKnobNamesEachBackendsReason(t *testing.T) {
 		t.Fatalf("err = %v, want codec.ErrInvalidSetting", err)
 	}
 }
+
+// TestBackendNoticeAndUnavailabilityReachTheUser pins what a backend
+// registers beside its status: the notice its license asks for, which
+// Explain prints, and why it cannot serve, which a request naming it reads.
+func TestBackendNoticeAndUnavailabilityReachTheUser(t *testing.T) {
+	missing := errors.New("libx is not installed; fix: install libx")
+	backends := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
+		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
+		registry.RegisterEncoder(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Backend: codec.BackendInfo{Name: "credited", Kind: codec.KindLib, Notice: "Credited Codec by Example"}}, choice.Encoder)
+		registry.RegisterDescriptor(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Modes: []codec.Mode{codec.ModeEncode}, Backend: codec.BackendInfo{Name: "x", Kind: codec.KindLib, Status: "not-installed", Unavailable: missing}})
+	})
+	rt, err := goav.New(backends)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := rt.Explain(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264()).To(goavtest.NewCollector().Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(report.RequiredAdapters, func(r plan.AdapterRequirement) bool { return r.Kind == "encoder" })
+	if i < 0 || report.RequiredAdapters[i].Notice != "Credited Codec by Example" {
+		t.Fatalf("Explain = %+v", report.RequiredAdapters)
+	}
+	task, err := rt.Build(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264(codec.Backend("x"))).To(goavtest.NewCollector().Sink()))
+	if err == nil {
+		task.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "fix: install libx") {
+		t.Fatalf("err = %v, want the backend's own reason and fix", err)
+	}
+}

@@ -192,9 +192,12 @@ func (r *SimpleRegistry) Select(need Need) (Choice, error) {
 	return choiceOf(fitting[0], reason, fitting[1:]), nil
 }
 
-// unimplemented is why a descriptor-only backend cannot serve: its status
-// says why when it is not merely planned (not-installed, say).
+// unimplemented is why a descriptor-only backend cannot serve: the error it
+// registered with, else its status when it is not merely planned.
 func unimplemented(desc Descriptor) string {
+	if desc.Backend.Unavailable != nil {
+		return desc.Backend.Unavailable.Error()
+	}
 	if status := desc.Backend.Status; status != "" && status != "active" {
 		return "registered without an implementation (" + status + ")"
 	}

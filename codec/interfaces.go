@@ -69,6 +69,11 @@ type BackendInfo struct {
 	Module  string
 	Package string
 	Status  string
+	// Notice is the attribution the backend's license asks a program to
+	// show (Explain prints it). Unavailable is why a backend whose Status is
+	// not active cannot serve, with the fix.
+	Notice      string
+	Unavailable error
 }
 
 // BackendKind is what a backend runs on, which ranks it when a request names
