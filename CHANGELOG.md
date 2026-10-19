@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Player sync: the heard position now subtracts the audio device's queue and,
+  on macOS, the hardware's reported output latency, so the picture no longer
+  leads the sound by 40-70 ms. A seek flushes once across its branches, and a
+  seek while paused shows the target frame. `cmd/goav` pins `main`.
+
 - Added the `player` nested module: a playback window with no cgo on any OS
   (Ebitengine and oto). The speaker's played position is the task timeline's
   clock, video is presented against the heard audio (late frames dropped,
