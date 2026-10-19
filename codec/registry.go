@@ -174,6 +174,8 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned.Modes = append([]Mode(nil), desc.Modes...)
 	cloned.Profiles = append([]string(nil), desc.Profiles...)
 	cloned.Capabilities = cloneCapabilities(desc.Capabilities)
+	cloned.Knobs = slices.Clone(desc.Knobs)
+	cloned.RawKnobs = slices.Clone(desc.RawKnobs)
 	return cloned
 }
 
@@ -211,6 +213,12 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 	merged.Experimental = merged.Experimental || next.Experimental
 	merged.Capabilities = mergeCapabilities(merged.Capabilities, next.Capabilities)
 	merged.Backend = mergeBackend(merged.Backend, next.Backend)
+	if next.Knobs != nil {
+		merged.Knobs = slices.Clone(next.Knobs)
+	}
+	if next.RawKnobs != nil {
+		merged.RawKnobs = slices.Clone(next.RawKnobs)
+	}
 	return merged
 }
 

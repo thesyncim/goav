@@ -640,6 +640,9 @@ func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requi
 		for i := range choice.Alternatives {
 			requirement.Alternatives = append(requirement.Alternatives, choice.Alternatives[i].Backend.Label())
 		}
+		for i := range choice.Descriptor.Knobs {
+			requirement.Knobs = append(requirement.Knobs, choice.Descriptor.Knobs[i].String())
+		}
 	}
 	return requirement
 }

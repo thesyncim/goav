@@ -31,6 +31,11 @@ type Descriptor struct {
 	Experimental bool
 	Capabilities Capabilities
 	Backend      BackendInfo
+	// Knobs are the settings the backend takes (see Knob); nil leaves its
+	// settings unchecked. RawKnobs check its raw parameters; nil passes
+	// them to the backend as given.
+	Knobs    []Knob
+	RawKnobs []Knob
 }
 
 // Capabilities carries concrete media compatibility details. Codec identity,

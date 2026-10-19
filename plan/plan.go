@@ -147,6 +147,9 @@ type AdapterRequirement struct {
 	Backend       string   `json:"backend,omitempty"`
 	BackendReason string   `json:"backendReason,omitempty"`
 	Alternatives  []string `json:"alternatives,omitempty"`
+	// Knobs lists the settings the chosen backend takes, one summary each
+	// ("rc=cbr|vbr (default vbr): rate control").
+	Knobs []string `json:"knobs,omitempty"`
 }
 
 // Diagnostic is one structured warning attached to a plan.

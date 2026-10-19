@@ -304,6 +304,9 @@ type CodecAdapterRequest struct {
 	Width        int
 	Height       int
 	Realtime     bool
+	// Settings are the request's codec settings, checked against the chosen
+	// backend's knobs.
+	Settings codec.CodecSettings
 }
 
 // Need is the request as a backend-selection need.
@@ -344,6 +347,7 @@ func EncodeAdapterRequestFromRecipeIR(encode codec.Spec, stream recipeir.Stream)
 		BitDepth:     encode.Settings.BitDepth,
 		Width:        firstPositiveInt(encode.Parameters.Width, resize.Width),
 		Height:       firstPositiveInt(encode.Parameters.Height, resize.Height),
+		Settings:     encode.Settings,
 	}
 }
 
@@ -360,6 +364,7 @@ func EncodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) C
 		BitDepth:     spec.Settings.BitDepth,
 		Width:        firstPositiveInt(spec.Parameters.Width, stream.Codec.Width),
 		Height:       firstPositiveInt(spec.Parameters.Height, stream.Codec.Height),
+		Settings:     spec.Settings,
 	}
 }
 
@@ -383,6 +388,11 @@ func recipeIRStreamResize(stream recipeir.Stream) filter.ResizeConfig {
 func SelectCodecBackend(operation string, node string, registry *codec.SimpleRegistry, request CodecAdapterRequest, mode codec.Mode) (codec.Choice, error) {
 	choice, err := registry.Select(request.Need(mode))
 	if err == nil {
+		if mode == codec.ModeEncode {
+			if _, knobErr := choice.Descriptor.ResolveKnobs(request.Settings, request.Realtime); knobErr != nil {
+				return codec.Choice{}, codecKnobRefusal(operation, node, choice.Descriptor, knobErr)
+			}
+		}
 		return choice, nil
 	}
 	var failure *codec.SelectError
@@ -788,4 +798,27 @@ func recipeIRStreamNeedsDecode(stream recipeir.Stream) bool {
 	return recipeIRStreamHasDecode(stream) ||
 		len(recipeIRStreamTransforms(stream)) != 0 ||
 		recipeIRStreamEncodeSpec(stream).ID != ""
+}
+
+// codecKnobRefusal refuses encode settings the chosen backend's knobs reject:
+// an unknown name (with the nearest knob) or a value outside its range.
+func codecKnobRefusal(operation string, node string, desc codec.Descriptor, cause error) error {
+	knobs := make([]string, len(desc.Knobs))
+	for i := range desc.Knobs {
+		knobs[i] = desc.Knobs[i].String()
+	}
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.EncodeParameterInvalidCode),
+		Code:      builderr.EncodeParameterInvalidCode,
+		Operation: operation,
+		Node:      node,
+		Reason:    cause.Error(),
+		Details:   builderr.DetailLines(append([]string{"backend=" + desc.Backend.Label()}, knobs...)),
+		Fixes: builderr.Fixes([]string{
+			"set only the settings the " + desc.Backend.Name + " backend lists",
+			"scope a setting meant for another backend as <backend>.<setting>, or name that backend with codec.Backend(...)",
+		}),
+		Cause: cause,
+	}
 }
