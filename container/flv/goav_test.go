@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/container/flv"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
@@ -66,5 +67,24 @@ func TestBundleCopiesMP4ToFLVAndDecodesIt(t *testing.T) {
 	}
 	if n := len(audio.Frames()); n == 0 || audio.Frames()[0].Type != av.MediaAudio {
 		t.Fatalf("%d audio frames", n)
+	}
+}
+
+// VP8, which Enhanced RTMP names and FFmpeg does not mux, round-trips
+// through the bundled encoder and decoder: frames encoded into FLV decode
+// back.
+func TestBundleVP8RoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "vp8.flv")
+	if err := bundle.Run(ctx, goavtest.Video(64, 48, 5).Video().Encode(codec.VP8()).To(goav.URI(path))); err != nil {
+		t.Fatalf("encode vp8 to flv: %v", err)
+	}
+	frames := goavtest.NewCollector()
+	if err := bundle.Run(ctx, goav.URIInput(path).Video().Decode().To(frames.Sink())); err != nil {
+		t.Fatalf("decode vp8 from flv: %v", err)
+	}
+	if n := len(frames.Frames()); n != 5 || frames.Frames()[0].Video.Width != 64 {
+		t.Fatalf("%d VP8 frames decoded, want 5 of 64 pixels wide", n)
 	}
 }

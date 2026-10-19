@@ -8,11 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
@@ -20,7 +21,7 @@ import (
 
 // The fixtures are ffmpeg 8 output, 1 s of 64x48 video at 10 fps and a
 // 48 kHz mono tone: classic H.264 (with B-frames) and AAC, and E-FLV HEVC,
-// AV1, VP9, and Opus, and a multitrack file with two AAC tracks.
+// AV1, VP9, Opus, and FLAC, and a multitrack file with two AAC tracks.
 func TestDemuxFixtures(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -29,11 +30,15 @@ func TestDemuxFixtures(t *testing.T) {
 		config       func([]byte) bool
 		videoPackets int
 		audioPackets int
+		// changes counts the sequence starts that change mid-stream: FFmpeg
+		// rewrites FLAC's STREAMINFO, its sample count and MD5, at the end.
+		changes int
 	}{
-		{"h264_aac", av.CodecH264, av.CodecAAC, func(b []byte) bool { _, err := h264.ParseConfig(b); return err == nil }, 10, 48},
-		{"hevc_aac", av.CodecHEVC, av.CodecAAC, func(b []byte) bool { _, err := hevc.ParseConfig(b); return err == nil }, 10, 48},
-		{"av1_opus", av.CodecAV1, av.CodecOpus, func(b []byte) bool { _, err := av1.ParseConfig(b); return err == nil }, 10, 51},
-		{"vp9_opus", av.CodecVP9, av.CodecOpus, func(b []byte) bool { return bytes.HasPrefix(b, []byte{1, 0, 0, 0}) && len(b) == 12 }, 10, 51},
+		{"h264_aac", av.CodecH264, av.CodecAAC, func(b []byte) bool { _, err := h264.ParseConfig(b); return err == nil }, 10, 48, 0},
+		{"hevc_aac", av.CodecHEVC, av.CodecAAC, func(b []byte) bool { _, err := hevc.ParseConfig(b); return err == nil }, 10, 48, 0},
+		{"av1_opus", av.CodecAV1, av.CodecOpus, func(b []byte) bool { _, err := av1.ParseConfig(b); return err == nil }, 10, 51, 0},
+		{"vp9_opus", av.CodecVP9, av.CodecOpus, func(b []byte) bool { return bytes.HasPrefix(b, []byte{1, 0, 0, 0}) && len(b) == 12 }, 10, 51, 0},
+		{"vp9_flac", av.CodecVP9, av.CodecFLAC, func(b []byte) bool { return bytes.HasPrefix(b, []byte{1, 0, 0, 0}) && len(b) == 12 }, 10, 12, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := demuxBytes(t, fixture(t, tc.name))
@@ -59,7 +64,7 @@ func TestDemuxFixtures(t *testing.T) {
 			if n := got.count("audio"); n != tc.audioPackets {
 				t.Fatalf("%d audio packets, want %d", n, tc.audioPackets)
 			}
-			if len(got.events) != 0 {
+			if len(got.events) != tc.changes || tc.changes > 0 && (got.events[0].Type != av.EventCodecChanged || got.events[0].StreamID != "audio") {
 				t.Fatalf("events %+v", got.events)
 			}
 			firstVideo := true
@@ -118,7 +123,7 @@ func TestDemuxMultitrackFixture(t *testing.T) {
 // configurations, timing, keyframes, and payloads, and the muxed bytes pass
 // the structural validator.
 func TestRemuxRoundTrip(t *testing.T) {
-	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "multi"} {
+	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "vp9_flac", "multi"} {
 		t.Run(name, func(t *testing.T) {
 			first := demuxBytes(t, fixture(t, name))
 			muxed := muxPackets(t, first.streams, first.packets)
@@ -345,12 +350,32 @@ func TestMuxRefusals(t *testing.T) {
 	}
 }
 
+// readsEnhancedFLV reports an ffprobe new enough to check E-FLV: one that
+// reads the committed ffmpeg 8 fixtures, multitrack and Opus included, as
+// they were written. An older one (ffmpeg before 7) would fail the checks
+// for what it does not know.
+func readsEnhancedFLV(probe string) bool {
+	enhancedProbe.Do(func() {
+		enhancedProbe.ok = true
+		for name, want := range map[string]string{"av1_opus": "av1,opus", "multi": "h264,aac,aac"} {
+			out, err := exec.Command(probe, "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", "testdata/"+name+".flv").Output()
+			enhancedProbe.ok = enhancedProbe.ok && err == nil && strings.Join(strings.Fields(string(out)), ",") == want
+		}
+	})
+	return enhancedProbe.ok
+}
+
+var enhancedProbe struct {
+	sync.Once
+	ok bool
+}
+
 // ffprobeStreams checks ffprobe, when installed, reads data's streams as
 // the comma-separated codec names want, and ffmpeg decodes it cleanly.
 func ffprobeStreams(t *testing.T, data []byte, want string) {
 	t.Helper()
 	probe, err := exec.LookPath("ffprobe")
-	if err != nil {
+	if err != nil || !readsEnhancedFLV(probe) {
 		return
 	}
 	path := filepath.Join(t.TempDir(), "probe.flv")
@@ -380,6 +405,7 @@ func TestFFprobeReadsMuxedFiles(t *testing.T) {
 		"hevc_aac": "hevc,aac",
 		"av1_opus": "av1,opus",
 		"vp9_opus": "vp9,opus",
+		"vp9_flac": "vp9,flac",
 		"multi":    "h264,aac,aac",
 	} {
 		t.Run(name, func(t *testing.T) {

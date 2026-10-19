@@ -31,7 +31,7 @@ func muxBench(tb testing.TB, name string) (*Muxer, []av.Packet) {
 // Writing a tag allocates nothing: the tag is built in the muxer's buffer
 // and written once, for the legacy and the enhanced headers alike.
 func TestMuxWriteAllocatesNothing(t *testing.T) {
-	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "multi"} {
+	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "vp9_flac", "multi"} {
 		m, packets := muxBench(t, name)
 		ctx := context.Background()
 		allocs := testing.AllocsPerRun(20, func() {

@@ -5,14 +5,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/amf0"
 )
 
 // FuzzDemux feeds the demuxer arbitrary bytes: it must never panic or
 // over-read, and what it reads back must mux.
 func FuzzDemux(f *testing.F) {
-	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "multi"} {
+	for _, name := range []string{"h264_aac", "hevc_aac", "av1_opus", "vp9_opus", "vp9_flac", "multi"} {
 		data := fixture(f, name)
 		f.Add(data[:min(len(data), 4096)])
 	}

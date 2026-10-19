@@ -13,8 +13,8 @@ const Marker = "REDACTED"
 
 // Redact renders u for reports: name is scheme://host/path with no userinfo,
 // query, or fragment; full keeps the query with secret values replaced and
-// userinfo as Marker. An RTMP URL's last path segment, its stream key, is
-// Marker in both.
+// userinfo as Marker. An RTMP URL's stream key, its last path segment
+// and the query that goes with it, is Marker in both.
 func Redact(u *url.URL) (name, full string) {
 	shown := *u
 	if StreamKeyed(u.Scheme) {
@@ -32,6 +32,9 @@ func Redact(u *url.URL) (name, full string) {
 		shown.User = url.User(Marker)
 	}
 	shown.RawQuery = query(u.RawQuery)
+	if StreamKeyed(u.Scheme) && u.RawQuery != "" {
+		shown.RawQuery = Marker // the key's query, which services sign it with
+	}
 	return name, shown.String()
 }
 
@@ -124,6 +127,14 @@ func maskURL(u []byte, keyed bool) {
 	}
 	q := strings.IndexByte(string(u), '?')
 	if q < 0 {
+		return
+	}
+	if keyed {
+		end := len(u)
+		if hash := strings.IndexByte(string(u[q:]), '#'); hash >= 0 {
+			end = q + hash
+		}
+		fill(u[q+1 : end])
 		return
 	}
 	for i := q + 1; i < len(u); {

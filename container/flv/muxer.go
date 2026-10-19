@@ -12,9 +12,9 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/aac"
-	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
@@ -171,13 +171,13 @@ func newMuxTrack(stream av.Stream, media av.MediaType, index int) (muxTrack, err
 			t.config = opus.DefaultHead(stream.Codec.Channels)
 		}
 	case av.CodecFLAC:
-		if len(extra) >= 4 && string(extra[:4]) != "fLaC" {
-			extra = append([]byte("fLaC"), extra...)
-		}
-		if len(extra) < 4+4+34 {
+		// The sequence start is the bare STREAMINFO, as FFmpeg and MediaMTX
+		// read it: the first block of the stream header ExtraData carries.
+		extra = bytes.TrimPrefix(extra, []byte("fLaC"))
+		if len(extra) < 4+flacStreamInfo || extra[0]&0x7f != 0 {
 			return muxTrack{}, fmt.Errorf("%w: FLAC stream %s needs its STREAMINFO in ExtraData", ErrUnsupported, stream.ID)
 		}
-		t.config = extra
+		t.config = extra[4 : 4+flacStreamInfo]
 	}
 	return t, nil
 }

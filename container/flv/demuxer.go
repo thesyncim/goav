@@ -12,9 +12,9 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/container/flv/amf0"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/aac"
-	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
 )
@@ -426,6 +426,9 @@ func (d *Demuxer) applyHints(t *demuxTrack) {
 // which announce publishes with av.EventCodecChanged.
 func (d *Demuxer) configure(t *demuxTrack, config []byte, announce bool) {
 	codec := &t.stream.Codec
+	if codec.ID == av.CodecFLAC {
+		config = flacHeader(config)
+	}
 	if bytes.Equal(codec.ExtraData.Bytes, config) {
 		return // a repeated sequence start, as after a publisher reconnect
 	}
@@ -459,6 +462,19 @@ func (d *Demuxer) configure(t *demuxTrack, config []byte, announce bool) {
 	stream := cloneStream(t.stream)
 	d.queue = append(d.queue, pending{event: &av.Event{Type: av.EventCodecChanged, StreamID: t.stream.ID, Epoch: t.stream.Epoch, Codec: &params, Stream: &stream}})
 }
+
+// flacHeader is the FLAC stream header goav carries as ExtraData (the
+// "fLaC" signature, then metadata blocks) for an E-FLV FLAC sequence
+// start, which FFmpeg and MediaMTX write as the bare STREAMINFO.
+func flacHeader(config []byte) []byte {
+	if len(config) != flacStreamInfo {
+		return config // a full stream header already
+	}
+	return append([]byte{'f', 'L', 'a', 'C', 0x80, 0, 0, flacStreamInfo}, config...)
+}
+
+// flacStreamInfo is the size of a FLAC STREAMINFO block.
+const flacStreamInfo = 34
 
 func (d *Demuxer) Close() error {
 	d.closed = true
