@@ -622,8 +622,8 @@ func mergeMetadata(base av.Metadata, overlay av.Metadata) av.Metadata {
 // sampleRateFromClock reports an audio clock rate as a sample rate, or 0 when
 // the negotiated rate does not fit an int on this platform.
 func sampleRateFromClock(clock uint32) int {
-	if uint64(clock) > uint64(math.MaxInt32) {
-		return 0
+	if clock <= math.MaxInt32 {
+		return int(clock)
 	}
-	return int(clock)
+	return 0
 }
