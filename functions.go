@@ -7,7 +7,7 @@ import (
 
 func validateSinkComponent(sink pipeline.Sink) error {
 	if sink == nil {
-		return compile.ErrNilSink
+		return errNilSink
 	}
 	if validator, ok := sink.(compile.ComponentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {

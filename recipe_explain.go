@@ -952,3 +952,26 @@ func explainExecutionDecision(resolved recipeResolved) (plan.Decision, bool) {
 		Message: "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel",
 	}, true
 }
+
+func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]plan.Decision, 0, len(rules))
+	for i := range rules {
+		names := make([]string, 0, len(rules[i].Branches))
+		destinations := make([]string, 0)
+		for j := range rules[i].Branches {
+			names = append(names, rules[i].Branches[j].Name+"-<stream>")
+			destinations = append(destinations, rules[i].Branches[j].Destinations...)
+		}
+		match := firstNonEmpty(rules[i].MatchDescription, "none")
+		out = append(out, plan.Decision{
+			Code:   compile.DiagnosticStreamRule,
+			Branch: strings.Join(names, "+"),
+			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
+				match, strings.Join(names, ", "), strings.Join(destinations, ", ")),
+		})
+	}
+	return out
+}

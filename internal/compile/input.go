@@ -16,5 +16,5 @@ func recipeIRInputSourceShape(input recipeir.Input) (shape.Spec, bool) {
 	if input.SourceShape.Domain == "" {
 		return shape.Spec{}, false
 	}
-	return NormalizeCustomSourceShape(input.Name, input.SourceShape), true
+	return recipeir.NormalizeSourceShape(input.Name, input.SourceShape), true
 }

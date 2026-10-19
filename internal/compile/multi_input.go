@@ -57,7 +57,7 @@ func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []
 }
 
 func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Stream {
-	shape := NormalizeCustomSourceShape(input.Name, spec)
+	shape := recipeir.NormalizeSourceShape(input.Name, spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,
@@ -73,7 +73,7 @@ func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Strea
 		},
 		Name: string(shape.StreamID),
 	}
-	FillStreamCodecParameters(&stream, input.Codec)
+	recipeir.FillStreamCodecParameters(&stream, input.Codec)
 	return stream
 }
 

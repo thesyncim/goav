@@ -17,7 +17,6 @@ import (
 var grammarCompileBoundaryFiles = []string{
 	"stream.go",
 	"source.go",
-	"stream_rule.go",
 }
 
 var plannerStateIdentifiers = map[string]bool{

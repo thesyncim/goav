@@ -92,7 +92,7 @@ type graphBuilder struct {
 
 func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 	if source == nil {
-		g.setErr(compile.ErrNilSource)
+		g.setErr(errNilSource)
 		return graphNode{name: name}
 	}
 	node := namedSource{name: firstNonEmpty(name, source.Name()), source: source}

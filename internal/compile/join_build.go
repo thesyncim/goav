@@ -4,6 +4,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/builderr"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -14,9 +15,9 @@ import (
 type JoinKind string
 
 const (
-	JoinMix       JoinKind = "mix"
-	JoinComposite JoinKind = "composite"
-	JoinSelect    JoinKind = "select"
+	JoinMix       JoinKind = recipeir.JoinMix
+	JoinComposite JoinKind = recipeir.JoinComposite
+	JoinSelect    JoinKind = recipeir.JoinSelect
 )
 
 // joinProfile is the per-kind configuration consulted by the join planner.

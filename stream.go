@@ -4,7 +4,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -50,7 +50,7 @@ type streamRoot struct {
 }
 
 type streamJoin struct {
-	kind   compile.JoinKind
+	kind   string
 	name   string
 	stage  pipeline.Stage
 	layers []Layer
@@ -217,7 +217,7 @@ func (s Stream) As(name string) Stream {
 // of arrival. It applies to a join's output only.
 func (s Stream) SyncByPTS() Stream {
 	if s.node == nil || s.node.root == nil || s.node.root.join == nil {
-		return Stream{node: &streamNode{parent: s.node, err: publicError(compile.StreamSyncByPTSError())}}
+		return Stream{node: &streamNode{parent: s.node, err: syncByPTSOutsideJoinError()}}
 	}
 	join := *s.node.root.join
 	join.sync = true
@@ -248,19 +248,19 @@ func At(s Stream, x, y int) Layer {
 
 // Mix sums audio streams into one.
 func Mix(streams ...Stream) Stream {
-	return newJoinStream(compile.JoinMix, "", nil, streamLayers(streams))
+	return newJoinStream(recipeir.JoinMix, "", nil, streamLayers(streams))
 }
 
 // Composite draws video streams onto one canvas, in order, each at its Layer
 // position.
 func Composite(layers ...Layer) Stream {
-	return newJoinStream(compile.JoinComposite, "", nil, layers)
+	return newJoinStream(recipeir.JoinComposite, "", nil, layers)
 }
 
 // Select forwards one of its streams at a time; control.SelectActive switches
 // which.
 func Select(streams ...Stream) Stream {
-	return newJoinStream(compile.JoinSelect, "", nil, streamLayers(streams))
+	return newJoinStream(recipeir.JoinSelect, "", nil, streamLayers(streams))
 }
 
 // Join converges streams into a custom stage whose Name equals name.
@@ -276,10 +276,10 @@ func streamLayers(streams []Stream) []Layer {
 	return layers
 }
 
-func newJoinStream(kind compile.JoinKind, name string, stage pipeline.Stage, layers []Layer) Stream {
+func newJoinStream(kind string, name string, stage pipeline.Stage, layers []Layer) Stream {
 	for i, layer := range layers {
 		if layer == nil {
-			return Stream{node: &streamNode{err: joinLayerNilError(firstNonEmpty(string(kind), name), i)}}
+			return Stream{node: &streamNode{err: joinLayerNilError(firstNonEmpty(kind, name), i)}}
 		}
 	}
 	return Stream{node: &streamNode{root: &streamRoot{join: &streamJoin{

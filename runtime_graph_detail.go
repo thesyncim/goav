@@ -3,6 +3,7 @@ package goav
 import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/recipeir"
 )
 
 func inputNodeDetail(input format.Input) string {
@@ -25,7 +26,7 @@ func inputNodeDetail(input format.Input) string {
 func customSourceDetail(input InputSpec) string {
 	parts := []string{"custom source"}
 	if input.source != nil {
-		shape := compile.NormalizeCustomSourceShape(input.inputName("source"), input.source.shape)
+		shape := recipeir.NormalizeSourceShape(input.inputName("source"), input.source.shape)
 		if shape.Domain != "" {
 			parts = append(parts, "domain="+string(shape.Domain))
 		}

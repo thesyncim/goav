@@ -7,7 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -34,7 +34,7 @@ type inputStreamAnchor struct {
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
 func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
-	spec = compile.NormalizeCustomSourceShape(name, spec)
+	spec = recipeir.NormalizeSourceShape(name, spec)
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name:     name,
@@ -124,7 +124,7 @@ func customSourceShape(input InputSpec) (shape.Spec, bool) {
 	if input.source == nil {
 		return shape.Spec{}, false
 	}
-	return compile.NormalizeCustomSourceShape(input.inputName("source"), input.source.shape), true
+	return recipeir.NormalizeSourceShape(input.inputName("source"), input.source.shape), true
 }
 
 func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
@@ -134,7 +134,7 @@ func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
 	if input.provider == nil {
 		return shape.Spec{}, false
 	}
-	return compile.NormalizeCustomSourceShape(input.inputName("source"), input.provider.SourceShape()), true
+	return recipeir.NormalizeSourceShape(input.inputName("source"), input.provider.SourceShape()), true
 }
 
 type compileSourceShapeState interface {
@@ -164,7 +164,7 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 }
 
 func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
-	shape := compile.NormalizeCustomSourceShape(input.inputName("source"), spec)
+	shape := recipeir.NormalizeSourceShape(input.inputName("source"), spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,
@@ -180,7 +180,7 @@ func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
 		},
 		Name: string(shape.StreamID),
 	}
-	compile.FillStreamCodecParameters(&stream, input.codec)
+	recipeir.FillStreamCodecParameters(&stream, input.codec)
 	return stream
 }
 
@@ -257,28 +257,6 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 	}
 }
 
-// applySourceWraps decorates an opened source with the input's WrapSource
-// chain, then re-pins the node's name and described detail to the opened
-// source's values so Describe() ≡ Build() holds no matter what the decorator
-// reports. A decorator that delegates Name() and DescribeNode passes through
-// untouched, keeping every optional capability it implements visible.
-func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
-	if len(s.wraps) == 0 || source == nil {
-		return source
-	}
-	name, detail := source.Name(), compile.DescribedNodeDetail(source)
-	wrapped := source
-	for _, wrap := range s.wraps {
-		if wrap == nil {
-			continue
-		}
-		if next := wrap(wrapped); next != nil {
-			wrapped = next
-		}
-	}
-	return resolvedProviderSource(wrapped, name, detail)
-}
-
 // graphSourceNodeName returns the base planner node name for this input. Callers
 // iterating several inputs resolve names through graphSourceNodeNames so repeated
 // provider names get the index-suffix disambiguation.
@@ -338,11 +316,11 @@ func (s InputSpec) graphSourceNodeDetail() string {
 
 func newCustomSource(input InputSpec) (pipeline.Source, []av.Stream, error) {
 	if input.source == nil {
-		return nil, nil, compile.ErrNilSource
+		return nil, nil, errNilSource
 	}
 	streams := customSourceStreams(input)
 	if len(streams) == 0 {
-		return nil, nil, compile.ErrNilSource
+		return nil, nil, errNilSource
 	}
 	source := &customSource{
 		name:   customSourceNodeName(input),
@@ -374,7 +352,7 @@ func (s *customSource) Start(ctx context.Context, emitter pipeline.Emitter) erro
 		return pipeline.ErrClosed
 	}
 	if s.fn == nil {
-		return compile.ErrNilSource
+		return errNilSource
 	}
 	push := sourcepkg.NewPush(ctx, emitter, s.stream)
 	return s.fn(ctx, push)

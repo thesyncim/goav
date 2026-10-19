@@ -48,6 +48,9 @@ const (
 // declared recipe or graph cannot be lowered as written.
 var ErrUnsupportedBuild = errors.New("goav: unsupported builder graph")
 
+// ErrNilStage reports a nil stage handed to a builder or .Do(...).
+var ErrNilStage = errors.New("goav: nil stage")
+
 // Refusal is a refusal the compiler raises. It carries exactly what a
 // goav.BuildError carries; the root package converts it at its public
 // boundary, so no caller ever sees a Refusal.

@@ -652,7 +652,7 @@ func tapNameEmptyError(operation string, node string) error {
 
 func streamStageMissingError(name string, cause error) error {
 	if cause == nil {
-		cause = ErrNilStage
+		cause = builderr.ErrNilStage
 	}
 	return &builderr.Refusal{
 		Phase:     builderr.PhaseBuild,

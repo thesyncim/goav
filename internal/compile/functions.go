@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -10,7 +11,7 @@ type ComponentValidator interface {
 
 func ValidateStageComponent(stage pipeline.Stage) error {
 	if stage == nil {
-		return ErrNilStage
+		return builderr.ErrNilStage
 	}
 	if validator, ok := stage.(ComponentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {

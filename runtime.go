@@ -13,12 +13,31 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/snapshot"
+)
+
+// Internal build-refusal causes. Public build-shape matching lives on
+// BuildError.Family and BuildError.Code; these only keep package-internal
+// errors.Is checks and low-level unwrap chains stable.
+var (
+	// errNilSource reports a nil source handed to a builder or constructor.
+	errNilSource = errors.New("goav: nil source")
+	// errNilReader reports a nil reader handed to FileInput.
+	errNilReader = errors.New("goav: nil input reader")
+	// errNilStage reports a nil stage handed to a builder or .Do(...).
+	errNilStage = builderr.ErrNilStage
+	// errNilSink reports a nil sink handed to a builder or goav.Sink(...).
+	errNilSink = errors.New("goav: nil sink")
+	// errNilWriter reports a nil writer handed to a byte destination.
+	errNilWriter = errors.New("goav: nil writer")
+	// errNilDestinationProvider reports a nil provider.Destination handed to Custom.
+	errNilDestinationProvider = errors.New("goav: nil destination provider")
 )
 
 // Runtime flow-control sentinels, surfaced on the front door so source.Func,
@@ -207,7 +226,7 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
-			return compile.ErrNilSource
+			return errNilSource
 		}
 		ref, err := graph.AddSource(b.sources[i], b.runtime.buffer)
 		if err != nil {

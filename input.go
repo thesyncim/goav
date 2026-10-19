@@ -132,7 +132,7 @@ func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 		name: name,
 	}
 	if reader == nil {
-		spec.err = compile.ErrNilReader
+		spec.err = errNilReader
 	}
 	return applyInputOptions(inputSpecHandle(spec), opts)
 }
@@ -149,7 +149,7 @@ func (s InputSpec) validate() error {
 			"check the input constructor arguments",
 			"pass a non-nil provider to goav.Input(provider)",
 		}
-		if errors.Is(s.err, compile.ErrNilReader) {
+		if errors.Is(s.err, errNilReader) {
 			fixes = []string{
 				"pass a non-nil io.Reader to goav.FileInput(name, reader)",
 				"use goav.Input(provider) for realtime receive through a source provider",
@@ -206,10 +206,10 @@ func (s InputSpec) validateCustomSource() error {
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
 				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
 			}),
-			cause: compile.ErrNilSource,
+			cause: errNilSource,
 		}
 	}
-	spec := compile.NormalizeCustomSourceShape(node, s.source.shape)
+	spec := recipeir.NormalizeSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
 			Phase:     phaseBuild,
@@ -380,4 +380,14 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 		}
 	}
 	return probes, nil
+}
+
+// sourceEventDomain reports the media domain this input's source produces, so
+// discovered-stream anchors carry the right domain (frame-domain custom
+// sources announce frame streams; everything else is packet-domain).
+func (s InputSpec) sourceEventDomain() shape.MediaDomain {
+	if spec, ok := declaredSourceShape(s); ok && spec.Domain != "" {
+		return spec.Domain
+	}
+	return shape.DomainPacket
 }

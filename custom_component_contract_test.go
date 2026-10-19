@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
@@ -210,10 +210,10 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := nilSource.Start(context.Background(), &componentEmitter{}); !errors.Is(err, compile.ErrNilSource) {
+	if err := nilSource.Start(context.Background(), &componentEmitter{}); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil callback Start err = %v, want errNilSource", err)
 	}
-	if _, _, err := newCustomSource(InputSpec{}); !errors.Is(err, compile.ErrNilSource) {
+	if _, _, err := newCustomSource(InputSpec{}); !errors.Is(err, errNilSource) {
 		t.Fatalf("empty custom source err = %v, want errNilSource", err)
 	}
 	if streams := customSourceStreams(InputSpec{}); streams != nil {
@@ -223,20 +223,20 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 		t.Fatalf("compileStateCustomSourceShape(nil) = %+v %v", got, ok)
 	}
 
-	rawDefault := compile.NormalizeCustomSourceShape("raw", shape.Spec{MediaKind: av.MediaAudio})
+	rawDefault := recipeir.NormalizeSourceShape("raw", shape.Spec{MediaKind: av.MediaAudio})
 	if rawDefault.Domain != shape.DomainPacket || rawDefault.StreamID != "raw" {
 		t.Fatalf("raw default shape = %+v", rawDefault)
 	}
-	videoDefault := compile.NormalizeCustomSourceShape("", shape.Frame(av.MediaVideo))
+	videoDefault := recipeir.NormalizeSourceShape("", shape.Frame(av.MediaVideo))
 	if videoDefault.StreamID != "video" {
 		t.Fatalf("video default stream = %q, want video", videoDefault.StreamID)
 	}
-	eventDefault := compile.NormalizeCustomSourceShape("", shape.Event())
+	eventDefault := recipeir.NormalizeSourceShape("", shape.Event())
 	if eventDefault.StreamID != "stream" {
 		t.Fatalf("event default stream = %q, want stream", eventDefault.StreamID)
 	}
 	mismatched := av.Stream{Codec: av.CodecParameters{ID: av.CodecOpus, SampleRate: 48000}}
-	compile.FillStreamCodecParameters(&mismatched, codec.VP8(codec.ClockRate(90000)))
+	recipeir.FillStreamCodecParameters(&mismatched, codec.VP8(codec.ClockRate(90000)))
 	if mismatched.Codec.ID != av.CodecOpus || mismatched.Codec.ClockRate != 0 {
 		t.Fatalf("mismatched codec facts changed stream: %+v", mismatched.Codec)
 	}
@@ -491,10 +491,10 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		!overridden.Realtime {
 		t.Fatalf("overridden custom contract = %+v", overridden)
 	}
-	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, compile.ErrNilDestinationProvider) || errors.Is(err, compile.ErrNilWriter) {
+	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilDestinationProvider) || errors.Is(err, errNilWriter) {
 		t.Fatalf("nil custom validate err = %v, want errNilDestinationProvider only", err)
 	}
-	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, compile.ErrNilWriter) {
+	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
 		t.Fatalf("nil writer validate err = %v, want errNilWriter", err)
 	}
 
@@ -538,13 +538,13 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		dest Destination
 		want error
 	}{
-		{name: "nil callback", dest: Writer("nil.ogg", nil), want: compile.ErrNilWriter},
+		{name: "nil callback", dest: Writer("nil.ogg", nil), want: errNilWriter},
 		{name: "callback error", dest: Writer("err.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, boom
 		}), want: boom},
 		{name: "nil writer", dest: Writer("nil-writer.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, nil
-		}), want: compile.ErrNilWriter},
+		}), want: errNilWriter},
 	}
 	for _, tt := range writerCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -734,7 +734,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 		t.Fatalf("custom open err = %v, want openErr", err)
 	}
 	nilDestination := &componentDestination{}
-	if _, _, err := builder.openDestinationOutput(ctx, Custom("nil.ogg", nilDestination).spec, nil, av.FormatOgg); !errors.Is(err, compile.ErrNilWriter) {
+	if _, _, err := builder.openDestinationOutput(ctx, Custom("nil.ogg", nilDestination).spec, nil, av.FormatOgg); !errors.Is(err, errNilWriter) {
 		t.Fatalf("custom nil writer err = %v, want errNilWriter", err)
 	}
 }
@@ -968,11 +968,11 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if nilProvider.origin != inputSpecOriginConstructed {
 		t.Fatalf("nil provider input origin = %v, want constructed", nilProvider.origin)
 	}
-	if err := nilProvider.validate(); !errors.Is(err, compile.ErrNilSource) {
+	if err := nilProvider.validate(); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil provider validate error = %v, want errNilSource", err)
 	}
 
-	if _, err := openProviderSource(context.Background(), nil, "nil", nil); !errors.Is(err, compile.ErrNilSource) {
+	if _, err := openProviderSource(context.Background(), nil, "nil", nil); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil provider err = %v, want errNilSource", err)
 	}
 	openErr := errors.New("open source failed")

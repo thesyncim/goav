@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -49,10 +48,10 @@ func TestExpertGraphBuilderValidationContracts(t *testing.T) {
 	if got := graph.Sink("missing-sink", nil).Name(); got != "missing-sink" {
 		t.Fatalf("nil sink handle name = %q, want missing-sink", got)
 	}
-	if _, err := graph.Describe(); !errors.Is(err, compile.ErrNilStage) {
+	if _, err := graph.Describe(); !errors.Is(err, errNilStage) {
 		t.Fatalf("Describe() err = %v, want first latched errNilStage", err)
 	}
-	if _, err := graph.Build(context.Background()); !errors.Is(err, compile.ErrNilStage) {
+	if _, err := graph.Build(context.Background()); !errors.Is(err, errNilStage) {
 		t.Fatalf("Build() err = %v, want first latched errNilStage", err)
 	}
 
@@ -60,7 +59,7 @@ func TestExpertGraphBuilderValidationContracts(t *testing.T) {
 	if got := graph.Sink("missing-sink", nil).Name(); got != "missing-sink" {
 		t.Fatalf("nil sink handle name = %q, want missing-sink", got)
 	}
-	if _, err := graph.Describe(); !errors.Is(err, compile.ErrNilSink) {
+	if _, err := graph.Describe(); !errors.Is(err, errNilSink) {
 		t.Fatalf("Describe() err = %v, want errNilSink", err)
 	}
 

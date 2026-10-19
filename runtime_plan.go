@@ -29,7 +29,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
-			return pipeline.Spec{}, compile.ErrNilSource
+			return pipeline.Spec{}, errNilSource
 		}
 		name := b.sources[i].Name()
 		ref := pipeline.NodeRef(name)

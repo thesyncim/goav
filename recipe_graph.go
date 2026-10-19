@@ -164,7 +164,7 @@ func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 	switch {
 	case root.join != nil:
 		node := recipeir.Node{Kind: recipeir.NodeJoin, Join: recipeir.Join{
-			Kind:  firstNonEmpty(string(root.join.kind), root.join.name),
+			Kind:  firstNonEmpty(root.join.kind, root.join.name),
 			Stage: root.join.stage,
 			Sync:  root.join.sync,
 		}}

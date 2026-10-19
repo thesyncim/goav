@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 // StreamOption narrows the stream selection made by the input selectors
@@ -61,4 +62,10 @@ func joinLayerNilError(join string, index int) error {
 		}),
 		cause: errUnsupportedBuild,
 	}
+}
+
+// syncByPTSOutsideJoinError is the refusal of SyncByPTS on a stream that is
+// not a Mix or Composite.
+func syncByPTSOutsideJoinError() error {
+	return publicError(compile.StreamSyncByPTSError())
 }

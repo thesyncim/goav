@@ -32,7 +32,7 @@ type (
 //	err := rt.Run(ctx, in.Audio().To(out))
 func Input(src provider.Source, opts ...InputOption) InputSpec {
 	if src == nil {
-		return inputSpecHandle(InputSpec{err: compile.ErrNilSource})
+		return inputSpecHandle(InputSpec{err: errNilSource})
 	}
 	spec := src.SourceShape()
 	return applyInputOptions(inputSpecHandle(InputSpec{
@@ -86,7 +86,7 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // structural (a type assertion), so providers stay free of goav internals.
 func openProviderSource(ctx context.Context, src provider.Source, name string, clock av.Clock) (graphSourceBuild, error) {
 	if src == nil {
-		return graphSourceBuild{}, compile.ErrNilSource
+		return graphSourceBuild{}, errNilSource
 	}
 	source, streams, err := src.OpenSource(ctx)
 	if err != nil {
@@ -192,4 +192,26 @@ type renamedControllableSource struct {
 
 func (s *renamedControllableSource) Control(ctx context.Context, msg *pipeline.Message) error {
 	return s.source.(pipeline.ControllableSource).Control(ctx, msg)
+}
+
+// applySourceWraps decorates an opened source with the input's WrapSource
+// chain, then re-pins the node's name and described detail to the opened
+// source's values so Describe() ≡ Build() holds no matter what the decorator
+// reports. A decorator that delegates Name() and DescribeNode passes through
+// untouched, keeping every optional capability it implements visible.
+func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
+	if len(s.wraps) == 0 || source == nil {
+		return source
+	}
+	name, detail := source.Name(), compile.DescribedNodeDetail(source)
+	wrapped := source
+	for _, wrap := range s.wraps {
+		if wrap == nil {
+			continue
+		}
+		if next := wrap(wrapped); next != nil {
+			wrapped = next
+		}
+	}
+	return resolvedProviderSource(wrapped, name, detail)
 }

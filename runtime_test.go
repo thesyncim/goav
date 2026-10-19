@@ -15,7 +15,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -878,7 +877,7 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 }
 
 func TestRuntimeBuilderDescribeValidation(t *testing.T) {
-	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, compile.ErrNilSource) {
+	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, errNilSource) {
 		t.Fatalf("source err = %v, want errNilSource", err)
 	}
 
@@ -919,7 +918,7 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 
 func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err := newTestBuilder(t).Source(nil).Build(context.Background())
-	if !errors.Is(err, compile.ErrNilSource) {
+	if !errors.Is(err, errNilSource) {
 		t.Fatalf("source err = %v, want errNilSource", err)
 	}
 
@@ -939,22 +938,22 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	_, err = newTestBuilder(t).Source(source).Stage(nil).Build(context.Background())
-	if !errors.Is(err, compile.ErrNilStage) {
+	if !errors.Is(err, errNilStage) {
 		t.Fatalf("stage err = %v, want errNilStage", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Stage(PacketFunc("packets", nil)).Build(context.Background())
-	if !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, compile.ErrNilStage) {
+	if !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, errNilStage) {
 		t.Fatalf("PacketFunc nil callback err = %v, want ErrNilStageCallback only", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(nil).Build(context.Background())
-	if !errors.Is(err, compile.ErrNilSink) {
+	if !errors.Is(err, errNilSink) {
 		t.Fatalf("sink err = %v, want errNilSink", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(SinkFunc("sink", nil)).Build(context.Background())
-	if !errors.Is(err, component.ErrNilSinkCallback) || errors.Is(err, compile.ErrNilSink) {
+	if !errors.Is(err, component.ErrNilSinkCallback) || errors.Is(err, errNilSink) {
 		t.Fatalf("SinkFunc nil callback err = %v, want ErrNilSinkCallback only", err)
 	}
 

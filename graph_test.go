@@ -17,7 +17,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
@@ -106,7 +105,7 @@ func TestRuntimeGraphHandleEventRoute(t *testing.T) {
 func TestRuntimeGraphHandlesRejectNilNode(t *testing.T) {
 	graph := expertGraph(mustNew())
 	graph.Source("source", nil)
-	if _, err := graph.Build(context.Background()); !errors.Is(err, compile.ErrNilSource) {
+	if _, err := graph.Build(context.Background()); !errors.Is(err, errNilSource) {
 		t.Fatalf("err = %v, want errNilSource", err)
 	}
 }
