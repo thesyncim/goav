@@ -63,3 +63,6 @@
   480x270 ! at 1420 790)` in the CLI). Arm transforms are planned, checked
   against the registered filters, and shown in Describe; work an arm cannot
   lower is refused with the fix.
+- `docs/ERROR_CATALOG.md` lists every code a goav refusal can carry (90, by
+  family), generated from the source and pinned complete by
+  `TestErrorCatalogDocMatchesErrcodeCatalog`, instead of 13 of them.

@@ -288,9 +288,8 @@ The checklist below gates the tag. Each item names its current evidence.
   removed with the doc source pins (2026-06-27); accuracy is review-owned.
 - [x] **Structured errors enforced**: `error_acceptance_test.go` builds the
   bad recipes and asserts rendered refusals, and
-  `TestErrorCatalogDocMatchesErrcodeCatalog` keeps `docs/ERROR_CATALOG.md` in
-  lockstep with `errcode/errcode.go`; every current errcode names a bad
-  recipe, coverage assertion, a fix, and the test that owns it.
+  `TestErrorCatalogDocMatchesErrcodeCatalog` pins `docs/ERROR_CATALOG.md` to
+  every code a refusal can carry, generated from the source.
 - [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
   pipeline/container suites plus perf-lab latency/RSS/pressure/control/fanout/
   container/real-Opus smoke; bench artifacts run in CI; methodology in

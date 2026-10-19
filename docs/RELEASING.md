@@ -60,7 +60,7 @@ say why.
 | Race coverage | `CGO_ENABLED=1 go test -race` passes for the governed runtime packages and nested transport modules. |
 | Static analysis and formatting | `CGO_ENABLED=0 go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, and `test -z "$(gofmt -l .)"` pass. |
 | README and docs examples | `TestReadmeGoExamplesCompile`, the doc-citation pins in `docs_citation_contract_test.go`, package-doc smoke, and example-module tests pass. |
-| Error catalog | `TestErrorCatalogDocMatchesErrcodeCatalog` and the acceptance tests prove every current errcode has catalog/docs/test ownership. |
+| Error catalog | `TestErrorCatalogDocMatchesErrcodeCatalog` pins the catalog to every code a refusal can carry; the acceptance tests own the public constants. |
 | Hot-path allocations | Allocation guard tests and benchmark smoke pass without documented regressions. |
 | Public API restraint | `docs/API_SURFACE.md` (the reviewed approved list), the PR template, and CI package-doc smoke show no ungoverned public package or undocumented export. Any new export needs the API-restraint checklist. |
 | CI artifacts | Coverage, fuzz-smoke, benchmark/perf-lab, benchstat, CodeQL, govulncheck, and release artifacts are present for the release candidate. |
