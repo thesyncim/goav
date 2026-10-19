@@ -7,3 +7,7 @@
   (and LGPL goh264, linked only with `-tags goav_goh264`), pinned with their
   licenses and the import graph by `TestRootModuleDependencyPurity`; the
   modernc runtime left the root module graph. The CLI no longer decodes AAC.
+- The README's codec table is true on every platform it claims, pinned by
+  `TestReadmeCodecTableMatchesBundle` against the bundle's active backends,
+  and `docs/ADAPTERS.md#licenses` states every backend's license and what
+  linking it means (LGPL goh264's relinking duty, GPL gplcodec).

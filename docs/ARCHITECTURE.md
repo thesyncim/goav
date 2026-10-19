@@ -231,8 +231,8 @@ the event by refreshing its payload map.
 
 ## Codec backends
 
-Adapters wrap existing pure-Go codec projects (`gopus`, `goaac`, `govpx`,
-`goav1`, `goh264`) behind `codec.DecoderFactory` and `codec.EncoderFactory`; the core
+Adapters wrap existing pure-Go codec projects (`gopus`, `govpx`, `goav1`,
+`goh264`; GPL `goaac` in the nested `gplcodec`) behind `codec.DecoderFactory` and `codec.EncoderFactory`; the core
 runtime does not depend on codec internals. Decoder factories may implement
 `codec.DecodeStateFactory` when a high-level runtime needs adapter-specific
 reusable state; exact low-level applications pass their own state through

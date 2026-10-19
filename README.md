@@ -9,7 +9,7 @@
 </div>
 
 You describe media work as plain Go values, and goav plans it, builds the graph, and runs it.
-The codecs and containers are pure Go (VP8, VP9, AV1, Opus, AAC; WebM, Matroska, MP4), so
+The codecs and containers are pure Go (VP8, VP9, AV1, Opus; WebM, Matroska, MP4), so
 your service still ships as one static binary.
 
 ```sh
@@ -138,13 +138,15 @@ DOT and Mermaid.
 
 | | Decode / demux | Encode / mux |
 | --- | --- | --- |
-| Video | VP8, VP9, AV1, H.264 (`goav_goh264` build tag) | VP8, VP9, AV1 |
-| Audio | Opus, AAC-LC | Opus (in WebM, Matroska, or MP4) |
+| Video | VP8, VP9, AV1, H.264 (`-tags goav_goh264`) | VP8, VP9, AV1 |
+| Audio | Opus | Opus (in WebM, Matroska, or MP4) |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, MP4 (progressive or fragmented), IVF, Annex B (H.264) |
 
 Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
 runtime with only the adapters you choose, and there is no global registry.
-See [Adapters](docs/ADAPTERS.md).
+AAC comes from [`libcodec`](libcodec) (AudioToolbox, macOS) or the opt-in [`gplcodec`](gplcodec)
+(pure Go, arm64 only, GPL). Everything `bundle` links is permissive, except LGPL H.264 under
+its tag; see [licenses](docs/ADAPTERS.md#licenses).
 
 ## Recipes
 
@@ -185,6 +187,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
+| [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
 
 The core module never pulls in Pion.
 

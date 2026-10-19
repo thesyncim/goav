@@ -323,8 +323,8 @@ The checklist below gates the tag. Each item names its current evidence.
   points and are excluded by the decision recorded in `docs/API_SURFACE.md`).
 - [x] **Dependency purity**: importing the root package does not pull bundled
   adapter packages into its dependency graph. The root module still carries
-  bundled backend requirements because `goav/bundle` is not a nested module;
-  revisit a nested-module split only if SBOM or scanner pressure justifies it
+  bundled backend requirements because `goav/bundle` is not a nested module,
+  all permissively licensed; the GPL AAC backend is the nested `gplcodec`
   (`TestRootModuleDependencyPurity`). The Pion ecosystem lives in the nested
   `rtpav` and `webrtcav` modules; `playoutav` is nested for the same
   provider-seam isolation without Pion. Nested modules tag

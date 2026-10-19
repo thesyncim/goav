@@ -96,8 +96,8 @@ decision rather than deferral:
 
 - Package-level purity is sufficient. `TestRootImportDoesNotPullBundledAdapters`
   proves importing the root package pulls no bundled adapter, and
-  `TestRootModuleDependencyPurity` keeps root-module requirements inside
-  `github.com/thesyncim/*` plus the reviewed AAC runtime allowlist.
+  `TestRootModuleDependencyPurity` keeps root-module requirements to the
+  permissively licensed backends (GPL code is the nested `gplcodec`).
 - A nested `bundle` module would add a `go.mod`, per-module tags, and release
   coordination for no isolation the package boundary does not already give.
   `rtpav`, `webrtcav`, and `playoutav` are nested because they own
@@ -148,8 +148,8 @@ Minimum Go version:
 Module scope:
 - Root module tag: `v0.1.0`.
 - Nested modules are not included in the root tag. `rtpav`, `webrtcav`,
-  `playoutav`, `player`, `libcodec`, and `cmd/goav` require separate prefixed tags if released.
-- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`libcodec`,
+  `playoutav`, `player`, `libcodec`, `gplcodec`, and `cmd/goav` require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`libcodec`/`gplcodec`,
   then `cmd/goav`, as needed.
 
 API surface:
