@@ -2,9 +2,13 @@ package ts
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"github.com/thesyncim/goav/format"
+	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -186,5 +190,60 @@ func TestDemuxRefusesNonTransportStreams(t *testing.T) {
 		if _, err := demux(data); !errors.Is(err, ErrInvalidData) {
 			t.Errorf("%s: %v, want ErrInvalidData", name, err)
 		}
+	}
+}
+
+// liveReader serves data in 1316-byte reads, as a UDP or SRT input does,
+// then blocks as a live input with nothing more to say.
+type liveReader struct {
+	data []byte
+	wait chan struct{}
+}
+
+func (r *liveReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		<-r.wait
+		return 0, io.EOF
+	}
+	n := copy(p[:min(len(p), 1316)], r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// TestDemuxDeliversWithoutReadingAhead reads a live input that goes quiet:
+// every PES with a known length, the last packet's included, is delivered
+// without waiting for more bytes.
+func TestDemuxDeliversWithoutReadingAhead(t *testing.T) {
+	data := fixture(t, "h264_aac.ts")
+	want := 0
+	for _, p := range demuxBytes(t, data).packets {
+		if p.Type == av.MediaAudio {
+			want++
+		}
+	}
+	r := &liveReader{data: data, wait: make(chan struct{})}
+	defer close(r.wait)
+	d := NewFormatDemuxer()
+	ctx := context.Background()
+	if err := d.Open(ctx, format.Input{Reader: r}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan int)
+	go func() {
+		audio := 0
+		result := format.ReadResult{Packet: &av.Packet{}, Events: make([]av.Event, 0, 1)}
+		for d.ReadInto(ctx, &result) == nil {
+			if result.PacketReady && result.Packet.Type == av.MediaAudio {
+				if audio++; audio == want {
+					got <- audio
+				}
+			}
+			result.Reset()
+		}
+	}()
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the last audio frame waits for bytes after it")
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -288,5 +289,51 @@ func TestMediaSinkLearnsTheConfiguredBitrate(t *testing.T) {
 	defer sink.mu.Unlock()
 	if len(sink.streams) != 1 || sink.streams[0].Metadata[av.MetadataBitrate] != "300000" {
 		t.Fatalf("streams = %+v, want the configured bitrate on the encoded stream", sink.streams)
+	}
+}
+
+// liveByteDestination takes muxed bytes in real time, as SRT or UDP out
+// does: its contract declares Realtime.
+type liveByteDestination struct{ out bytes.Buffer }
+
+func (*liveByteDestination) Name() string { return "live-bytes" }
+
+func (*liveByteDestination) Contract() provider.Contract {
+	return provider.Contract{ByteStream: true, Realtime: true, Formats: []av.FormatID{av.FormatTS}}
+}
+
+func (d *liveByteDestination) Open(context.Context, provider.Info) (provider.Writer, error) {
+	return nopWriteCloser{&d.out}, nil
+}
+
+type nopWriteCloser struct{ *bytes.Buffer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+// TestLiveByteDestinationPacesAFile pins pacing for a live byte
+// destination: a file muxed into it plans realtime and plays at its media
+// time, as for a live media sink.
+func TestLiveByteDestinationPacesAFile(t *testing.T) {
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := &liveByteDestination{}
+	out := goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Custom("live", dest))
+	spec, err := offlineRuntime().Describe(out)
+	if err != nil || !spec.Realtime {
+		t.Fatalf("describe realtime=%v err=%v, want a realtime plan", spec.Realtime, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Custom("live", dest))); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took < 300*time.Millisecond {
+		t.Fatalf("a 500ms file reached the live destination in %v", took)
+	}
+	if dest.out.Len() == 0 || dest.out.Bytes()[0] != 0x47 {
+		t.Fatal("the destination got no transport stream")
 	}
 }

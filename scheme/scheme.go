@@ -1,13 +1,14 @@
 // Package scheme holds goav's built-in URL schemes, the providers
 // goav.URIInput and goav.URI resolve through: File for file URLs and bare
-// paths, and HTTP for http and https. bundle.Schemes registers them on a
-// runtime; registering one yourself replaces it there, last wins:
+// paths, HTTP for http and https, and UDP for MPEG-TS over udp.
+// bundle.Schemes registers them on a runtime; registering one yourself
+// replaces it there, last wins:
 //
 //	rt, err := bundle.New(runconfig.Scheme("https", scheme.HTTP(scheme.Client(myClient))))
 //
-// Both use the standard library only. Transports with dependencies live in
-// nested modules and export their schemes the same way (webrtcav.WHEP); a
-// future RTMP, SRT, or HLS input is one more provider.Scheme, a
+// All use the standard library only. Transports with dependencies live in
+// nested modules and export their schemes the same way (webrtcav.WHEP,
+// srtav.SRT); a future RTMP or HLS input is one more provider.Scheme, a
 // provider.ByteSource when it carries a container (FLV, MPEG-TS, fMP4
 // segments) and a provider.Source when it carries media.
 package scheme

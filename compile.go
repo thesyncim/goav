@@ -153,7 +153,8 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 // follows the inputs and destinations unless the runtime forces it with
 // WithRealtime(true): a recipe with a live input (a provider or push source
 // whose shape declares Realtime) or a live destination (a media sink whose
-// Live reports true: RTP out, WHIP, a WebRTC track) compiles against a
+// Live reports true: RTP out, WHIP, a WebRTC track; a byte destination whose
+// contract declares Realtime: SRT, UDP) compiles against a
 // realtime view of its runtime, so its graph buffers between stages,
 // encoders pick low-latency presets, and files play paced at their media
 // time, while file-to-file recipes keep the offline runtime and run at full

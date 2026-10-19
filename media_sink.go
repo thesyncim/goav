@@ -120,9 +120,14 @@ type liveSink interface {
 	Live() bool
 }
 
-// destinationsAreLive reports whether a destination consumes in real time.
+// destinationsAreLive reports whether a destination consumes in real time: a
+// live media sink, or a byte destination whose contract declares Realtime
+// (SRT, UDP).
 func destinationsAreLive(dests []Destination) bool {
 	for i := range dests {
+		if dests[i].spec.output.Realtime {
+			return true
+		}
 		if live, ok := dests[i].spec.sink.(liveSink); ok && live.Live() {
 			return true
 		}

@@ -148,7 +148,9 @@ type TransactionalWriter interface {
 // Contract declares what a destination can accept before it opens: whether
 // it consumes muxed bytes (ByteStream) or media messages, and the formats,
 // MIME types, protocol, and realtime/seek capabilities the planner may rely
-// on when selecting the output format. Fragment, for a byte stream, is the
+// on when selecting the output format. Realtime marks one that consumes in
+// real time (SRT, UDP): its recipe plans realtime, so a file plays at its
+// media time. Fragment, for a byte stream, is the
 // longest fragment the destination wants from a fragmenting muxer: an LL-HLS
 // packager asks for its part duration.
 type Contract struct {

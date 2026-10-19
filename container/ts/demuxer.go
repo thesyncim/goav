@@ -128,7 +128,7 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 			d.finishAll()
 			break
 		} else if err != nil {
-			return err
+			return readError(ctx, err)
 		}
 	}
 	if d.pmtVersion < 0 {
@@ -191,7 +191,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 		if err := d.step(); err == io.EOF {
 			d.finishAll()
 		} else if err != nil {
-			return err
+			return readError(ctx, err)
 		}
 	}
 	u := d.queue[d.head]
@@ -229,6 +229,15 @@ func (d *FormatDemuxer) Close() error {
 	return nil
 }
 
+// readError is a failed read: the run's end when its context is done (the
+// runtime closes a live input's reader then), else the reader's error.
+func readError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return err
+}
+
 // step reads and handles one transport packet.
 func (d *FormatDemuxer) step() error {
 	p, err := d.nextPacket()
@@ -243,7 +252,12 @@ func (d *FormatDemuxer) step() error {
 // bytes a packet apart after garbage or a lost packet boundary.
 func (d *FormatDemuxer) nextPacket() ([]byte, error) {
 	for {
-		if d.end-d.start < packetSize+1 && !d.eof {
+		// Synced, a packet is enough; finding sync takes the next sync byte too.
+		need := packetSize
+		if !d.synced {
+			need++
+		}
+		if d.end-d.start < need && !d.eof {
 			if err := d.fill(); err != nil {
 				return nil, err
 			}
