@@ -291,7 +291,7 @@ const (
 // h264Packetizer sends Annex B access units in packetization mode 1 (RFC
 // 6184): NAL units that fit share STAP-A packets, larger ones split into
 // FU-A fragments, and an IDR missing its parameter sets gets the last ones
-// seen (in band, or the stream's extradata) ahead of its first slice.
+// seen (in band, or the stream's extradata) at the head of its access unit.
 type h264Packetizer struct {
 	budget int
 	clock  uint32
@@ -344,11 +344,17 @@ func (p *h264Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, p
 	if invalid || len(p.nalus) == 0 {
 		return ErrInvalidPayload
 	}
-	for i, nalu := range p.nalus {
-		if idr && (!sps || !pps) && isH264Slice(nalu[0]&h264NALUTypeMask) {
-			p.nalus = p.withParameterSets(i, !sps, !pps)
-			break
+	if idr && (!sps || !pps) {
+		// The missing sets open the access unit (an in-band SPS keeps its
+		// place ahead of a PPS put after it), before any SEI that refers to
+		// them.
+		at := 0
+		for i, nalu := range p.nalus {
+			if sps && nalu[0]&h264NALUTypeMask == h264NALUSPS {
+				at = i + 1
+			}
 		}
+		p.nalus = p.withParameterSets(at, !sps, !pps)
 	}
 	for _, nalu := range p.nalus {
 		switch {
@@ -368,7 +374,7 @@ func (p *h264Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, p
 }
 
 // withParameterSets inserts the missing cached parameter sets before the
-// NAL unit at i, the access unit's first slice.
+// NAL unit at i.
 func (p *h264Packetizer) withParameterSets(i int, sps, pps bool) [][]byte {
 	inserted := 0
 	if sps && len(p.sps) != 0 {
@@ -494,8 +500,6 @@ func h264AggregateSize(pending [][]byte, next []byte) int {
 	}
 	return size
 }
-
-func isH264Slice(nalType byte) bool { return nalType >= 1 && nalType <= h264NALUIDR }
 
 // h264EachNALU calls fn with each NAL unit of an Annex B access unit, start
 // codes removed; data without a leading start code is one bare NAL unit.
