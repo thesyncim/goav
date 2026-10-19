@@ -92,7 +92,7 @@ func TestDecodeBFrameGOPTimestampsFollowPictures(t *testing.T) {
 		packet := av.Packet{
 			StreamID:   "video",
 			CodecEpoch: 2,
-			Payload:    av.Buffer{Bytes: sample.Data, Ownership: av.BufferImmutable},
+			Payload:    av.Buffer{Bytes: sample.Data},
 			PTS:        av.Timestamp{Value: sample.CTS, Base: base},
 			DTS:        av.Timestamp{Value: sample.DTS, Base: base},
 			Duration:   av.Duration{Value: 1024, Base: base},

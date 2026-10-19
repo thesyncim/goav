@@ -262,7 +262,6 @@ func (f *Filter) nextOutput(frame *av.Frame, out *filter.Result, samples int, pt
 		return nil, filter.ErrOutputBufferTooSmall
 	}
 	plane.Buffer.Bytes = plane.Buffer.Bytes[:outputBytes]
-	plane.Buffer.Ownership = av.BufferOwned
 	plane.Stride = f.outputChannels * 2
 
 	f.outputAudio.Samples = samples

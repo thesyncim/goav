@@ -35,7 +35,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 				}
 				p := av.Packet{
 					StreamID: "generated",
-					Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}},
 				}
 				if _, err := push.Packet(&p); err != nil {
 					return err
@@ -123,7 +123,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 				case <-sctx.Done():
 					return sctx.Err()
 				}
-				p := av.Packet{StreamID: "generated", Payload: av.Buffer{Bytes: []byte{byte(i + 1)}, Ownership: av.BufferImmutable}}
+				p := av.Packet{StreamID: "generated", Payload: av.Buffer{Bytes: []byte{byte(i + 1)}}}
 				if _, err := push.Packet(&p); err != nil {
 					return err
 				}
@@ -197,7 +197,7 @@ func rebranchPacketSource(phases []bool, release <-chan struct{}) InputSpec {
 				p := av.Packet{
 					StreamID: "generated",
 					Keyframe: phases[i],
-					Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}},
 				}
 				if _, err := push.Packet(&p); err != nil {
 					return err
@@ -362,7 +362,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 						SampleFormat: av.SampleFormatS16,
 						Samples:      1,
 					},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{byte(i + 1), 0, byte(i + 1), 0}, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{byte(i + 1), 0, byte(i + 1), 0}}}},
 				}
 				if _, err := push.Frame(&frame); err != nil {
 					return err

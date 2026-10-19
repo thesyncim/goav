@@ -99,7 +99,6 @@ func (f *doubleRateFilter) FilterInto(_ context.Context, frame *av.Frame, out *f
 		dst = append(dst, group...)
 	}
 	dstFrame.Planes[0].Buffer.Bytes = dst
-	dstFrame.Planes[0].Buffer.Ownership = av.BufferOwned
 	dstFrame.Planes[0].Stride = width
 	f.audio.Samples = samples * 2
 	dstFrame.StreamID = frame.StreamID

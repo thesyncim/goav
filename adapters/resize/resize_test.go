@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/raceflag"
 )
 
 func TestRegister(t *testing.T) {
@@ -83,8 +84,8 @@ func TestFilterResizesI420Exact(t *testing.T) {
 		t.Fatalf("v = %v, want %v", got, want)
 	}
 	for i := range output.Planes {
-		if output.Planes[i].Buffer.Ownership != av.BufferOwned {
-			t.Fatalf("plane[%d] ownership = %s", i, output.Planes[i].Buffer.Ownership)
+		if output.Planes[i].Buffer.Owner == nil {
+			t.Fatalf("plane[%d] is not pooled: %+v", i, output.Planes[i].Buffer)
 		}
 	}
 }
@@ -149,10 +150,12 @@ func TestFilterRejectsUnsupportedPixelFormat(t *testing.T) {
 	}
 }
 
+// TestFilterRequiresOutputCapacity pins that a result without room for the
+// three output plane slots is refused; the plane bytes come from the pool.
 func TestFilterRequiresOutputCapacity(t *testing.T) {
 	resizer := newTestFilter(t, filter.ResizeConfig{Width: 4, Height: 4}, videoStream(4, 4, av.PixelFormatYUV420P))
 	frame := patternedVideoFrame("video", 4, 4, av.PixelFormatYUV420P)
-	result := filter.Result{Frames: []av.Frame{preallocVideoFrame(2, 2)}[:0]}
+	result := filter.Result{Frames: []av.Frame{{Planes: make([]av.Plane, 1)}}[:0]}
 
 	err := resizer.FilterInto(context.Background(), &frame, &result)
 	if err != filter.ErrOutputBufferTooSmall {
@@ -161,6 +164,9 @@ func TestFilterRequiresOutputCapacity(t *testing.T) {
 }
 
 func TestFilterAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	resizer := newTestFilter(t, filter.ResizeConfig{Width: 2, Height: 2}, videoStream(4, 4, av.PixelFormatYUV420P))
 	frame := patternedVideoFrame("video", 4, 4, av.PixelFormatYUV420P)
 	result := filter.Result{Frames: []av.Frame{preallocVideoFrame(2, 2)}[:0]}
@@ -171,6 +177,8 @@ func TestFilterAllocs(t *testing.T) {
 		if err := resizer.FilterInto(ctx, &frame, &result); err != nil {
 			t.Fatal(err)
 		}
+		// The stage releases each output once published.
+		result.Frames[0].Release()
 	}); allocs != 0 {
 		t.Fatalf("allocs = %v, want 0", allocs)
 	}
@@ -216,9 +224,9 @@ func videoFrame(streamID av.StreamID, width int, height int, pixelFormat string,
 			PixelFormat: pixelFormat,
 		},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: y, Ownership: av.BufferOwned}, Stride: width},
-			{Buffer: av.Buffer{Bytes: u, Ownership: av.BufferOwned}, Stride: width / 2},
-			{Buffer: av.Buffer{Bytes: v, Ownership: av.BufferOwned}, Stride: width / 2},
+			{Buffer: av.Buffer{Bytes: y}, Stride: width},
+			{Buffer: av.Buffer{Bytes: u}, Stride: width / 2},
+			{Buffer: av.Buffer{Bytes: v}, Stride: width / 2},
 		},
 	}
 }

@@ -79,7 +79,7 @@ func liveS16Source(name string, frames int) goav.InputSpec {
 					PTS:      av.Timestamp{Value: int64(i), Base: base},
 					Duration: av.Duration{Value: 1, Base: base},
 					Audio:    &av.AudioFrame{SampleRate: 48_000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: []byte{byte(i), 0}, Ownership: av.BufferImmutable}}},
+					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: []byte{byte(i), 0}}}},
 				}
 				for {
 					_, err := push.Frame(frame)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -762,6 +763,9 @@ func TestDecoderStageControlRequestEvent(t *testing.T) {
 }
 
 func TestDecoderStageAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	stage, err := NewDecoderStage(DecoderStageConfig{
 		Decoder: &fakeDecoder{},
 		Result:  DecodeResult{Frames: make([]av.Frame, 0, 1)},
@@ -949,6 +953,9 @@ func TestEncoderStageClose(t *testing.T) {
 }
 
 func TestEncoderStageAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	stage, err := NewEncoderStage(EncoderStageConfig{
 		Encoder: &fakeEncoder{},
 		Result:  EncodeResult{Packets: make([]av.Packet, 0, 1)},

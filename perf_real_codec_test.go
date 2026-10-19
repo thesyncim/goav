@@ -1,8 +1,10 @@
 package goav_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"runtime"
 	"testing"
 
@@ -10,8 +12,10 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/container/mp4"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/internal/h264"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -101,7 +105,7 @@ func benchVideoPacketsPayload(name string, n int, codecID av.CodecID, payload []
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range n {
@@ -136,4 +140,91 @@ func BenchmarkSoakRecordDrift(b *testing.B) {
 	b.ReportMetric(float64(after.HeapAlloc)-float64(before.HeapAlloc), "heap_drift_B")
 	b.ReportMetric(float64(after.NumGC-before.NumGC), "gc_cycles")
 	b.ReportMetric(float64(after.PauseTotalNs-before.PauseTotalNs), "gc_pause_total_ns")
+}
+
+// BenchmarkRealH264Decode decodes the repository MP4 fixture's first H.264
+// access unit (an IDR, converted to Annex B) through the bundled decoder, so
+// the real decoder's per-frame cost, including how its frames leave the
+// stage, is measured on a real bitstream.
+func BenchmarkRealH264Decode(b *testing.B) {
+	payload, width, height := realH264AccessUnit(b)
+	job := goav.Source("real-h264-packets",
+		shape.Packet(av.MediaVideo, av.CodecH264, shape.Video(width, height, av.PixelFormatYUV420P)),
+		func(_ context.Context, push source.Push) error {
+			base := av.TimeBase{Num: 1, Den: 90_000}
+			packet := av.Packet{
+				Type:     av.MediaVideo,
+				Payload:  av.Buffer{Bytes: payload},
+				Keyframe: true,
+			}
+			for i := range b.N {
+				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
+				packet.DTS = packet.PTS
+				packet.Duration = av.Duration{Value: 3000, Base: base}
+				if _, err := push.Packet(&packet); err != nil {
+					return err
+				}
+			}
+			return push.EOS()
+		}).
+		Video().
+		Decode().
+		To(benchSink("real-h264-frames"))
+	task, err := benchRealCodecRuntime().Build(context.Background(), job)
+	if err != nil {
+		// The H.264 decoder ships behind the goav_goh264 build tag.
+		b.Skipf("no bundled H.264 decoder in this build: %v", err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	if err := task.Run(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	b.StopTimer()
+	if err := task.Close(); err != nil {
+		b.Fatal(err)
+	}
+}
+
+// realH264AccessUnit returns the fixture's first H.264 sample as Annex B (the
+// avcC parameter sets, then the IDR) and the track's geometry.
+func realH264AccessUnit(b *testing.B) ([]byte, int, int) {
+	b.Helper()
+	data, err := os.ReadFile("container/mp4/testdata/h264_aac.mp4")
+	if err != nil {
+		b.Fatal(err)
+	}
+	demuxer, err := mp4.NewDemuxer(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		b.Fatal(err)
+	}
+	video := -1
+	var config h264.Config
+	var width, height int
+	for i, track := range demuxer.Tracks() {
+		if track.Codec.ID == av.CodecH264 {
+			video, width, height = i, track.Codec.Width, track.Codec.Height
+			if config, err = h264.ParseConfig(track.Codec.ExtraData.Bytes); err != nil {
+				b.Fatal(err)
+			}
+			break
+		}
+	}
+	if video < 0 {
+		b.Fatal("fixture has no H.264 track")
+	}
+	var sample mp4.Sample
+	for {
+		if err := demuxer.ReadInto(nil, &sample); err != nil {
+			b.Fatal(err)
+		}
+		if sample.TrackIndex == video && sample.Keyframe {
+			break
+		}
+	}
+	annexB, err := h264.AppendAnnexB(config.AppendParameterSets(nil), sample.Data, config.LengthSize)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return annexB, width, height
 }

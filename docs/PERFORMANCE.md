@@ -37,12 +37,16 @@ through fluent recipe objects or workflow-specific compiler dispatch.
 Rules for hot-path code:
 
 - Prefer `Into` methods that fill caller-owned result structs; reset before
-  reuse. Preallocate result slices and frame plane buffers; return capacity
-  errors instead of appending beyond capacity.
+  reuse. Preallocate result slices; fill video planes from `av.NewBuffer` so
+  the stage hands them on without a copy; return capacity errors instead of
+  appending beyond capacity.
 - Avoid `fmt`, map writes, closure allocation, and error wrapping.
 - Keep recipe, flow, branch, tap, destination, and codec abstractions cold-path
   only; do not dispatch through them for each packet or frame.
-- Fanout shares payload references unless an explicit policy requires a copy.
+- Fanout shares payload references, never copies: published bytes are
+  immutable (`av.Buffer`), and pooled ones (`av.NewBuffer`) recycle when the
+  last reference is released. `-tags goavdebug` poisons released bytes, so a
+  holder that kept them without `Ref` reads 0xDB.
 - Optional `runconfig.WithMediaPools(true)` installs per-runtime, never-global
   scratch pools for runtime-owned metadata maps and join frame-plane slices.
   The pool is only for values whose lifetime is known to the runtime; public
@@ -58,8 +62,8 @@ silently growing.
 | Path | Test | Enforced |
 |---|---|---|
 | Direct graph pass-through (source->stage->sink) | `pipeline.TestGraphDirectRunAllocs` | 0 |
-| Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, immutable payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
-| Buffered borrowed-packet fanout steady path (1/8/64/512 targets, one graph-owned refcounted copy) | `pipeline.TestBufferedFanoutRefcountAllocs` | 0 |
+| Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, ordinary payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
+| Buffered pooled-payload fanout steady path (1/8/64/512 targets, each slot takes a reference, nothing copied) | `pipeline.TestBufferedFanoutRefcountAllocs` | 0 |
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `source.Push.Packet` / `source.Push.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | <=1 |
@@ -129,6 +133,7 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkResize` | real bundled filter, 320x180 -> 160x90 I420 (1 alloc/op steady state) |
 | `BenchmarkScalePlaneKernel`, `BenchmarkScaleI420Kernel` | adapter-local I420 resize inner-loop benches (area averaging when shrinking, linear when growing): luma/chroma scale, passthrough row copy, fill crop, and whole-I420 half-scale |
 | `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (1 alloc/op steady state) |
+| `BenchmarkBranchFanout/i420/branches=2,8` | one 1280x720 decode, N buffered branches: every branch reads the decoder's pooled frame, so B/op stays flat in N |
 | `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (1 alloc/op steady state) |
 | `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (1 alloc/op steady state per push) |
 | `BenchmarkMixS16Kernel` | audio mix inner-loop kernel microbench (2/3/8 arms); `GOEXPERIMENT=simd` builds select the portable Go `simd` kernel (`simd/<bits>`), default and `purego` builds the scalar loop |
@@ -180,7 +185,7 @@ the strongest SIMD candidate of the three.
 
 The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,
-`BenchmarkBufferedFanout` over shared/copy/refcount modes and 1/8/64/512
+`BenchmarkBufferedFanout` over shared/refcount modes and 1/8/64/512
 targets). The committed baseline ratchet covers the deterministic
 `BenchmarkDirectFanout` and `BenchmarkBufferedFanout` rows; the parallel row
 stays an advisory multi-core scaling signal. The
@@ -265,11 +270,6 @@ release attaches same-machine artifacts.
 Performance characteristics that exist but are expected to change; treat the
 current numbers as snapshots, not contracts:
 
-- **Buffered mutable frame/owned-payload fanout**: borrowed packet fanout is
-  refcounted after one graph-owned copy (`BenchmarkBufferedFanout/refcount` and
-  `TestGraphBufferedBorrowedPacketFanoutSharesOneGraphCopy`); owned packets,
-  owned frames, and defensive `CopyAlways` paths still copy per target to
-  preserve branch-local mutation isolation.
 - **Runtime attach under load**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation; its cost is dominated by planning and is not a
   data-plane figure.

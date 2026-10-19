@@ -85,7 +85,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 		return Source(string(id),
 			shape.Packet(media, codecID, options...),
 			func(_ context.Context, push SourcePush) error {
-				if _, err := push.Packet(&av.Packet{StreamID: id, Type: media, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}); err != nil {
+				if _, err := push.Packet(&av.Packet{StreamID: id, Type: media, Payload: av.Buffer{Bytes: []byte{1}}}); err != nil {
 					return err
 				}
 				return push.EOS()

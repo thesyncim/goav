@@ -185,6 +185,12 @@ type EncodeConfig struct {
 // DecodeResult is the caller-owned output buffer DecodeInto/FlushInto append
 // to: decoded frames, emitted events, and control requests. Reusing one
 // result across calls keeps decode allocation-free.
+//
+// Plane bytes may be the decoder's own memory, valid until its next call
+// (reused output, reference pictures): the stage copies those once into a
+// pooled buffer before publishing. Planes from av.NewBuffer pass their one
+// reference to the stage without a copy; a decoder that keeps such a plane
+// for itself retains it first.
 type DecodeResult struct {
 	Frames   []av.Frame
 	Events   []av.Event
@@ -209,7 +215,7 @@ func (r *DecodeResult) Reset() {
 
 // EncodeResult is the caller-owned output buffer EncodeInto/FlushInto append
 // to: encoded packets and emitted events. Reusing one result across calls
-// keeps encode allocation-free.
+// keeps encode allocation-free. Payload lifetimes follow DecodeResult's.
 type EncodeResult struct {
 	Packets []av.Packet
 	Events  []av.Event

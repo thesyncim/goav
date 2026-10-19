@@ -13,8 +13,7 @@ type conformTestEmitter struct{ frames []*av.Frame }
 
 func (e *conformTestEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
 	if msg.Kind == pipeline.MessageFrame {
-		frame := *msg.Frame
-		e.frames = append(e.frames, &frame)
+		e.frames = append(e.frames, msg.Frame.Ref())
 	}
 	return nil
 }

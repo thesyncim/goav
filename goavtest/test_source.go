@@ -133,7 +133,7 @@ func TestSourceFrames(frames ...*av.Frame) TestSourceOption {
 			if frame == nil {
 				continue
 			}
-			source.script = append(source.script, testSourceMessage{frame: cloneFrame(frame)})
+			source.script = append(source.script, testSourceMessage{frame: copyFrame(frame)})
 		}
 	}
 }
@@ -146,7 +146,7 @@ func TestSourcePackets(packets ...*av.Packet) TestSourceOption {
 			if packet == nil {
 				continue
 			}
-			source.script = append(source.script, testSourceMessage{packet: clonePacket(packet)})
+			source.script = append(source.script, testSourceMessage{packet: copyPacket(packet)})
 		}
 	}
 }
@@ -343,7 +343,7 @@ func (s *TestSource) emit(ctx context.Context, emitter pipeline.Emitter, message
 func (s *TestSource) pipelineMessage(message testSourceMessage) pipeline.Message {
 	switch {
 	case message.frame != nil:
-		frame := cloneFrame(message.frame)
+		frame := copyFrame(message.frame)
 		if frame.StreamID == "" {
 			frame.StreamID = s.stream.ID
 		}
@@ -352,7 +352,7 @@ func (s *TestSource) pipelineMessage(message testSourceMessage) pipeline.Message
 		}
 		return pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
 	case message.packet != nil:
-		packet := clonePacket(message.packet)
+		packet := copyPacket(message.packet)
 		if packet.StreamID == "" {
 			packet.StreamID = s.stream.ID
 		}
@@ -418,7 +418,7 @@ func defaultTestSourceScript(stream av.Stream, spec shape.Spec) []testSourceMess
 		packet := &av.Packet{
 			StreamID: stream.ID,
 			Type:     stream.Type,
-			Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+			Payload:  av.Buffer{Bytes: []byte{1}},
 		}
 		return []testSourceMessage{{packet: packet}}
 	case shape.DomainEvent:
@@ -455,14 +455,14 @@ func cloneFramePtr(frame *av.Frame) *av.Frame {
 	if frame == nil {
 		return nil
 	}
-	return cloneFrame(frame)
+	return copyFrame(frame)
 }
 
 func clonePacketPtr(packet *av.Packet) *av.Packet {
 	if packet == nil {
 		return nil
 	}
-	return clonePacket(packet)
+	return copyPacket(packet)
 }
 
 func cloneEventPtr(event *av.Event) *av.Event {
@@ -486,4 +486,33 @@ func (s *TestSource) String() string {
 		return "goavtest.TestSource(<nil>)"
 	}
 	return fmt.Sprintf("goavtest.TestSource(%s)", s.name)
+}
+
+// copyFrame deep-copies a scripted frame into memory the source owns and
+// never writes again: headers by value, plane bytes into fresh backing.
+func copyFrame(frame *av.Frame) *av.Frame {
+	clone := *frame
+	if frame.Audio != nil {
+		audio := *frame.Audio
+		clone.Audio = &audio
+	}
+	if frame.Video != nil {
+		video := *frame.Video
+		clone.Video = &video
+	}
+	clone.Planes = make([]av.Plane, len(frame.Planes))
+	for i := range frame.Planes {
+		clone.Planes[i] = frame.Planes[i]
+		clone.Planes[i].Buffer = cloneBuffer(frame.Planes[i].Buffer)
+	}
+	clone.Metadata = cloneMetadata(frame.Metadata)
+	return &clone
+}
+
+// copyPacket deep-copies a scripted packet, payload bytes included.
+func copyPacket(packet *av.Packet) *av.Packet {
+	clone := *packet
+	clone.Payload = cloneBuffer(packet.Payload)
+	clone.Metadata = cloneMetadata(packet.Metadata)
+	return &clone
 }

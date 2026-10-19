@@ -11,7 +11,7 @@ import (
 func readinessPacket(stream av.StreamID) *Message {
 	return &Message{Kind: MessagePacket, Packet: &av.Packet{
 		StreamID: stream,
-		Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{1}},
 	}}
 }
 

@@ -30,7 +30,7 @@ func selectTestOneShotSource(id av.StreamID, samples ...int16) InputSpec {
 			frame := &av.Frame{
 				StreamID: id, Type: av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 			}
 			if _, err := push.Frame(frame); err != nil {
 				return err
@@ -53,7 +53,7 @@ func selectTestLiveSource(id av.StreamID, sample int16) InputSpec {
 				frame := &av.Frame{
 					StreamID: id, Type: av.MediaAudio,
 					Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 				}
 				if _, err := push.Frame(frame); err != nil {
 					if errors.Is(err, pipeline.ErrBackpressure) {

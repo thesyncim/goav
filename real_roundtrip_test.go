@@ -49,7 +49,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 					StreamID: "mic", Type: av.MediaAudio,
 					PTS:    av.Timestamp{Value: int64(i * samples), Base: av.TimeBase{Num: 1, Den: rate}},
 					Audio:  &av.AudioFrame{SampleRate: rate, Channels: channels, SampleFormat: av.SampleFormatS16, Samples: samples},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 				}
 				if _, err := push.Frame(frame); err != nil {
 					return err

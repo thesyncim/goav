@@ -213,10 +213,13 @@ func (d *Decoder) decodeVisiblePacket(pkt *av.Packet, streamInfo govpxlib.Stream
 
 	frameInfo, err := d.decoder.DecodeIntoWithPTS(pkt.Payload.Bytes, &img, timestampValue(pkt.PTS))
 	if err != nil {
+		frame.Release()
 		out.Frames = out.Frames[:index]
 		return mapGovpxError(err)
 	}
 	if !frameInfo.ShowFrame {
+		// A hidden picture (an altref) gives its planes straight back.
+		frame.Release()
 		out.Frames = out.Frames[:index]
 		return nil
 	}
@@ -258,30 +261,14 @@ func prepareI420Frame(frame *av.Frame, width, height int) error {
 	if cap(frame.Planes) < 3 {
 		return codec.ErrOutputBufferTooSmall
 	}
-	planes := frame.Planes[:3]
 	chromaWidth := (width + 1) / 2
 	chromaHeight := (height + 1) / 2
-	ySize := width * height
-	chromaSize := chromaWidth * chromaHeight
-	if cap(planes[0].Buffer.Bytes) < ySize ||
-		cap(planes[1].Buffer.Bytes) < chromaSize ||
-		cap(planes[2].Buffer.Bytes) < chromaSize {
-		return codec.ErrOutputBufferTooSmall
-	}
-
-	frame.Planes = planes
-	frame.Planes[0] = av.Plane{
-		Buffer: av.Buffer{Bytes: planes[0].Buffer.Bytes[:ySize], Ownership: av.BufferOwned},
-		Stride: width,
-	}
-	frame.Planes[1] = av.Plane{
-		Buffer: av.Buffer{Bytes: planes[1].Buffer.Bytes[:chromaSize], Ownership: av.BufferOwned},
-		Stride: chromaWidth,
-	}
-	frame.Planes[2] = av.Plane{
-		Buffer: av.Buffer{Bytes: planes[2].Buffer.Bytes[:chromaSize], Ownership: av.BufferOwned},
-		Stride: chromaWidth,
-	}
+	// Each picture decodes into new pooled planes, which the stage hands
+	// downstream by reference: the previous picture may still be queued.
+	frame.Planes = frame.Planes[:3]
+	frame.Planes[0] = av.Plane{Buffer: av.NewBuffer(width * height), Stride: width}
+	frame.Planes[1] = av.Plane{Buffer: av.NewBuffer(chromaWidth * chromaHeight), Stride: chromaWidth}
+	frame.Planes[2] = av.Plane{Buffer: av.NewBuffer(chromaWidth * chromaHeight), Stride: chromaWidth}
 	return nil
 }
 

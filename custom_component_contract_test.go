@@ -53,12 +53,10 @@ func cloneComponentMessage(msg *pipeline.Message) pipeline.Message {
 	}
 	out := *msg
 	if msg.Packet != nil {
-		packet := *msg.Packet
-		out.Packet = &packet
+		out.Packet = msg.Packet.Ref()
 	}
 	if msg.Frame != nil {
-		frame := *msg.Frame
-		out.Frame = &frame
+		out.Frame = msg.Frame.Ref()
 	}
 	if msg.Event != nil {
 		event := *msg.Event
@@ -655,7 +653,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 			ID:         av.CodecOpus,
 			Type:       av.MediaAudio,
 			Attributes: av.Metadata{"mode": "speech"},
-			ExtraData:  av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable},
+			ExtraData:  av.Buffer{Bytes: []byte{1, 2, 3}},
 		},
 	}}
 	builder := newTestBuilder(t,

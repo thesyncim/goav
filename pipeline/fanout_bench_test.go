@@ -66,20 +66,16 @@ func (s *benchSink) Name() string                           { return s.name }
 func (s *benchSink) Handle(context.Context, *Message) error { return nil }
 func (s *benchSink) Close() error                           { return nil }
 
-func benchPacketMessage(size int, immutable bool) *Message {
-	owner := av.BufferImmutable
-	if !immutable {
-		owner = av.BufferBorrowed
+// benchPacketMessage returns a packet message of size payload bytes: ordinary
+// memory, or a pooled buffer the caller holds a reference to.
+func benchPacketMessage(size int, pooled bool) *Message {
+	payload := av.Buffer{Bytes: make([]byte, size)}
+	if pooled {
+		payload = av.NewBuffer(size)
 	}
 	return &Message{
-		Kind: MessagePacket,
-		Packet: &av.Packet{
-			StreamID: "v",
-			Payload: av.Buffer{
-				Bytes:     make([]byte, size),
-				Ownership: owner,
-			},
-		},
+		Kind:   MessagePacket,
+		Packet: &av.Packet{StreamID: "v", Payload: payload},
 	}
 }
 
@@ -113,7 +109,7 @@ func buildDirectFanout(b *testing.B, n int) (*benchCaptureSource, Graph) {
 // fanout (no copy: immutable payload). The per-message cost includes the global
 // statsMu and g.mu.RLock that P2 targets.
 func BenchmarkDirectFanout(b *testing.B) {
-	msg := benchPacketMessage(fanoutPayload, true)
+	msg := benchPacketMessage(fanoutPayload, false)
 	ctx := context.Background()
 	for _, n := range fanoutSizes {
 		b.Run("N="+strconv.Itoa(n), func(b *testing.B) {
@@ -143,7 +139,7 @@ func BenchmarkDirectFanoutParallel(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
-				msg := benchPacketMessage(fanoutPayload, true)
+				msg := benchPacketMessage(fanoutPayload, false)
 				for pb.Next() {
 					if err := src.emitter.Emit(ctx, msg); err != nil {
 						panic(err)
@@ -155,35 +151,29 @@ func BenchmarkDirectFanoutParallel(b *testing.B) {
 }
 
 // BenchmarkBufferedFanout measures steady buffered 1->N throughput with workers
-// draining concurrently. "shared" uses an immutable payload and shares the slice
-// header; "copy" uses a borrowed payload with defensive per-target copies;
-// "refcount" uses a borrowed payload and copies it once into graph-owned backing
-// for refcounted fanout. DropOldest avoids spurious backpressure teardown so the
-// baseline is stable.
+// draining concurrently. Every target queues the producer's payload by
+// reference: "shared" is ordinary memory (no reference count), "refcount" a
+// pooled buffer each queued slot retains and releases. DropOldest avoids
+// spurious backpressure teardown so the baseline is stable.
 func BenchmarkBufferedFanout(b *testing.B) {
 	for _, mode := range []struct {
-		name       string
-		immutable  bool
-		copyAlways bool
+		name   string
+		pooled bool
 	}{
-		{"shared", true, false},
-		{"copy", false, true},
-		{"refcount", false, false},
+		{"shared", false},
+		{"refcount", true},
 	} {
 		for _, n := range fanoutSizes {
 			b.Run(mode.name+"/N="+strconv.Itoa(n), func(b *testing.B) {
-				runBufferedFanout(b, n, mode.immutable, mode.copyAlways)
+				runBufferedFanout(b, n, mode.pooled)
 			})
 		}
 	}
 }
 
-func runBufferedFanout(b *testing.B, n int, immutable bool, copyAlways bool) {
-	policy := BufferPolicy{Capacity: 1024, Drop: DropOldest, CopyAlways: copyAlways}
-	if !immutable {
-		policy.CopyPacketBytes = fanoutPayload
-	}
-	msg := benchPacketMessage(fanoutPayload, immutable)
+func runBufferedFanout(b *testing.B, n int, pooled bool) {
+	policy := BufferPolicy{Capacity: 1024, Drop: DropOldest}
+	msg := benchPacketMessage(fanoutPayload, pooled)
 	src := &holdSource{name: "src", ready: make(chan struct{}), release: make(chan struct{})}
 	g, err := NewGraph(GraphConfig{Name: "bench", Buffer: policy})
 	if err != nil {

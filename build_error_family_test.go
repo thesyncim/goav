@@ -20,7 +20,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{encodeMissingCode, errcode.FamilyEncode},
 		{destinationDuplicateCode, errcode.FamilyDestination},
 		{decodeConfigConflictCode, errcode.FamilyBranch},
-		{bufferPayloadUnsafeCode, errcode.FamilyBuffer},
+		{branchBufferInvalidCode, errcode.FamilyBuffer},
 		{errcode.TapInvalid, errcode.FamilyTap},
 		{errcode.Code("mix_inputs"), errcode.FamilyJoin},
 		{runtimeBranchInvalidCode, errcode.FamilyRuntimeBranch},

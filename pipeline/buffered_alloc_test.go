@@ -29,7 +29,7 @@ func (s *holdSource) Close() error { return nil }
 
 // TestGraphBufferedSteadyEmitAllocs pins the buffered fanout steady path at
 // zero allocations: emit reads the atomic routing snapshot, binds the message
-// into a preallocated node slot (immutable payload, so no copy), and each
+// into a preallocated node slot (by reference, never a copy), and each
 // sink's worker delivers and releases the slot — producer and worker sides
 // both allocation-free per message. Regressions on the lock-free buffered
 // data plane fail here loudly.
@@ -56,7 +56,7 @@ func TestGraphBufferedSteadyEmitAllocs(t *testing.T) {
 	go func() { runDone <- graph.Run(ctx) }()
 	<-source.ready
 
-	msg := benchPacketMessage(fanoutPayload, true) // immutable: queued by reference
+	msg := benchPacketMessage(fanoutPayload, false) // ordinary memory: queued by reference
 	if allocs := testing.AllocsPerRun(1000, func() {
 		if err := source.emitter.Emit(ctx, msg); err != nil {
 			t.Fatal(err)
@@ -93,10 +93,10 @@ func (s *gateSink) Handle(context.Context, *Message) error {
 
 func (s *gateSink) Close() error { return nil }
 
-// TestBufferedFanoutRefcountAllocs pins the refcounted borrowed-packet enqueue
-// path at zero allocations across the SFU-width sweep. The first target copies
-// the producer-borrowed payload into graph-owned backing once; sibling targets
-// bind refcounted views into their own preallocated slots. Sinks are gated
+// TestBufferedFanoutRefcountAllocs pins the pooled-packet enqueue path at zero
+// allocations across the SFU-width sweep: every target binds the producer's
+// payload into its own preallocated slot by taking a reference, so nothing is
+// copied and nothing allocated, however wide the fanout. Sinks are gated
 // shut during the measurement so the pinned window is purely producer-driven:
 // the warmup emit plus the measured emits stay within the 64-slot queues, so
 // no drop or delivery runs concurrently. The pin takes the minimum over a few
@@ -111,12 +111,8 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 	for _, n := range fanoutSizes {
 		t.Run("N="+strconv.Itoa(n), func(t *testing.T) {
 			graph, err := NewGraph(GraphConfig{
-				Name: "borrowed-fanout-alloc",
-				Buffer: BufferPolicy{
-					Capacity:        64,
-					Drop:            DropOldest,
-					CopyPacketBytes: fanoutPayload,
-				},
+				Name:   "pooled-fanout-alloc",
+				Buffer: BufferPolicy{Capacity: 64, Drop: DropOldest},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -141,7 +137,7 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 			go func() { runDone <- graph.Run(ctx) }()
 			<-source.ready
 
-			msg := benchPacketMessage(fanoutPayload, false)
+			msg := benchPacketMessage(fanoutPayload, true)
 			emit := func() {
 				if err := source.emitter.Emit(ctx, msg); err != nil {
 					t.Fatal(err)
@@ -152,7 +148,7 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 				allocs = testing.AllocsPerRun(10, emit)
 			}
 			if allocs != 0 {
-				t.Fatalf("borrowed buffered fanout emit allocs = %v in every window, want 0", allocs)
+				t.Fatalf("pooled buffered fanout emit allocs = %v in every window, want 0", allocs)
 			}
 
 			close(gate)

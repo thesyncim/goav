@@ -117,11 +117,11 @@ func TestComponentRTPOpusDecodeGraph(t *testing.T) {
 	if sink.lastFrameStreamID != "audio" || sink.lastFrameEpoch != 1 ||
 		sink.lastFramePTS.Value != 960 || sink.lastAudioSamples != 960 ||
 		sink.lastAudioSampleRate != 48000 || sink.lastPlaneBytes == 0 ||
-		sink.lastPlaneOwnership != av.BufferOwned {
-		t.Fatalf("decoded frame stream=%s epoch=%d pts=%+v samples=%d rate=%d bytes=%d ownership=%s",
+		!sink.lastPlanePooled {
+		t.Fatalf("decoded frame stream=%s epoch=%d pts=%+v samples=%d rate=%d bytes=%d pooled=%v",
 			sink.lastFrameStreamID, sink.lastFrameEpoch, sink.lastFramePTS,
 			sink.lastAudioSamples, sink.lastAudioSampleRate, sink.lastPlaneBytes,
-			sink.lastPlaneOwnership)
+			sink.lastPlanePooled)
 	}
 	stats := graph.Stats()
 	if stats.Packets != 1 || stats.Frames != 1 || stats.Events != 2 || stats.Delivered != 4 {
@@ -190,14 +190,14 @@ type componentMediaSink struct {
 	lastPacketEpoch     av.Epoch
 	lastPacketPTS       av.Timestamp
 	lastPacketBytes     int
-	lastPacketOwnership av.BufferOwnership
+	lastPacketPooled    bool
 	lastFrameStreamID   av.StreamID
 	lastFrameEpoch      av.Epoch
 	lastFramePTS        av.Timestamp
 	lastAudioSamples    int
 	lastAudioSampleRate int
 	lastPlaneBytes      int
-	lastPlaneOwnership  av.BufferOwnership
+	lastPlanePooled     bool
 	order               [2]pipeline.MessageKind
 	orderLen            int
 	closed              bool
@@ -219,7 +219,7 @@ func (s *componentMediaSink) Handle(_ context.Context, msg *pipeline.Message) er
 			s.lastPacketEpoch = msg.Packet.CodecEpoch
 			s.lastPacketPTS = msg.Packet.PTS
 			s.lastPacketBytes = len(msg.Packet.Payload.Bytes)
-			s.lastPacketOwnership = msg.Packet.Payload.Ownership
+			s.lastPacketPooled = msg.Packet.Payload.Owner != nil
 		}
 	case pipeline.MessageFrame:
 		s.frames++
@@ -233,7 +233,7 @@ func (s *componentMediaSink) Handle(_ context.Context, msg *pipeline.Message) er
 			}
 			if len(msg.Frame.Planes) > 0 {
 				s.lastPlaneBytes = len(msg.Frame.Planes[0].Buffer.Bytes)
-				s.lastPlaneOwnership = msg.Frame.Planes[0].Buffer.Ownership
+				s.lastPlanePooled = msg.Frame.Planes[0].Buffer.Owner != nil
 			}
 		}
 	case pipeline.MessageEvent:

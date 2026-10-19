@@ -88,8 +88,9 @@ type OpenOptions struct {
 // allocation-free.
 type ReadResult struct {
 	// Packet is caller-owned scratch filled by Demuxer.ReadInto when
-	// PacketReady is true. Borrowed packet payloads remain valid until the
-	// demuxer's next ReadInto call unless the demuxer documents otherwise.
+	// PacketReady is true. Its payload need only stay valid until the next
+	// ReadInto: the source copies it once into a pooled buffer to publish
+	// it, unless the demuxer filled it from av.NewBuffer.
 	Packet *av.Packet
 	// PacketReady reports whether Packet contains a packet for this read.
 	PacketReady bool

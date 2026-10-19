@@ -29,7 +29,7 @@ func solverTestAudioSource(id av.StreamID, rate int, channels int, sampleFormat 
 			frame := &av.Frame{
 				StreamID: id, Type: av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: rate, Channels: channels, SampleFormat: sampleFormat, Samples: samples},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 			}
 			if _, err := push.Frame(frame); err != nil {
 				return err
@@ -396,7 +396,7 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 	source := Source("mic",
 		shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
 		func(_ context.Context, push SourcePush) error {
-			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 				return err
 			}
 			return push.EOS()
@@ -440,7 +440,7 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 	source := Source("mic",
 		shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
 		func(_ context.Context, push SourcePush) error {
-			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 				return err
 			}
 			return push.EOS()

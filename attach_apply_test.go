@@ -135,7 +135,7 @@ func TestRebranchAtKeyframeDeliversTheSwitchingKeyframe(t *testing.T) {
 	send := func(id byte, key bool) {
 		t.Helper()
 		select {
-		case packets <- av.Packet{StreamID: "cam", Type: av.MediaAudio, Keyframe: key, Payload: av.Buffer{Bytes: []byte{id}, Ownership: av.BufferImmutable}}:
+		case packets <- av.Packet{StreamID: "cam", Type: av.MediaAudio, Keyframe: key, Payload: av.Buffer{Bytes: []byte{id}}}:
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}

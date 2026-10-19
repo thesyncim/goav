@@ -139,9 +139,9 @@ func endlessVideo(name string, width, height int) goav.InputSpec {
 					Duration: av.Duration{Value: 1, Base: base},
 					Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 					Planes: []av.Plane{
-						{Buffer: av.Buffer{Bytes: luma, Ownership: av.BufferImmutable}, Stride: width},
-						{Buffer: av.Buffer{Bytes: chroma, Ownership: av.BufferImmutable}, Stride: (width + 1) / 2},
-						{Buffer: av.Buffer{Bytes: chroma, Ownership: av.BufferImmutable}, Stride: (width + 1) / 2},
+						{Buffer: av.Buffer{Bytes: luma}, Stride: width},
+						{Buffer: av.Buffer{Bytes: chroma}, Stride: (width + 1) / 2},
+						{Buffer: av.Buffer{Bytes: chroma}, Stride: (width + 1) / 2},
 					},
 				}
 				if _, err := push.Frame(frame); err != nil && !errors.Is(err, goav.ErrBackpressure) {

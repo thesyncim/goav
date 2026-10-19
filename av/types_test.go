@@ -9,7 +9,7 @@ func TestPacketResetReusesPayloadStorage(t *testing.T) {
 	payload := make([]byte, 128)
 	packet := Packet{
 		StreamID:   "audio",
-		Payload:    Buffer{Bytes: payload, Ownership: BufferOwned},
+		Payload:    Buffer{Bytes: payload},
 		Keyframe:   true,
 		LossBefore: true,
 		Metadata:   Metadata{"k": "v"},
@@ -30,7 +30,7 @@ func TestPacketResetReusesPayloadStorage(t *testing.T) {
 
 func TestCoreResetAllocs(t *testing.T) {
 	payload := make([]byte, 128)
-	packet := Packet{Payload: Buffer{Bytes: payload, Ownership: BufferOwned}}
+	packet := Packet{Payload: Buffer{Bytes: payload}}
 
 	planes := make([]Plane, 2)
 	planes[0].Buffer.Bytes = make([]byte, 64)

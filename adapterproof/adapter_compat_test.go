@@ -113,7 +113,6 @@ func (e *toyEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *codec.E
 		return codec.ErrOutputBufferTooSmall
 	}
 	packet.Payload.Bytes = append(packet.Payload.Bytes[:0], payload...)
-	packet.Payload.Ownership = av.BufferOwned
 	packet.StreamID = frame.StreamID
 	packet.Type = av.MediaAudio
 	packet.PTS = frame.PTS
@@ -180,7 +179,6 @@ func (d *toyDecoder) DecodeInto(_ context.Context, packet *av.Packet, out *codec
 		return codec.ErrOutputBufferTooSmall
 	}
 	plane.Buffer.Bytes = append(plane.Buffer.Bytes[:0], payload...)
-	plane.Buffer.Ownership = av.BufferOwned
 	plane.Stride = d.audio.Channels * 2
 	d.audio.Samples = len(payload) / (d.audio.Channels * 2)
 	frame.StreamID = packet.StreamID
@@ -465,7 +463,6 @@ func (f *toyUpsampler) FilterInto(_ context.Context, frame *av.Frame, out *filte
 		dst = append(dst, group...)
 	}
 	output.Planes[0].Buffer.Bytes = dst
-	output.Planes[0].Buffer.Ownership = av.BufferOwned
 	output.Planes[0].Stride = width
 	f.audio.Samples = samples * 2
 	output.StreamID = frame.StreamID
@@ -562,7 +559,7 @@ func (s *toyProviderSource) Start(ctx context.Context, emitter pipeline.Emitter)
 		packet.PTS = av.Timestamp{Value: elapsed, Base: s.stream.TimeBase}
 		packet.Duration = av.Duration{Value: int64(len(payload) / 2), Base: s.stream.TimeBase}
 		packet.Keyframe = true
-		packet.Payload = av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}
+		packet.Payload = av.Buffer{Bytes: payload}
 		elapsed += int64(len(payload) / 2)
 		msg = pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet}
 		if err := emitter.Emit(ctx, &msg); err != nil {

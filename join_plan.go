@@ -406,13 +406,6 @@ func (p *joinPlan) treeGraphBuffer(realtime bool) *pipeline.BufferPolicy {
 	return nil
 }
 
-func (p *joinPlan) joinNodeBufferPolicy(policy pipeline.BufferPolicy, work workPlan) (pipeline.BufferPolicy, error) {
-	if operation, ok := workOperationForNodeKind(work.Operations, pipeline.NodeRef(p.name), plan.OpJoin); ok {
-		return bufferPolicyWithShapeBudgetsForOperations(policy, []workOperation{operation})
-	}
-	return bufferPolicyWithShapeBudgetsForOperations(policy, work.Operations)
-}
-
 // --- work plan ---
 
 // appendJoinArmWork renders this join's arms into the work IR: one branch per

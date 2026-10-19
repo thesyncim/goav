@@ -174,7 +174,7 @@ func TestStressDirectMultiSourceErrorCancellation(t *testing.T) {
 func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 	for range 25 {
 		ctx, cancel := context.WithCancel(context.Background())
-		packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+		packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}}}
 		stop := make(chan struct{})
 		source := &directLoopSource{name: "src", packet: packet, stop: stop}
 		sink := &signalBlockSink{name: "sink", entered: make(chan struct{}), release: make(chan struct{})}
@@ -296,7 +296,7 @@ func TestStressEventStormDuringClose(t *testing.T) {
 func TestStressRemoveWhileStageHandleInFlight(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}}}
 	stop := make(chan struct{})
 	source := &directLoopSource{name: "src", packet: packet, stop: stop}
 	stage := &blockUntilStage{name: "slow", entered: make(chan struct{}), release: make(chan struct{})}

@@ -104,7 +104,7 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 					PTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					DTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					Duration: av.Duration{Value: 3000, Base: base},
-					Payload:  av.Buffer{Bytes: []byte{byte(n)}, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: []byte{byte(n)}},
 				}
 				for {
 					if ctx.Err() != nil {
@@ -372,7 +372,7 @@ func idleAfterVideoPackets(name string, width, height, count int) goav.InputSpec
 					PTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					DTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					Duration: av.Duration{Value: 3000, Base: base},
-					Payload:  av.Buffer{Bytes: []byte{byte(n)}, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: []byte{byte(n)}},
 				}
 				if _, err := push.Packet(packet); err != nil {
 					return err

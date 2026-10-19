@@ -43,7 +43,7 @@ func TestEncoderProducesDecodableAV1Packet(t *testing.T) {
 
 	encoded := codec.EncodeResult{
 		Packets: []av.Packet{{
-			Payload: av.Buffer{Bytes: make([]byte, 0, 1<<20), Ownership: av.BufferOwned},
+			Payload: av.Buffer{Bytes: make([]byte, 0, 1<<20)},
 		}}[:0],
 		Events: make([]av.Event, 0, 1),
 	}
@@ -438,7 +438,7 @@ func newTestAV1Encoder(t *testing.T, settings codec.CodecSettings) *Encoder {
 func newAV1EncodeResult() codec.EncodeResult {
 	return codec.EncodeResult{
 		Packets: []av.Packet{{
-			Payload: av.Buffer{Bytes: make([]byte, 0, 1<<20), Ownership: av.BufferOwned},
+			Payload: av.Buffer{Bytes: make([]byte, 0, 1<<20)},
 		}}[:0],
 		Events: make([]av.Event, 0, 1),
 	}
@@ -463,9 +463,9 @@ func patternedAV1Frame(width, height, n int) *av.Frame {
 		Duration: av.Duration{Value: 1, Base: base},
 		Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: y, Ownership: av.BufferImmutable}, Stride: width},
-			{Buffer: av.Buffer{Bytes: u, Ownership: av.BufferImmutable}, Stride: chromaW},
-			{Buffer: av.Buffer{Bytes: v, Ownership: av.BufferImmutable}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: y}, Stride: width},
+			{Buffer: av.Buffer{Bytes: u}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: v}, Stride: chromaW},
 		},
 	}
 }

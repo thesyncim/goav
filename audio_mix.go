@@ -188,13 +188,17 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 		s.message.Packet = nil
 		s.message.Frame = mixed
 		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		err = emitter.Emit(ctx, &s.message)
+		// The mixed buffer is the stage's own; downstream keeps it by reference.
+		mixed.Release()
+		if err != nil {
 			return err
 		}
 	}
 }
 
-// mixS16Frames sums S16-interleaved audio frames sample-by-sample with clamping.
+// mixS16FramesInto sums S16-interleaved audio frames sample-by-sample with
+// clamping into a new pooled plane in dst, which the caller releases.
 func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame, inputs [][]byte) (*av.Frame, error) {
 	base := firstMixFrame(frames)
 	if base == nil {
@@ -234,13 +238,8 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 		dst.Planes = make([]av.Plane, 1)
 	}
 	dst.Planes = dst.Planes[:1]
-	mixed := dst.Planes[0].Buffer.Bytes
-	if cap(mixed) < n {
-		mixed = make([]byte, n)
-	} else {
-		mixed = mixed[:n]
-	}
-	mixS16Into(mixed, inputs, n)
+	mixed := av.NewBuffer(n)
+	mixS16Into(mixed.Bytes, inputs, n)
 	*audio = *base.Audio
 	audio.Samples = n / 2 / maxInt(base.Audio.Channels, 1)
 	dst.StreamID = out
@@ -251,7 +250,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	dst.Video = nil
 	dst.Metadata = nil
 	dst.Planes[0] = av.Plane{
-		Buffer: av.Buffer{Bytes: mixed, Ownership: av.BufferBorrowed},
+		Buffer: mixed,
 		Stride: base.Planes[0].Stride,
 		Offset: base.Planes[0].Offset,
 	}
@@ -267,6 +266,8 @@ func firstMixFrame(frames []*av.Frame) *av.Frame {
 	return nil
 }
 
+// cloneMixFrame keeps an arm frame past the call that lent it: a pooled
+// header with the frame's fields and its own reference to each plane.
 func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
 	clone := s.takeMixFrame(frame.StreamID)
 	planes := clone.Planes
@@ -280,25 +281,9 @@ func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
 	}
 	clone.Audio = audio
 	clone.Video = nil
-	clone.Planes = planes
-	if cap(clone.Planes) < len(frame.Planes) {
-		clone.Planes = make([]av.Plane, len(frame.Planes))
-	}
-	clone.Planes = clone.Planes[:len(frame.Planes)]
-	for i := range frame.Planes {
-		bytes := clone.Planes[i].Buffer.Bytes
-		clone.Planes[i] = frame.Planes[i]
-		src := frame.Planes[i].Buffer.Bytes
-		if frame.Planes[i].Buffer.Ownership == av.BufferImmutable {
-			continue
-		}
-		if cap(bytes) < len(src) {
-			bytes = make([]byte, len(src))
-		} else {
-			bytes = bytes[:len(src)]
-		}
-		copy(bytes, src)
-		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
+	clone.Planes = append(planes[:0], frame.Planes...)
+	for i := range clone.Planes {
+		clone.Planes[i].Buffer.Retain()
 	}
 	return clone
 }
@@ -329,6 +314,7 @@ func (s *audioMixStage) recycleMixFrame(frame *av.Frame) {
 	if frame == nil {
 		return
 	}
+	frame.Release()
 	id := frame.StreamID
 	s.free[id] = append(s.free[id], frame)
 }

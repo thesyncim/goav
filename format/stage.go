@@ -11,6 +11,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/interleave"
+	"github.com/thesyncim/goav/internal/payload"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -60,6 +61,9 @@ type DemuxSource struct {
 	pacer   *demuxPacer
 	result  ReadResult
 	message pipeline.Message
+	// packet is the header each read packet is published under, holding its
+	// own payload reference (internal/payload).
+	packet  av.Packet
 	eos     av.Event
 	disc    av.Event
 	streams []av.Stream
@@ -257,6 +261,8 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		if err := s.applyPendingControl(ctx, emitter); err != nil {
 			return err
 		}
+		// A packet the window skipped still holds a pooled payload.
+		payload.DropPacket(s.result.Packet)
 		s.result.Reset()
 		if err := s.demuxer.ReadInto(ctx, &s.result); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -508,15 +514,22 @@ func (s *DemuxSource) stampPacketType(packet *av.Packet) {
 	}
 }
 
+// emitPacket publishes a read packet. Its payload is the demuxer's read
+// scratch, so it is copied once into a pooled buffer that every branch then
+// shares (a demuxer that reads into av.NewBuffer hands it over as is).
 func (s *DemuxSource) emitPacket(ctx context.Context, emitter pipeline.Emitter, packet *av.Packet) error {
 	if packet == nil {
 		return nil
 	}
+	payload.TakePacket(&s.packet, packet)
 	s.message.Kind = pipeline.MessagePacket
-	s.message.Packet = packet
+	s.message.Packet = &s.packet
 	s.message.Frame = nil
 	s.message.Event = nil
-	return emitter.Emit(ctx, &s.message)
+	err := emitter.Emit(ctx, &s.message)
+	// Downstream holds its own reference now.
+	s.packet.Release()
+	return err
 }
 
 func (s *DemuxSource) emitEndOfStream(ctx context.Context, emitter pipeline.Emitter) error {

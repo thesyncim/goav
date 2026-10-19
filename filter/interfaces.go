@@ -57,7 +57,10 @@ type FrameFilter interface {
 }
 
 // Result is the caller-owned output buffer FilterInto/FlushInto append to,
-// keeping filtering allocation-free.
+// keeping filtering allocation-free. Plane lifetimes follow
+// codec.DecodeResult's: scratch is copied once when published, av.NewBuffer
+// planes pass their reference to the stage, and a filter that forwards an
+// input plane retains it first.
 type Result struct {
 	Frames []av.Frame
 	Events []av.Event

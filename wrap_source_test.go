@@ -101,8 +101,8 @@ func TestWrapSourceDecoratesFileInput(t *testing.T) {
 	// Mux two packets into an in-memory fake container.
 	var file bytes.Buffer
 	err := rt.Run(ctx, goavtest.Packets(av.CodecOpus,
-		av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}, Keyframe: true},
-		av.Packet{Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
+		av.Packet{Payload: av.Buffer{Bytes: []byte{1}}, Keyframe: true},
+		av.Packet{Payload: av.Buffer{Bytes: []byte{2}}},
 	).To(goav.Write("in.webm", &file)))
 	if err != nil {
 		t.Fatal(err)

@@ -153,7 +153,6 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.StreamID = stream.ID
 	out.Packet.Type = stream.Type
 	out.Packet.Payload.Bytes = sample.Data
-	out.Packet.Payload.Ownership = av.BufferOwned
 	base := av.TimeBase{Num: 1, Den: int64(sample.Timescale)}
 	out.Packet.PTS = av.Timestamp{Value: sample.CTS, Base: base}
 	out.Packet.DTS = av.Timestamp{Value: sample.DTS, Base: base}

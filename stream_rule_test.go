@@ -135,7 +135,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	return Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
-			declared := av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			declared := av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{1}}}
 			if _, err := push.Packet(&declared); err != nil {
 				return err
 			}
@@ -154,7 +154,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 						StreamID: late.ID,
 						Type:     av.MediaAudio,
 						Keyframe: true,
-						Payload:  av.Buffer{Bytes: []byte{payload}, Ownership: av.BufferImmutable},
+						Payload:  av.Buffer{Bytes: []byte{payload}},
 					}
 					if _, err := push.Packet(&packet); err != nil {
 						return err
@@ -178,7 +178,7 @@ func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <
 	return Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
-			declared := av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			declared := av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{1}}}
 			if _, err := push.Packet(&declared); err != nil {
 				return err
 			}
@@ -202,7 +202,7 @@ func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <
 							StreamID: lates[i].ID,
 							Type:     av.MediaAudio,
 							Keyframe: true,
-							Payload:  av.Buffer{Bytes: []byte{byte(i + 2)}, Ownership: av.BufferImmutable},
+							Payload:  av.Buffer{Bytes: []byte{byte(i + 2)}},
 						}
 						if _, err := push.Packet(&packet); err != nil {
 							return err
@@ -372,7 +372,7 @@ func TestOnStreamLateBranchReceivesFramesFromFrameSource(t *testing.T) {
 							SampleFormat: av.SampleFormatS16,
 							Samples:      1,
 						},
-						Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{7, 0, 7, 0}, Ownership: av.BufferImmutable}}},
+						Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{7, 0, 7, 0}}}},
 					}
 					if _, err := push.Frame(&frame); err != nil {
 						return err
@@ -454,7 +454,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 							SampleFormat: av.SampleFormatS16,
 							Samples:      samples,
 						},
-						Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+						Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 					}
 					if _, err := push.Frame(&frame); err != nil {
 						return err
@@ -784,7 +784,7 @@ func TestOnStreamBranchReceivesEveryPacketOfDiscoveredStream(t *testing.T) {
 							StreamID: late.ID,
 							Type:     av.MediaAudio,
 							Keyframe: i == 0,
-							Payload:  av.Buffer{Bytes: []byte{byte(i)}, Ownership: av.BufferImmutable},
+							Payload:  av.Buffer{Bytes: []byte{byte(i)}},
 						}
 						if _, err := push.Packet(&packet); err != nil {
 							return err

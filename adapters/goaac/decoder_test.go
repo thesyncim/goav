@@ -123,7 +123,7 @@ func TestDecodeADTSIntoCallerOwnedFrame(t *testing.T) {
 			StreamID:   "audio",
 			Type:       av.MediaAudio,
 			CodecEpoch: 9,
-			Payload:    av.Buffer{Bytes: packetData, Ownership: av.BufferBorrowed},
+			Payload:    av.Buffer{Bytes: packetData},
 			PTS:        av.Timestamp{Value: int64(i * 1024), Base: av.TimeBase{Num: 1, Den: 44100}},
 			Metadata:   av.Metadata{"track": "main"},
 		}
@@ -150,7 +150,7 @@ func TestDecodeADTSIntoCallerOwnedFrame(t *testing.T) {
 	}
 	if len(frame.Planes) != 1 ||
 		len(frame.Planes[0].Buffer.Bytes) != 1024*2*2 ||
-		frame.Planes[0].Buffer.Ownership != av.BufferOwned ||
+		frame.Planes[0].Buffer.Owner != nil ||
 		frame.Planes[0].Stride != 4 {
 		t.Fatalf("planes = %+v", frame.Planes)
 	}

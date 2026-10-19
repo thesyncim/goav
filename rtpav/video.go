@@ -286,8 +286,7 @@ func (a *videoFrameAssembler) emitPacket(timestamp uint32, clockRate uint32, pay
 		Type:       a.stream.Type,
 		CodecEpoch: a.stream.Epoch,
 		Payload: av.Buffer{
-			Bytes:     payload,
-			Ownership: av.BufferBorrowed,
+			Bytes: payload,
 		},
 		PTS:           av.RTPToTimestamp(timestamp, clockRate),
 		Keyframe:      keyframe,

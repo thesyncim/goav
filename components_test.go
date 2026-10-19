@@ -424,14 +424,14 @@ type componentMediaSink struct {
 	lastPacketEpoch     av.Epoch
 	lastPacketPTS       av.Timestamp
 	lastPacketBytes     int
-	lastPacketOwnership av.BufferOwnership
+	lastPacketPooled    bool
 	lastFrameStreamID   av.StreamID
 	lastFrameEpoch      av.Epoch
 	lastFramePTS        av.Timestamp
 	lastAudioSamples    int
 	lastAudioSampleRate int
 	lastPlaneBytes      int
-	lastPlaneOwnership  av.BufferOwnership
+	lastPlanePooled     bool
 	order               [2]pipeline.MessageKind
 	orderLen            int
 	closed              bool
@@ -453,7 +453,7 @@ func (s *componentMediaSink) Handle(_ context.Context, msg *pipeline.Message) er
 			s.lastPacketEpoch = msg.Packet.CodecEpoch
 			s.lastPacketPTS = msg.Packet.PTS
 			s.lastPacketBytes = len(msg.Packet.Payload.Bytes)
-			s.lastPacketOwnership = msg.Packet.Payload.Ownership
+			s.lastPacketPooled = msg.Packet.Payload.Owner != nil
 		}
 	case pipeline.MessageFrame:
 		s.frames++
@@ -467,7 +467,7 @@ func (s *componentMediaSink) Handle(_ context.Context, msg *pipeline.Message) er
 			}
 			if len(msg.Frame.Planes) > 0 {
 				s.lastPlaneBytes = len(msg.Frame.Planes[0].Buffer.Bytes)
-				s.lastPlaneOwnership = msg.Frame.Planes[0].Buffer.Ownership
+				s.lastPlanePooled = msg.Frame.Planes[0].Buffer.Owner != nil
 			}
 		}
 	case pipeline.MessageEvent:

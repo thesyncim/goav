@@ -182,10 +182,13 @@ func (d *VP9Decoder) decodeVisiblePacket(pkt *av.Packet, streamInfo govpxlib.VP9
 
 	frameInfo, err := d.decoder.DecodeIntoWithPTS(pkt.Payload.Bytes, &img, timestampValue(pkt.PTS))
 	if err != nil {
+		frame.Release()
 		out.Frames = out.Frames[:index]
 		return mapGovpxError(err)
 	}
 	if !frameInfo.ShowFrame {
+		// A hidden picture (an altref) gives its planes straight back.
+		frame.Release()
 		out.Frames = out.Frames[:index]
 		return nil
 	}

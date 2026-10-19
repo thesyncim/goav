@@ -200,7 +200,7 @@ func s16Frame(name string, sampleRate, channels int, samples []int16, elapsed in
 			SampleFormat: av.SampleFormatS16,
 			Samples:      perChannel,
 		},
-		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 	}
 }
 
@@ -227,9 +227,9 @@ func i420Frame(name string, width, height, n int) *av.Frame {
 		Duration: av.Duration{Value: 1, Base: base},
 		Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: luma, Ownership: av.BufferImmutable}, Stride: width},
-			{Buffer: av.Buffer{Bytes: cb, Ownership: av.BufferImmutable}, Stride: chromaW},
-			{Buffer: av.Buffer{Bytes: cr, Ownership: av.BufferImmutable}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: luma}, Stride: width},
+			{Buffer: av.Buffer{Bytes: cb}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: cr}, Stride: chromaW},
 		},
 	}
 }

@@ -328,7 +328,7 @@ func (p *player) received() []av.Event {
 // fadeFrame is frame n of the fade, which steps from black to white every
 // 16 frames.
 func fadeFrame(n int) *av.Frame {
-	chroma := av.Buffer{Bytes: bytes.Repeat([]byte{128}, width*height/4), Ownership: av.BufferImmutable}
+	chroma := av.Buffer{Bytes: bytes.Repeat([]byte{128}, width*height/4)}
 	return &av.Frame{
 		StreamID: "player",
 		Type:     av.MediaVideo,
@@ -336,7 +336,7 @@ func fadeFrame(n int) *av.Frame {
 		Duration: av.Duration{Value: 1, Base: frameRate},
 		Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: bytes.Repeat([]byte{byte(n % 16 * 17)}, width*height), Ownership: av.BufferImmutable}, Stride: width},
+			{Buffer: av.Buffer{Bytes: bytes.Repeat([]byte{byte(n % 16 * 17)}, width*height)}, Stride: width},
 			{Buffer: chroma, Stride: width / 2},
 			{Buffer: chroma, Stride: width / 2},
 		},
@@ -384,7 +384,7 @@ func (acmeEncoder) EncodeInto(_ context.Context, f *av.Frame, out *codec.EncodeR
 	p := &out.Packets[len(out.Packets)-1]
 	p.Reset()
 	p.StreamID, p.Type, p.PTS, p.Keyframe = f.StreamID, f.Type, f.PTS, true
-	p.Payload = av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}
+	p.Payload = av.Buffer{Bytes: []byte{1}}
 	return nil
 }
 func (acmeEncoder) FlushInto(context.Context, *codec.EncodeResult) error { return nil }

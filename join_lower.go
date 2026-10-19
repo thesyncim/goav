@@ -79,12 +79,6 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		buffer := rt.buffer
 		if pinned != nil {
 			buffer = *pinned
-			if !buffer.IsDirect() {
-				var err error
-				if buffer, err = p.joinNodeBufferPolicy(buffer, in.work); err != nil {
-					return av.Stream{}, err
-				}
-			}
 		}
 		joined := p.joined
 		if p.late {

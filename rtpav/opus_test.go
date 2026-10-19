@@ -29,9 +29,6 @@ func TestOpusDepacketizerProducesBorrowedPacket(t *testing.T) {
 	if out.StreamID != "audio" || out.CodecEpoch != 3 {
 		t.Fatalf("packet stream/epoch = %+v", out)
 	}
-	if out.Payload.Ownership != av.BufferBorrowed {
-		t.Fatalf("ownership = %q", out.Payload.Ownership)
-	}
 	if &out.Payload.Bytes[0] != &payload[0] {
 		t.Fatal("payload was copied")
 	}

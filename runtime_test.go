@@ -102,13 +102,13 @@ func (s *runtimeTestSink) Handle(_ context.Context, msg *pipeline.Message) error
 	if msg.Kind == pipeline.MessagePacket {
 		s.lastPacket = msg.Packet
 		if msg.Packet != nil {
-			s.lastPacketValue = *msg.Packet
+			s.lastPacketValue = *msg.Packet.Ref()
 		}
 	}
 	if msg.Kind == pipeline.MessageFrame {
 		s.frames++
 		if msg.Frame != nil {
-			s.lastFrame = *msg.Frame
+			s.lastFrame = *msg.Frame.Ref()
 		}
 	}
 	return nil

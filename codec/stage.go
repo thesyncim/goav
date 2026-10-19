@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/payload"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -55,12 +56,16 @@ type EncoderStageConfig struct {
 // frames, events reach the decoder (codec changes are validated against the
 // opened stream), and decoder control requests surface as events.
 type DecoderStage struct {
-	name         string
-	detail       string
-	inputStream  av.Stream
-	decoder      Decoder
-	result       DecodeResult
-	message      pipeline.Message
+	name        string
+	detail      string
+	inputStream av.Stream
+	decoder     Decoder
+	result      DecodeResult
+	message     pipeline.Message
+	// frame is the header each decoded frame is published under, holding its
+	// own plane references (internal/payload); planes is its plane storage.
+	frame        av.Frame
+	planes       []av.Plane
 	requestEvent av.Event
 	dropEvents   bool
 	closed       bool
@@ -70,11 +75,14 @@ type DecoderStage struct {
 // packets (optionally restamped to the encoded output stream) and events
 // reach the encoder before continuing downstream.
 type EncoderStage struct {
-	name              string
-	detail            string
-	encoder           Encoder
-	result            EncodeResult
-	message           pipeline.Message
+	name    string
+	detail  string
+	encoder Encoder
+	result  EncodeResult
+	message pipeline.Message
+	// packet is the header each encoded packet is published under, holding
+	// its own payload reference (internal/payload).
+	packet            av.Packet
 	outputStreamID    av.StreamID
 	outputCodecEpoch  av.Epoch
 	stampOutputStream bool
@@ -357,6 +365,8 @@ func (s *DecoderStage) emitInputEvent(ctx context.Context, msg *pipeline.Message
 }
 
 func (s *DecoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter) error {
+	// Frames left unpublished by a failed emit release their references.
+	defer payload.DropFrames(s.result.Frames)
 	for i := range s.result.Events {
 		s.message.Kind = pipeline.MessageEvent
 		s.message.Packet = nil
@@ -379,11 +389,15 @@ func (s *DecoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter)
 		}
 	}
 	for i := range s.result.Frames {
+		s.planes = payload.TakeFrame(&s.frame, s.planes, &s.result.Frames[i])
 		s.message.Kind = pipeline.MessageFrame
 		s.message.Packet = nil
-		s.message.Frame = &s.result.Frames[i]
+		s.message.Frame = &s.frame
 		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		err := emitter.Emit(ctx, &s.message)
+		// Downstream holds its own references now.
+		s.frame.Release()
+		if err != nil {
 			return err
 		}
 	}
@@ -391,6 +405,8 @@ func (s *DecoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter)
 }
 
 func (s *EncoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter) error {
+	// Packets left unpublished by a failed emit release their references.
+	defer payload.DropPackets(s.result.Packets)
 	for i := range s.result.Events {
 		s.message.Kind = pipeline.MessageEvent
 		s.message.Packet = nil
@@ -401,15 +417,19 @@ func (s *EncoderStage) emitResult(ctx context.Context, emitter pipeline.Emitter)
 		}
 	}
 	for i := range s.result.Packets {
+		payload.TakePacket(&s.packet, &s.result.Packets[i])
 		if s.stampOutputStream {
-			s.result.Packets[i].StreamID = s.outputStreamID
-			s.result.Packets[i].CodecEpoch = s.outputCodecEpoch
+			s.packet.StreamID = s.outputStreamID
+			s.packet.CodecEpoch = s.outputCodecEpoch
 		}
 		s.message.Kind = pipeline.MessagePacket
-		s.message.Packet = &s.result.Packets[i]
+		s.message.Packet = &s.packet
 		s.message.Frame = nil
 		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		err := emitter.Emit(ctx, &s.message)
+		// Downstream holds its own reference now.
+		s.packet.Release()
+		if err != nil {
 			return err
 		}
 	}

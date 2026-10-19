@@ -27,7 +27,7 @@ func exampleFrame(sample int16) av.Frame {
 		Type:  av.MediaAudio,
 		Audio: &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+			Buffer: av.Buffer{Bytes: payload},
 		}},
 	}
 }
@@ -164,7 +164,7 @@ func (e exampleEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *code
 		StreamID: frame.StreamID,
 		Type:     frame.Type,
 		Keyframe: true,
-		Payload:  av.Buffer{Bytes: []byte{0x42}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{0x42}},
 	}
 	return nil
 }

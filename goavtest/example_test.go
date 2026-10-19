@@ -80,7 +80,7 @@ func ExampleTestSourceScript() {
 			Samples:      1,
 		},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: []byte{7, 0}, Ownership: av.BufferImmutable},
+			Buffer: av.Buffer{Bytes: []byte{7, 0}},
 		}},
 	}
 	source := goavtest.NewTestSource("fixture",

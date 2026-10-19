@@ -29,7 +29,7 @@ func TestDecodeVP9IntoCallerOwnedI420Frame(t *testing.T) {
 	packet := av.Packet{
 		StreamID:   "video",
 		CodecEpoch: 3,
-		Payload:    av.Buffer{Bytes: encoded, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: encoded},
 		PTS:        av.Timestamp{Value: 90, Base: av.RTPTimeBase(90000)},
 		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 		Keyframe:   true,
@@ -56,8 +56,8 @@ func TestDecodeVP9IntoCallerOwnedI420Frame(t *testing.T) {
 	}
 	wantLengths := [...]int{4096, 1024, 1024}
 	for i := range frame.Planes {
-		if frame.Planes[i].Buffer.Ownership != av.BufferOwned {
-			t.Fatalf("plane[%d] ownership = %q, want owned", i, frame.Planes[i].Buffer.Ownership)
+		if frame.Planes[i].Buffer.Owner == nil {
+			t.Fatalf("plane[%d] is not pooled: %+v", i, frame.Planes[i].Buffer)
 		}
 		if len(frame.Planes[i].Buffer.Bytes) != wantLengths[i] {
 			t.Fatalf("plane[%d] len = %d, want %d", i, len(frame.Planes[i].Buffer.Bytes), wantLengths[i])

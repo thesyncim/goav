@@ -105,7 +105,6 @@ func (e *VP9Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec
 	packet.StreamID = e.stream.ID
 	packet.CodecEpoch = e.stream.Epoch
 	packet.Payload.Bytes = result.Data
-	packet.Payload.Ownership = av.BufferOwned
 	packet.PTS = frame.PTS
 	packet.Duration = frame.Duration
 	packet.Keyframe = result.KeyFrame

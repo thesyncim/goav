@@ -125,7 +125,6 @@ func (e *pcmEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *codec.E
 	packet.Reset()
 	payload := frame.Planes[0].Buffer.Bytes
 	packet.Payload.Bytes = append([]byte(nil), payload...)
-	packet.Payload.Ownership = av.BufferOwned
 	packet.StreamID = frame.StreamID
 	packet.Type = av.MediaAudio
 	packet.PTS = frame.PTS
@@ -175,7 +174,7 @@ func (d *pcmDecoder) DecodeInto(_ context.Context, packet *av.Packet, out *codec
 	frame.Reset()
 	payload := packet.Payload.Bytes
 	frame.Planes = []av.Plane{{
-		Buffer: av.Buffer{Bytes: append([]byte(nil), payload...), Ownership: av.BufferOwned},
+		Buffer: av.Buffer{Bytes: append([]byte(nil), payload...)},
 		Stride: d.audio.Channels * 2,
 	}}
 	d.audio.Samples = len(payload) / (d.audio.Channels * 2)
@@ -201,7 +200,6 @@ func packetSource(name string, packets []*av.Packet) goav.InputSpec {
 				clone := *packet
 				clone.StreamID = av.StreamID(name)
 				clone.Payload.Bytes = append([]byte(nil), packet.Payload.Bytes...)
-				clone.Payload.Ownership = av.BufferImmutable
 				if _, err := push.Packet(&clone); err != nil {
 					return err
 				}

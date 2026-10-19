@@ -16,9 +16,10 @@ import (
 
 // Collector is a recording destination: point a chain at Sink() and read back
 // everything it received through the ordered, race-safe accessors. Collected
-// frames, packets, and events are safe deep copies taken at delivery — buffer
-// ownership is respected, so a producer recycling its buffers can never
-// corrupt what a test asserts on. Treat the returned values as read-only.
+// frames and packets are references taken at delivery (Frame.Ref, Packet.Ref):
+// their own headers over the delivered payload, which they keep alive, so a
+// producer reusing its pool can never corrupt what a test asserts on; events
+// are copies. Treat the returned values as read-only.
 //
 // The zero Collector is not usable; construct with NewCollector.
 type Collector struct {
@@ -50,9 +51,9 @@ func (c *Collector) collect(_ context.Context, msg component.Message) error {
 	defer c.mu.Unlock()
 	switch {
 	case msg.Frame != nil:
-		c.frames = append(c.frames, cloneFrame(msg.Frame))
+		c.frames = append(c.frames, msg.Frame.Ref())
 	case msg.Packet != nil:
-		c.packets = append(c.packets, clonePacket(msg.Packet))
+		c.packets = append(c.packets, msg.Packet.Ref())
 	case msg.Event != nil:
 		c.events = append(c.events, cloneEvent(*msg.Event))
 	}
@@ -123,7 +124,7 @@ func (c *Collector) Wait(ctx context.Context, cond func(*Collector) bool) error 
 }
 
 // WaitFrames blocks until at least n frames have reached the collector, then
-// returns the collected frame copies. It is the common case wrapper around
+// returns the collected frames. It is the common case wrapper around
 // Wait for live or control-driven tests.
 func (c *Collector) WaitFrames(ctx context.Context, n int) ([]*av.Frame, error) {
 	if err := c.waitCount(ctx, n, func(c *Collector) int { return len(c.frames) }); err != nil {
@@ -133,7 +134,7 @@ func (c *Collector) WaitFrames(ctx context.Context, n int) ([]*av.Frame, error) 
 }
 
 // WaitPackets blocks until at least n packets have reached the collector, then
-// returns the collected packet copies.
+// returns the collected packets.
 func (c *Collector) WaitPackets(ctx context.Context, n int) ([]*av.Packet, error) {
 	if err := c.waitCount(ctx, n, func(c *Collector) int { return len(c.packets) }); err != nil {
 		return nil, err
@@ -159,35 +160,6 @@ func (c *Collector) waitCount(ctx context.Context, n int, count func(*Collector)
 		defer c.mu.Unlock()
 		return count(c) >= n
 	})
-}
-
-// cloneFrame deep-copies a delivered frame: headers by value, plane bytes
-// into fresh backing marked immutable (the collector never writes them again).
-func cloneFrame(frame *av.Frame) *av.Frame {
-	clone := *frame
-	if frame.Audio != nil {
-		audio := *frame.Audio
-		clone.Audio = &audio
-	}
-	if frame.Video != nil {
-		video := *frame.Video
-		clone.Video = &video
-	}
-	clone.Planes = make([]av.Plane, len(frame.Planes))
-	for i := range frame.Planes {
-		clone.Planes[i] = frame.Planes[i]
-		clone.Planes[i].Buffer = cloneBuffer(frame.Planes[i].Buffer)
-	}
-	clone.Metadata = cloneMetadata(frame.Metadata)
-	return &clone
-}
-
-// clonePacket deep-copies a delivered packet, payload bytes included.
-func clonePacket(packet *av.Packet) *av.Packet {
-	clone := *packet
-	clone.Payload = cloneBuffer(packet.Payload)
-	clone.Metadata = cloneMetadata(packet.Metadata)
-	return &clone
 }
 
 // cloneEvent copies a delivered event, detaching its Stream and Codec
@@ -217,12 +189,9 @@ func cloneCodecParameters(params av.CodecParameters) av.CodecParameters {
 
 func cloneBuffer(buffer av.Buffer) av.Buffer {
 	if buffer.Bytes == nil {
-		return av.Buffer{Ownership: av.BufferImmutable}
+		return av.Buffer{}
 	}
-	return av.Buffer{
-		Bytes:     append([]byte(nil), buffer.Bytes...),
-		Ownership: av.BufferImmutable,
-	}
+	return av.Buffer{Bytes: append([]byte(nil), buffer.Bytes...)}
 }
 
 func cloneMetadata(metadata av.Metadata) av.Metadata {

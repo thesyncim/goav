@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -517,6 +518,9 @@ func TestStageCloseForwardsError(t *testing.T) {
 }
 
 func TestStageAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	stage, err := NewStage(StageConfig{
 		Filter: &fakeFilter{},
 		Result: Result{Frames: make([]av.Frame, 0, 1)},

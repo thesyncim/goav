@@ -34,9 +34,9 @@ func compositeTestI420Frame(id av.StreamID, w, h int, y, u, v byte) *av.Frame {
 		Duration: av.Duration{Value: 3},
 		Video:    &av.VideoFrame{Width: w, Height: h, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferImmutable}, Stride: w},
-			{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
-			{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: yPlane}, Stride: w},
+			{Buffer: av.Buffer{Bytes: uPlane}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: vPlane}, Stride: chromaW},
 		},
 	}
 }
@@ -276,24 +276,29 @@ func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
 		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
 
-	mutable := compositeTestI420Frame("a", 2, 2, 11, 12, 13)
-	for i := range mutable.Planes {
-		mutable.Planes[i].Buffer.Ownership = av.BufferOwned
-	}
-	clone := stage.cloneCompositeFrame(mutable)
-	mutable.Planes[0].Buffer.Bytes[0] = 99
-	if clone.Planes[0].Buffer.Bytes[0] != 11 || clone.Planes[0].Buffer.Ownership != av.BufferOwned {
-		t.Fatalf("clone plane = %+v, want owned deep copy", clone.Planes[0].Buffer)
+	// A kept arm frame is a header over the arm's own bytes, holding a
+	// reference to each pooled plane until the stage recycles it.
+	arm := compositeTestI420Frame("a", 2, 2, 11, 12, 13)
+	pooled := av.NewBuffer(len(arm.Planes[0].Buffer.Bytes))
+	copy(pooled.Bytes, arm.Planes[0].Buffer.Bytes)
+	arm.Planes[0].Buffer = pooled
+	clone := stage.cloneCompositeFrame(arm)
+	if &clone.Planes[0].Buffer.Bytes[0] != &pooled.Bytes[0] || pooled.Owner.Refs() != 2 {
+		t.Fatalf("clone plane = %+v refs=%d, want the arm's bytes, retained", clone.Planes[0].Buffer, pooled.Owner.Refs())
 	}
 	stage.recycleCompositeFrame(clone)
 	if got := len(stage.free["a"]); got != 1 {
 		t.Fatalf("recycled free frames = %d, want 1", got)
 	}
-	clone = stage.cloneCompositeFrame(mutable)
-	if clone.Planes[0].Buffer.Bytes[0] != 99 || clone.Planes[0].Buffer.Ownership != av.BufferOwned {
-		t.Fatalf("reused clone plane = %+v, want owned reused buffer", clone.Planes[0].Buffer)
+	if refs := pooled.Owner.Refs(); refs != 1 {
+		t.Fatalf("refs = %d after recycle, want the arm's 1", refs)
+	}
+	clone = stage.cloneCompositeFrame(arm)
+	if clone.Planes[0].Buffer.Bytes[0] != 11 {
+		t.Fatalf("reused clone plane = %+v, want the arm's bytes", clone.Planes[0].Buffer)
 	}
 	stage.recycleCompositeFrame(clone)
+	arm.Release()
 
 	extra := compositeTestI420Frame("new-arm", 1, 1, 1, 2, 3)
 	extra.Planes = append(extra.Planes, av.Plane{Buffer: av.Buffer{Bytes: []byte{4}}})

@@ -15,12 +15,14 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// TestStressConcurrentSourcePushMutableBuffers pushes from many goroutines that
-// reuse and mutate one borrowed backing array each, racing the runtime's
-// ingest copy. A torn payload at the sink (bytes from two different writes)
-// would mean a borrowed buffer was queued without copying; the race detector
-// catches the underlying data race directly.
-func TestStressConcurrentSourcePushMutableBuffers(t *testing.T) {
+// TestStressConcurrentSourcePushPooledBuffers pushes from many goroutines that
+// each fill a pooled buffer, push it, and release it at once, so the pool hands
+// the next push memory that was just released while queued deliveries are
+// still in flight. A torn payload at the sink (bytes from two different
+// writes) would mean a queue read memory the pool had recycled: a queued
+// message must hold its own reference. The race detector catches the
+// underlying data race directly.
+func TestStressConcurrentSourcePushPooledBuffers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -57,30 +59,28 @@ func TestStressConcurrentSourcePushMutableBuffers(t *testing.T) {
 				writersDone.Add(1)
 				go func(w int) {
 					defer writersDone.Done()
-					payload := make([]byte, payloadLen) // reused, mutated between pushes
 					for j := range perWriter {
 						if ctx.Err() != nil {
 							return
 						}
 						v := byte((w*perWriter + j) & 0xff)
-						for k := range payload {
-							payload[k] = v
+						payload := av.NewBuffer(payloadLen)
+						for k := range payload.Bytes {
+							payload.Bytes[k] = v
 						}
 						frame := &av.Frame{
 							StreamID: "push",
 							Type:     av.MediaAudio,
 							Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-							Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferBorrowed}}},
+							Planes:   []av.Plane{{Buffer: payload}},
 						}
 						_, err := push.Frame(frame)
 						if err != nil && !errors.Is(err, ErrBackpressure) {
 							return
 						}
-						// Immediately reuse the backing array with a different value:
-						// the runtime must already hold its own copy.
-						for k := range payload {
-							payload[k] = v ^ 0xff
-						}
+						// Give the writer's reference back at once: whatever the
+						// runtime queued holds its own.
+						payload.Release()
 					}
 				}(w)
 			}
@@ -99,7 +99,7 @@ func TestStressConcurrentSourcePushMutableBuffers(t *testing.T) {
 		t.Fatalf("Run err = %v", err)
 	}
 	if torn.Load() != 0 {
-		t.Fatalf("%d frames had torn payloads: a borrowed buffer was queued without an ingest copy", torn.Load())
+		t.Fatalf("%d frames had torn payloads: a queued message read recycled pool memory", torn.Load())
 	}
 	if seen.Load() == 0 {
 		t.Fatal("sink saw no frames")
@@ -131,7 +131,7 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 					StreamID: "load",
 					Type:     av.MediaAudio,
 					Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 				}
 				if _, err := push.Frame(frame); err != nil {
 					if errors.Is(err, ErrClosed) || errors.Is(err, context.Canceled) {

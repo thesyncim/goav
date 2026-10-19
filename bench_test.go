@@ -66,7 +66,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:    av.MediaVideo,
-				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: payload},
 			}
 			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
@@ -90,7 +90,7 @@ func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
 			base := av.TimeBase{Num: 1, Den: 48_000}
 			packet := av.Packet{
 				Type:    av.MediaAudio,
-				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: payload},
 			}
 			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * benchAudioSamples, Base: base}
@@ -124,7 +124,7 @@ func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel in
 					SampleFormat: av.SampleFormatS16,
 					Samples:      samplesPerChannel,
 				},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 			}
 			for i := range n {
 				frame.PTS = av.Timestamp{Value: int64(i) * int64(samplesPerChannel), Base: base}
@@ -151,9 +151,9 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 				Type:  av.MediaVideo,
 				Video: &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 				Planes: []av.Plane{
-					{Buffer: av.Buffer{Bytes: luma, Ownership: av.BufferImmutable}, Stride: width},
-					{Buffer: av.Buffer{Bytes: cb, Ownership: av.BufferImmutable}, Stride: chromaW},
-					{Buffer: av.Buffer{Bytes: cr, Ownership: av.BufferImmutable}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: luma}, Stride: width},
+					{Buffer: av.Buffer{Bytes: cb}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: cr}, Stride: chromaW},
 				},
 			}
 			for i := range n {
@@ -292,6 +292,21 @@ func BenchmarkBranchFanout(b *testing.B) {
 				outs[i] = decoded.As(name).To(benchSink(name))
 			}
 			runBenchTask(b, benchRuntime(), outs...)
+		})
+	}
+	// Real I420 frames on a buffered graph: every branch is its own queue, so a
+	// decoded 1280x720 frame (1.38 MB) reaches N sinks. B/op is what that
+	// fanout costs in payload memory per source packet.
+	video := passthroughI420Payload(b, benchFanoutW, benchFanoutH)
+	for _, n := range []int{2, 8} {
+		b.Run("i420/branches="+strconv.Itoa(n), func(b *testing.B) {
+			decoded := benchVideoPacketsSized("cam", b.N, benchFanoutW, benchFanoutH, video).Video().Decode()
+			outs := make([]goav.Output, n)
+			for i := range outs {
+				name := "branch-" + strconv.Itoa(i)
+				outs[i] = decoded.As(name).To(benchSink(name))
+			}
+			runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(16).PipelinePolicy())), outs...)
 		})
 	}
 }
@@ -452,7 +467,7 @@ func (l *benchAttachLoad) input() goav.InputSpec {
 			frame := av.Frame{
 				Type:   av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: l.sampleRate, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: l.samples},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 			}
 			var pts int64
 			for {
@@ -528,4 +543,49 @@ func BenchmarkSourcePush(b *testing.B) {
 					To(benchSink("out")))
 		})
 	}
+}
+
+const benchFanoutW, benchFanoutH = 1280, 720
+
+// passthroughI420Payload returns one goavtest passthrough VP8 packet carrying
+// a width x height I420 frame, so decoding it yields a real-size frame.
+func passthroughI420Payload(b *testing.B, width, height int) []byte {
+	b.Helper()
+	out := goavtest.NewCollector()
+	err := benchRuntime().Run(context.Background(), benchVideoFrames("seed", 1, width, height).
+		Video().
+		Encode(codec.VP8()).
+		To(out.Sink()))
+	if err != nil {
+		b.Fatal(err)
+	}
+	packets := out.Packets()
+	if len(packets) != 1 {
+		b.Fatalf("seed encode produced %d packets, want 1", len(packets))
+	}
+	return append([]byte(nil), packets[0].Payload.Bytes...)
+}
+
+// benchVideoPacketsSized pushes n VP8-tagged keyframes of one shared payload
+// for a width x height stream at 30fps.
+func benchVideoPacketsSized(name string, n, width, height int, payload []byte) goav.InputSpec {
+	return goav.Source(name,
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
+		func(_ context.Context, push source.Push) error {
+			base := av.TimeBase{Num: 1, Den: 90_000}
+			packet := av.Packet{
+				Type:     av.MediaVideo,
+				Payload:  av.Buffer{Bytes: payload},
+				Keyframe: true,
+			}
+			for i := range n {
+				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
+				packet.DTS = packet.PTS
+				packet.Duration = av.Duration{Value: 3000, Base: base}
+				if _, err := push.Packet(&packet); err != nil {
+					return err
+				}
+			}
+			return push.EOS()
+		})
 }

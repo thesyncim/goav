@@ -13,18 +13,12 @@ import (
 	"github.com/thesyncim/goav/source"
 )
 
-// TestRuntimeBranchExplicitDropBufferInheritsCopyBounds pins that an explicit
-// realtime branch buffer (flow.DropOldest/Latest/...) inherits the copy bounds
-// the runtime already sized for the graph's shapes — exactly like the default
-// branch buffer does. Without that inheritance a buffered branch edge refuses
-// the mutable decoded frames a real codec produces with
-// pipeline.ErrBufferedMessageUnsafe, forcing callers to redundantly pass
-// flow.BufferCopyBounds just to use a dropping buffer.
-//
-// The decoder fabricates mutable (graph-owned) frames, so the branch buffer
-// must copy them into its own backing; the regression is only observable with
-// mutable payloads, which is why immutable-fixture tests never caught it.
-func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
+// TestRuntimeBranchExplicitDropBufferCarriesDecodedFrames pins that an
+// explicit realtime branch buffer (flow.DropOldest/Latest/...) carries the
+// decoded frames a codec stage publishes, like the default branch buffer:
+// queued messages hold references to the frames, so no buffer needs bounds
+// sized for them.
+func TestRuntimeBranchExplicitDropBufferCarriesDecodedFrames(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -77,7 +71,7 @@ func mutableFrameVideoPackets(name string, width, height, count int) goav.InputS
 					PTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					DTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
 					Duration: av.Duration{Value: 3000, Base: base},
-					Payload:  av.Buffer{Bytes: []byte{byte(n)}, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: []byte{byte(n)}},
 				}
 				if _, err := push.Packet(packet); err != nil {
 					return err

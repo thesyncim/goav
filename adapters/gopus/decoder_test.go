@@ -51,7 +51,7 @@ func TestEncodeOpusIntoCallerOwnedPacket(t *testing.T) {
 	if packet.StreamID != "encoded-audio" || packet.CodecEpoch != 7 {
 		t.Fatalf("packet identity = %+v", packet)
 	}
-	if len(packet.Payload.Bytes) == 0 || packet.Payload.Ownership != av.BufferOwned {
+	if len(packet.Payload.Bytes) == 0 || packet.Payload.Owner != nil {
 		t.Fatalf("payload = %+v", packet.Payload)
 	}
 	// The packet presents at its first decoded sample: the encoder's 312-sample
@@ -131,7 +131,7 @@ func TestDecodePacketLossConcealmentIntoPreallocatedFrame(t *testing.T) {
 	if frame.Audio.SampleRate != 48000 || frame.Audio.Channels != 1 || frame.Audio.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("audio = %+v", frame.Audio)
 	}
-	if len(frame.Planes) != 1 || frame.Planes[0].Buffer.Ownership != av.BufferOwned {
+	if len(frame.Planes) != 1 || frame.Planes[0].Buffer.Owner != nil {
 		t.Fatalf("planes = %+v", frame.Planes)
 	}
 	if len(frame.Planes[0].Buffer.Bytes) == 0 {
@@ -152,7 +152,7 @@ func TestDecodeOpusPacketIntoPreallocatedFrame(t *testing.T) {
 		StreamID:   stream.ID,
 		Type:       av.MediaAudio,
 		CodecEpoch: stream.Epoch,
-		Payload:    av.Buffer{Bytes: testCELTPacket(), Ownership: av.BufferBorrowed},
+		Payload:    av.Buffer{Bytes: testCELTPacket()},
 		PTS:        av.Timestamp{Value: 960, Base: av.RTPTimeBase(48000)},
 	}
 
@@ -319,7 +319,7 @@ func opusTestFrame() av.Frame {
 			Samples:      samples,
 		},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: pcm, Ownership: av.BufferOwned}, Stride: 2},
+			{Buffer: av.Buffer{Bytes: pcm}, Stride: 2},
 		},
 	}
 }

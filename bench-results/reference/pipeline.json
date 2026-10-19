@@ -23,54 +23,6 @@
   },
   "benchmarks": [
     {
-      "name": "BenchmarkBufferedFanout/copy/N=1",
-      "metrics": {
-        "B/op": 0,
-        "allocs/op": 0,
-        "ns/op": 120.8
-      },
-      "ceilings": {
-        "B/op": 1024,
-        "allocs/op": 0
-      }
-    },
-    {
-      "name": "BenchmarkBufferedFanout/copy/N=512",
-      "metrics": {
-        "B/op": 0,
-        "allocs/op": 0,
-        "ns/op": 207180
-      },
-      "ceilings": {
-        "B/op": 1024,
-        "allocs/op": 0
-      }
-    },
-    {
-      "name": "BenchmarkBufferedFanout/copy/N=64",
-      "metrics": {
-        "B/op": 0,
-        "allocs/op": 0,
-        "ns/op": 19070
-      },
-      "ceilings": {
-        "B/op": 1024,
-        "allocs/op": 0
-      }
-    },
-    {
-      "name": "BenchmarkBufferedFanout/copy/N=8",
-      "metrics": {
-        "B/op": 0,
-        "allocs/op": 0,
-        "ns/op": 3030
-      },
-      "ceilings": {
-        "B/op": 1024,
-        "allocs/op": 0
-      }
-    },
-    {
       "name": "BenchmarkBufferedFanout/refcount/N=1",
       "metrics": {
         "B/op": 0,

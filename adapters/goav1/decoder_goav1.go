@@ -477,16 +477,16 @@ func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *backend.Frame, frame *av
 
 	frame.Planes = frame.Planes[:planeCount]
 	frame.Planes[0] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Y.Pix, Ownership: av.BufferBorrowed},
+		Buffer: av.Buffer{Bytes: src.Y.Pix},
 		Stride: src.Y.Stride,
 	}
 	if planeCount == 3 {
 		frame.Planes[1] = av.Plane{
-			Buffer: av.Buffer{Bytes: src.U.Pix, Ownership: av.BufferBorrowed},
+			Buffer: av.Buffer{Bytes: src.U.Pix},
 			Stride: src.U.Stride,
 		}
 		frame.Planes[2] = av.Plane{
-			Buffer: av.Buffer{Bytes: src.V.Pix, Ownership: av.BufferBorrowed},
+			Buffer: av.Buffer{Bytes: src.V.Pix},
 			Stride: src.V.Stride,
 		}
 	}

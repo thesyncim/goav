@@ -40,6 +40,9 @@ const nodeClosingBit = int64(1) << 62
 type directEmitter struct {
 	graph *directRunner
 	from  int
+	// self is the emitting node; once its index is reused, the snapshot holds
+	// another node there and this emitter sheds.
+	self *directNode
 }
 
 type directSourceRun struct {
@@ -48,13 +51,14 @@ type directSourceRun struct {
 }
 
 func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
-	return e.graph.emit(ctx, e.from, msg)
+	_, err := e.graph.emitDelivery(ctx, e.from, e.self, msg)
+	return err
 }
 
 // EmitDelivery implements the optional DeliveryEmitter capability: Emit plus a
 // per-message report of delivered vs deliberately-shed targets.
 func (e *directEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
-	return e.graph.emitDelivery(ctx, e.from, msg)
+	return e.graph.emitDelivery(ctx, e.from, e.self, msg)
 }
 
 func newDirectRunner(config GraphConfig) (*directRunner, error) {
@@ -78,7 +82,7 @@ func (g *directRunner) newNode(policy BufferPolicy) (*directNode, error) {
 func (g *directRunner) mutable(bool) error { return nil }
 
 func (g *directRunner) attachLocked(n *directNode, index int) {
-	n.emitter = directEmitter{graph: g, from: index}
+	n.emitter = directEmitter{graph: g, from: index, self: n}
 }
 
 func (g *directRunner) stopLocked(context.Context, *directNode) (bool, error) {
@@ -160,11 +164,26 @@ func (g *directRunner) Run(ctx context.Context) error {
 }
 
 func (g *directRunner) Remove(ref NodeRef) error {
+	_, err := g.RemoveNode(ref)
+	return err
+}
+
+// RemoveNode is Remove that also returns the node's final counters, read
+// once its in-flight deliveries finished (the NodeRemover capability).
+func (g *directRunner) RemoveNode(ref NodeRef) (NodeStats, error) {
+	node, err := g.remove(ref)
+	if node == nil {
+		return NodeStats{}, err
+	}
+	return g.finalStats(&node.nodeBase), err
+}
+
+func (g *directRunner) remove(ref NodeRef) (*directNode, error) {
 	g.mu.Lock()
 	node, err := g.detachLocked(ref)
 	if err != nil {
 		g.mu.Unlock()
-		return err
+		return nil, err
 	}
 	node.active = false
 	node.routes = nil
@@ -175,9 +194,13 @@ func (g *directRunner) Remove(ref NodeRef) error {
 	g.rebuildLocked()
 	g.mu.Unlock()
 	if err := waitNodeGateDrained("remove", node.name, &node.gate, g.config.CloseWaitTimeout); err != nil {
-		return err
+		return node, err
 	}
-	return node.close()
+	// No delivery is in flight and none can start: the index is free.
+	g.mu.Lock()
+	g.reclaimLocked(node)
+	g.mu.Unlock()
+	return node, node.close()
 }
 
 // waitNodeGateDrained tombstones a removed node's delivery gate and waits for
@@ -221,12 +244,7 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	return nil
 }
 
-func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
-	_, err := g.emitDelivery(ctx, from, msg)
-	return err
-}
-
-func (g *directRunner) emitDelivery(ctx context.Context, from int, msg *Message) (Delivery, error) {
+func (g *directRunner) emitDelivery(ctx context.Context, from int, self *directNode, msg *Message) (Delivery, error) {
 	var delivery Delivery
 	if msg == nil {
 		return delivery, ErrNilMessage
@@ -250,7 +268,7 @@ func (g *directRunner) emitDelivery(ctx context.Context, from int, msg *Message)
 		return delivery, ErrUnknownNode
 	}
 	fromNode := &snap.nodes[from]
-	if !fromNode.active {
+	if !fromNode.active || fromNode.node != self {
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)

@@ -28,7 +28,7 @@ func BenchmarkCopyPlaneKernel(b *testing.B) {
 				src[i] = byte(i)
 			}
 			dst := make([]byte, tt.dstW*tt.dstH)
-			plane := av.Plane{Buffer: av.Buffer{Bytes: src, Ownership: av.BufferImmutable}, Stride: tt.srcStride}
+			plane := av.Plane{Buffer: av.Buffer{Bytes: src}, Stride: tt.srcStride}
 			b.ReportAllocs()
 			b.SetBytes(int64(tt.srcW * tt.srcH))
 			for i := 0; i < b.N; i++ {

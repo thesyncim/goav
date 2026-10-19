@@ -129,7 +129,7 @@ func (s *packetSink) Name() string {
 func (s *packetSink) Handle(_ context.Context, msg *pipeline.Message) error {
 	switch msg.Kind {
 	case pipeline.MessagePacket:
-		s.packets = append(s.packets, *msg.Packet)
+		s.packets = append(s.packets, *msg.Packet.Ref())
 	case pipeline.MessageEvent:
 		s.events = append(s.events, *msg.Event)
 	}
@@ -220,7 +220,7 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 	if packet.StreamID != "audio" || packet.CodecEpoch != 2 {
 		t.Fatalf("packet = %+v", packet)
 	}
-	if packet.Payload.Ownership != av.BufferBorrowed || packet.PTS.Value != 960 {
+	if packet.Payload.Owner == nil || packet.PTS.Value != 960 {
 		t.Fatalf("packet = %+v", packet)
 	}
 	if len(sink.events) != 1 || sink.events[0].Type != av.EventEndOfStream {
@@ -329,7 +329,7 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			eventsOut = append(eventsOut, *msg.Event)
 		}
@@ -406,7 +406,7 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			eventsOut = append(eventsOut, *msg.Event)
 		}
@@ -523,7 +523,7 @@ func TestSourceEmitsTimestampDiscontinuityOnLargeGap(t *testing.T) {
 	if err := source.Start(ctx, testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			events = append(events, *msg.Event)
 		}
@@ -756,7 +756,7 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			gotEvents = append(gotEvents, *msg.Event)
 		}
@@ -878,7 +878,7 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 	if err := source.Start(ctx, testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			got = append(got, *msg.Event)
 		}

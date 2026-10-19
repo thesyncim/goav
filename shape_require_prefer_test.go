@@ -138,7 +138,7 @@ func TestRequireWorksInBranches(t *testing.T) {
 	source := Source("mic",
 		shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
 		func(_ context.Context, push SourcePush) error {
-			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 				return err
 			}
 			return push.EOS()
@@ -334,7 +334,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 		return Source("mic",
 			shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
 			func(_ context.Context, push SourcePush) error {
-				if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+				if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 					return err
 				}
 				return push.EOS()

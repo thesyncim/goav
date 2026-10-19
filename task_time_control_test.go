@@ -292,7 +292,7 @@ func (s *segmentPacketSource) Start(ctx context.Context, emitter pipeline.Emitte
 		msg := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 			StreamID: s.stream,
 			Type:     av.MediaAudio,
-			Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+			Payload:  av.Buffer{Bytes: []byte{1}},
 			PTS:      av.Timestamp{Value: pos, Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
 		}}
 		if err := emitter.Emit(ctx, msg); err != nil {

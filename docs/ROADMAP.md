@@ -161,11 +161,6 @@ These pieces exist and are tested, but their numbers or exact semantics may
 still move. `docs/PERFORMANCE.md` "Experimental" is the performance side of
 this list:
 
-- **Buffered mutable frame/owned-payload fanout**: borrowed packet fanout now
-  shares one graph-owned refcounted copy (`pipeline`
-  `TestBufferedFanoutRefcountAllocs`, `BenchmarkBufferedFanout/refcount`);
-  owned packets, frame planes, and defensive `CopyAlways` mode still copy per
-  target to preserve branch-local mutation isolation.
 - **Attach-under-load cost**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation dominated by planning; not a data-plane figure.
 - **OnStream rule breadth**: identity matches (`source.MatchMedia`/

@@ -569,11 +569,11 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	formats := withTestFormats(testFormatMuxer(av.FormatOgg, muxers))
 	audioPacket := av.Packet{
 		StreamID: "audio",
-		Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{1}},
 	}
 	videoPacket := av.Packet{
 		StreamID: "video",
-		Payload:  av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{2}},
 	}
 	audioBase := &runtimeTestSink{name: "audio-base"}
 	videoBase := &runtimeTestSink{name: "video-base"}
@@ -1812,9 +1812,9 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	packets := []av.Packet{
-		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}},
-		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
-		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{3}, Ownership: av.BufferImmutable}},
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}}},
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{2}}},
+		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{3}}},
 	}
 	source := &runtimeBranchStepSource{
 		name: "source",
@@ -1836,7 +1836,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	base := newRuntimeObservedSink("base", 3)
 	late := newRuntimeObservedSink("late", 2)
 
-	graph := expertGraph(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1})))
+	graph := expertGraph(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	task, err := graph.Build(ctx)
@@ -1857,7 +1857,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	waitDelivered(t, ctx, base)
 	attachment, err := task.Attach(ctx,
 		task.Route(pipeline.Route{From: src.Name()}).
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			As("late").
 			To(Sink(late)),
 	)
@@ -1909,7 +1909,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 func TestTaskAttachDetachBufferedBranchStress(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}}}
 	source := &runtimeFloodSource{
 		name: "source",
 		msg:  pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
@@ -1975,7 +1975,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	)
 	packet := av.Packet{
 		StreamID: "audio",
-		Payload:  av.Buffer{Bytes: []byte{9}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{9}},
 	}
 	source := &runtimeBranchWaitingSource{
 		name:   "source",
@@ -2056,7 +2056,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	)
 	packet := av.Packet{
 		StreamID: "audio",
-		Payload:  av.Buffer{Bytes: []byte{9}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{9}},
 	}
 	source := &runtimeBranchWaitingSource{
 		name:   "source",
@@ -2101,7 +2101,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	}
 	parent, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.packets").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			Tap("audio.copied").
 			As("copy").
 			To(Sink(copied)),
@@ -2119,7 +2119,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	}
 	child, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.copied").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
 	)
@@ -2208,7 +2208,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
@@ -2310,7 +2310,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	meter := &runtimeTestStage{name: "meter"}
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			Do(meter).
 			Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo))).
 			As("archive").
@@ -2410,7 +2410,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 	parent, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			Tap("audio.encoded").
 			As("archive").
@@ -2429,7 +2429,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 	child, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.encoded").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
 	)
@@ -2529,7 +2529,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	waitDelivered(t, ctx, base)
 	parent, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			Tap("audio.encoded").
 			As("archive").
@@ -2540,7 +2540,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	}
 	child, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.encoded").
-			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
+			Buffer(flow.Blocking(2)).
 			As("copy").
 			To(Sink(copied)),
 	)

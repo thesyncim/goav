@@ -51,6 +51,8 @@ type Source struct {
 	jitterOut     JitterResult
 	depacketOut   DepacketizeResult
 	message       pipeline.Message
+	// packet is the header a depacketized packet is published under.
+	packet        av.Packet
 	eos           av.Event
 	discontinuity av.Event
 	closed        bool
@@ -207,11 +209,7 @@ func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, pack
 		if err := s.observePacketTimestamp(ctx, emitter, &s.depacketOut.Packets[i]); err != nil {
 			return err
 		}
-		s.message.Kind = pipeline.MessagePacket
-		s.message.Packet = &s.depacketOut.Packets[i]
-		s.message.Frame = nil
-		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		if err := s.emitPacket(ctx, emitter, &s.depacketOut.Packets[i]); err != nil {
 			return err
 		}
 	}
@@ -252,16 +250,33 @@ func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
 			if err := s.observePacketTimestamp(ctx, emitter, &s.depacketOut.Packets[j]); err != nil {
 				return err
 			}
-			s.message.Kind = pipeline.MessagePacket
-			s.message.Packet = &s.depacketOut.Packets[j]
-			s.message.Frame = nil
-			s.message.Event = nil
-			if err := emitter.Emit(ctx, &s.message); err != nil {
+			if err := s.emitPacket(ctx, emitter, &s.depacketOut.Packets[j]); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// emitPacket publishes a depacketized packet. Its payload is a view into the
+// received RTP packet or the depacketizer's reassembly scratch, both reused,
+// so it is copied once into a pooled buffer every branch then shares.
+func (s *Source) emitPacket(ctx context.Context, emitter pipeline.Emitter, packet *av.Packet) error {
+	s.packet = *packet
+	if packet.Payload.Owner == nil {
+		s.packet.Payload = av.NewBuffer(len(packet.Payload.Bytes))
+		copy(s.packet.Payload.Bytes, packet.Payload.Bytes)
+	} else {
+		packet.Payload = av.Buffer{}
+	}
+	s.message.Kind = pipeline.MessagePacket
+	s.message.Packet = &s.packet
+	s.message.Frame = nil
+	s.message.Event = nil
+	err := emitter.Emit(ctx, &s.message)
+	// Downstream holds its own reference now.
+	s.packet.Release()
+	return err
 }
 
 func (s *Source) emitReceiverEvents(ctx context.Context, emitter pipeline.Emitter) error {

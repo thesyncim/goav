@@ -91,7 +91,7 @@ func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16
 	return Source(string(id),
 		shape.Packet(av.MediaAudio, codecID, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
-			if _, err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}); err != nil {
+			if _, err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: payload}}); err != nil {
 				return err
 			}
 			return push.EOS()

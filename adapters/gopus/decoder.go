@@ -231,7 +231,6 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 	}
 	used := samples * d.channels * 2
 	plane.Buffer.Bytes = pcmBytes[:used]
-	plane.Buffer.Ownership = av.BufferOwned
 	plane.Stride = d.channels * 2
 
 	d.audio.Samples = samples

@@ -231,3 +231,19 @@ func assertSilentAudioFrame(t *testing.T, frame av.Frame, sampleRate int, channe
 		}
 	}
 }
+
+// TestFramePayloadSizeIsExact pins the passthrough encoder's preallocation:
+// the serialized frame fills its pooled packet exactly, audio and video.
+func TestFramePayloadSizeIsExact(t *testing.T) {
+	for _, frame := range []*av.Frame{
+		{Audio: &av.AudioFrame{SampleRate: 48000, Channels: 2, ChannelLayout: "stereo", SampleFormat: av.SampleFormatS16, Samples: 2},
+			Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 2, 3, 4, 5, 6, 7, 8}}, Stride: 8}}},
+		{Video: &av.VideoFrame{Width: 2, Height: 2, PixelFormat: av.PixelFormatI420},
+			Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 2, 3, 4}}}, {Buffer: av.Buffer{Bytes: []byte{5}}}, {Buffer: av.Buffer{Bytes: []byte{6}}}}},
+		{},
+	} {
+		if got, want := len(appendFramePayload(nil, frame)), framePayloadSize(frame); got != want {
+			t.Fatalf("serialized %d bytes, framePayloadSize = %d", got, want)
+		}
+	}
+}

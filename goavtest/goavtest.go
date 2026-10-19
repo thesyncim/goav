@@ -18,7 +18,7 @@
 // The sources (Audio, Video, Packets, LiveAudio, NewTestSource with
 // TestSourceScript) are PTS-stamped with coherent durations and declare their
 // shape, so the planner solves conversions exactly as it would for production
-// inputs. The Collector records safe copies of everything a destination
+// inputs. The Collector keeps references to everything a destination
 // receives; WaitFrames, WaitPackets, and WaitEvents are the usual live-test
 // synchronization points. Runtime is the one-liner deterministic runtime:
 // standard filters, a passthrough codec for every well-known codec id, a

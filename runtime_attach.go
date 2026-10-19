@@ -659,7 +659,6 @@ type runtimeAttachment struct {
 	routes       []pipeline.Route
 	taps         []snapshot.Tap
 	stages       []pipeline.Stage
-	copyNever    []string
 	destinations []workDestination
 	stopMu       sync.Mutex
 	stopped      bool
@@ -667,6 +666,9 @@ type runtimeAttachment struct {
 	// (DrainOldBranch/AbortOldBranch) chose for this branch's destinations;
 	// snapshots report it instead of the plain lifecycle.DestinationClosed.
 	detachOutcome atomic.Value
+	// removedStats holds the final counters of the branch's nodes, taken as
+	// detach removed them: removed nodes leave the graph's Stats.
+	removedStats atomic.Pointer[map[string]pipeline.NodeStats]
 }
 
 func (a *runtimeAttachment) allAnchorTaps() []string {
@@ -742,7 +744,7 @@ func (a *runtimeAttachment) Stats() pipeline.GraphStats {
 	if a == nil || a.owner == nil {
 		return pipeline.GraphStats{}
 	}
-	return branchStatsForNodes(a.owner.Stats(), a.nodes)
+	return branchStatsForNodes(withRemovedStats(a.owner.Stats(), a.removedStats.Load()), a.nodes)
 }
 
 func (a *runtimeAttachment) Snapshot() snapshot.Branch {
@@ -753,7 +755,7 @@ func (a *runtimeAttachment) Snapshot() snapshot.Branch {
 	if a.owner == nil {
 		return a.branchSnapshotLocked(stats)
 	}
-	stats = a.owner.Stats()
+	stats = withRemovedStats(a.owner.Stats(), a.removedStats.Load())
 	a.owner.attachMu.Lock()
 	defer a.owner.attachMu.Unlock()
 	return a.branchSnapshotLocked(stats)
@@ -923,11 +925,13 @@ func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 			first = err
 		}
 	}
+	removed := make(map[string]pipeline.NodeStats, len(a.nodes))
 	for _, v := range upstreamFirst(a.nodes, a.routes) {
-		if err := graph.Remove(v); err != nil && !isStoppedAttachmentError(err) && first == nil {
+		if err := removeBranchNode(graph, v, removed); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
+	a.removedStats.Store(&removed)
 	return first
 }
 

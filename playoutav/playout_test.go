@@ -55,7 +55,7 @@ func TestScheduledPlayoutPacketProviderKeepsTransportOutOfCore(t *testing.T) {
 	packet := &av.Packet{
 		StreamID: "audio",
 		Type:     av.MediaAudio,
-		Payload:  av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferBorrowed},
+		Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
 		PTS:      av.Timestamp{Value: 10, Base: stream.TimeBase},
 	}
 	input := playoutav.New([]av.Stream{stream}, []playoutav.Message{playoutav.Packet(0, packet)})
@@ -170,7 +170,7 @@ func s16Frame(stream av.StreamID, pts time.Duration, samples ...int16) *av.Frame
 			Samples:      len(samples),
 		},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferBorrowed},
+			Buffer: av.Buffer{Bytes: payload},
 			Stride: len(payload),
 		}},
 	}

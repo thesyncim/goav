@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -556,7 +555,7 @@ func (t *task) Run(ctx context.Context) error {
 	t.lifecycleMu.Lock()
 	t.started = true
 	t.lifecycleMu.Unlock()
-	err := t.structuredRunError(t.graph.Run(ctx))
+	err := t.graph.Run(ctx)
 	t.finishDestinations(err)
 	// A task stopped by its context reports why, whether or not its sources
 	// returned the context error themselves.
@@ -568,71 +567,6 @@ func (t *task) Run(ctx context.Context) error {
 	t.runErr = err
 	t.lifecycleMu.Unlock()
 	return err
-}
-
-func (t *task) structuredRunError(err error) error {
-	if err == nil {
-		return nil
-	}
-	switch {
-	case errors.Is(err, pipeline.ErrBufferedMessageUnsafe):
-		return t.bufferedPayloadRunError(err, bufferPayloadUnsafeCode,
-			"a buffered edge refused a mutable payload that cannot be shared safely")
-	case errors.Is(err, pipeline.ErrMessageTooLarge):
-		return t.bufferedPayloadRunError(err, bufferPayloadTooLargeCode,
-			"a buffered edge received a payload larger than its copy bounds")
-	default:
-		return err
-	}
-}
-
-func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason string) error {
-	fields := []buildErrorDetail{{Key: "cause", Value: bufferedPayloadCauseName(cause)}}
-	if branches := t.copyNeverBranchNames(); len(branches) != 0 {
-		fields = append(fields, buildErrorDetail{Key: "copy_never_branches", Value: strings.Join(branches, ",")})
-	}
-	return &BuildError{
-		Phase:     phaseRun,
-		Family:    errcode.FamilyForCode(code),
-		Code:      code,
-		Operation: "run task",
-		Node:      "buffered graph",
-		Reason:    reason,
-		fields:    fields,
-		fixes: []buildErrorFix{
-			{Message: "for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload"},
-			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
-			{Message: "for runtime-level buffers, set runconfig.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
-		},
-		cause: cause,
-	}
-}
-
-func bufferedPayloadCauseName(err error) string {
-	switch {
-	case errors.Is(err, pipeline.ErrBufferedMessageUnsafe):
-		return "pipeline.ErrBufferedMessageUnsafe"
-	case errors.Is(err, pipeline.ErrMessageTooLarge):
-		return "pipeline.ErrMessageTooLarge"
-	default:
-		return err.Error()
-	}
-}
-
-func (t *task) copyNeverBranchNames() []string {
-	if t == nil {
-		return nil
-	}
-	t.attachMu.Lock()
-	defer t.attachMu.Unlock()
-	var out []string
-	for attachment := range t.attachments {
-		if attachment == nil || attachment.stopped {
-			continue
-		}
-		out = append(out, attachment.copyNever...)
-	}
-	return uniqueStrings(out)
 }
 
 func (t *task) Stats() pipeline.GraphStats {

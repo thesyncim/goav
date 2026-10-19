@@ -201,10 +201,7 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 		return filter.ErrOutputBufferTooSmall
 	}
 	output.Planes = output.Planes[:3]
-	if !prepareOutputPlanes(output.Planes, g.outputWidth, g.outputHeight) {
-		out.Frames = out.Frames[:index]
-		return filter.ErrOutputBufferTooSmall
-	}
+	prepareOutputPlanes(output.Planes, g.outputWidth, g.outputHeight)
 
 	f.scaleI420(output.Planes, frame.Planes, g)
 
@@ -382,23 +379,19 @@ func planeReady(plane *av.Plane, width int, height int) bool {
 	return need <= len(plane.Buffer.Bytes)
 }
 
-func prepareOutputPlanes(planes []av.Plane, width int, height int) bool {
-	return prepareOutputPlane(&planes[0], width, height) &&
-		prepareOutputPlane(&planes[1], width/2, height/2) &&
-		prepareOutputPlane(&planes[2], width/2, height/2)
+// prepareOutputPlanes gives the output new pooled planes: the stage hands
+// each output downstream by reference, so the previous one may still be in
+// use.
+func prepareOutputPlanes(planes []av.Plane, width int, height int) {
+	prepareOutputPlane(&planes[0], width, height)
+	prepareOutputPlane(&planes[1], width/2, height/2)
+	prepareOutputPlane(&planes[2], width/2, height/2)
 }
 
-func prepareOutputPlane(plane *av.Plane, width int, height int) bool {
-	size := width * height
-	if cap(plane.Buffer.Bytes) < size {
-		return false
-	}
-	plane.Buffer.Bytes = plane.Buffer.Bytes[:size]
-	plane.Buffer.Ownership = av.BufferOwned
-	plane.Buffer.Owner = nil
+func prepareOutputPlane(plane *av.Plane, width int, height int) {
+	plane.Buffer = av.NewBuffer(width * height)
 	plane.Stride = width
 	plane.Offset = 0
-	return true
 }
 
 func (f *Filter) scaleI420(dst []av.Plane, src []av.Plane, g geometry) {

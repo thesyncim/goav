@@ -207,7 +207,8 @@ func filterResultForStream(stream av.Stream) filter.Result {
 		frame.Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
 	}
 	if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-		frame = preallocVideoFilterFrame(stream)
+		// Plane slots only: video filters publish new pooled planes.
+		frame = av.Frame{Planes: make([]av.Plane, 3)}
 	}
 	return filter.Result{
 		Frames: []av.Frame{frame}[:0],
@@ -275,19 +276,6 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		}),
 		cause: errUnsupportedBuild,
 	}
-}
-
-func preallocVideoFilterFrame(stream av.Stream) av.Frame {
-	frame := av.Frame{Planes: make([]av.Plane, 3)}
-	width := stream.Codec.Width
-	height := stream.Codec.Height
-	if width <= 0 || height <= 0 || width%2 != 0 || height%2 != 0 {
-		return frame
-	}
-	frame.Planes[0].Buffer.Bytes = make([]byte, 0, width*height)
-	frame.Planes[1].Buffer.Bytes = make([]byte, 0, width*height/4)
-	frame.Planes[2].Buffer.Bytes = make([]byte, 0, width*height/4)
-	return frame
 }
 
 func resizeFitStreamDimensions(inputWidth int, inputHeight int, targetWidth int, targetHeight int) (int, int) {

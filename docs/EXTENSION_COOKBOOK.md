@@ -54,7 +54,7 @@ input := goav.Source("mic",
             StreamID: "mic",
             Type:     av.MediaAudio,
             Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16},
-            Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: pcm, Ownership: av.BufferImmutable}}},
+            Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: pcm}}}, // never written again
         }
         if _, err := push.Frame(&frame); err != nil {
             return err
@@ -225,7 +225,7 @@ scratch reuse, or backpressure-specific behavior. A reusable stage should:
   buffers (`TestComponentCustomStageForwardsEvents`,
   `TestComponentCodecStageFlushesOnEOS`);
 - return deterministic errors for unsupported media or missing scratch;
-- document its accepted and emitted message shapes, borrowed-buffer lifetime,
+- document its accepted and emitted message shapes, payload lifetime,
   executor safety, and EOS, flush, discontinuity, loss, codec-change, and
   backpressure behavior, so a caller can wire it without reading the source.
 
@@ -354,7 +354,7 @@ package pins its hot paths with allocation guards next to the contract;
 
 | Package | Stable | Experimental |
 |---|---|---|
-| `av` | `Packet`, `Frame`, `Event`, `Buffer`/`Plane` (ownership flags define retain/copy/reuse), and reset helpers so hot paths reuse structs | - |
+| `av` | `Packet`, `Frame`, `Event`, `Buffer`/`Plane` (immutable once published; `Ref`/`Retain` keep, `MakeWritable` copies before a write, `NewBuffer` pools), and reset helpers so hot paths reuse structs | - |
 | `pipeline` | `Message`, `Source`, `Stage`, `Sink`, `Emitter`, `Route` (stream/event scoping), one-to-many fanout | dynamic graph mutation (closed graphs return `pipeline.ErrClosed`), buffer policy, graph stats; on a task, `task.Stats()`, `task.Snapshot()`, `task.Taps()`, and the `plan.Report` from `Explain` |
 | `component` | `NewPacketStage`, `NewFrameStage`, `NewEventStage`, `NewSink`, and the `*Func` helpers | - |
 | `codec` | `Registry`, `Descriptor` (identity + capability preflight), `DecoderFactory`/`EncoderFactory`, `DecoderStage` (packets -> frames; preserves realtime events, drives loss/PLC, flushes before EOS), `EncoderStage` (frames -> packets; observes control events, flushes delayed packets), caller-owned `DecodeResult`/`EncodeResult` | decode state factories for adapter scratch |

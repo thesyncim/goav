@@ -23,7 +23,7 @@ func TestAudioAnalyzerRecordsS16Metrics(t *testing.T) {
 			SampleFormat: av.SampleFormatS16,
 			Samples:      2,
 		},
-		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}, Stride: 4}},
+		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}, Stride: 4}},
 	})
 	analyzer.observeEvent(&av.Event{Type: av.EventPacketLoss})
 	analyzer.observePacket(&av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}}})

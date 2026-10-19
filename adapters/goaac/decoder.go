@@ -150,7 +150,6 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	samples := len(decoded) / channels
 	plane := &frame.Planes[0]
 	plane.Buffer.Bytes = backing[:len(decoded)*2]
-	plane.Buffer.Ownership = av.BufferOwned
 	plane.Stride = channels * 2
 
 	d.stream.Codec.SampleRate = sampleRate

@@ -30,7 +30,7 @@ Match a refusal with `errors.As`, then switch on its fields:
   `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2) explicitly`,
   `encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(...))`.
 - **Unwrap**: low-level runtime causes such as
-  `pipeline.ErrBufferedMessageUnsafe` remain reachable through `errors.Is`;
+  `pipeline.ErrBackpressure` remain reachable through `errors.Is`;
   build-shape matching should use `Family`, `Code`, and details.
 
 One renderer produces one shape:
@@ -94,14 +94,7 @@ collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full
 strings remain typed internally while runtime mutation stays experimental.
 Failed stream-rule branch attachments surface as `av.EventAttachError` events
 carrying the stream id, branch name, and cause. Join stages name the offending
-arm (`goav: audio mix requires s16, got f32 on arm "b"`). Buffered payload
-safety backstops are also
-structured at the task boundary: a mutable payload reaching `flow.CopyNever`
-returns `FamilyBuffer` with `Code("buffer_payload_unsafe")`, the `CopyNever`
-branch names, and still matches `pipeline.ErrBufferedMessageUnsafe`; a payload
-larger than the configured copy bounds returns `FamilyBuffer` with
-`Code("buffer_payload_too_large")` and still matches
-`pipeline.ErrMessageTooLarge`.
+arm (`goav: audio mix requires s16, got f32 on arm "b"`).
 
 ## Diagnostics
 

@@ -98,8 +98,8 @@ func TestPacketsHonorKeyframeFlagsAndPTS(t *testing.T) {
 	base := av.TimeBase{Num: 1, Den: 90000}
 	out := goavtest.NewCollector()
 	err := goavtest.Runtime().Run(ctx, goavtest.Packets(av.CodecVP8,
-		av.Packet{Keyframe: true, PTS: av.Timestamp{Value: 0, Base: base}, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}},
-		av.Packet{Keyframe: false, PTS: av.Timestamp{Value: 3000, Base: base}, Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
+		av.Packet{Keyframe: true, PTS: av.Timestamp{Value: 0, Base: base}, Payload: av.Buffer{Bytes: []byte{1}}},
+		av.Packet{Keyframe: false, PTS: av.Timestamp{Value: 3000, Base: base}, Payload: av.Buffer{Bytes: []byte{2}}},
 	).
 		Video().
 		To(out.Sink()))
