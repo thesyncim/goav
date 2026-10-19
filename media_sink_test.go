@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
@@ -233,5 +234,59 @@ func TestMediaSinkTakesARemux(t *testing.T) {
 		if _, ok := ids[packet.StreamID]; !ok {
 			t.Fatalf("packet for %q, opened %v", packet.StreamID, ids)
 		}
+	}
+}
+
+// liveMediaSink is a media sink that consumes in real time.
+type liveMediaSink struct{ *mediaSink }
+
+func (liveMediaSink) Live() bool { return true }
+
+// TestLiveMediaSinkPacesAFile pins pacing for a live destination: an MP4
+// copied whole into it on an offline runtime plans realtime and plays at its
+// media time, while the same copy into a sink that is not live runs at full
+// speed.
+func TestLiveMediaSinkPacesAFile(t *testing.T) {
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepts := []shape.Spec{shape.Packet(av.MediaVideo, av.CodecH264), shape.Packet(av.MediaAudio, av.CodecAAC)}
+	run := func(sink pipeline.Sink) time.Duration {
+		t.Helper()
+		out := goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		start := time.Now()
+		if err := offlineRuntime().Run(ctx, out); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(start)
+	}
+	live := liveMediaSink{newMediaSink(accepts...)}
+	spec, err := offlineRuntime().Describe(goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(live)))
+	if err != nil || !spec.Realtime {
+		t.Fatalf("describe realtime=%v err=%v, want a realtime plan", spec.Realtime, err)
+	}
+	paced, fast := run(liveMediaSink{newMediaSink(accepts...)}), run(newMediaSink(accepts...))
+	if paced < 300*time.Millisecond || fast > paced/2 {
+		t.Fatalf("live sink took %s, plain sink %s: want the live one paced at the file's media time", paced, fast)
+	}
+}
+
+// TestMediaSinkLearnsTheConfiguredBitrate pins the bitrate a recipe gives
+// an encoder riding its stream (av.MetadataBitrate), the ceiling a media
+// sink holds bandwidth estimates to.
+func TestMediaSinkLearnsTheConfiguredBitrate(t *testing.T) {
+	sink := newMediaSink(shape.Packet(av.MediaVideo, av.CodecVP8))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := bundle.MustNew().Run(ctx, goavtest.Video(64, 64, 2).Video().Encode(codec.VP8(codec.Bitrate(300_000))).To(goav.Sink(sink))); err != nil {
+		t.Fatal(err)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.streams) != 1 || sink.streams[0].Metadata[av.MetadataBitrate] != "300000" {
+		t.Fatalf("streams = %+v, want the configured bitrate on the encoded stream", sink.streams)
 	}
 }

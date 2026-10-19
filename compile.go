@@ -150,13 +150,16 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 }
 
 // compileRuntime is the runtime a recipe plans and builds against. Realtime
-// follows the inputs unless the runtime forces it with WithRealtime(true): a
-// recipe with a live input (a provider or push source whose shape declares
-// Realtime) compiles against a realtime view of its runtime, so its graph
-// buffers between stages and encoders pick low-latency presets, while
-// file-to-file recipes keep the offline runtime and run at full speed.
+// follows the inputs and destinations unless the runtime forces it with
+// WithRealtime(true): a recipe with a live input (a provider or push source
+// whose shape declares Realtime) or a live destination (a media sink whose
+// Live reports true: RTP out, WHIP, a WebRTC track) compiles against a
+// realtime view of its runtime, so its graph buffers between stages,
+// encoders pick low-latency presets, and files play paced at their media
+// time, while file-to-file recipes keep the offline runtime and run at full
+// speed.
 func (g *recipeGraph) compileRuntime(rt *Runtime) *Runtime {
-	if rt == nil || rt.realtime || !inputsAreLive(g.inputs) {
+	if rt == nil || rt.realtime || !inputsAreLive(g.inputs) && !destinationsAreLive(g.dests) {
 		return rt
 	}
 	return runtimeWithRealtime(rt, true)

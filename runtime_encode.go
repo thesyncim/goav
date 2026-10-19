@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -45,7 +46,21 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 		return nil, av.Stream{}, err
 	}
 	b.encoders = append(b.encoders, stage)
-	return stage, reportedStream(config.Stream, encoder), nil
+	return stage, withConfiguredBitrate(reportedStream(config.Stream, encoder), config.Settings.Bitrate), nil
+}
+
+// withConfiguredBitrate records the bitrate a recipe configured an encoder
+// with on its stream (av.MetadataBitrate), so a media destination following
+// a receiver's bandwidth estimate retargets it no higher.
+func withConfiguredBitrate(stream av.Stream, bitsPerSecond int) av.Stream {
+	if bitsPerSecond <= 0 {
+		return stream
+	}
+	metadata := make(av.Metadata, len(stream.Metadata)+1)
+	maps.Copy(metadata, stream.Metadata)
+	metadata[av.MetadataBitrate] = strconv.Itoa(bitsPerSecond)
+	stream.Metadata = metadata
+	return stream
 }
 
 func prepareEncodeConfig(input av.Stream, request compile.EncodeRequest, realtime bool) (codec.EncodeConfig, av.Stream, error) {

@@ -105,6 +105,9 @@ type DestinationScheme interface {
 //   - InputShapes() shape.Set — what it takes, in preference order: the
 //     planner encodes frames to the first codec it can encode, and refuses
 //     other packets with the fix.
+//   - Live() bool — true for a sink that consumes in real time (RTP out,
+//     WHIP): its recipe plans realtime, so a file routed to it plays at its
+//     media time instead of in one burst.
 //   - UseControl(func(context.Context, control.Control) error) — the task's
 //     control path, bound before OpenStreams: a receiver's keyframe request
 //     becomes control.Keyframe(stream) on the encoder feeding the stream.

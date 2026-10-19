@@ -112,3 +112,20 @@ func validateMediaSinkStreams(node string, destination destinationSpec, streams 
 	}
 	return nil
 }
+
+// liveSink is a media destination that consumes in real time (RTP out,
+// WHIP, a WebRTC track): its recipe plans realtime, so a file routed to it
+// plays paced at its media time instead of in one burst.
+type liveSink interface {
+	Live() bool
+}
+
+// destinationsAreLive reports whether a destination consumes in real time.
+func destinationsAreLive(dests []Destination) bool {
+	for i := range dests {
+		if live, ok := dests[i].spec.sink.(liveSink); ok && live.Live() {
+			return true
+		}
+	}
+	return false
+}
