@@ -165,6 +165,8 @@ const (
 	// drainLimit is how much of an abandoned body is drained so its
 	// connection is reused.
 	drainLimit = 64 << 10
+	// drainWait bounds that drain.
+	drainWait = 100 * time.Millisecond
 	// window is how many recent bytes a progressive read keeps for backward
 	// reads.
 	window = 1 << 20
@@ -296,7 +298,8 @@ func (r *httpReader) attach(resp *http.Response, at, end int64) {
 }
 
 // release lets go of the open body, draining a short rest so its
-// connection is reused.
+// connection is reused. The drain never waits on a slow server: after
+// drainWait the body closes, costing only the connection.
 func (r *httpReader) release() {
 	b := r.body
 	if b == nil {
@@ -304,7 +307,9 @@ func (r *httpReader) release() {
 	}
 	r.body = nil
 	if b.end >= 0 && b.end-b.at <= drainLimit && !b.guard.stalled.Load() {
+		deadline := time.AfterFunc(drainWait, func() { b.resp.Body.Close() })
 		_, _ = io.Copy(io.Discard, b.reader)
+		deadline.Stop()
 	}
 	b.guard.timer.Stop()
 	b.resp.Body.Close()

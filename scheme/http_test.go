@@ -342,3 +342,46 @@ func TestHTTPReaderHonorsClose(t *testing.T) {
 		t.Fatal("Close did not end the blocked read")
 	}
 }
+
+// TestHTTPSeekAwayFromAStalledRange pins that abandoning a range whose server
+// stalled costs the connection, not a stall: the drain is bounded.
+func TestHTTPSeekAwayFromAStalledRange(t *testing.T) {
+	data := bytes.Repeat([]byte{7}, 4<<20)
+	stall := make(chan struct{})
+	var first sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stalled := false
+		first.Do(func() { stalled = true })
+		if !stalled {
+			http.ServeContent(w, r, "big.bin", time.Unix(1700000000, 0), bytes.NewReader(data))
+			return
+		}
+		// The first range promises 256 KiB, sends all but 16 KiB, and stalls.
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", 256<<10-1, len(data)))
+		w.Header().Set("Content-Length", strconv.Itoa(256<<10))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(data[:240<<10])
+		w.(http.Flusher).Flush()
+		<-stall
+	}))
+	defer func() { close(stall); srv.Close() }()
+	u, _ := url.Parse(srv.URL + "/big.bin")
+	in, _ := scheme.HTTP().Input(u)
+	reader, err := in.(provider.ByteSource).OpenBytes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	at := reader.(io.ReaderAt)
+	buf := make([]byte, 230<<10)
+	if _, err := at.ReadAt(buf, 0); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := at.ReadAt(buf[:1024], 2<<20); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Fatalf("seeking away from the stalled range took %s", waited)
+	}
+}
