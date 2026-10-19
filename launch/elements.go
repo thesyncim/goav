@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -323,47 +324,44 @@ type nopSeekCloser struct{ io.ReadSeeker }
 
 func (nopSeekCloser) Close() error { return nil }
 
-// lazyWriter creates its file on the first write, so compiling or describing
-// a program creates nothing.
-type lazyWriter struct {
+// fileDestination is a program's output file, created when the run opens
+// the destination: compiling or describing a program creates nothing, and a
+// file the FileSystem refuses fails the build (or the attach) that opens it.
+// The file keeps its own capabilities: muxers that backpatch see it seek.
+type fileDestination struct {
 	fs   FileSystem
 	name string
-	w    io.Writer
-	err  error
 }
 
-func (l *lazyWriter) Write(p []byte) (int, error) {
-	if l.w == nil && l.err == nil {
-		l.w, l.err = l.fs.Create(l.name)
-	}
-	if l.err != nil {
-		return 0, l.err
-	}
-	return l.w.Write(p)
+func (f fileDestination) Name() string { return f.name }
+
+func (f fileDestination) Contract() provider.Contract {
+	return provider.Contract{ByteStream: true, Protocol: av.ProtocolFile}
 }
 
-// Seek forwards to the file when it can seek, so muxers that backpatch
-// headers see a seekable output; otherwise it reports that it cannot.
-func (l *lazyWriter) Seek(offset int64, whence int) (int64, error) {
-	if l.w == nil && l.err == nil {
-		l.w, l.err = l.fs.Create(l.name)
+func (f fileDestination) Open(ctx context.Context, _ provider.Info) (provider.Writer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if l.err != nil {
-		return 0, l.err
+	w, err := f.fs.Create(f.name)
+	if err != nil {
+		return nil, err
 	}
-	if s, ok := l.w.(io.Seeker); ok {
-		return s.Seek(offset, whence)
+	switch w := w.(type) {
+	case provider.Writer:
+		return w, nil
+	case io.WriteSeeker:
+		return nopWriteSeekCloser{w}, nil
 	}
-	return 0, errNotSeekable
+	return nopWriteCloser{w}, nil
 }
 
-func (l *lazyWriter) Close() error {
-	if c, ok := l.w.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
-}
+type nopWriteSeekCloser struct{ io.WriteSeeker }
+
+func (nopWriteSeekCloser) Close() error { return nil }
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 var errNoTask = errors.New("this program is not attached to a running task")
-
-var errNotSeekable = errors.New("launch: output cannot seek")

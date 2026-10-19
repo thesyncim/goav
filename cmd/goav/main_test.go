@@ -427,6 +427,8 @@ func TestRunServesTheControlPlane(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-run-control-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	out := filepath.Join(t.TempDir(), "controlled.ivf")
+	// Attached programs touch files only under the control directory.
+	dir := t.TempDir()
 	program := fmt.Sprintf(`testsrc video name=fixture size=32x18 fps=30 frames=900 live pattern=bars ! tap frames ! encode av1 bitrate=200k fps=30 keyframe_interval=1 ! file %q format=ivf`, out)
 
 	var stdout, stderr bytes.Buffer
@@ -434,7 +436,7 @@ func TestRunServesTheControlPlane(t *testing.T) {
 	go func() {
 		// The real-clock runtime keeps the live source running through the
 		// whole conversation; a fake clock would finish it at once.
-		done <- run([]string{"run", "--runtime", "default", "--control", "unix://" + socket, program}, &stdout, &stderr)
+		done <- run([]string{"run", "--runtime", "default", "--control", "unix://" + socket, "--control-dir", dir, program}, &stdout, &stderr)
 	}()
 	waitForRunSocket(t, socket, done, &stdout, &stderr)
 
@@ -447,9 +449,13 @@ func TestRunServesTheControlPlane(t *testing.T) {
 	runLocalCtl(t, socket, "rate", "value=0.5")
 	runLocalCtl(t, socket, "seek", "position=100ms", "source=fixture")
 
-	preview := filepath.Join(t.TempDir(), "preview.ivf")
+	preview := filepath.Join(dir, "preview.ivf")
+	var refused bytes.Buffer
+	if code := run([]string{"ctl", "--control", "unix://" + socket, "attach", `tap frames ! encode av1 ! as escape ! file ../escape.ivf format=ivf`}, io.Discard, &refused); code != 1 {
+		t.Fatalf("attach outside the control directory: code %d, stderr %s", code, refused.String())
+	}
 	attached := runLocalCtl(t, socket, "attach",
-		fmt.Sprintf(`tap frames ! resize 16x16 ! encode av1 bitrate=120k fps=30 keyframe_interval=1 ! as preview ! file %q format=ivf`, preview))
+		`tap frames ! resize 16x16 ! encode av1 bitrate=120k fps=30 keyframe_interval=1 ! as preview ! file preview.ivf format=ivf`)
 	var att struct{ Attachment string }
 	if err := json.Unmarshal([]byte(attached), &att); err != nil || att.Attachment != "preview" {
 		t.Fatalf("attach = %s (%v)", attached, err)
@@ -583,5 +589,72 @@ func TestRunGrantsWHIP(t *testing.T) {
 	text := stdout.String()
 	if !strings.Contains(text, "codec=vp8") || !strings.Contains(text, "sink whip [whip publish]") || strings.Contains(text, "SECRET") {
 		t.Fatalf("describe =\n%s", text)
+	}
+}
+
+// TestRunControlOverTCPNeedsTheToken pins the tcp control plane's defaults:
+// loopback only unless --control-remote, and every client presents the
+// token goav run writes owner-only to the token file.
+func TestRunControlOverTCPNeedsTheToken(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"run", "--control", "tcp://0.0.0.0:1", "testsrc video live ! null"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--control-remote") {
+		t.Fatalf("all-interfaces tcp: code %d, stderr %q", code, stderr.String())
+	}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := "tcp://" + l.Addr().String()
+	l.Close()
+	tokenFile := filepath.Join(t.TempDir(), "ctl.token")
+	stdout.Reset()
+	stderr.Reset()
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"run", "--control", address, "--control-token", tokenFile, "--control-dir", t.TempDir(), "testsrc video size=16x16 live ! tap live ! null"}, &stdout, &stderr)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if info, err := os.Stat(tokenFile); err == nil {
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("token file mode %v, want 0600", info.Mode().Perm())
+			}
+			if conn, err := net.Dial("tcp", strings.TrimPrefix(address, "tcp://")); err == nil {
+				conn.Close()
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("tcp control never came up; stderr=%q", stderr.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	wrong := filepath.Join(t.TempDir(), "wrong.token")
+	if err := os.WriteFile(wrong, []byte("0123456789abcdef0123456789abcdef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var ctlErr bytes.Buffer
+	if code := run([]string{"ctl", "--control", address, "--control-token", wrong, "taps"}, io.Discard, &ctlErr); code != 1 || !strings.Contains(ctlErr.String(), "unauthorized") {
+		t.Fatalf("wrong token: code %d, stderr %q", code, ctlErr.String())
+	}
+	var taps bytes.Buffer
+	if code := run([]string{"ctl", "--control", address, "--control-token", tokenFile, "taps"}, &taps, io.Discard); code != 0 || !strings.Contains(taps.String(), `"name": "live"`) {
+		t.Fatalf("with the token: code %d, taps %s", code, taps.String())
+	}
+	if code := run([]string{"ctl", "--control", address, "--control-token", tokenFile, "stop"}, io.Discard, io.Discard); code != 0 {
+		t.Fatalf("stop: code %d", code)
+	}
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("goav run code %d, stderr %q", code, stderr.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("goav run did not stop")
+	}
+	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
+		t.Fatalf("token file left behind: %v", err)
 	}
 }

@@ -45,3 +45,13 @@
   `open`) naming the input, the detected format, and what is wrong (empty,
   truncated, not that format) instead of a bare `EOF` or `matroska: invalid
   data`; a read failure mid-run names its source node.
+- The control plane authenticates: `ctlserver.Token(t)` makes every
+  connection authenticate first (`$/authenticate`; `Dial` sends it from
+  `tcp://TOKEN@host:port`) and every HTTP request carry `Authorization: Bearer`,
+  answering others `CodeUnauthorized` (-32001); `ListenAndServe` refuses tcp
+  without a Token. `goav run --control tcp://127.0.0.1:PORT` writes a random
+  token owner-only to `--control-token FILE` (default: per address, in the
+  config directory) that `goav ctl` reads, refuses a non-loopback address
+  without `--control-remote`, and confines attached programs to
+  `--control-dir` (default `.`). Program output files are created when their
+  destination opens, so a refused path fails the build or attach.

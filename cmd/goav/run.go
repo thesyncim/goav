@@ -34,7 +34,7 @@ import (
 // program they act on: inline arguments, or a file with -f.
 type programArgs struct {
 	runtime string
-	control string
+	control controlFlags
 	serve   string
 	format  string
 	program string
@@ -67,8 +67,14 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 		case name == "--runtime":
 			args.runtime, err = take()
 		case name == "--control" && verb == "run":
-			args.control, err = take()
-			args.control = controlAddress(args.control)
+			args.control.address, err = take()
+			args.control.address = controlAddress(args.control.address)
+		case name == "--control-token" && verb == "run":
+			args.control.tokenFile, err = take()
+		case name == "--control-dir" && verb == "run":
+			args.control.dir, err = take()
+		case arg == "--control-remote" && verb == "run":
+			args.control.remote = true
 		case name == "--serve" && verb == "run":
 			args.serve, err = take()
 		case name == "--format" && verb == "describe":
@@ -95,6 +101,9 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 		args.program = string(data)
 	default:
 		args.program = strings.Join(parts, " ")
+	}
+	if err := args.control.validate(); err != nil {
+		return args, false, err
 	}
 	if strings.TrimSpace(args.program) == "" {
 		return args, true, nil
@@ -133,11 +142,20 @@ func (f *cliFiles) Create(name string) (io.Writer, error) {
 	}
 	file, err := os.Create(name)
 	if err == nil {
-		f.mu.Lock()
-		f.written = append(f.written, name)
-		f.mu.Unlock()
+		f.note("", name)
 	}
 	return file, err
+}
+
+// note records that gone no longer exists and added does (either may be
+// empty), for the summary.
+func (f *cliFiles) note(gone, added string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.written = slices.DeleteFunc(f.written, func(n string) bool { return n == gone || n == added })
+	if added != "" {
+		f.written = append(f.written, added)
+	}
 }
 
 // Rename publishes a file written under a temporary name, as HLS does with
@@ -146,10 +164,7 @@ func (f *cliFiles) Rename(oldname, newname string) error {
 	if err := os.Rename(oldname, newname); err != nil {
 		return err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.written = slices.DeleteFunc(f.written, func(n string) bool { return n == oldname || n == newname })
-	f.written = append(f.written, newname)
+	f.note(oldname, newname)
 	return nil
 }
 
@@ -158,9 +173,7 @@ func (f *cliFiles) Remove(name string) error {
 	if err := os.Remove(name); err != nil {
 		return err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.written = slices.DeleteFunc(f.written, func(n string) bool { return n == name })
+	f.note(name, "")
 	return nil
 }
 
@@ -181,6 +194,10 @@ const runFlags = `
 flags:
   --runtime default|demo|test   adapters to run with (default: the bundle)
   --control unix://PATH         serve the running task to goav ctl (bare PATH = unix)
+  --control tcp://127.0.0.1:PORT serve it over tcp; clients need the token goav run writes
+  --control-token FILE          where that token goes (default: per address, in the config dir)
+  --control-remote              allow a tcp address other hosts can reach
+  --control-dir DIR             the files attached programs may read and write (default .)
   --serve ADDR                  serve the program's hls outputs over HTTP (LL-HLS too)
   -f FILE                       read the program from FILE
 `
@@ -241,8 +258,8 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 	if win.Used() {
 		runTask = func(ctx context.Context) error { return win.Run(ctx, task) }
 	}
-	if args.control != "" {
-		err = runServed(ctx, task, runTask, args.control, files)
+	if args.control.address != "" {
+		err = runServed(ctx, task, runTask, args.control, files, stderr)
 	} else {
 		err = runTask(ctx)
 	}
@@ -262,7 +279,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		Played  *playStats `json:"played,omitempty"`
 		Control string     `json:"control,omitempty"`
 		Stopped bool       `json:"stopped,omitempty"`
-	}{Runtime: args.runtime, Wrote: files.written, Control: args.control, Stopped: errors.Is(err, context.Canceled)}
+	}{Runtime: args.runtime, Wrote: files.written, Control: args.control.address, Stopped: errors.Is(err, context.Canceled)}
 	if win.Used() {
 		summary.Played = win.summary()
 	}
@@ -274,10 +291,26 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 }
 
 // runServed runs the task while a control socket serves it; the first to
-// stop stops both. The CLI's own user is the client, so attached programs
-// use the user's files, and the summary lists what they write.
-func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Context) error, control string, files launch.FileSystem) error {
-	server, err := ctlserver.New(task, ctlserver.Files(files))
+// stop stops both. Attached programs read and write files only under the
+// control directory, and the summary lists what they write. A tcp address
+// must be loopback unless --control-remote, and clients authenticate with a
+// token written owner-only to the token file.
+func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Context) error, control controlFlags, files *cliFiles, stderr io.Writer) error {
+	attached, err := files.within(cmp.Or(control.dir, "."))
+	if err != nil {
+		return err
+	}
+	options := []ctlserver.Option{ctlserver.Files(attached)}
+	if strings.HasPrefix(control.address, "tcp://") {
+		token, path, err := control.issueToken()
+		if err != nil {
+			return err
+		}
+		defer os.Remove(path)
+		fmt.Fprintf(stderr, "control token in %s (goav ctl reads it there; elsewhere pass --control-token FILE)\n", path)
+		options = append(options, ctlserver.Token(token))
+	}
+	server, err := ctlserver.New(task, options...)
 	if err != nil {
 		return err
 	}
@@ -285,7 +318,7 @@ func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Con
 	defer cancel()
 	errC := make(chan error, 2)
 	go func() {
-		errC <- server.ListenAndServe(runCtx, control)
+		errC <- server.ListenAndServe(runCtx, control.address)
 		cancel()
 	}()
 	// The task runs on the calling goroutine (a window must), the server
