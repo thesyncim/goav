@@ -32,6 +32,11 @@ func (r *Runtime) Run(ctx context.Context, outs ...Output) error {
 
 // Build builds the Outputs into one task without starting it.
 func (r *Runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
+	built, err := r.build(ctx, outs...)
+	return built, publicError(err)
+}
+
+func (r *Runtime) build(ctx context.Context, outs ...Output) (LiveTask, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return nil, err
@@ -53,6 +58,11 @@ func (r *Runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
 // On a refusal it returns both the structured BuildError and a partial
 // report naming what is missing.
 func (r *Runtime) Explain(ctx context.Context, outs ...Output) (plan.Report, error) {
+	report, err := r.explain(ctx, outs...)
+	return report, publicError(err)
+}
+
+func (r *Runtime) explain(ctx context.Context, outs ...Output) (plan.Report, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return plan.Report{}, err
@@ -75,6 +85,11 @@ func (r *Runtime) Explain(ctx context.Context, outs ...Output) (plan.Report, err
 
 // Describe returns the graph the Outputs build, without opening them.
 func (r *Runtime) Describe(outs ...Output) (pipeline.Spec, error) {
+	spec, err := r.describe(outs...)
+	return spec, publicError(err)
+}
+
+func (r *Runtime) describe(outs ...Output) (pipeline.Spec, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return pipeline.Spec{}, err

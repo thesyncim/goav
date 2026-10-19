@@ -830,6 +830,11 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 }
 
 func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
+	next, err := a.rebranch(ctx, options...)
+	return next, publicError(err)
+}
+
+func (a *runtimeAttachment) rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}

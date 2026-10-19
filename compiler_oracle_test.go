@@ -44,6 +44,9 @@ type oracleResult struct {
 }
 
 func oracleErrorFrom(err error) *oracleError {
+	if leak := internalErrorIn(err); leak != "" {
+		return &oracleError{Code: "leaked: " + leak}
+	}
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {
 		return &oracleError{Code: "untyped: " + err.Error()}

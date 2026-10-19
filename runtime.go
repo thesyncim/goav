@@ -24,9 +24,6 @@ import (
 // BuildError.Family and BuildError.Code; these only keep package-internal
 // errors.Is checks and low-level unwrap chains stable.
 var (
-	// errUnsupportedBuild is the cause behind every build-shape refusal: the
-	// declared recipe or graph cannot be lowered as written.
-	errUnsupportedBuild = errors.New("goav: unsupported builder graph")
 	// errNilSource reports a nil source handed to a builder or constructor.
 	errNilSource = errors.New("goav: nil source")
 	// errNilReader reports a nil reader handed to FileInput.

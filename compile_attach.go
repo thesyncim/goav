@@ -35,9 +35,10 @@ func (attachBranch) RebranchArg() {}
 func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 	branches, err := t.attachBranches(outs)
 	if err != nil {
-		return nil, err
+		return nil, publicError(err)
 	}
-	return t.attach(ctx, branches...)
+	attachment, err := t.attach(ctx, branches...)
+	return attachment, publicError(err)
 }
 
 // attachBranches lowers Outputs rooted at the task's taps, tracks, and routes
