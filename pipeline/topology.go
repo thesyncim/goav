@@ -65,7 +65,10 @@ const (
 // itself, its routes, and the per-node state the topology reads. A runner's
 // node type embeds it and adds how messages reach the node.
 type nodeBase struct {
-	name   string
+	name string
+	// index is the node's position in topology.nodes, fixed for its life; a
+	// retired node's index is reused once nothing can deliver into it.
+	index  int
 	kind   nodeKind
 	source Source
 	stage  Stage
@@ -151,6 +154,14 @@ type topology[P graphNode] struct {
 	index   map[string]int
 	nodes   []P
 	sources []int
+	// reusable lists retired node indices nothing can deliver into anymore:
+	// the next add takes one instead of growing nodes, so a task that attaches
+	// and detaches forever keeps a bounded node table. Emitters compare their
+	// own node with the snapshot's, so a retired node's emitter never speaks
+	// for the index's new occupant.
+	reusable []int
+	// retired keeps the graph totals of nodes whose index was reused.
+	retired retiredCounts
 	closed  bool
 	// snap is the routing snapshot the data plane reads without mu; nil once
 	// the graph is closed.
@@ -256,10 +267,18 @@ func (t *topology[P]) add(n P) (NodeRef, error) {
 		return "", ErrNodeExists
 	}
 	index := len(t.nodes)
+	if last := len(t.reusable) - 1; last >= 0 {
+		index = t.reusable[last]
+		t.reusable = t.reusable[:last]
+		t.retired.fold(t.nodes[index].base())
+		t.nodes[index] = n
+	} else {
+		t.nodes = append(t.nodes, n)
+	}
+	b.index = index
 	b.active = true
 	b.counters = &nodeCounters{}
 	t.index[b.name] = index
-	t.nodes = append(t.nodes, n)
 	if b.kind == nodeSource {
 		t.sources = append(t.sources, index)
 	}
@@ -423,6 +442,25 @@ func (t *topology[P]) detachLocked(ref NodeRef) (P, error) {
 	return n, nil
 }
 
+// finalStats reads a removed node's counters, as Stats would have listed
+// them, once nothing delivers into it anymore.
+func (t *topology[P]) finalStats(n *nodeBase) NodeStats {
+	stats := snapshotStats(&t.cold, []string{n.name}, []*nodeCounters{n.counters}, []uint64{reportedDrops(n.source, n.stage, n.sink)})
+	return stats.Nodes[n.name]
+}
+
+// reclaimLocked makes a removed node's index reusable once nothing can
+// deliver into it: it is out of the index, routeless and inactive, and its
+// worker or in-flight deliveries are done. Caller holds t.mu (write).
+func (t *topology[P]) reclaimLocked(n P) {
+	b := n.base()
+	if b.active || b.index < 0 || b.index >= len(t.nodes) || t.nodes[b.index].base() != b {
+		return
+	}
+	t.reusable = append(t.reusable, b.index)
+	b.index = -1
+}
+
 func (t *topology[P]) Spec() Spec {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -462,15 +500,22 @@ func (t *topology[P]) Events() <-chan av.Event {
 func (t *topology[P]) Stats() GraphStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	names := make([]string, len(t.nodes))
-	nodes := make([]*nodeCounters, len(t.nodes))
-	reported := make([]uint64, len(t.nodes))
+	// Like Spec, Nodes covers the live nodes; a removed node still counts in
+	// the graph totals (an unnamed entry), and so do the nodes whose index was
+	// reused (the retired entry).
+	names := make([]string, len(t.nodes)+1)
+	nodes := make([]*nodeCounters, len(t.nodes)+1)
+	reported := make([]uint64, len(t.nodes)+1)
 	for i := range t.nodes {
 		n := t.nodes[i].base()
-		names[i] = n.name
+		if n.active {
+			names[i] = n.name
+		}
 		nodes[i] = n.counters
 		reported[i] = reportedDrops(n.source, n.stage, n.sink)
 	}
+	nodes[len(t.nodes)] = &t.retired.counters
+	reported[len(t.nodes)] = t.retired.reported
 	return snapshotStats(&t.cold, names, nodes, reported)
 }
 

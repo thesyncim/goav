@@ -63,16 +63,20 @@ func (n *bufferedNode) base() *nodeBase { return &n.nodeBase }
 type bufferedEmitter struct {
 	graph *bufferedRunner
 	from  int
+	// self is the emitting node; once its index is reused, the snapshot holds
+	// another node there and this emitter sheds.
+	self *bufferedNode
 }
 
 func (e *bufferedEmitter) Emit(ctx context.Context, msg *Message) error {
-	return e.graph.emit(ctx, e.from, msg)
+	_, err := e.graph.emitDelivery(ctx, e.from, e.self, msg)
+	return err
 }
 
 // EmitDelivery implements the optional DeliveryEmitter capability: Emit plus a
 // per-message report of delivered vs deliberately-shed targets.
 func (e *bufferedEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
-	return e.graph.emitDelivery(ctx, e.from, msg)
+	return e.graph.emitDelivery(ctx, e.from, e.self, msg)
 }
 
 type bufferedMessage struct {
@@ -137,7 +141,7 @@ func (g *bufferedRunner) mutable(source bool) error {
 func (g *bufferedRunner) attachLocked(n *bufferedNode, index int) {
 	n.drop = newDropController(n.policy)
 	n.space = make(chan struct{}, 1)
-	n.emitter = bufferedEmitter{graph: g, from: index}
+	n.emitter = bufferedEmitter{graph: g, from: index, self: n}
 	if g.running && n.kind != nodeSource {
 		g.openQueue(n)
 		g.startWorkerLocked(n)
@@ -239,31 +243,47 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 }
 
 func (g *bufferedRunner) Remove(ref NodeRef) error {
+	_, err := g.RemoveNode(ref)
+	return err
+}
+
+// RemoveNode is Remove that also returns the node's final counters, read
+// once its queued tail was delivered (the NodeRemover capability).
+func (g *bufferedRunner) RemoveNode(ref NodeRef) (NodeStats, error) {
+	node, err := g.remove(ref)
+	if node == nil {
+		return NodeStats{}, err
+	}
+	return g.finalStats(&node.nodeBase), err
+}
+
+func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
 	g.mu.Lock()
 	running := g.running
 	node, err := g.detachLocked(ref)
 	if err != nil {
 		g.mu.Unlock()
-		return err
+		return nil, err
 	}
 	if node.kind == nodeSink && running {
 		// A sink leaving before its first media message stops gating readiness.
 		g.noteSinkMedia(&node.sawMedia)
 	}
 	if !running || node.queue == nil {
-		g.retireLocked(node)
+		g.retireLocked(node, true)
 		g.mu.Unlock()
-		return node.close()
+		return node, node.close()
 	}
 	// Nothing new reaches the node now; what it already queued is delivered
 	// before it closes. Its own routes stay up while it drains, so a stage
 	// hands its tail downstream instead of losing it. The drain is bounded by
 	// the queue's capacity and the close-wait budget.
 	if err := g.closeNodeQueue("remove", node); err != nil {
-		g.retireLocked(node)
+		// The worker may still run: the node keeps its queue and index.
+		g.retireLocked(node, false)
 		g.mu.Unlock()
 		go forceCloseNodeQueue(node)
-		return err
+		return node, err
 	}
 	done := node.done
 	g.rebuildLocked()
@@ -273,22 +293,32 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	if !node.active {
 		// Close took the graph down mid-drain and closed the node itself.
 		g.mu.Unlock()
-		return err
+		return node, err
 	}
-	g.retireLocked(node)
+	// A drain that timed out leaves the worker running: keep its queue.
+	g.retireLocked(node, err == nil)
 	g.mu.Unlock()
 	if err != nil {
-		return err
+		return node, err
 	}
-	return node.close()
+	return node, node.close()
 }
 
 // retireLocked takes a removed node out of the graph: inactive, routeless,
-// and shedding whatever its worker still holds. Caller holds g.mu.
-func (g *bufferedRunner) retireLocked(node *bufferedNode) {
+// and shedding whatever its worker still holds. Once its worker is done
+// (stopped), the node gives up its queue and slots and its index becomes
+// reusable, so a removed node holds no memory. Caller holds g.mu.
+func (g *bufferedRunner) retireLocked(node *bufferedNode, stopped bool) {
 	node.active = false
 	node.removed.Store(true)
 	node.routes = nil
+	if stopped {
+		node.queueMutex.Lock()
+		node.queueClosed = true
+		node.queue, node.free, node.slots = nil, nil, nil
+		node.queueMutex.Unlock()
+		g.reclaimLocked(node)
+	}
 	g.rebuildLocked()
 }
 
@@ -407,15 +437,10 @@ func (g *bufferedRunner) closeQueuesLocked() error {
 	return first
 }
 
-func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error {
-	_, err := g.emitDelivery(ctx, from, msg)
-	return err
-}
-
 // emitDelivery is emit with per-message delivery accounting: it additionally
 // reports how many matching targets queued the message and how many shed it,
 // powering the optional DeliveryEmitter capability.
-func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Message) (Delivery, error) {
+func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, self *bufferedNode, msg *Message) (Delivery, error) {
 	var delivery Delivery
 	if msg == nil {
 		return delivery, ErrNilMessage
@@ -434,7 +459,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 		return delivery, ErrUnknownNode
 	}
 	fromNode := &snap.nodes[from]
-	if !fromNode.active {
+	if !fromNode.active || fromNode.node != self {
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)

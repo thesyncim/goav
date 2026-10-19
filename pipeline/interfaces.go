@@ -239,6 +239,14 @@ func (r Route) ByEvent(event av.EventType) Route {
 	return r
 }
 
+// NodeRemover is implemented by graphs whose Remove can also hand back the
+// removed node's final counters, read once its queued tail was delivered. A
+// removed node leaves Stats, so a caller that reports on what it removed (a
+// detached branch) takes them here. Both runners implement it.
+type NodeRemover interface {
+	RemoveNode(NodeRef) (NodeStats, error)
+}
+
 // NodePauser is implemented by graphs that can pause/resume delivery to a single
 // node (the buffered runner). It is an optional capability discovered by type
 // assertion, so it does not widen the Graph interface for every implementer.

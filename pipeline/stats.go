@@ -245,3 +245,26 @@ func (n *nodeCounters) snapshotLocked() NodeStats {
 	}
 	return stats
 }
+
+// retiredCounts accumulates the counters of removed nodes whose index was
+// reused, so the graph totals keep what they did. Guarded by topology.mu.
+type retiredCounts struct {
+	counters nodeCounters
+	reported uint64
+}
+
+// fold adds a removed node's counts to the retired totals.
+func (r *retiredCounts) fold(n *nodeBase) {
+	if c := n.counters; c != nil {
+		r.counters.inMessages.Add(c.inMessages.Load())
+		r.counters.inPackets.Add(c.inPackets.Load())
+		r.counters.inFrames.Add(c.inFrames.Load())
+		r.counters.inEvents.Add(c.inEvents.Load())
+		r.counters.outMessages.Add(c.outMessages.Load())
+		r.counters.outPackets.Add(c.outPackets.Load())
+		r.counters.outFrames.Add(c.outFrames.Load())
+		r.counters.outEvents.Add(c.outEvents.Load())
+		r.counters.dropped.Add(c.dropped.Load())
+	}
+	r.reported += reportedDrops(n.source, n.stage, n.sink)
+}
