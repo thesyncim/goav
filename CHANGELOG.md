@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Every nested module (cmd/goav, player, playoutav, rtpav, webrtcav,
+  goavtest/expect) now requires the main commit with URL schemes, so `go get`
+  of any of them resolves a root that has `provider.Scheme`.
 - URLs are inputs and destinations: `goav.URIInput` and `goav.URI` resolve through
   `runconfig.Scheme`; `bundle` registers `file` and `http(s)` (package `scheme`), and
   `webrtcav.WHEP` plays WHEP. Reports redact URLs; live inputs take `goav.Reconnect`;

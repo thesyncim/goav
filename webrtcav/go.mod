@@ -9,8 +9,8 @@ require (
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.24
-	github.com/thesyncim/goav v0.0.0-20261019164621-65346751ac2a
-	github.com/thesyncim/goav/rtpav v0.0.0-20261019083539-2703b0955de9
+	github.com/thesyncim/goav v0.0.0-20261019171325-bfa663d2ff70
+	github.com/thesyncim/goav/rtpav v0.0.0-20261019171325-bfa663d2ff70
 )
 
 require (
