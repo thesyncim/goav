@@ -37,6 +37,7 @@ type cmTimingInfo struct {
 type coreFoundation struct {
 	release          func(ref uintptr)                                                          `sym:"CFRelease"`
 	retain           func(ref uintptr) uintptr                                                  `sym:"CFRetain"`
+	retainCount      func(ref uintptr) int                                                      `sym:"CFGetRetainCount"`
 	dictionaryCreate func(alloc uintptr, capacity int, keys, values uintptr) uintptr            `sym:"CFDictionaryCreateMutable"`
 	dictionarySet    func(dict, key, value uintptr)                                             `sym:"CFDictionarySetValue"`
 	dictionaryGet    func(dict, key uintptr) uintptr                                            `sym:"CFDictionaryGetValue"`

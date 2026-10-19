@@ -231,3 +231,56 @@ func TestReorderPresentsInPTSOrder(t *testing.T) {
 		t.Fatalf("presentation order %v", order)
 	}
 }
+
+// damagedAt is a session whose library rejects the unit at one PTS.
+type damagedAt struct {
+	decodeOrder
+	pts []int64
+}
+
+func (s *damagedAt) Decode(unit *Packet, emit func(*Picture) error) error {
+	if slices.Contains(s.pts, unit.PTS) {
+		return Damaged("fake", "decode", -1)
+	}
+	return s.decodeOrder.Decode(unit, emit)
+}
+
+// TestDamagedUnitIsDroppedAndHealedByAKeyframe pins the recovery from a
+// unit the library rejects: the unit is dropped, upstream is asked for a
+// keyframe once until a keyframe heals the stream, and the units after it
+// still decode.
+func TestDamagedUnitIsDroppedAndHealedByAKeyframe(t *testing.T) {
+	c := &Codec{ID: av.CodecAV1, Media: av.MediaVideo, Backend: "fake",
+		NewVideoDecoder: func(VideoConfig) (VideoDecoder, error) {
+			return &damagedAt{decodeOrder{y: make([]byte, 16), c: make([]byte, 4)}, []int64{2, 3, 5}}, nil
+		}}
+	d := &videoDecoder{c: c, desc: c.descriptor(codec.ModeDecode, "")}
+	base := av.TimeBase{Num: 1, Den: 1}
+	config := codec.DecodeConfig{Stream: av.Stream{TimeBase: base, Codec: av.CodecParameters{ID: av.CodecAV1}}}
+	config.Resilience.RequestKeyframes = true
+	if err := d.Open(t.Context(), config); err != nil {
+		t.Fatal(err)
+	}
+	var decoded []int64
+	requests := 0
+	var result codec.DecodeResult
+	for pts := range int64(7) {
+		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}, PTS: av.Timestamp{Value: pts, Base: base}, Keyframe: pts == 0 || pts == 4}
+		if err := d.DecodeInto(t.Context(), &packet, &result); err != nil {
+			t.Fatalf("unit %d: %v", pts, err)
+		}
+		for _, f := range result.Frames {
+			decoded = append(decoded, f.PTS.Value)
+			f.Release()
+		}
+		for _, r := range result.Requests {
+			if r.Type == codec.ControlRequestKeyframe {
+				requests++
+			}
+		}
+		result.Reset()
+	}
+	if !slices.Equal(decoded, []int64{0, 1, 4, 6}) || requests != 2 {
+		t.Fatalf("decoded %v with %d keyframe requests, want [0 1 4 6] and 2", decoded, requests)
+	}
+}

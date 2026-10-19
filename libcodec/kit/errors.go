@@ -63,3 +63,14 @@ func unavailable(backend, op, name, reason, fix string, err error) *Error {
 func Fail(backend, op, call string, status int64) error {
 	return &Error{Backend: backend, Op: op, Name: call, Reason: "failed with status " + strconv.FormatInt(status, 10)}
 }
+
+// ErrDamaged marks a unit the library could not decode. A decoder session
+// returns it (through Damaged) and stays usable: the kit drops the unit,
+// asks upstream for a keyframe, and goes on decoding.
+var ErrDamaged = errors.New("libcodec: damaged unit")
+
+// Damaged is the error a decoder session returns for a unit its library
+// rejected as damaged: call is the library call, status its code.
+func Damaged(backend, call string, status int64) error {
+	return &Error{Backend: backend, Op: "decode", Name: call, Reason: "rejected a damaged unit (status " + strconv.FormatInt(status, 10) + ")", Err: ErrDamaged}
+}
