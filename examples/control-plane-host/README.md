@@ -26,7 +26,7 @@ GOEXPERIMENT=simd go run . --control unix:///tmp/goav-host.sock
 ```
 
 From another shell, with `goav` built from this checkout
-(`GOEXPERIMENT=simd go install ./cmd/goav` at the repository root):
+(`cd cmd/goav && GOEXPERIMENT=simd go install .`, or `go install .../cmd/goav@latest`):
 
 ```sh
 ctl() { goav ctl --control unix:///tmp/goav-host.sock "$@"; }

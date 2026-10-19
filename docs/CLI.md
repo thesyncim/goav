@@ -15,9 +15,8 @@ goav ctl      --control unix://PATH <method> [key=value...]
 ```
 
 Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
-the SIMD codec paths run about twice as fast. The CLI is its own module, so the
-root keeps no windowing dependency; `-tags goav_noplay` leaves the window out
-(on Linux, a static binary).
+the SIMD codec paths run about twice as fast; `-tags goav_noplay` leaves the
+window out (a static Linux binary).
 
 ## The language
 
@@ -79,11 +78,8 @@ so `live` test sources run as fast as the graph allows; `test` is the
 `goavtest` runtime with fake codecs. `goav describe` prints the graph a program
 builds and `goav explain` its plan, without opening or creating any file.
 
-`play` is a window, [synced to the speaker](ADAPTERS.md#player): route decoded
-video and audio to it, and the program runs realtime on the speaker's clock
-(space pauses, arrows seek, `[` `]` change the rate). `goav play FILE` plays a
-file's streams; the summary adds what was presented, dropped, and the largest
-A/V offset.
+A program routed to `play` runs on the [player](ADAPTERS.md#player)'s speaker clock in a
+window; `goav play FILE` plays a file, and the summary adds what was shown.
 
 ## Serving HLS
 

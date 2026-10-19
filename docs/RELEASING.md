@@ -34,7 +34,7 @@ repository page should say meanwhile.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav; do
+   for mod in goavtest/expect rtpav webrtcav playoutav player; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -83,6 +83,8 @@ go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
 ```
 
 Edit the `require` lines (keep the `replace`), then run the module's tests.
+`cmd/goav` pins the root and `player` the same way but has no `replace` (so
+`go install ...@version` works); gate it in a workspace over the checkout.
 
 ## Tags
 
@@ -101,8 +103,8 @@ git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
 git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
-Tag order follows dependencies: root first, then `rtpav`, `webrtcav`, and
-`playoutav` when those modules are released.
+Tag order follows dependencies: root first, then `rtpav`, `webrtcav`,
+`playoutav`, and `player`, then `cmd/goav` (it pins `player`).
 
 Nested-module tags need the standard multi-module dance, because consumers
 ignore `replace` directives: in-repo the nested `go.mod` files require the

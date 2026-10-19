@@ -65,15 +65,13 @@ runtime/provider changes beyond docs and CI enumeration.
 
 ### Player
 
-`player.New()` is a playback window: route decoded video and audio to
-`w.Destination()` (or to `play` in a program, via `w.Element()`) and call
-`w.Run(ctx, task)` on the main goroutine; `goav play FILE` does all of it. The
-speaker is the master clock: `w.Clock()` (the device's played position) is the
-task timeline's inner clock (`runconfig.WithClock`, with `WithRealtime(true)`),
-so media arrives as fast as it is heard, video is shown against the heard
-position (late frames dropped, early ones waited for), and space, the arrows,
-and `[`/`]` are the task's own Pause, Seek, and Rate. Conversion is
-limited-range BT.601/BT.709 on the CPU; at rates other than 1x the pitch moves.
+`player.New()` is a window: route decoded video and audio to `w.Destination()`
+(`play` in programs) and call `w.Run(ctx, task)` on the main goroutine, or run
+`goav play FILE`. The speaker's played position, `w.Clock()`, is the task
+timeline's clock (`runconfig.WithClock` with `WithRealtime(true)`): media arrives
+as fast as it is heard, video follows the heard position (late frames dropped,
+early ones waited for), and the keys are the task's Pause, Seek, and Rate (the
+pitch follows the rate). YUV converts on the CPU (limited-range BT.601/709).
 
 | OS (amd64, arm64) | Window, audio | `CGO_ENABLED=0` | Needs at run time |
 | --- | --- | --- | --- |
