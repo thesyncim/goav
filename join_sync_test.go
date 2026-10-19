@@ -50,40 +50,52 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	ctx := context.Background()
 	sink := Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))
 
-	realtimeMix, err := legacyMix(
-		recipeFrom(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
-		recipeFrom(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).UseRuntime(mustNew(WithRealtime(true))).BuildLive(ctx)
+	realtimeMix, err := mustNew(WithRealtime(true)).Build(ctx,
+		Mix(
+			mixSyncTestSource("a", []int64{0}, [][]int16{{1}}).Audio(),
+			mixSyncTestSource("b", []int64{0}, [][]int16{{2}}).Audio(),
+		).
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer realtimeMix.Close()
 	requireJoinTaskGraph(t, realtimeMix, "bufferedRunner")
 
-	offlineMix, err := legacyMix(
-		recipeFrom(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
-		recipeFrom(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).UseRuntime(mustNew(WithRealtime(false))).BuildLive(ctx)
+	offlineMix, err := mustNew(WithRealtime(false)).Build(ctx,
+		Mix(
+			mixSyncTestSource("a", []int64{0}, [][]int16{{1}}).Audio(),
+			mixSyncTestSource("b", []int64{0}, [][]int16{{2}}).Audio(),
+		).
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer offlineMix.Close()
 	requireJoinTaskGraph(t, offlineMix, "directRunner")
 
-	realtimeComposite, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).UseRuntime(mustNew(WithRealtime(true))).BuildLive(ctx)
+	realtimeComposite, err := mustNew(WithRealtime(true)).Build(ctx,
+		Composite(
+			At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0),
+			At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0),
+		).
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer realtimeComposite.Close()
 	requireJoinTaskGraph(t, realtimeComposite, "bufferedRunner")
 
-	offlineComposite, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).UseRuntime(mustNew(WithRealtime(false))).BuildLive(ctx)
+	offlineComposite, err := mustNew(WithRealtime(false)).Build(ctx,
+		Composite(
+			At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0),
+			At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0),
+		).
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,10 +352,14 @@ func TestMixSyncByPTSEndToEnd(t *testing.T) {
 		return nil
 	}))
 
-	task, err := legacyMix(
-		recipeFrom(mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}})).Audio(),
-		recipeFrom(mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(sink).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Mix(
+			mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}}).Audio(),
+			mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+		).
+			SyncByPTS().
+			To(sink),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,12 +383,14 @@ func TestMixSyncByPTSEndToEnd(t *testing.T) {
 // "sync" reason — and through Snapshot(). No silent loss.
 func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 	ctx := context.Background()
-	task, err := legacyMix(
-		// Arm a repeats PTS 0: the duplicate lands behind the emitted timeline
-		// and is dropped to catch up, whatever the arrival interleaving.
-		recipeFrom(mixSyncTestSource("a", []int64{0, 0, 20}, [][]int16{{10, 10}, {99, 99}, {20, 20}})).Audio(),
-		recipeFrom(mixSyncTestSource("b", []int64{0, 20}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Mix(
+			mixSyncTestSource("a", []int64{0, 0, 20}, [][]int16{{10, 10}, {99, 99}, {20, 20}}).Audio(),
+			mixSyncTestSource("b", []int64{0, 20}, [][]int16{{1, 1}, {2, 2}}).Audio(),
+		).
+			SyncByPTS().
+			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,12 +419,16 @@ func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 // the planned join node carries the sync=pts detail, the built stage reports
 // the same through DescribeNode, and Describe() ≡ BuildLive() stays exact.
 func TestJoinDescribeEqualsBuildMixSyncByPTS(t *testing.T) {
-	job := legacyMix(
-		recipeFrom(mixSyncTestSource("a", []int64{0}, [][]int16{{1, 1}})).Audio(),
-		recipeFrom(mixSyncTestSource("b", []int64{0}, [][]int16{{2, 2}})).Audio(),
-	).SyncByPTS().To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
+	outs := []Output{
+		Mix(
+			mixSyncTestSource("a", []int64{0}, [][]int16{{1, 1}}).Audio(),
+			mixSyncTestSource("b", []int64{0}, [][]int16{{2, 2}}).Audio(),
+		).
+			SyncByPTS().
+			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
+	}
 
-	planned := joinPlanGuard(t, job)
+	planned := joinPlanGuard(t, mustNew(), outs...)
 	if text := specText(planned); !strings.Contains(text, "sync=pts") {
 		t.Fatalf("planned spec missing the sync=pts join detail:\n%s", text)
 	}

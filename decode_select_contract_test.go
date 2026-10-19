@@ -74,19 +74,17 @@ func TestDecodeStreamWithSpecMergesExternalCodecMetadata(t *testing.T) {
 func TestSelectBranchesBuildsPlannedBranchFanout(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	job := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
-	).Branches(
-		newBranch("monitor").To(Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {
-			if msg.Kind == pipeline.MessageFrame && msg.Frame != nil && msg.Frame.Audio != nil {
-				got = append(got, mixTestReadS16(msg.Frame))
-			}
-			return nil
-		}))),
-	)
+	out := Select(
+		selectTestOneShotSource("a", 100).Audio(),
+		selectTestOneShotSource("b", 200).Audio(),
+	).As("monitor").To(Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {
+		if msg.Kind == pipeline.MessageFrame && msg.Frame != nil && msg.Frame.Audio != nil {
+			got = append(got, mixTestReadS16(msg.Frame))
+		}
+		return nil
+	})))
 
-	task, err := job.Build(ctx)
+	task, err := mustNew().Build(ctx, out)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Removed the `branch_source_invalid` code: only the test-only builder
+  spelling could raise it.
+
 - `task.Attach` lowers through the build's compiler: the attached Outputs
   are branches rooted at the task's taps, tracks, or routes, planned by the
   same lowering and opened by the same per-node opener, and the planned patch

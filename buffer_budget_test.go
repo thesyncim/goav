@@ -19,12 +19,10 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 
-	_, err := recipeFrom(source).
+	_, err := rt.Build(ctx, source.
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
-		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		Build(ctx)
+		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))))
 	if err == nil {
 		t.Fatal("Build() error = nil, want buffer_budget_missing")
 	}
@@ -58,11 +56,9 @@ func TestRealtimeDecodeRecipeBuildsWithUnknownBufferBudgetFact(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 
-	task, err := recipeFrom(source).
+	task, err := rt.Build(ctx, source.
 		Audio().Decode().
-		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		Build(ctx)
+		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatalf("Build() error = %v, want the buffered graph to build with a ceiling budget", err)
 	}

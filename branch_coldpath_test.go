@@ -49,79 +49,32 @@ func requireColdPathBuildError(t *testing.T, err error, code errcode.Code) *Buil
 	return buildErr
 }
 
-// TestBranchRefusesSecondDecode pins the duplicate-decode refusal on the
-// branch builder itself.
-func TestBranchRefusesSecondDecode(t *testing.T) {
-	spec := newBranch("voice").Decode().Decode().
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Copy().
-		Branches(spec).
-		Describe()
+// TestForkRefusesSecondDecode pins the duplicate-decode refusal on a fork.
+func TestForkRefusesSecondDecode(t *testing.T) {
+	_, err := mustNew().Describe(coldPathPacketSource("mic", []byte{1}).
+		Audio().Decode().Decode().As("voice").
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	requireColdPathBuildError(t, err, branchDecodeDuplicateCode)
 }
 
-// TestBranchesRefusePacketBranchEncode pins the packet-domain encode rule:
-// a planned branch on a .Copy() parent cannot encode without decoding first.
-func TestBranchesRefusePacketBranchEncode(t *testing.T) {
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Copy().
-		Branches(newBranch("web").Encode(codec.Opus(codec.Bitrate(96_000))).
-			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
-		Describe()
+// TestForkRefusesPacketEncode pins the packet-domain encode rule: a fork of
+// a packet stream cannot encode without decoding first.
+func TestForkRefusesPacketEncode(t *testing.T) {
+	_, err := mustNew().Describe(coldPathPacketSource("mic", []byte{1}).
+		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).As("web").
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	requireColdPathBuildError(t, err, operationShapeMismatchCode)
 }
 
 // TestStreamToRefusesEmptyDestination pins the same refusal on the stream
 // chain: .To(goav.Destination{}) is refused naming the stream.
 func TestStreamToRefusesEmptyDestination(t *testing.T) {
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Copy().
-		To(Destination{}).
-		Describe()
+	_, err := mustNew().Describe(coldPathPacketSource("mic", []byte{1}).
+		Audio().
+		To(Destination{}))
 	buildErr := requireColdPathBuildError(t, err, destinationInvalidCode)
 	if buildErr.Operation != "build stream" {
 		t.Fatalf("operation = %q, want build stream", buildErr.Operation)
-	}
-}
-
-// TestBranchesAnchorOnDeclaredAndDefaultPacketTaps pins the packet-anchor
-// resolution for planned branches on a .Copy() parent: one branch anchors on
-// the declared post-copy tap, one on the default packet tap name, and both
-// receive the parent's packets end to end.
-func TestBranchesAnchorOnDeclaredAndDefaultPacketTaps(t *testing.T) {
-	ctx := context.Background()
-	var declared, fallback int
-	task, err := recipeFrom(coldPathPacketSource("mic", []byte{1}, []byte{2})).
-		Audio().Copy().Tap(packetTapRef("recorded")).
-		Branches(
-			newBranch("a").From(packetTapRef("recorded")).
-				Copy().
-				To(Sink(SinkFunc("a", func(_ context.Context, msg Message) error {
-					if msg.Kind == pipeline.MessagePacket {
-						declared++
-					}
-					return nil
-				}))),
-			newBranch("b").From(packetTapRef("audio.packets")).
-				Copy().
-				To(Sink(SinkFunc("b", func(_ context.Context, msg Message) error {
-					if msg.Kind == pipeline.MessagePacket {
-						fallback++
-					}
-					return nil
-				}))),
-		).
-		Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer task.Close()
-	if err := task.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if declared != 2 || fallback != 2 {
-		t.Fatalf("declared tap branch=%d default tap branch=%d, want 2 packets each", declared, fallback)
 	}
 }
 
@@ -220,9 +173,9 @@ func TestAttachedBranchStreamAndEventNarrowRoutes(t *testing.T) {
 
 	onlyA := newColdPathCountSink("only-a")
 	stats := newColdPathCountSink("stats")
-	if _, err := legacyAttach(task, ctx,
-		newBranch("only-a").From(src).Stream("a").To(Sink(onlyA)),
-		newBranch("stats").From(src).Event(av.EventStats).To(Sink(stats)),
+	if _, err := task.Attach(ctx,
+		task.Route(pipeline.Route{From: "feed", Policy: pipeline.RouteByStream, Label: "a"}).As("only-a").To(Sink(onlyA)),
+		task.Route(pipeline.Route{From: "feed", Policy: pipeline.RouteByEvent, Label: string(av.EventStats)}).As("stats").To(Sink(stats)),
 	); err != nil {
 		t.Fatal(err)
 	}

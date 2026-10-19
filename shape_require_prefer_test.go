@@ -20,14 +20,14 @@ import (
 // equals the built graph (the assertion lowers to no runtime node).
 func TestRequireMetIsNoOp(t *testing.T) {
 	ctx := context.Background()
-	job := recipeFrom(solverTestAudioSource("mic", 48_000, codec.Stereo, av.SampleFormatS16)).
+	rt := solverTestOpusRuntime(testBundleFilters())
+	out := solverTestAudioSource("mic", 48_000, codec.Stereo, av.SampleFormatS16).
 		Audio().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(out)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
@@ -35,7 +35,7 @@ func TestRequireMetIsNoOp(t *testing.T) {
 	if strings.Contains(specText(planned), "resample") {
 		t.Fatalf("satisfied .Require(...) inserted a conversion:\n%s", specText(planned))
 	}
-	report, err := job.Explain(ctx)
+	report, err := rt.Explain(ctx, out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -44,13 +44,13 @@ func TestRequireMetIsNoOp(t *testing.T) {
 			t.Fatalf("satisfied .Require(...) reported an insertion: %+v", warning)
 		}
 	}
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run(): %v", err)
@@ -62,13 +62,11 @@ func TestRequireMetIsNoOp(t *testing.T) {
 // conversion could satisfy the requirement — the exact .Auto(...) policy and
 // the explicit operation to write instead.
 func TestRequireViolatedFailsWithFix(t *testing.T) {
-	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := solverTestOpusRuntime(testBundleFilters()).Build(context.Background(), solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16).
 		Audio().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		BuildLive(context.Background())
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_requirement_unmet with matching BuildError code", err)
@@ -95,22 +93,22 @@ func TestRequireViolatedFailsWithFix(t *testing.T) {
 // insertion is reported like any other solver conversion.
 func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 	ctx := context.Background()
-	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	rt := solverTestOpusRuntime(testBundleFilters())
+	out := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16).
 		Audio().
 		Auto(shape.AllowResample()).
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(out)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
 	if !strings.Contains(specText(planned), "resample-audio") {
 		t.Fatalf("planned spec should show the inserted resample node:\n%s", specText(planned))
 	}
-	report, err := job.Explain(ctx)
+	report, err := rt.Explain(ctx, out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -123,13 +121,13 @@ func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should report the insertion before the requirement, warnings = %+v", report.Warnings)
 	}
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -149,17 +147,13 @@ func TestRequireWorksInBranches(t *testing.T) {
 		testBundleFilters(),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	_, err := recipeFrom(source).
+	_, err := rt.Build(context.Background(), source.
 		Audio().
 		Decode().
-		Branches(
-			newBranch("voice").
-				Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
-				Encode(codec.Opus(codec.Bitrate(96_000))).
-				To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
-		).
-		UseRuntime(rt).
-		BuildLive(context.Background())
+		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
+		Encode(codec.Opus(codec.Bitrate(96_000))).
+		As("voice").
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" {
 		t.Fatalf("err = %v, want shape_requirement_unmet", err)
@@ -187,37 +181,34 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 	)
-	chain := func() *testChain {
-		return recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	chain := func() Stream {
+		return solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16).
 			Audio().
 			Auto(shape.AllowResample())
 	}
 
 	// Without a preference the selection is ambiguous and refuses to guess.
-	_, err := chain().
+	_, err := rt.Build(context.Background(), chain().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		BuildLive(context.Background())
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" {
 		t.Fatalf("err = %v, want shape_adapter_ambiguous without a preference", err)
 	}
 
 	// The preference resolves it: only conv-rt declares realtime capability.
-	job := chain().
+	out := chain().
 		Prefer(shape.New(shape.Realtime(true))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt)
-	planned, err := job.Describe()
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
+	planned, err := rt.Describe(out)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
 	if !strings.Contains(specText(planned), "conv-rt") {
 		t.Fatalf("planned spec should show the preferred adapter node:\n%s", specText(planned))
 	}
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -230,13 +221,13 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should record the preference resolution, warnings = %+v", report.Warnings)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -255,15 +246,14 @@ func TestPreferBiasesOpenConversionTarget(t *testing.T) {
 		Stateless:     true,
 	}, factory))
 
-	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	out := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16).
 		Audio().
 		Auto(shape.AllowResample(), shape.AllowConvert()).
 		Prefer(shape.New(shape.Audio(0, 0, "f32"))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt)
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -279,9 +269,9 @@ func TestPreferBiasesOpenConversionTarget(t *testing.T) {
 	if !applied || !inserted {
 		t.Fatalf("Explain should record the biased target (applied=%v inserted=%v), warnings = %+v", applied, inserted, report.Warnings)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if len(factory.configs) != 1 || factory.configs[0].Audio == nil || factory.configs[0].Audio.SampleFormat != "f32" {
@@ -303,15 +293,14 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 		Stateless:     true,
 	}, factory))
 
-	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	out := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16).
 		Audio().
 		Auto(shape.AllowResample()). // no AllowConvert: the f32 preference is not honorable
 		Prefer(shape.New(shape.Audio(0, 0, "f32"))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt)
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -324,9 +313,9 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 	if !ignored {
 		t.Fatalf("Explain should record the dropped preference, warnings = %+v", report.Warnings)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if len(factory.configs) != 1 || factory.configs[0].Audio == nil || factory.configs[0].Audio.SampleFormat != av.SampleFormatS16 {
@@ -363,37 +352,32 @@ func TestPreferWorksInBranches(t *testing.T) {
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	branch := func(prefer bool) *testBranch {
-		b := newBranch("voice").Auto(shape.AllowResample())
+	branch := func(prefer bool) Output {
+		s := source().Audio().Decode().Auto(shape.AllowResample())
 		if prefer {
-			b = b.Prefer(shape.New(shape.Realtime(true)))
+			s = s.Prefer(shape.New(shape.Realtime(true)))
 		}
-		return b.Encode(codec.Opus(codec.Bitrate(96_000))).
+		return s.Encode(codec.Opus(codec.Bitrate(96_000))).As("voice").
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 	}
 
 	// Without the preference the adapter choice is ambiguous and refused.
-	_, err := recipeFrom(source()).Audio().Decode().
-		Branches(branch(false)).
-		UseRuntime(rt).
-		BuildLive(context.Background())
+	_, err := rt.Build(context.Background(), branch(false))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" {
 		t.Fatalf("err = %v, want shape_adapter_ambiguous without a preference", err)
 	}
 
 	// The branch's .Prefer(realtime) resolves it to conv-rt.
-	job := recipeFrom(source()).Audio().Decode().
-		Branches(branch(true)).
-		UseRuntime(rt)
-	planned, err := job.Describe()
+	out := branch(true)
+	planned, err := rt.Describe(out)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
 	if !strings.Contains(specText(planned), "conv-rt") {
 		t.Fatalf("planned spec should show the preferred adapter on the branch:\n%s", specText(planned))
 	}
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), out)
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}
@@ -406,13 +390,13 @@ func TestPreferWorksInBranches(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should record the branch preference resolution, warnings = %+v", report.Warnings)
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -421,23 +405,23 @@ func TestPreferWorksInBranches(t *testing.T) {
 // runtime with the conversion inserted before the assertion.
 func TestReadmeRequireExampleBuilds(t *testing.T) {
 	mic := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)
-	job := recipeFrom(mic).
+	rt := testBundleRuntime()
+	out := mic.
 		Audio().
 		Auto(shape.AllowResample()).
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, 2, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Write("voice.webm", io.Discard)).
-		UseRuntime(testBundleRuntime())
-	planned, err := job.Describe()
+		To(Write("voice.webm", io.Discard))
+	planned, err := rt.Describe(out)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
 	if !strings.Contains(specText(planned), "resample-audio") {
 		t.Fatalf("planned spec should show the inserted resample node:\n%s", specText(planned))
 	}
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), out)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 }

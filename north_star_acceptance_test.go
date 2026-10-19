@@ -66,14 +66,10 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	)
 	sinkA := &runtimeTestSink{name: "a"}
 	sinkB := &runtimeTestSink{name: "b"}
-	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(rt).
-		Audio().Decode().Tap(frameTapRef("audio.decoded")).
-		Branches(
-			newBranch("a").To(Sink(sinkA)),
-			newBranch("b").To(Sink(sinkB)),
-		)
+	decoded := FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.decoded")
+	outs := []Output{decoded.As("a").To(Sink(sinkA)), decoded.As("b").To(Sink(sinkB))}
 
-	spec, err := job.Describe()
+	spec, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
@@ -96,14 +92,14 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 		t.Fatalf("NORTH_STAR #18: decode fanout = %v, want the one decode node feeding both branches; spec:\n%s", fanout, specText(spec))
 	}
 
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), outs...)
 	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
+		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
 	sinkC := &runtimeTestSink{name: "c"}
-	if _, err := legacyAttach(task, context.Background(),
-		newBranch("c").From(frameTapRef("audio.decoded")).To(Sink(sinkC))); err != nil {
+	if _, err := task.Attach(context.Background(),
+		task.Tap("audio.decoded").As("c").To(Sink(sinkC))); err != nil {
 		t.Fatalf("Attach() at the decode tap: %v", err)
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -135,9 +131,8 @@ func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 			return push.EOS()
 		},
 	)
-	err := recipeFrom(input).UseRuntime(rt).
-		Audio().Copy().To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
-		Run(context.Background())
+	err := rt.Run(context.Background(), input.
+		Audio().To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))))
 	if err != nil {
 		t.Fatalf("NORTH_STAR #34: custom packet source Copy to File: %v", err)
 	}
@@ -173,9 +168,8 @@ func TestNorthStarCustomFrameSourceEncodesToFile(t *testing.T) {
 			return push.EOS()
 		},
 	)
-	err := recipeFrom(input).UseRuntime(rt).
-		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
-		Run(context.Background())
+	err := rt.Run(context.Background(), input.
+		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))))
 	if err != nil {
 		t.Fatalf("NORTH_STAR #35: custom frame source Encode to File: %v", err)
 	}
@@ -193,9 +187,8 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #13: a frame branch to File without Encode must fail (File needs packets).
 	t.Run("frame_to_file_without_encode_fails", func(t *testing.T) {
-		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
-			Audio().Decode().To(Write("out.ogg", io.Discard)).
-			BuildLive(context.Background())
+		_, err := northStarTranscodeRuntime().Build(context.Background(), input().
+			Audio().Decode().To(Write("out.ogg", io.Discard)))
 		if err == nil {
 			t.Fatal("NORTH_STAR #13: a frame branch to File without Encode must fail (File needs packets)")
 		}
@@ -203,9 +196,8 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #15: decode to a frame Sink must succeed.
 	t.Run("decode_to_frame_sink_succeeds", func(t *testing.T) {
-		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
-			Audio().Decode().To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
-			BuildLive(context.Background())
+		_, err := northStarTranscodeRuntime().Build(context.Background(), input().
+			Audio().Decode().To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
 		if err != nil {
 			t.Fatalf("NORTH_STAR #15: decode to a frame Sink must succeed: %v", err)
 		}
@@ -213,9 +205,8 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #14: packet branch to File with Copy must succeed.
 	t.Run("packet_copy_to_file_succeeds", func(t *testing.T) {
-		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
-			Audio().Copy().To(Write("out.ogg", io.Discard)).
-			BuildLive(context.Background())
+		_, err := northStarTranscodeRuntime().Build(context.Background(), input().
+			Audio().To(Write("out.ogg", io.Discard)))
 		if err != nil {
 			t.Fatalf("NORTH_STAR #14: a packet branch to File with Copy must succeed: %v", err)
 		}

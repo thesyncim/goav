@@ -119,12 +119,10 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 
 	encoder := &controlRecordingEncoder{}
 	rt := mustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{encoder: encoder}))
-	built, err := recipeFrom(controlLiveVideoSource("cam")).
+	built, err := rt.Build(ctx, controlLiveVideoSource("cam").
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
-		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		Build(ctx)
+		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,12 +163,10 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 		WithRealtime(false),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}),
 	)
-	built, err := recipeFrom(controlVideoSource("cam", false)).
+	built, err := rt.Build(ctx, controlVideoSource("cam", false).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
-		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
-		UseRuntime(rt).
-		Build(ctx)
+		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,14 +317,11 @@ func TestSetBitrateTargetsOneRendition(t *testing.T) {
 	sink := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	built, err := recipeFrom(controlLiveVideoSource("cam")).
-		Video().
-		Branches(
-			newBranch("hd").Encode(codec.VP8(codec.Bitrate(2_000_000))).To(sink("hd-out")),
-			newBranch("sd").Encode(codec.VP8(codec.Bitrate(500_000))).To(sink("sd-out")),
-		).
-		UseRuntime(rt).
-		Build(ctx)
+	v := controlLiveVideoSource("cam").Video()
+	built, err := rt.Build(ctx,
+		v.Encode(codec.VP8(codec.Bitrate(2_000_000))).As("hd").To(sink("hd-out")),
+		v.Encode(codec.VP8(codec.Bitrate(500_000))).As("sd").To(sink("sd-out")),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

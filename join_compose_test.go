@@ -31,10 +31,11 @@ func joinTestCollectSink(name string, into *[][]int16) Destination {
 func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 	ctx := context.Background()
 	var main [][]int16
-	task, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Tap(frameTapRef("mixed")).To(joinTestCollectSink("out", &main)).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Mix(mixTestAudioSource("a", 100, 200).Audio(), mixTestAudioSource("b", 50, -50).Audio()).
+			Tap("mixed").
+			To(joinTestCollectSink("out", &main)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,9 +56,7 @@ func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 	// Attaching a runtime branch from the join tap uses the same machinery as
 	// chain taps and receives the MIXED frames.
 	var tapped [][]int16
-	attachment, err := legacyAttach(task, ctx, newBranch("monitor").
-		From(frameTapRef("mixed")).
-		To(joinTestCollectSink("monitor", &tapped)))
+	attachment, err := task.Attach(ctx, task.Tap("mixed").As("monitor").To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,13 +76,11 @@ func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 func TestMixBranchesFanOutMixedStream(t *testing.T) {
 	ctx := context.Background()
 	var xs, ys [][]int16
-	task, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Branches(
-		newBranch("x").To(joinTestCollectSink("x-sink", &xs)),
-		newBranch("y").To(joinTestCollectSink("y-sink", &ys)),
-	).BuildLive(ctx)
+	fork := Mix(mixTestAudioSource("a", 100, 200).Audio(), mixTestAudioSource("b", 50, -50).Audio())
+	task, err := mustNew().Build(ctx,
+		fork.As("x").To(joinTestCollectSink("x-sink", &xs)),
+		fork.As("y").To(joinTestCollectSink("y-sink", &ys)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,13 +120,11 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 func TestJoinOutputBranches(t *testing.T) {
 	ctx := context.Background()
 	var encoded, monitor [][]int16
-	task, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 30, 40)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 5, 6)).Audio(),
-	).Branches(
-		newBranch("encoded").To(joinTestCollectSink("encoded", &encoded)),
-		newBranch("monitor").To(joinTestCollectSink("monitor", &monitor)),
-	).BuildLive(ctx)
+	fork := Mix(mixTestAudioSource("a", 30, 40).Audio(), mixTestAudioSource("b", 5, 6).Audio())
+	task, err := mustNew().Build(ctx,
+		fork.As("encoded").To(joinTestCollectSink("encoded", &encoded)),
+		fork.As("monitor").To(joinTestCollectSink("monitor", &monitor)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,13 +150,11 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	)
 
 	var monitor [][]int16
-	task, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Branches(
-		newBranch("rec").Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))),
-		newBranch("mon").To(joinTestCollectSink("monitor", &monitor)),
-	).UseRuntime(rt).BuildLive(ctx)
+	fork := Mix(mixTestAudioSource("a", 100, 200).Audio(), mixTestAudioSource("b", 50, -50).Audio())
+	task, err := rt.Build(ctx,
+		fork.Encode(codec.Opus()).As("rec").To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))),
+		fork.As("mon").To(joinTestCollectSink("monitor", &monitor)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,12 +173,12 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Tap(frameTapRef("mixed")).Branches(
-		newBranch("x").From(frameTapRef("mixed")).To(joinTestCollectSink("x-sink", &got)),
-	).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Mix(mixTestAudioSource("a", 100, 200).Audio(), mixTestAudioSource("b", 50, -50).Audio()).
+			Tap("mixed").
+			As("x").
+			To(joinTestCollectSink("x-sink", &got)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,12 +197,12 @@ func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 // TestMixForksAfterItsEncoder pins that a joined stream forks after its
 // encoder like any stream: the fork reads the encoded packets.
 func TestMixForksAfterItsEncoder(t *testing.T) {
-	spec, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Encode(codec.Opus()).Branches(
-		newBranch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).Describe()
+	spec, err := mustNew().Describe(
+		Mix(mixTestAudioSource("a", 1).Audio(), mixTestAudioSource("b", 1).Audio()).
+			Encode(codec.Opus()).
+			As("x").
+			To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,9 +212,11 @@ func TestMixForksAfterItsEncoder(t *testing.T) {
 }
 
 func TestMixBranchesPreserveArmCountError(t *testing.T) {
-	_, err := legacyMix(recipeFrom(mixTestAudioSource("a", 1)).Audio()).Branches(
-		newBranch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).BuildLive(context.Background())
+	_, err := mustNew().Build(context.Background(),
+		Mix(mixTestAudioSource("a", 1).Audio()).
+			As("x").
+			To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
+	)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_inputs" {
 		t.Fatalf("err = %v, want mix_inputs", err)
@@ -229,12 +224,11 @@ func TestMixBranchesPreserveArmCountError(t *testing.T) {
 }
 
 func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Branches(
-		newBranch("x").To(Write("x.ogg", io.Discard, Format(av.FormatOgg))),
-	).BuildLive(context.Background())
+	_, err := mustNew().Build(context.Background(),
+		Mix(mixTestAudioSource("a", 1).Audio(), mixTestAudioSource("b", 1).Audio()).
+			As("x").
+			To(Write("x.ogg", io.Discard, Format(av.FormatOgg))),
+	)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
 		t.Fatalf("err = %v, want encode_missing (same as the chain rule)", err)
@@ -252,13 +246,11 @@ func TestCompositeBranchesFanOutCompositedStream(t *testing.T) {
 			return nil
 		}))
 	}
-	task, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).Branches(
-		newBranch("x").To(collect("x-sink", &xs)),
-		newBranch("y").To(collect("y-sink", &ys)),
-	).BuildLive(ctx)
+	fork := Composite(At(compositeTestVideoSource("a", 4, 4, 100, 10, 20).Video(), 0, 0), At(compositeTestVideoSource("b", 4, 4, 200, 30, 40).Video(), 4, 0))
+	task, err := mustNew().Build(ctx,
+		fork.As("x").To(collect("x-sink", &xs)),
+		fork.As("y").To(collect("y-sink", &ys)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,10 +274,11 @@ func TestCompositeBranchesFanOutCompositedStream(t *testing.T) {
 func TestSelectTapNamesSwitchedStream(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := legacySelect(
-		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
-		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(frameTapRef("switched")).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
+	task, err := mustNew().Build(ctx,
+		Select(selectTestOneShotSource("a", 100).Audio(), selectTestOneShotSource("b", 200).Audio()).
+			Tap("switched").
+			To(joinTestCollectSink("out", &got)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

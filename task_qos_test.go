@@ -41,10 +41,8 @@ func TestQoSReportsLateness(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 30*time.Millisecond)).
-		UseRuntime(mustNew(WithClock(clock))).
-		Video().Playout(flow.Playout("preview").WithDropLate(10 * time.Millisecond)).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(WithClock(clock)).Build(ctx, playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 30*time.Millisecond).
+		Video().Playout(flow.Playout("preview").WithDropLate(10*time.Millisecond)).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,11 +142,10 @@ func TestQoSPolicyDrivesBitrateControl(t *testing.T) {
 			return []control.Control{control.Must(control.SetBitrate(event.StreamID, 250_000))}
 		}),
 	)
-	live, err := recipeFrom(qosEncodeVideoSource("cam", release, 0, 20*time.Millisecond, 40*time.Millisecond)).
-		UseRuntime(rt).
+	live, err := rt.Build(ctx, qosEncodeVideoSource("cam", release, 0, 20*time.Millisecond, 40*time.Millisecond).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
-		Playout(flow.Playout("qos").WithDropLate(10 * time.Millisecond)).
+		Playout(flow.Playout("qos").WithDropLate(10*time.Millisecond)).
 		To(Sink(SinkFunc("packets", func(_ context.Context, msg Message) error {
 			if msg.Kind == pipeline.MessagePacket && msg.Packet != nil {
 				select {
@@ -157,8 +154,7 @@ func TestQoSPolicyDrivesBitrateControl(t *testing.T) {
 				}
 			}
 			return nil
-		}))).
-		BuildLive(ctx)
+		}))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,15 +200,13 @@ func TestQoSPolicyRefusalSurfacesThroughWatch(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
-		UseRuntime(mustNew(
-			WithClock(clock),
-			WithQoSPolicy(func(av.Event) []control.Control {
-				return []control.Control{control.Keyframe("cam").AtTap("nope")}
-			}),
-		)).
-		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
-		BuildLive(ctx)
+	live, err := mustNew(
+		WithClock(clock),
+		WithQoSPolicy(func(av.Event) []control.Control {
+			return []control.Control{control.Keyframe("cam").AtTap("nope")}
+		}),
+	).Build(ctx, playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond).
+		Video().Playout(flow.Playout("preview")).To(log.sink("preview")))
 	if err != nil {
 		t.Fatal(err)
 	}

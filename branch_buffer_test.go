@@ -83,17 +83,17 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 	}
 }
 
-func TestBranchBufferIsNormalBranchAPI(t *testing.T) {
-	method, ok := reflect.TypeOf(newBranch("preview")).MethodByName("Buffer")
+func TestStreamBufferIsNormalStreamAPI(t *testing.T) {
+	method, ok := reflect.TypeFor[Stream]().MethodByName("Buffer")
 	if !ok {
-		t.Fatal("Branch should expose Buffer")
+		t.Fatal("Stream should expose Buffer")
 	}
 	got := method.Type.In(1)
 	if got != reflect.TypeFor[flow.BranchBuffer]() {
-		t.Fatalf("Branch.Buffer argument = %s, want flow.BranchBuffer", got)
+		t.Fatalf("Stream.Buffer argument = %s, want flow.BranchBuffer", got)
 	}
 	if got == reflect.TypeFor[pipeline.BufferPolicy]() {
-		t.Fatalf("Branch.Buffer must not expose pipeline.BufferPolicy")
+		t.Fatalf("Stream.Buffer must not expose pipeline.BufferPolicy")
 	}
 }
 
