@@ -1,6 +1,7 @@
 package goav_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -10,7 +11,9 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/goavtest"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
@@ -134,5 +137,29 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		!strings.Contains(err.Error(), "destination=out.h264") ||
 		!strings.Contains(err.Error(), "branch=video codec=vp8 media=video") {
 		t.Fatalf("err = %v, want Annex B codec guidance", err)
+	}
+}
+
+// TestWholeInputIntoSingleStreamContainerIsRefused pins that a muxer is never
+// handed a stream it would drop: a whole two-stream file routed to IVF is
+// refused when it opens, naming the stream to route, and so is audio alone.
+func TestWholeInputIntoSingleStreamContainerIsRefused(t *testing.T) {
+	ctx := context.Background()
+	var source bytes.Buffer
+	both := goav.Write("av.webm", &source)
+	if err := offlineRuntime().Run(ctx,
+		goavtest.Video(64, 48, 2).Video().Encode(codec.VP8()).To(both),
+		goavtest.Audio(48000, 1, make([]int16, 960)).Audio().Encode(codec.Opus()).To(both)); err != nil {
+		t.Fatal(err)
+	}
+	in := func() goav.InputSpec { return goav.FileInput("av.webm", bytes.NewReader(source.Bytes())) }
+	err := offlineRuntime().Run(ctx, in().To(goav.Write("whole.ivf", io.Discard)))
+	requireBuildError(t, err, errcode.Code("destination_mux_incompatible"), "open destination", "whole.ivf",
+		"route only the stream it carries: input.Video().To(destination)")
+	err = offlineRuntime().Run(ctx, in().Audio().To(goav.Write("audio.ivf", io.Discard)))
+	requireBuildError(t, err, errcode.Code("destination_mux_incompatible"), "open destination", "audio.ivf",
+		"route exactly one VP8, VP9, or AV1 video branch")
+	if err := offlineRuntime().Run(ctx, in().Video().To(goav.Write("video.ivf", io.Discard))); err != nil {
+		t.Fatalf("video alone into IVF: %v", err)
 	}
 }

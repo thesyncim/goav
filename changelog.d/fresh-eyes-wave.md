@@ -36,3 +36,8 @@
   the name, URI, and MIME type are hints, so a misnamed or extensionless file
   works. Probing keeps the reader's capabilities (a file still seeks); an HTTP
   input re-reads its first 4 KiB without a second request.
+- A muxer is never handed a stream it would drop: when a destination opens,
+  the streams an input turned out to have are checked against the container
+  like planned ones, so a whole two-stream file into IVF is refused as
+  `destination_mux_incompatible` naming the stream to route, instead of
+  silently losing the audio.
