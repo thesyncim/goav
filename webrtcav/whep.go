@@ -8,12 +8,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -66,8 +69,11 @@ func WHEPSession(config SessionConfig) WHEPOption {
 //	runconfig.Scheme("whep", webrtcav.WHEP(webrtcav.WHEPToken(token)))
 //
 // Opening the input POSTs an SDP offer with receive-only audio and video,
-// applies the answer, and waits for the negotiated tracks; ICE candidates
-// found after the offer go out by PATCH when the server accepts trickle.
+// applies the answer, and starts once the first negotiated track flows; a
+// track silent until later joins then. ICE candidates found after the offer
+// go out by PATCH when the server accepts trickle, and STUN/TURN servers an
+// answer names (Link rel="ice-server") configure the session: the first to
+// name new ones is re-offered with them, later ones to that host start so.
 // The input is live, one stream per track (one track per codec), and its
 // Close DELETEs the session's resource. A dropped peer connection fails the
 // input with ErrWHEPDisconnected. WHEP is an input scheme: it plays media in
@@ -82,10 +88,33 @@ func WHEP(options ...WHEPOption) provider.InputScheme {
 	if config.client == nil {
 		config.client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return whepScheme{config: config}
+	return whepScheme{config: config, servers: &iceServers{byHost: map[string][]webrtc.ICEServer{}}}
 }
 
-type whepScheme struct{ config whepConfig }
+type whepScheme struct {
+	config  whepConfig
+	servers *iceServers
+}
+
+// iceServers remembers, per endpoint host, the STUN/TURN servers its WHEP
+// answers named (Link rel="ice-server"), so later sessions configure them
+// before their offer.
+type iceServers struct {
+	mu     sync.Mutex
+	byHost map[string][]webrtc.ICEServer
+}
+
+func (c *iceServers) get(host string) []webrtc.ICEServer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.byHost[host]
+}
+
+func (c *iceServers) put(host string, servers []webrtc.ICEServer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byHost[host] = servers
+}
 
 func (s whepScheme) Input(u *url.URL) (provider.Input, error) {
 	if u.Host == "" {
@@ -96,11 +125,12 @@ func (s whepScheme) Input(u *url.URL) (provider.Input, error) {
 	if strings.HasSuffix(strings.ToLower(u.Scheme), "+http") {
 		endpoint.Scheme = "http"
 	}
-	return &whepInput{config: s.config, endpoint: &endpoint}, nil
+	return &whepInput{config: s.config, servers: s.servers, endpoint: &endpoint}, nil
 }
 
 type whepInput struct {
 	config   whepConfig
+	servers  *iceServers
 	endpoint *url.URL
 }
 
@@ -125,12 +155,43 @@ func (in *whepInput) OpenSource(ctx context.Context) (pipeline.Source, []av.Stre
 	return source, streams, nil
 }
 
+// negotiate opens a session. The ICE servers an answer names (Link
+// rel="ice-server", RFC 9725 section 4.6) only help candidates gathered
+// after them, so a session that learns new ones is replaced, once, by one
+// configured with them before its offer; later sessions to the host start
+// with them. Servers the caller configured (WHEPSession) take precedence.
 func (in *whepInput) negotiate(ctx context.Context) (*whepSession, error) {
+	config := in.config.session.Configuration
+	own := len(config.ICEServers) != 0
+	if !own {
+		config.ICEServers = in.servers.get(in.endpoint.Host)
+	}
+	s, err := in.offer(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	if learned := s.linked; !own && len(learned) != 0 && !slices.EqualFunc(learned, config.ICEServers, sameICEServer) {
+		in.servers.put(in.endpoint.Host, learned)
+		s.Close()
+		config.ICEServers = learned
+		if s, err = in.offer(ctx, config); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.awaitTracks(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// offer opens a peer connection under config and negotiates it.
+func (in *whepInput) offer(ctx context.Context, config webrtc.Configuration) (*whepSession, error) {
 	api := in.config.session.API
 	if api == nil {
 		api = webrtc.NewAPI()
 	}
-	pc, err := api.NewPeerConnection(in.config.session.Configuration)
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
 	}
@@ -139,11 +200,11 @@ func (in *whepInput) negotiate(ctx context.Context) (*whepSession, error) {
 		s.Close()
 		return nil, err
 	}
-	if err := s.awaitTracks(ctx); err != nil {
-		s.Close()
-		return nil, err
-	}
 	return s, nil
+}
+
+func sameICEServer(a, b webrtc.ICEServer) bool {
+	return slices.Equal(a.URLs, b.URLs) && a.Username == b.Username && a.Credential == b.Credential
 }
 
 // whepSession is one negotiated WHEP session: the peer connection, its
@@ -154,10 +215,17 @@ type whepSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	arrived  chan *webrtc.TrackRemote
+	arrived  chan arrival
 	failed   chan struct{}
 	packets  chan *rtp.Packet
 	readErrs chan error
+	// events announces a track the answer did not declare (av.EventStreamAdded).
+	events chan av.Event
+	// declared maps the answer's sending media sections (by mid) to their
+	// stream index.
+	declared map[string]int
+	// linked is the ICE servers the answer named (Link rel="ice-server").
+	linked []webrtc.ICEServer
 
 	wake chan struct{}
 
@@ -185,15 +253,16 @@ func newWHEPSession(config whepConfig, pc *webrtc.PeerConnection) *whepSession {
 		pc:       pc,
 		ctx:      ctx,
 		cancel:   cancel,
-		arrived:  make(chan *webrtc.TrackRemote, 4),
+		arrived:  make(chan arrival, 4),
 		failed:   make(chan struct{}),
 		packets:  make(chan *rtp.Packet, 64),
 		readErrs: make(chan error, 4),
+		events:   make(chan av.Event, 4),
 		wake:     make(chan struct{}, 1),
 	}
-	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		select {
-		case s.arrived <- track:
+		case s.arrived <- arrival{track: track, receiver: receiver}:
 		case <-s.ctx.Done():
 		}
 	})
@@ -255,11 +324,13 @@ func (s *whepSession) offer(ctx context.Context, endpoint *url.URL) error {
 	s.resource = resp.Request.URL.ResolveReference(location)
 	s.etag = resp.Header.Get("ETag")
 	s.patches = strings.Contains(resp.Header.Get("Accept-Patch"), "application/trickle-ice-sdpfrag")
+	s.linked = linkedICEServers(resp.Header.Values("Link"))
 	s.posted = true
 	s.mu.Unlock()
 	if err := s.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: string(answer)}); err != nil {
 		return err
 	}
+	s.declare(string(answer))
 	go s.trickleLoop()
 	s.signal()
 	return nil
@@ -368,66 +439,170 @@ func sdpFragment(local *webrtc.SessionDescription, candidates []webrtc.ICECandid
 	return b.Bytes(), nil
 }
 
-// awaitTracks waits for every track the answer sends, then reads them.
+// arrival is a track Pion started receiving, with its receiver.
+type arrival struct {
+	track    *webrtc.TrackRemote
+	receiver *webrtc.RTPReceiver
+}
+
+// declare reads the answer's sending media sections into the session's
+// streams and payload maps before any packet flows, so the input carries
+// every negotiated track from the start and a track still silent when the
+// first one flows is only a late stream.
+func (s *whepSession) declare(answer string) {
+	parsed, err := (&webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}).Unmarshal()
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.declared = map[string]int{}
+	for _, media := range parsed.MediaDescriptions {
+		_, sendonly := media.Attribute("sendonly")
+		_, sendrecv := media.Attribute("sendrecv")
+		if media.MediaName.Port.Value == 0 || !sendonly && !sendrecv || len(media.MediaName.Formats) == 0 {
+			continue
+		}
+		mid, _ := media.Attribute("mid")
+		kind := media.MediaName.Media
+		id := kind
+		if msid, ok := media.Attribute("msid"); ok {
+			if fields := strings.Fields(msid); len(fields) == 2 {
+				id = fields[1]
+			}
+		}
+		if slices.ContainsFunc(s.streams, func(stream av.Stream) bool { return stream.ID == av.StreamID(id) }) {
+			id += "-" + mid
+		}
+		codec := sdpCodec(media.Attributes, kind, media.MediaName.Formats[0])
+		stream := streamFromRemoteTrack(RemoteTrack{Codec: codec, Stream: av.Stream{ID: av.StreamID(id), Name: id}})
+		s.declared[mid] = len(s.streams)
+		s.streams = append(s.streams, stream)
+		s.payloads = append(s.payloads, rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{payloadCodecFromWebRTC(codec, stream.Codec)}))
+	}
+}
+
+// sdpCodec is the codec a media section's first payload type names.
+func sdpCodec(attributes []sdp.Attribute, kind, format string) webrtc.RTPCodecParameters {
+	var codec webrtc.RTPCodecParameters
+	if pt, err := strconv.ParseUint(format, 10, 8); err == nil {
+		codec.PayloadType = webrtc.PayloadType(pt)
+	}
+	for _, attribute := range attributes {
+		value, ok := strings.CutPrefix(attribute.Value, format+" ")
+		switch {
+		case !ok:
+		case attribute.Key == "rtpmap":
+			parts := strings.Split(value, "/")
+			codec.MimeType = kind + "/" + parts[0]
+			if len(parts) > 1 {
+				rate, _ := strconv.ParseUint(parts[1], 10, 32)
+				codec.ClockRate = uint32(rate)
+			}
+			if len(parts) > 2 {
+				channels, _ := strconv.ParseUint(parts[2], 10, 16)
+				codec.Channels = uint16(channels)
+			}
+		case attribute.Key == "fmtp":
+			codec.SDPFmtpLine = value
+		}
+	}
+	return codec
+}
+
+// awaitTracks waits until the first negotiated track flows and starts
+// reading; the others join as they start, so a silent camera delays only
+// its own stream.
 func (s *whepSession) awaitTracks(ctx context.Context) error {
-	want := s.sentTracks()
-	if want == 0 {
+	s.mu.Lock()
+	declared := len(s.streams)
+	s.mu.Unlock()
+	if declared == 0 {
 		return errors.New("whep: the server sends no track")
 	}
 	deadline := time.NewTimer(s.config.tracks)
 	defer deadline.Stop()
-	for len(s.readers) < want {
-		select {
-		case track := <-s.arrived:
-			reader, err := NewTrackRemoteAdapter().AdaptTrack(ctx, RemoteTrack{Track: track, Feedback: s})
-			if err != nil {
-				return err
-			}
-			streams, err := reader.Streams(ctx)
-			if err != nil || len(streams) == 0 {
-				reader.Close()
-				return ErrUnknownStream
-			}
-			s.readers = append(s.readers, reader)
-			s.streams = append(s.streams, streams[0])
-			s.payloads = append(s.payloads, reader.PayloadMap())
-		case <-s.failed:
-			return ErrWHEPDisconnected
-		case <-deadline.C:
-			return fmt.Errorf("whep: %d of %d tracks arrived within %s", len(s.readers), want, s.config.tracks)
-		case <-ctx.Done():
-			return ctx.Err()
+	select {
+	case first := <-s.arrived:
+		if err := s.adopt(ctx, first); err != nil {
+			return err
 		}
+	case <-s.failed:
+		return ErrWHEPDisconnected
+	case <-deadline.C:
+		return fmt.Errorf("whep: no track started within %s", s.config.tracks)
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	for _, reader := range s.readers {
-		go s.pump(reader)
-	}
+	go s.adoptLate()
 	return nil
 }
 
-// sentTracks counts the answer's media sections that send to us. It parses
-// a copy: Unmarshal caches into the description Pion itself reads.
-func (s *whepSession) sentTracks() int {
-	remote := s.pc.RemoteDescription()
-	if remote == nil {
-		return 0
+// adoptLate reads the tracks that start after the first.
+func (s *whepSession) adoptLate() {
+	for {
+		select {
+		case late := <-s.arrived:
+			if err := s.adopt(s.ctx, late); err != nil {
+				select {
+				case s.readErrs <- err:
+				case <-s.ctx.Done():
+				}
+				return
+			}
+		case <-s.ctx.Done():
+			return
+		}
 	}
-	parsed, err := (&webrtc.SessionDescription{Type: remote.Type, SDP: remote.SDP}).Unmarshal()
+}
+
+// adopt reads one track under the stream its media section declared. A
+// track the answer did not declare joins as a new stream, announced before
+// its packets flow so the RTP source learns its payload types first.
+func (s *whepSession) adopt(ctx context.Context, a arrival) error {
+	mid := ""
+	for _, transceiver := range s.pc.GetTransceivers() {
+		if transceiver.Receiver() == a.receiver {
+			mid = transceiver.Mid()
+		}
+	}
+	s.mu.Lock()
+	index, declared := s.declared[mid]
+	remote := RemoteTrack{Track: a.track, Feedback: s}
+	if declared {
+		remote.Stream = av.Stream{ID: s.streams[index].ID, Name: s.streams[index].Name}
+	}
+	s.mu.Unlock()
+	reader, err := NewTrackRemoteAdapter().AdaptTrack(ctx, remote)
 	if err != nil {
-		return 0
+		return err
 	}
-	n := 0
-	for _, media := range parsed.MediaDescriptions {
-		if media.MediaName.Port.Value == 0 {
-			continue
-		}
-		_, sendonly := media.Attribute("sendonly")
-		_, sendrecv := media.Attribute("sendrecv")
-		if sendonly || sendrecv {
-			n++
+	streams, err := reader.Streams(ctx)
+	if err != nil || len(streams) == 0 {
+		reader.Close()
+		return ErrUnknownStream
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		reader.Close()
+		return ErrClosed
+	}
+	s.readers = append(s.readers, reader)
+	if declared {
+		s.payloads[index] = reader.PayloadMap()
+	} else {
+		s.streams = append(s.streams, streams[0])
+		s.payloads = append(s.payloads, reader.PayloadMap())
+		stream := streams[0]
+		select {
+		case s.events <- av.Event{Type: av.EventStreamAdded, StreamID: stream.ID, Stream: &stream}:
+		default:
 		}
 	}
-	return n
+	s.mu.Unlock()
+	go s.pump(reader)
+	return nil
 }
 
 // pump moves one track's packets into the merged reader.
@@ -452,10 +627,16 @@ func (s *whepSession) pump(reader TrackReader) {
 // Streams, PayloadMap, ReadRTP, Events, WriteRTCP, and Close make the
 // session the rtpav.PacketReader of its tracks.
 func (s *whepSession) Streams(context.Context) ([]av.Stream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return append([]av.Stream(nil), s.streams...), nil
 }
 
-func (s *whepSession) PayloadMap() rtpav.PayloadMap { return mergedPayloads(s.payloads) }
+func (s *whepSession) PayloadMap() rtpav.PayloadMap {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append(mergedPayloads(nil), s.payloads...)
+}
 
 func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
 	select {
@@ -479,7 +660,7 @@ func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
 	}
 }
 
-func (s *whepSession) Events() <-chan av.Event { return nil }
+func (s *whepSession) Events() <-chan av.Event { return s.events }
 
 func (s *whepSession) WriteRTCP(_ context.Context, packets []rtcp.Packet) error {
 	if len(packets) == 0 || s.isClosed() {
@@ -502,6 +683,8 @@ func (s *whepSession) Close() error {
 		s.mu.Lock()
 		s.closed = true
 		resource := s.resource
+		readers := append([]TrackReader(nil), s.readers...)
+		close(s.events)
 		s.mu.Unlock()
 		if resource != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -513,7 +696,7 @@ func (s *whepSession) Close() error {
 			cancel()
 		}
 		s.cancel()
-		for _, reader := range s.readers {
+		for _, reader := range readers {
 			reader.Close()
 		}
 		if closeErr := s.pc.Close(); err == nil {
@@ -583,4 +766,59 @@ func (m mergedPayloads) Codecs() []rtpav.PayloadCodec {
 		codecs = append(codecs, payloads.Codecs()...)
 	}
 	return codecs
+}
+
+// linkedICEServers reads the STUN/TURN servers of Link header values of
+// rel "ice-server" (RFC 9725 section 4.6):
+//
+//	<turn:turn.example.net?transport=udp>; rel="ice-server"; username="u"; credential="p"
+func linkedICEServers(values []string) []webrtc.ICEServer {
+	var servers []webrtc.ICEServer
+	for _, value := range values {
+		for _, link := range splitOutsideQuotes(value, ',') {
+			target, params, ok := strings.Cut(strings.TrimSpace(link), ";")
+			target = strings.TrimSpace(target)
+			if !ok || !strings.HasPrefix(target, "<") || !strings.HasSuffix(target, ">") {
+				continue
+			}
+			server := webrtc.ICEServer{URLs: []string{target[1 : len(target)-1]}}
+			ice := false
+			for _, param := range splitOutsideQuotes(params, ';') {
+				key, val, _ := strings.Cut(strings.TrimSpace(param), "=")
+				val = strings.Trim(strings.TrimSpace(val), `"`)
+				switch strings.ToLower(strings.TrimSpace(key)) {
+				case "rel":
+					ice = slices.Contains(strings.Fields(val), "ice-server")
+				case "username":
+					server.Username = val
+				case "credential":
+					server.Credential = val
+				}
+			}
+			if ice {
+				servers = append(servers, server)
+			}
+		}
+	}
+	return servers
+}
+
+// splitOutsideQuotes splits s at sep where sep is not inside quotes or <>.
+func splitOutsideQuotes(s string, sep byte) []string {
+	var parts []string
+	quoted, angled, start := false, false, 0
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			quoted = !quoted
+		case c == '<' && !quoted:
+			angled = true
+		case c == '>' && !quoted:
+			angled = false
+		case c == sep && !quoted && !angled:
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, s[start:])
 }

@@ -39,6 +39,9 @@ func loopbackAPI() *webrtc.API {
 type whepServer struct {
 	t    *testing.T
 	stop chan struct{}
+	// link is a Link header the 201 carries; videoAfter holds video back.
+	link       string
+	videoAfter time.Duration
 
 	mu       sync.Mutex
 	pc       *webrtc.PeerConnection
@@ -123,6 +126,9 @@ func (s *whepServer) post(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "../session/1")
 	w.Header().Set("Content-Type", "application/sdp")
 	w.Header().Set("Accept-Patch", "application/trickle-ice-sdpfrag")
+	if s.link != "" {
+		w.Header().Set("Link", s.link)
+	}
 	w.WriteHeader(http.StatusCreated)
 	io.WriteString(w, pc.LocalDescription().SDP)
 	go s.send(audio, video)
@@ -131,6 +137,7 @@ func (s *whepServer) post(w http.ResponseWriter, r *http.Request) {
 func (s *whepServer) send(audio, video *webrtc.TrackLocalStaticRTP) {
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
+	start := time.Now()
 	for i := uint32(0); ; i++ {
 		select {
 		case <-tick.C:
@@ -139,6 +146,9 @@ func (s *whepServer) send(audio, video *webrtc.TrackLocalStaticRTP) {
 		}
 		seq := uint16(i)
 		audio.WriteRTP(&rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: seq, Timestamp: i * 960, Marker: true}, Payload: []byte{0xf8, 0xff, 0xfe}})
+		if time.Since(start) < s.videoAfter {
+			continue
+		}
 		video.WriteRTP(&rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: seq, Timestamp: i * 3000, Marker: true}, Payload: []byte{0x10, 0x00, 0x9d, 0x01, 0x2a}})
 	}
 }
@@ -217,5 +227,77 @@ func TestWHEPRefusals(t *testing.T) {
 	_, err := rt.Build(context.Background(), goav.URIInput("whep+http://"+strings.TrimPrefix(srv.URL, "http://")+"/live?token=SECRET").Video().To(goavtest.NewCollector().Sink()))
 	if err == nil || !strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("err = %v, want a redacted 401", err)
+	}
+}
+
+// TestWHEPStartsWithTheFirstTrack pins that a track silent at first (video
+// that starts late) does not fail the input: it starts with the first track
+// to flow, well inside a track wait the late one would exceed.
+func TestWHEPStartsWithTheFirstTrack(t *testing.T) {
+	server := &whepServer{t: t, stop: make(chan struct{}), videoAfter: 600 * time.Millisecond}
+	srv := httptest.NewServer(server)
+	defer srv.Close()
+	defer close(server.stop)
+	scheme := WHEP(WHEPSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
+	scheme.config.tracks = 300 * time.Millisecond
+	rt := bundle.MustNew(runconfig.Scheme("whep+http", scheme))
+	in := goav.URIInput("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam")
+	video, audio := goavtest.NewCollector(), goavtest.NewCollector()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	task, err := rt.Build(ctx, in.Video().To(video.Sink()), in.Audio().To(audio.Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- task.Run(ctx) }()
+	if _, err := audio.WaitPackets(ctx, 3); err != nil {
+		t.Fatalf("audio: %v", err)
+	}
+	if _, err := video.WaitPackets(ctx, 3); err != nil {
+		t.Fatalf("late video: %v", err)
+	}
+	cancel()
+	<-done
+	task.Close()
+}
+
+// TestWHEPUsesLinkedICEServers pins Link rel="ice-server": a session whose
+// answer names servers is re-offered once with them configured, and later
+// sessions to the host start with them.
+func TestWHEPUsesLinkedICEServers(t *testing.T) {
+	server := &whepServer{t: t, stop: make(chan struct{}), link: `<stun:127.0.0.1:3478>; rel="ice-server", <turn:127.0.0.1:3478?transport=udp>; rel="ice-server"; username="u"; credential="p,q"`}
+	srv := httptest.NewServer(server)
+	defer srv.Close()
+	defer close(server.stop)
+	scheme := WHEP(WHEPSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
+	scheme.config.gather = 200 * time.Millisecond
+	rt := bundle.MustNew(runconfig.Scheme("whep+http", scheme))
+	host := strings.TrimPrefix(srv.URL, "http://")
+	for session := 1; session <= 2; session++ {
+		video := goavtest.NewCollector()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		task, err := rt.Build(ctx, goav.URIInput("whep+http://"+host+"/whep/cam").Video().To(video.Sink()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- task.Run(ctx) }()
+		if _, err := video.WaitPackets(ctx, 2); err != nil {
+			t.Fatalf("session %d: %v", session, err)
+		}
+		cancel()
+		<-done
+		task.Close()
+	}
+	server.mu.Lock()
+	posts, deletes := server.posts, server.deletes
+	server.mu.Unlock()
+	if posts != 3 || deletes != 3 {
+		t.Fatalf("posts=%d deletes=%d, want a re-offer for the first session only", posts, deletes)
+	}
+	servers := scheme.servers.get(host)
+	if len(servers) != 2 || servers[1].URLs[0] != "turn:127.0.0.1:3478?transport=udp" || servers[1].Username != "u" || servers[1].Credential != "p,q" {
+		t.Fatalf("learned servers = %+v", servers)
 	}
 }
