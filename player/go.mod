@@ -7,7 +7,7 @@ toolchain go1.27.2
 require (
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/hajimehoshi/ebiten/v2 v2.10.5
-	github.com/thesyncim/goav v0.0.0-20261019124119-264f3bd957b0
+	github.com/thesyncim/goav v0.0.0-20261019132157-3266c6d1400b
 )
 
 require (
