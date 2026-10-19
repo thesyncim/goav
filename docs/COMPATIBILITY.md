@@ -154,9 +154,11 @@ Module scope:
 
 API surface:
 - Added exported symbols: `BuildError` helper methods, the value grammar
-  (`Stream`, `Output`, `Layer`, `At`, `Runtime.Run`/`Build`/`Describe`/`Explain`,
-  `LiveTask.Tap`/`Track`/`Attach`), task capability vocabulary,
-  `Write(name, writer)`, `bundle.Describe`, inspect helpers, sync policy
+  (`Stream`, `Output`, `JoinArg`, `At`, `ByPTS`,
+  `Runtime.Run`/`Build`/`Describe`/`Explain`, `LiveTask.Spec`/`Tap`/`Track`/
+  `Attach`), task capability vocabulary (snapshots, states, watch filters, and
+  detach/rebranch policies, all in the root), `Write(name, writer)`,
+  `bundle.Describe`, sync policy
   options, media-time rebranch boundaries, and the sealed option types
   (`StreamOption`, `InputOption`, `DestinationOption`, `MediaOption`) exported
   for godoc linkability while constructors remain the only construction surface.

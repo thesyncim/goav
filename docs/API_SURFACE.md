@@ -253,8 +253,8 @@ it, and v1 does not freeze its shape.
   `goav:graph` URI; `RenderTaskFlowchart(task)` renders a running task-like
   value's current snapshot as a Mermaid flowchart, with runtime branch-owned
   nodes annotated by branch name/state; `RenderTaskURI` keeps the same URI
-  format selection for live tasks. A leaf outside the core import graph,
-  surface-pinned like the vocabulary packages.
+  format selection for live tasks. It sits above the root (it reads
+  `goav.TaskSnapshot`/`BranchSnapshot`), and the root never imports it.
 - `launch`: the pipeline language. `Compile(program, options...)` returns
   ordinary `goav.Output` values (the same graph the Go recipe builds);
   `Files`, `Task`, and `Use` grant file access, a running task's taps, and a

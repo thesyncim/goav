@@ -1,8 +1,9 @@
-// Package graphrender renders a pipeline.Spec — the graph Describe returns
-// for planned and built jobs — as human-readable text, Graphviz DOT, or
-// Mermaid. It is a diagnostics leaf outside the goav core: the root package
-// never imports it, and it reads only the public Spec vocabulary, so any
-// graph a recipe or expert builder describes can be rendered.
+// Package graphrender renders a pipeline.Spec — the graph Runtime.Describe
+// plans and LiveTask.Spec reports once built — as human-readable text,
+// Graphviz DOT, or Mermaid, and annotates goav.TaskSnapshot and
+// goav.BranchSnapshot views with branch and tap labels. It is diagnostics
+// outside the goav core: the root package never imports it, so any graph a
+// recipe or expert builder describes can be rendered.
 //
 // The format is selected by a goav:graph URI:
 //
