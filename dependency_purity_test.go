@@ -1,6 +1,7 @@
 package goav_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -200,6 +201,40 @@ func TestRootImportDoesNotPullBundledAdapters(t *testing.T) {
 	} {
 		if strings.Contains(deps, forbidden) {
 			t.Fatalf("root import pulls bundled adapter/backend dependency %s", forbidden)
+		}
+	}
+}
+
+// TestNoCommittedBinaries keeps compiled programs out of the repository: a
+// tracked file starting with an ELF, Mach-O, or PE header fails, and the
+// helper binaries the scripts build stay ignored.
+func TestNoCommittedBinaries(t *testing.T) {
+	out, err := exec.Command("git", "ls-files", "-z").Output()
+	if err != nil {
+		t.Skipf("not a git checkout: %v", err)
+	}
+	magics := [][]byte{
+		{0x7f, 'E', 'L', 'F'},
+		{0xfe, 0xed, 0xfa, 0xce}, {0xfe, 0xed, 0xfa, 0xcf}, {0xce, 0xfa, 0xed, 0xfe}, {0xcf, 0xfa, 0xed, 0xfe}, {0xca, 0xfe, 0xba, 0xbe},
+		{'M', 'Z'},
+	}
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(out), "\x00"), "\x00") {
+		file, err := os.Open(name)
+		if err != nil {
+			continue // deleted in the working tree
+		}
+		head := make([]byte, 4)
+		n, _ := file.Read(head)
+		file.Close()
+		for _, magic := range magics {
+			if bytes.HasPrefix(head[:n], magic) {
+				t.Errorf("%s is a compiled binary; remove it with git rm --cached and ignore it in .gitignore", name)
+			}
+		}
+	}
+	for _, built := range []string{"scripts/bench/internal/benchbaseline/benchbaseline", "cmd/goav/goav"} {
+		if err := exec.Command("git", "check-ignore", "-q", built).Run(); err != nil {
+			t.Errorf("%s is not ignored; add it to .gitignore", built)
 		}
 	}
 }

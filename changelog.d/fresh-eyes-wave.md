@@ -17,3 +17,5 @@
   `workflow_dispatch` with `dry_run` rehearses every step on any branch without
   a tag or release; a nested tag pinning a goav module at a pseudo-version is
   refused; `gplcodec` and `goavtest/expect` tags are recognized.
+- Removed a committed 3.7 MB benchmark helper binary; `TestNoCommittedBinaries`
+  refuses any tracked ELF, Mach-O, or PE file.
