@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -199,3 +201,280 @@ func (*admitPassStage) Admit(context.Context, *Message) error { return nil }
 func (*admitPassStage) Handle(ctx context.Context, msg *Message, emitter Emitter) error {
 	return emitter.Emit(ctx, msg)
 }
+
+// relayStage passes messages on from its own worker on a buffered graph.
+type relayStage struct{ name string }
+
+func (s *relayStage) Name() string { return s.name }
+func (s *relayStage) Close() error { return nil }
+func (s *relayStage) Handle(ctx context.Context, msg *Message, emitter Emitter) error {
+	return emitter.Emit(ctx, msg)
+}
+
+// TestBufferedRunInterleavesTimedSourcesByTime pins the order on the
+// buffered runner: each source reaches the sink through its own worker, and
+// the sink still sees packets earliest first on every run, because the turn
+// moves only once the previous packet's work is done.
+func TestBufferedRunInterleavesTimedSourcesByTime(t *testing.T) {
+	want := []string{"c@-1", "a@0", "b@0", "c@5", "a@10", "b@15", "a@20", "c@20", "b@30", "c@35"}
+	for range 50 {
+		graph, err := NewGraph(GraphConfig{Name: "order", Buffer: BufferPolicy{Capacity: 4, Drop: DropBlock}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sink := &orderSink{}
+		if _, err := graph.AddSink(sink, BufferPolicy{Capacity: 4, Drop: DropBlock}); err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range []*timedSource{
+			{name: "a", times: []int64{0, 10, 20}, ordered: true},
+			{name: "b", times: []int64{0, 15, 30}, ordered: true},
+			{name: "c", times: []int64{-1, 5, 20, 35}, ordered: true},
+		} {
+			relay := &relayStage{name: source.name + "-relay"}
+			for _, err := range []error{
+				func() error {
+					_, err := graph.AddSource(source, BufferPolicy{Capacity: 4, Drop: DropBlock})
+					return err
+				}(),
+				func() error { _, err := graph.AddStage(relay, BufferPolicy{Capacity: 4, Drop: DropBlock}); return err }(),
+				graph.Connect(Route{From: source.name, To: []string{relay.name}}),
+				graph.Connect(Route{From: relay.name, To: []string{"sink"}}),
+			} {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = graph.Run(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if !slices.Equal(sink.got, want) {
+			t.Fatalf("delivery order = %v, want %v", sink.got, want)
+		}
+	}
+}
+
+// pairGate is a toy join: it pairs one packet of arm a with one of arm b
+// and holds an arm back (Admit) once it leads by lead packets. Admits makes
+// it an interleave.Gate.
+type pairGate struct {
+	name     string
+	lead     int64
+	depth    [2]atomic.Int64
+	wake     [2]chan struct{}
+	pending  [2][]string
+	maxDepth int64
+}
+
+func newPairGate(name string, lead int64) *pairGate {
+	return &pairGate{name: name, lead: lead, wake: [2]chan struct{}{make(chan struct{}, 1), make(chan struct{}, 1)}}
+}
+
+func pairArm(msg *Message) int {
+	if msg.Packet != nil && strings.HasPrefix(string(msg.Packet.StreamID), "b") {
+		return 1
+	}
+	return 0
+}
+
+func (g *pairGate) Name() string { return g.name }
+func (g *pairGate) Close() error { return nil }
+func (g *pairGate) Admits(_ interleave.Token, m any) bool {
+	msg := m.(*Message)
+	return msg.Kind != MessagePacket || g.depth[pairArm(msg)].Load() < g.lead
+}
+func (g *pairGate) Admit(ctx context.Context, msg *Message) error {
+	for !g.Admits(interleave.Token{}, msg) {
+		select {
+		case <-g.wake[pairArm(msg)]:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+func (g *pairGate) Handle(ctx context.Context, msg *Message, emitter Emitter) error {
+	arm := pairArm(msg)
+	// Record the arrival, then the pairs it completes: the arrival order is
+	// what a free run would leave to the scheduler.
+	var arrival av.Packet
+	arrival.StreamID = "+" + msg.Packet.StreamID
+	if err := emitter.Emit(ctx, &Message{Kind: MessagePacket, Packet: &arrival}); err != nil {
+		return err
+	}
+	g.pending[arm] = append(g.pending[arm], string(msg.Packet.StreamID))
+	g.maxDepth = max(g.maxDepth, int64(len(g.pending[arm])))
+	for len(g.pending[0]) != 0 && len(g.pending[1]) != 0 {
+		for i := range g.pending {
+			var packet av.Packet
+			packet.StreamID = av.StreamID(g.pending[i][0])
+			g.pending[i] = g.pending[i][1:]
+			if err := emitter.Emit(ctx, &Message{Kind: MessagePacket, Packet: &packet}); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range g.pending {
+		if g.depth[i].Swap(int64(len(g.pending[i]))) >= g.lead && int64(len(g.pending[i])) < g.lead {
+			select {
+			case g.wake[i] <- struct{}{}:
+			default:
+			}
+		}
+	}
+	return nil
+}
+
+// TestDirectRunParksASourceItsJoinHoldsBack pins the order through a join:
+// b's packets are all later than a's, so a runs first until the join holds
+// its arm back; a then gives up the turn, b runs, and a resumes as soon as
+// the join admits it again. Without that handoff a would wait in Admit
+// holding the turn b needs. Arrivals and pairs come out the same on every
+// run, and no arm ever leads by more than the join allows.
+func TestDirectRunParksASourceItsJoinHoldsBack(t *testing.T) {
+	var first []string
+	a := &timedSource{name: "a", ordered: true}
+	b := &timedSource{name: "b", ordered: true}
+	for i := range int64(20) {
+		a.times = append(a.times, i)
+		b.times = append(b.times, 1000+i)
+	}
+	for range 50 {
+		gate := newPairGate("join", 2)
+		got := runTimedGraph(t, false, gate, a, b)
+		if len(got) != 80 || !slices.Equal(got[:3], []string{"+a@0", "+a@1", "+b@1000"}) {
+			t.Fatalf("delivered %v, want 40 arrivals and 40 paired packets, a held after two", got)
+		}
+		if first == nil {
+			first = got
+		} else if !slices.Equal(got, first) {
+			t.Fatalf("delivery order = %v, want %v as on the first run", got, first)
+		}
+		if gate.maxDepth > gate.lead+1 {
+			t.Fatalf("an arm led the join by %d packets, want at most %d", gate.maxDepth, gate.lead+1)
+		}
+	}
+}
+
+// TestTimeOrderCoversOnlyGatedJoins pins which graphs with converging stages
+// keep the order: every source must take part and every converging stage
+// must be a Gate fed through single-producer nodes. A nested join, a plain
+// Admitter, or a source outside the order runs them all freely.
+func TestTimeOrderCoversOnlyGatedJoins(t *testing.T) {
+	type shape struct {
+		name     string
+		nested   bool
+		plain    bool
+		optOut   bool
+		buffered bool
+		want     bool
+	}
+	for _, tc := range []shape{
+		{name: "gated join", want: true},
+		{name: "nested gated joins", nested: true},
+		{name: "plain admitter", plain: true},
+		{name: "source outside the order", optOut: true},
+		{name: "buffered graph", buffered: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := GraphConfig{Name: "order"}
+			if tc.buffered {
+				config.Buffer = BufferPolicy{Capacity: 4, Drop: DropBlock}
+			}
+			graph, err := NewGraph(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			add := func(err error) {
+				t.Helper()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = graph.AddSink(&orderSink{}, config.Buffer)
+			add(err)
+			var join Stage = newPairGate("join", 2)
+			if tc.plain {
+				join = &admitPassStage{}
+			}
+			_, err = graph.AddStage(join, config.Buffer)
+			add(err)
+			add(graph.Connect(Route{From: "join", To: []string{"sink"}}))
+			into := "join"
+			if tc.nested {
+				_, err = graph.AddStage(newPairGate("inner", 2), config.Buffer)
+				add(err)
+				add(graph.Connect(Route{From: "inner", To: []string{"join"}}))
+				into = "inner"
+			}
+			var sources []Source
+			for _, name := range []string{"a", "b", "c"} {
+				source := &timedSource{name: name, ordered: !(tc.optOut && name == "c")}
+				sources = append(sources, source)
+				_, err = graph.AddSource(source, config.Buffer)
+				add(err)
+				to := into
+				if name == "c" {
+					to = "join"
+				}
+				add(graph.Connect(Route{From: name, To: []string{to}}))
+			}
+			var ordered []bool
+			switch g := graph.(type) {
+			case *directRunner:
+				ordered = timeOrderedSources(false, false, g.snap.Load(), sources, func(s Source) Source { return s })
+			case *bufferedRunner:
+				ordered = timeOrderedSources(false, true, g.snap.Load(), sources, func(s Source) Source { return s })
+			}
+			if got := ordered != nil; got != tc.want {
+				t.Fatalf("ordered = %v, want %v", ordered, tc.want)
+			}
+		})
+	}
+}
+
+// TestBufferedTimeOrderOnlyWhereChainsMerge pins that a buffered graph whose
+// sources never meet (a promoted ladder: each output reads one chain) keeps
+// pipelining freely, and one whose sources meet at a node is ordered.
+func TestBufferedTimeOrderOnlyWhereChainsMerge(t *testing.T) {
+	policy := BufferPolicy{Capacity: 4, Drop: DropBlock}
+	for _, shared := range []bool{false, true} {
+		graph, err := NewGraph(GraphConfig{Name: "order", Buffer: policy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sources []Source
+		for _, name := range []string{"a", "b"} {
+			source := &timedSource{name: name, ordered: true}
+			sources = append(sources, source)
+			sink := "sink-" + name
+			if shared {
+				sink = "sink"
+			}
+			if _, err := graph.AddSink(&namedSink{name: sink}, policy); err != nil && !errors.Is(err, ErrNodeExists) {
+				t.Fatal(err)
+			}
+			if _, err := graph.AddSource(source, policy); err != nil {
+				t.Fatal(err)
+			}
+			if err := graph.Connect(Route{From: name, To: []string{sink}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		g := graph.(*bufferedRunner)
+		ordered := timeOrderedSources(false, true, g.snap.Load(), sources, func(s Source) Source { return s })
+		if got := ordered != nil; got != shared {
+			t.Fatalf("shared sink %v: ordered = %v, want %v", shared, ordered, shared)
+		}
+	}
+}
+
+type namedSink struct{ name string }
+
+func (s *namedSink) Name() string                           { return s.name }
+func (s *namedSink) Close() error                           { return nil }
+func (s *namedSink) Handle(context.Context, *Message) error { return nil }

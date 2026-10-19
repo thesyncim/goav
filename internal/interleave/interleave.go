@@ -1,11 +1,11 @@
 // Package interleave is the contract between the offline pipeline runner and
-// the sources it may interleave by time. A direct, non-realtime graph with
-// several such sources advances the one whose next packet is earliest, so a
-// run's output is the same on every run. The contract stays inside the
-// module: no other package can name Token, so none can opt in by accident.
+// the nodes it may order by time. A non-realtime graph with several such
+// sources advances the one whose next packet is earliest, so a run's output
+// is the same on every run. The contract stays inside the module: no other
+// package can name Token, so none can opt in by accident.
 package interleave
 
-// Token keeps Source unimplementable outside the module.
+// Token keeps Source and Gate unimplementable outside the module.
 type Token struct{}
 
 // Source is a graph source whose Start loop blocks only on Emit and on
@@ -14,4 +14,13 @@ type Token struct{}
 // (a paced, realtime pump does not).
 type Source interface {
 	ByTime(Token) bool
+}
+
+// Gate is a converging stage's admission (pipeline.Admitter) that the time
+// order can check without blocking: Admits reports whether Admit would let
+// msg, the *pipeline.Message about to be delivered, through now. A source
+// the stage holds back gives up its turn, and only the turn's holder decides,
+// by asking Admits, when it may resume, so the Go scheduler never does.
+type Gate interface {
+	Admits(Token, any) bool
 }

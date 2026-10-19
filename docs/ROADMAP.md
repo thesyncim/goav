@@ -208,7 +208,10 @@ this list:
   a leading arm back, `TestJoinBackpressuresFastArm`), so a
   pull scheduler would duplicate flow control the graph already has. Ordering
   offline file inputs by time, which backpressure cannot do, is an internal
-  runner policy, not an API (`TestSeveralFileInputsInterleaveDeterministically`). The rest
+  runner policy, not an API, on both runners and through joins
+  (`TestSeveralFileInputsInterleaveDeterministically`,
+  `TestOfflineJoinsAndLaddersWriteTheSameBytes`); nested joins and joins on
+  a buffered graph still run their arms free. The rest
   of the time domain is landed and cited in "The settled model" above.
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `task.Detach` has explicit
