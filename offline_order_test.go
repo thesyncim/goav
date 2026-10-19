@@ -35,7 +35,7 @@ func (j jitterReader) Read(p []byte) (int, error) {
 	return j.r.Read(p)
 }
 
-// orderFixtures are made once per process: goavtest names its sources from a
+// orderFixtureSet is made once per process: goavtest names its sources from a
 // process-wide counter, so fixtures made again for each -cpu pass would differ.
 type orderFixtureSet struct {
 	once                           sync.Once
