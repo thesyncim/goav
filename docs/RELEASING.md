@@ -85,6 +85,8 @@ go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
 Edit the `require` lines (keep the `replace`), then run the module's tests.
 `cmd/goav` pins the root and `player` the same way but has no `replace` (so
 `go install ...@version` works); gate it in a workspace over the checkout.
+It can pin only commits on `main`, so bump it to the new `main` pseudo-version
+right after any merge that changes `player` or root API the CLI uses.
 
 ## Tags
 

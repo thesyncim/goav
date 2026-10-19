@@ -168,14 +168,9 @@ func (g *game) keys() {
 
 func (g *game) seek(delta time.Duration) {
 	target := max(g.w.engine.Stats().Position+delta, 0)
-	e, task := g.w.engine, g.task
+	e, task, paused := g.w.engine, g.task, g.paused
 	g.control(func() {
-		// Flush first: it releases a sink blocked on stale media, so the
-		// seek lands promptly, and media from the old position is dropped
-		// until the seek's discontinuity; the new position re-prerolls.
-		e.BeginSeek()
-		if err := task.Control(context.Background(), control.Seek(target)); err != nil {
-			e.EndSeek()
+		if err := e.Seek(context.Background(), task, target, paused); err != nil {
 			g.setStatus(fmt.Sprintf("seek: %v", err))
 			return
 		}

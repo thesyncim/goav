@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/control"
 )
 
 // The device format: every source is rendered to 48 kHz stereo s16.
@@ -60,6 +61,8 @@ type Engine struct {
 	clock   *DeviceClock
 	written atomic.Int64
 	device  atomic.Pointer[func() int]
+	// latencyFrames is the device queue and hardware latency past buffered.
+	latencyFrames atomic.Int64
 
 	mu    sync.Mutex
 	wake  chan struct{}
@@ -91,8 +94,20 @@ type Engine struct {
 	ended    bool
 	closed   bool
 	sawAudio bool
-	// seekUntil is set while a seek's stale media is dropped (BeginSeek).
-	seekUntil time.Time
+	// seeking is set while a seek cuts the old position's media (BeginSeek):
+	// per kind, cutting marks a kind still on the old timeline and cutAt the
+	// newest PTS it had queued; seekBudget is the unpaused device time left,
+	// as of seekAt. newest and have track the current epoch's queued media.
+	seeking    bool
+	seekBudget time.Duration
+	seekAt     time.Duration
+	cutAt      [kinds]time.Duration
+	cutting    [kinds]bool
+	newest     [kinds]time.Duration
+	have       [kinds]bool
+	// played records that the current epoch has been heard or shown, and
+	// pictured that it has queued a picture.
+	played, pictured bool
 
 	presented, dropped, underruns uint64
 	avOffset, maxAV               time.Duration
@@ -152,16 +167,21 @@ func New(latency time.Duration, mono func() time.Duration) *Engine {
 // runs in the speaker's time.
 func (e *Engine) Clock() *DeviceClock { return e.clock }
 
-// SetDevice installs the device's report of output frames it has accepted
-// but not played yet. Without one, every frame handed out counts as played.
-func (e *Engine) SetDevice(buffered func() int) {
+// SetDevice describes the audio path between Fill and the speaker: buffered
+// reports the output frames the player side holds but has not handed to the
+// device yet, and latency is the steady delay past that point — the device's
+// own queue plus the hardware's reported output latency. A frame handed out
+// is heard only after both. Without a device every frame counts as heard.
+func (e *Engine) SetDevice(buffered func() int, latency time.Duration) {
 	if buffered != nil {
 		e.device.Store(&buffered)
 	}
+	e.latencyFrames.Store(durationToFrames(max(latency, 0)))
 }
 
+// playedFrames is the output frame being heard now.
 func (e *Engine) playedFrames() int64 {
-	played := e.written.Load()
+	played := e.written.Load() - e.latencyFrames.Load()
 	if buffered := e.device.Load(); buffered != nil {
 		played -= int64((*buffered)())
 	}
@@ -198,6 +218,7 @@ func (e *Engine) Fill(out []byte) int {
 		if rendered > 0 {
 			e.recordLocked(segment{start: start, end: start + int64(rendered), pts0: pts0, pts1: e.headPTSLocked(), audible: true, epoch: e.epoch})
 			e.audibleTo = start + int64(rendered)
+			e.played = true
 		}
 		if rendered < n {
 			e.playing = false
@@ -284,10 +305,31 @@ func (e *Engine) queuedLocked() time.Duration {
 	return e.queued - time.Duration(e.pos/float64(e.chunks[0].rate)*float64(time.Second))
 }
 
+// recordLocked appends a device segment, extending the last one instead when
+// s continues it (same epoch and audibility, contiguous media at the same
+// rate), so the ring spans the whole device path however small the pulls.
 func (e *Engine) recordLocked(s segment) {
+	if e.segCount > 0 {
+		last := &e.segs[(e.segHead-1+segments)%segments]
+		if last.end == s.start && last.audible == s.audible && last.epoch == s.epoch && continues(last, &s) {
+			last.end, last.pts1 = s.end, s.pts1
+			return
+		}
+	}
 	e.segs[e.segHead] = s
 	e.segHead = (e.segHead + 1) % segments
 	e.segCount = min(e.segCount+1, segments)
+}
+
+// continues reports whether s carries on a's media timeline: it starts within
+// a millisecond of where a ends and advances media at the same rate.
+func continues(a, s *segment) bool {
+	if d := s.pts0 - a.pts1; d < -time.Millisecond || d > time.Millisecond {
+		return false
+	}
+	slopeA := float64(a.pts1-a.pts0) / float64(a.end-a.start)
+	slopeS := float64(s.pts1-s.pts0) / float64(s.end-s.start)
+	return math.Abs(slopeA-slopeS) <= 1e-3*math.Max(math.Abs(slopeA), 1)
 }
 
 // heardLocked is the media time audible at device frame dev, when the device
@@ -359,9 +401,11 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 		e.popVideoLocked().Release()
 		e.dropped++
 	}
-	// A seek while paused still shows the new position's first picture.
+	// A seek while paused still shows the new position's first picture: a
+	// preview, which leaves the epoch unplayed.
+	preview := false
 	if !present && e.paused && !e.presentedFresh && len(e.video) > 0 {
-		present, m, ok = true, e.vpts[0], true
+		present, m, ok, preview = true, e.vpts[0], true, true
 	}
 	if !present {
 		if drop > 0 {
@@ -373,6 +417,7 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 	f := e.popVideoLocked()
 	e.presented++
 	e.presentedFresh = true
+	e.played = e.played || !preview
 	if ok {
 		e.avOffset = m - pts
 		e.maxAV = max(e.maxAV, abs(e.avOffset))
@@ -411,8 +456,9 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 	e.sawAudio = true
 	e.mu.Unlock()
 	for {
+		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.seekingLocked() {
+		if e.closed || e.epoch != epoch || e.staleLocked(kindAudio, chunk.pts, now) {
 			e.mu.Unlock()
 			return nil
 		}
@@ -421,6 +467,7 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 				e.waitSet, e.waitStart = true, e.written.Load()
 			}
 			e.chunks = append(e.chunks, chunk)
+			e.newest[kindAudio], e.have[kindAudio] = max(e.newest[kindAudio], chunk.pts), true
 			e.queued += chunk.duration()
 			e.mu.Unlock()
 			return nil
@@ -457,7 +504,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.seekingLocked() {
+		if e.closed || e.epoch != epoch || e.staleLocked(kindVideo, pts, now) {
 			e.mu.Unlock()
 			ref.Release()
 			return nil
@@ -474,6 +521,8 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 		audioNeedsData := e.sawAudio && !e.ended && e.queuedLocked() < e.latency
 		if len(e.video) < videoHardCap && (ahead < e.latency+readAhead || audioNeedsData) {
 			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
+			e.queuedPictureLocked()
+			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
 			e.mu.Unlock()
 			return nil
 		}
@@ -481,6 +530,8 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 			e.popVideoLocked().Release()
 			e.dropped++
 			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
+			e.queuedPictureLocked()
+			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
 			e.mu.Unlock()
 			return nil
 		}
@@ -504,36 +555,133 @@ func (e *Engine) Flush() {
 	e.flushLocked()
 }
 
-// seekWait bounds how long BeginSeek drops media waiting for the seek's
-// discontinuity.
-const seekWait = time.Second
+// A seek has to drop the old position's media still in flight, without
+// dropping the new position's. Each branch delivers its own discontinuity, and
+// the sink cannot tell the branches' apart (the events carry no stream), so
+// the cut is made per media type on the timeline instead: in-flight media of
+// a type continues where that type left off — each within staleBehind..
+// staleAhead of the newest old PTS seen — while the new position starts
+// elsewhere (a seek lands more than staleAhead away). The first media of a type off that span is the new position, and
+// everything of that type after it is kept.
+const (
+	staleBehind = 50 * time.Millisecond
+	staleAhead  = 250 * time.Millisecond
+	// seekWait bounds the cut, counted in unpaused device time, for a seek
+	// that lands inside the old span.
+	seekWait = time.Second
+)
 
-// BeginSeek flushes for a seek the caller is about to issue and drops the
-// media still in flight from the old position until the seek's
-// discontinuity arrives (or seekWait passes), so no stale picture flashes up
+// Media kinds the seek cut tracks.
+const (
+	kindAudio = iota
+	kindVideo
+	kinds
+)
+
+// BeginSeek flushes for a seek the caller is about to issue and cuts the
+// old position's in-flight media, so no stale picture or sound slips in
 // after the jump. Call EndSeek if the seek is refused.
 func (e *Engine) BeginSeek() {
+	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.flushLocked()
-	e.seekUntil = time.Now().Add(seekWait)
+	e.beginSeekLocked(now)
 }
 
-// EndSeek stops dropping media after a refused seek.
+func (e *Engine) beginSeekLocked(now time.Duration) {
+	newest, have := e.newest, e.have
+	e.flushLocked()
+	e.seeking, e.seekBudget, e.seekAt = true, seekWait, now
+	e.cutAt, e.cutting = newest, have
+}
+
+// EndSeek stops cutting after a refused seek.
 func (e *Engine) EndSeek() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.seekUntil = time.Time{}
+	e.seeking = false
 }
 
-// seekingLocked reports whether media is stale: a seek was issued and its
-// discontinuity has not arrived yet.
-func (e *Engine) seekingLocked() bool {
-	return !e.seekUntil.IsZero() && time.Now().Before(e.seekUntil)
+// staleLocked reports whether media of kind at pts is the old position's,
+// arriving after a seek. The cut's wait is charged only while playing, so a
+// seek made while paused holds however long the pause lasts.
+func (e *Engine) staleLocked(kind int, pts, now time.Duration) bool {
+	if !e.seeking {
+		return false
+	}
+	if !e.paused {
+		e.seekBudget -= max(now-e.seekAt, 0)
+	}
+	e.seekAt = now
+	if e.seekBudget <= 0 {
+		e.seeking = false
+		return false
+	}
+	if !e.cutting[kind] {
+		return false
+	}
+	if pts >= e.cutAt[kind]-staleBehind && pts <= e.cutAt[kind]+staleAhead {
+		// Still the old timeline: follow it, so a run of in-flight media
+		// stays recognized however far it reaches.
+		e.cutAt[kind] = max(e.cutAt[kind], pts)
+		return true
+	}
+	e.cutting[kind] = false
+	if e.cutting == [kinds]bool{} {
+		e.seeking = false
+	}
+	return false
+}
+
+// Discontinuity handles a timeline break arriving at the sink. Every branch
+// of a seek delivers one, and one seek flushes once: a break while a seek is
+// cutting belongs to it, and so does one before anything of the current
+// epoch was heard or shown. Any other break is a seek made elsewhere (a
+// control socket): it flushes and cuts like BeginSeek.
+func (e *Engine) Discontinuity() {
+	now := e.clock.Now()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.seeking && e.played {
+		e.beginSeekLocked(now)
+	}
+}
+
+// queuedPictureLocked records the epoch's first queued picture and wakes
+// WaitPicture.
+func (e *Engine) queuedPictureLocked() {
+	if !e.pictured {
+		e.pictured = true
+		e.signalLocked()
+	}
+}
+
+// WaitPicture waits until a picture of the current epoch is queued, ctx ends,
+// or timeout passes, and reports whether one is.
+func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		e.mu.Lock()
+		ready := e.pictured
+		wake := e.wake
+		e.mu.Unlock()
+		if ready {
+			return true
+		}
+		select {
+		case <-wake:
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
+		}
+	}
 }
 
 func (e *Engine) flushLocked() {
-	e.seekUntil = time.Time{}
+	e.seeking, e.played, e.pictured = false, false, false
+	e.newest, e.have = [kinds]time.Duration{}, [kinds]bool{}
 	e.epoch++
 	for _, f := range e.video {
 		f.Release()
@@ -668,4 +816,30 @@ func audioChunkOf(f *av.Frame) (audioChunk, error) {
 		out[2*i], out[2*i+1] = l, r
 	}
 	return audioChunk{pts: pts, rate: a.SampleRate, samples: out}, nil
+}
+
+// Seeker is the part of a goav task a seek drives.
+type Seeker interface {
+	Control(context.Context, control.Control) error
+	Pause(context.Context) error
+	Resume(context.Context) error
+}
+
+// Seek moves task to target: BeginSeek releases a sink blocked on stale media
+// (so the seek lands promptly) and drops the old position's in-flight media
+// until the seek's discontinuity. While paused, the task's timeline would
+// hold the new position's media at the source, so the task runs until the
+// first picture is queued — the engine stays paused and previews it — and
+// then pauses again.
+func (e *Engine) Seek(ctx context.Context, task Seeker, target time.Duration, paused bool) error {
+	e.BeginSeek()
+	if err := task.Control(ctx, control.Seek(max(target, 0))); err != nil {
+		e.EndSeek()
+		return err
+	}
+	if paused && task.Resume(ctx) == nil {
+		e.WaitPicture(ctx, 2*time.Second)
+		return task.Pause(ctx)
+	}
+	return nil
 }
