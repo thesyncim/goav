@@ -942,3 +942,149 @@ func TestSourceStreamRemovedDropsLateStream(t *testing.T) {
 		t.Fatalf("eos = %+v, want the single configured stream restored", eos)
 	}
 }
+
+// collectSource runs source to EOF and returns what it emitted.
+func collectSource(t *testing.T, source *Source) ([]av.Packet, []av.Event) {
+	t.Helper()
+	var packets []av.Packet
+	var events []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packet := *msg.Packet
+			packet.Payload.Bytes = append([]byte(nil), packet.Payload.Bytes...)
+			packets = append(packets, packet)
+		case pipeline.MessageEvent:
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	return packets, events
+}
+
+// An RTP timestamp that wraps past 2^32 is a +960 step, not a 4.29e9 jump
+// backward: the source keeps extended timestamps per stream epoch.
+func TestSourceUnwrapsRTPTimestampRollover(t *testing.T) {
+	stream := av.Stream{ID: "audio", Epoch: 1, Codec: av.CodecParameters{ID: av.CodecOpus, ClockRate: 48000}}
+	receiver := &fakeReceiver{
+		payloads: NewStaticPayloadMap(1, []PayloadCodec{{PayloadType: 111, Parameters: stream.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}}),
+		packets: []*rtp.Packet{
+			{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 0xfffffe00}, Payload: []byte{1}},
+			{Header: rtp.Header{PayloadType: 111, SequenceNumber: 2, Timestamp: 448}, Payload: []byte{2}},
+			{Header: rtp.Header{PayloadType: 111, SequenceNumber: 3, Timestamp: 448 + 960}, Payload: []byte{3}},
+		},
+		events: make(chan av.Event),
+	}
+	source, err := NewSource(SourceConfig{
+		Receiver:        receiver,
+		Depacketizers:   []Depacketizer{NewOpusDepacketizer(stream)},
+		Streams:         []av.Stream{stream},
+		MaxTimestampGap: av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets, events := collectSource(t, source)
+	if len(events) != 1 || events[0].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v, want only end of stream", events)
+	}
+	if len(packets) != 3 {
+		t.Fatalf("packets = %d, want 3", len(packets))
+	}
+	for i := 1; i < len(packets); i++ {
+		gap, ok := packets[i].PTS.Sub(packets[i-1].PTS)
+		if !ok || gap.Value != 960 || packets[i].Discontinuous {
+			t.Fatalf("packet %d: gap=%+v discontinuous=%v (pts %+v after %+v)", i, gap, packets[i].Discontinuous, packets[i].PTS, packets[i-1].PTS)
+		}
+	}
+	if packets[0].PTS.Value != 0xfffffe00 {
+		t.Fatalf("first pts = %d, want the raw RTP timestamp", packets[0].PTS.Value)
+	}
+}
+
+// updateDuringReadReceiver simulates a receiver whose payload map is
+// renegotiated while ReadRTP is blocked: the update lands (map swapped,
+// CodecChanged queued) just before the read returns its packet.
+type updateDuringReadReceiver struct {
+	fakeReceiver
+	updateOnRead int
+	updated      PayloadMap
+	event        av.Event
+}
+
+func (r *updateDuringReadReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+	if r.index == r.updateOnRead {
+		r.payloads = r.updated
+		r.events <- r.event
+	}
+	return r.fakeReceiver.ReadRTP(ctx)
+}
+
+func newUpdateDuringReadReceiver(updateOnRead int, packets ...*rtp.Packet) (*updateDuringReadReceiver, av.Stream) {
+	initial := av.Stream{ID: "audio", Epoch: 1, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, ClockRate: 48000}}
+	updated := initial
+	updated.Epoch = 2
+	return &updateDuringReadReceiver{
+		fakeReceiver: fakeReceiver{
+			payloads: NewStaticPayloadMap(1, []PayloadCodec{{PayloadType: 111, Parameters: initial.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}}),
+			packets:  packets,
+			events:   make(chan av.Event, 1),
+		},
+		updateOnRead: updateOnRead,
+		updated:      NewStaticPayloadMap(2, []PayloadCodec{{PayloadType: 112, Parameters: updated.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}}),
+		event:        av.Event{Type: av.EventCodecChanged, StreamID: updated.ID, Epoch: updated.Epoch, Stream: &updated, Codec: &updated.Codec},
+	}, initial
+}
+
+// A packet of the renegotiated payload type that arrives on the same read the
+// update landed during resolves through the new map and epoch.
+func TestSourcePayloadUpdateDuringBlockedRead(t *testing.T) {
+	for _, jitter := range []bool{false, true} {
+		receiver, initial := newUpdateDuringReadReceiver(1,
+			&rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{1}},
+			&rtp.Packet{Header: rtp.Header{PayloadType: 112, SequenceNumber: 2, Timestamp: 1920}, Payload: []byte{2}},
+		)
+		config := SourceConfig{Receiver: receiver, Depacketizers: []Depacketizer{NewOpusDepacketizer(initial)}}
+		if jitter {
+			ring, err := NewJitterRing(JitterConfig{Capacity: 4})
+			if err != nil {
+				t.Fatal(err)
+			}
+			config.Jitter = ring
+		}
+		source, err := NewSource(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		packets, events := collectSource(t, source)
+		if len(packets) != 2 || packets[0].CodecEpoch != 1 || packets[1].CodecEpoch != 2 || packets[1].Payload.Bytes[0] != 2 {
+			t.Fatalf("jitter=%v packets = %+v", jitter, packets)
+		}
+		if len(events) != 2 || events[0].Type != av.EventCodecChanged || events[1].Type != av.EventEndOfStream {
+			t.Fatalf("jitter=%v events = %+v", jitter, events)
+		}
+	}
+}
+
+// A packet of the old payload type returned by the read the update landed
+// during is older than the update: it keeps the old map and epoch, and the
+// update applies from the next packet.
+func TestSourcePayloadUpdateKeepsInFlightPacketOnOldEpoch(t *testing.T) {
+	receiver, initial := newUpdateDuringReadReceiver(0,
+		&rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{1}},
+		&rtp.Packet{Header: rtp.Header{PayloadType: 112, SequenceNumber: 2, Timestamp: 1920}, Payload: []byte{2}},
+	)
+	source, err := NewSource(SourceConfig{Receiver: receiver, Depacketizers: []Depacketizer{NewOpusDepacketizer(initial)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets, events := collectSource(t, source)
+	if len(packets) != 2 || packets[0].CodecEpoch != 1 || packets[1].CodecEpoch != 2 {
+		t.Fatalf("packets = %+v", packets)
+	}
+	if len(events) != 2 || events[0].Type != av.EventCodecChanged || events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", events)
+	}
+}

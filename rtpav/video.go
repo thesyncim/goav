@@ -43,7 +43,10 @@ type videoFrameAssembler struct {
 	lossBefore    bool
 	discontinuous bool
 	requestSync   bool
-	timestamp     uint32
+	// keyframe is frame-level: detected on the first fragment, kept through
+	// emission.
+	keyframe  bool
+	timestamp uint32
 }
 
 // WithMaxVideoFrameSize caps the bytes one reassembled video frame may
@@ -185,13 +188,14 @@ func (a *videoFrameAssembler) push(
 		a.started = true
 		a.dropping = false
 		a.timestamp = pkt.Timestamp
+		a.keyframe = keyframe
 		a.buffer = a.buffer[:0]
 	}
 	if a.dropping {
 		return nil
 	}
 	if end && len(a.buffer) == 0 {
-		return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, keyframe, out)
+		return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out)
 	}
 	if len(a.buffer)+len(frame) > cap(a.buffer) {
 		a.dropUntilSync()
@@ -203,7 +207,7 @@ func (a *videoFrameAssembler) push(
 	}
 	packetPayload := a.buffer
 	a.started = false
-	return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), packetPayload, keyframe, out)
+	return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), packetPayload, a.keyframe, out)
 }
 
 func (a *videoFrameAssembler) handleEvent(ctx context.Context, event *av.Event) error {
@@ -252,6 +256,7 @@ func (a *videoFrameAssembler) dropUntilSync() {
 func (a *videoFrameAssembler) resetPartial() {
 	a.started = false
 	a.buffer = a.buffer[:0]
+	a.keyframe = false
 	a.timestamp = 0
 }
 
