@@ -115,7 +115,7 @@ func TestURIsKeepTheFileSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, escape := range []string{
-		`uri "file://` + filepath.ToSlash(outside) + `" ! video ! file out2.ivf`,
+		`uri "` + fileURL(outside) + `" ! video ! file out2.ivf`,
 		`"../` + filepath.Base(filepath.Dir(outside)) + `/secret.ivf" ! video ! file out2.ivf`,
 	} {
 		outs, err := launch.Compile(escape, launch.Files(fs), launch.URIs())
@@ -142,4 +142,14 @@ func TestRefusalMasksURLCredentials(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("rendered refusal:\n%v\nwant:\n%s", err, want)
 	}
+}
+
+// fileURL is the file URL of a local path: file:///C:/x on Windows, whose
+// paths have no leading slash.
+func fileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return "file://" + p
 }

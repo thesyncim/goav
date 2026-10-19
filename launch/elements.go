@@ -268,28 +268,60 @@ func (osFiles) Remove(name string) error             { return os.Remove(name) }
 
 // Dir is the files under root and nothing else: a path that escapes root,
 // through .. or a symlink, is refused. A control server hands attached
-// programs a Dir.
+// programs a Dir. Each operation opens root for its own duration, so a Dir
+// holds no handle: it needs no Close, and root stays removable.
 func Dir(root string) (FileSystem, error) {
 	r, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, err
 	}
-	return rootFiles{r}, nil
+	return rootFiles{dir: root}, r.Close()
 }
 
-type rootFiles struct{ root *os.Root }
+type rootFiles struct{ dir string }
 
-func (f rootFiles) Open(name string) (io.Reader, error) { return f.root.Open(name) }
-func (f rootFiles) Create(name string) (io.Writer, error) {
-	if dir := filepath.Dir(name); dir != "." {
-		if err := f.root.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
+// in runs fn on root, opened for the call: files fn opens stay open after.
+func (f rootFiles) in(fn func(*os.Root) error) error {
+	r, err := os.OpenRoot(f.dir)
+	if err != nil {
+		return err
 	}
-	return f.root.Create(name)
+	defer r.Close()
+	return fn(r)
 }
-func (f rootFiles) Rename(oldname, newname string) error { return f.root.Rename(oldname, newname) }
-func (f rootFiles) Remove(name string) error             { return f.root.Remove(name) }
+
+func (f rootFiles) Open(name string) (io.Reader, error) {
+	var file *os.File
+	if err := f.in(func(r *os.Root) (err error) { file, err = r.Open(name); return err }); err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+func (f rootFiles) Create(name string) (io.Writer, error) {
+	var file *os.File
+	err := f.in(func(r *os.Root) (err error) {
+		if dir := filepath.Dir(name); dir != "." {
+			if err := r.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+		}
+		file, err = r.Create(name)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+func (f rootFiles) Rename(oldname, newname string) error {
+	return f.in(func(r *os.Root) error { return r.Rename(oldname, newname) })
+}
+
+func (f rootFiles) Remove(name string) error {
+	return f.in(func(r *os.Root) error { return r.Remove(name) })
+}
 
 // fileBytes is a program's file input: the runtime opens it when the run
 // starts, so compiling or describing a program opens nothing, and the file

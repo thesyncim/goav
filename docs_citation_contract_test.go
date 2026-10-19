@@ -169,6 +169,7 @@ func repoCitationIndex(t *testing.T) (testFiles, testFuncs, scripts map[string]b
 		if err != nil {
 			return err
 		}
+		path = filepath.ToSlash(path) // docs cite scripts/... on every OS
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", ".idea", ".claude", "vendor", "bench-results", "history":

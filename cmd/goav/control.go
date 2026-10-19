@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/thesyncim/goav/launch"
 )
 
 // controlFlags are goav run's control-plane flags.
@@ -96,32 +98,34 @@ func withToken(address, tokenFile string) (string, error) {
 }
 
 // within is the files programs attached over the control plane may touch:
-// only those under dir (an os.Root refuses a path that leaves it), recorded
+// only those under dir (a launch.Dir refuses a path that leaves it), recorded
 // for the summary like the program's own.
 func (f *cliFiles) within(dir string) (*rootedFiles, error) {
-	root, err := os.OpenRoot(dir)
+	files, err := launch.Dir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("goav run: --control-dir %s: %w", dir, err)
 	}
-	return &rootedFiles{root: root, dir: dir, record: f}, nil
+	return &rootedFiles{files: files.(dirFiles), dir: dir, record: f}, nil
 }
 
-// rootedFiles is a launch.FileSystem confined to one directory.
+// dirFiles is what a launch.Dir does: open, create, rename, and remove.
+type dirFiles interface {
+	launch.FileSystem
+	Rename(oldname, newname string) error
+	Remove(name string) error
+}
+
+// rootedFiles is a launch.Dir that records what it writes.
 type rootedFiles struct {
-	root   *os.Root
+	files  dirFiles
 	dir    string
 	record *cliFiles
 }
 
-func (f *rootedFiles) Open(name string) (io.Reader, error) { return f.root.Open(name) }
+func (f *rootedFiles) Open(name string) (io.Reader, error) { return f.files.Open(name) }
 
 func (f *rootedFiles) Create(name string) (io.Writer, error) {
-	if dir := filepath.Dir(name); dir != "." {
-		if err := f.root.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
-	}
-	file, err := f.root.Create(name)
+	file, err := f.files.Create(name)
 	if err == nil {
 		f.record.note("", filepath.Join(f.dir, name))
 	}
@@ -129,7 +133,7 @@ func (f *rootedFiles) Create(name string) (io.Writer, error) {
 }
 
 func (f *rootedFiles) Rename(oldname, newname string) error {
-	if err := f.root.Rename(oldname, newname); err != nil {
+	if err := f.files.Rename(oldname, newname); err != nil {
 		return err
 	}
 	f.record.note(filepath.Join(f.dir, oldname), filepath.Join(f.dir, newname))
@@ -137,7 +141,7 @@ func (f *rootedFiles) Rename(oldname, newname string) error {
 }
 
 func (f *rootedFiles) Remove(name string) error {
-	if err := f.root.Remove(name); err != nil {
+	if err := f.files.Remove(name); err != nil {
 		return err
 	}
 	f.record.note(filepath.Join(f.dir, name), "")

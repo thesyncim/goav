@@ -396,7 +396,8 @@ func TestBatchAndMalformedRequests(t *testing.T) {
 func TestUnixSocketSafety(t *testing.T) {
 	h := serve(t, liveProgram)
 	path := strings.TrimPrefix(h.address, "unix://")
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX modes: a socket there takes its directory's ACL.
+	if info, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("socket mode = %v (%v), want owner-only", info.Mode(), err)
 	}
 	if err := h.server.ListenAndServe(context.Background(), h.address); err == nil || !strings.Contains(err.Error(), "already being served") {

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -39,7 +40,7 @@ func TestURIFileRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "nested", "out.ivf")
-	recipe := goav.URIInput("file://" + filepath.ToSlash(in)).To(goav.URI("file://" + filepath.ToSlash(out)))
+	recipe := goav.URIInput(fileURL(in)).To(goav.URI(fileURL(out)))
 	spec, err := bundle.Describe(recipe)
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +59,13 @@ func TestURIFileRoundTrip(t *testing.T) {
 		t.Fatalf("output = %d bytes %q, want a remuxed IVF", len(got), got[:min(4, len(got))])
 	}
 
-	// A bare path is a file too, whatever it contains.
-	bare := filepath.Join(dir, "100% bare?#.ivf")
+	// A bare path is a file too, whatever it contains (Windows forbids ? in
+	// file names).
+	name := "100% bare?#.ivf"
+	if runtime.GOOS == "windows" {
+		name = "100% bare#.ivf"
+	}
+	bare := filepath.Join(dir, name)
 	if err := bundle.Run(context.Background(), goav.URIInput(in).To(goav.URI(bare))); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +178,7 @@ func TestURIRedactsCredentials(t *testing.T) {
 	rt := bundle.MustNew(runconfig.Scheme("vault", custom))
 	const raw = "vault://alice:hunter2@media.example/clips/movie.ivf?token=SECRET1&quality=hd&X-Amz-Signature=SECRET2"
 	sink := goavtest.NewCollector()
-	out := "file://" + filepath.ToSlash(filepath.Join(t.TempDir(), "out.ivf")) + "?sig=SECRET3"
+	out := fileURL(filepath.Join(t.TempDir(), "out.ivf")) + "?sig=SECRET3"
 	in := goav.URIInput(raw, goav.Reconnect(1, time.Millisecond))
 	recipe := []goav.Output{in.Video().To(sink.Sink()), in.Video().To(goav.URI(out))}
 
@@ -263,4 +269,14 @@ func (b testBytes) OpenBytes(context.Context) (io.ReadCloser, error) {
 		reader = io.MultiReader(reader, iotest.ErrReader(io.ErrUnexpectedEOF))
 	}
 	return io.NopCloser(reader), nil
+}
+
+// fileURL is the file URL of a local path: file:///C:/x on Windows, whose
+// paths have no leading slash.
+func fileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return "file://" + p
 }

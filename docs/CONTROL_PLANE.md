@@ -29,9 +29,10 @@ return server.ListenAndServe(ctx, "unix:///run/goav/ctl.sock")
 
 `ListenAndServe` takes `unix:///path` or `tcp://host:port` and serves until
 ctx ends, then waits for calls in flight to answer. A unix socket is
-owner-only from the moment it exists; a stale socket is replaced, and a path
-another server is serving, or one that is not a socket, is refused rather
-than deleted. TCP needs `ctlserver.Token(t)`: every connection first sends
+owner-only from the moment it exists (on Windows, it takes its directory's
+ACL); a stale socket is replaced, and a path another server is serving, or one
+that is not a socket, is refused rather than deleted. TCP needs
+`ctlserver.Token(t)`: every connection first sends
 `{"method":"$/authenticate","params":{"token":t}}` (`Dial` does, from
 `tcp://TOKEN@host:port`) or is answered `-32001` and closed; an HTTP request
 needs `Authorization: Bearer t`. `Serve(ctx, listener)` takes a listener you made.
