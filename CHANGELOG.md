@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `Spec` and `Stats` report one node set at every level: the task, each
+  `Attachment`, and `TaskSnapshot`/`BranchSnapshot`. A detached
+  `Attachment`'s `Spec` used to go empty while its `Stats` kept the final
+  counters; it now keeps the final spec too. Pinned by
+  `TestSpecAndStatsAgreeAcrossTaskBranchAndSnapshot` through attach/detach
+  churn.
 - Break: the `inspect`, `snapshot`, and `lifecycle` packages folded into the
   root beside `LiveTask` and `Attachment`, so a live application imports one
   package for the task, its views, and its policies. Renames:

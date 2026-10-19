@@ -55,7 +55,9 @@ type LiveTask interface {
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
 	Snapshot() TaskSnapshot
 	// Stats returns per-node counters — packets, frames, drops by reason —
-	// readable while the task runs (lock-free atomic reads).
+	// over the node set Describe reports, with removed nodes counted only in
+	// the graph totals. They are readable while the task runs (lock-free atomic
+	// reads).
 	Stats() pipeline.GraphStats
 	// Tap is the stream at one of the task's taps; Outputs built from it are
 	// added to the running task with Attach.

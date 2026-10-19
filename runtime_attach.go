@@ -63,10 +63,11 @@ type Attachment interface {
 	// be reused across attachments).
 	ID() string
 	Name() string
-	// Spec returns the branch's private graph patch as a structured spec.
+	// Spec returns the branch's private graph patch as a structured spec, and
+	// Stats its counters, over the same node set; once the branch detaches
+	// both report its final nodes. Snapshot returns the branch-owned
+	// point-in-time view (lifecycle state, spec, stats, published taps).
 	Spec() pipeline.Spec
-	// Stats returns branch-scoped counters; Snapshot returns the branch-owned
-	// point-in-time view (lifecycle state, stats, published taps).
 	Stats() pipeline.GraphStats
 	Snapshot() BranchSnapshot
 	// Pause stops delivery to this branch without touching the source or its
@@ -668,6 +669,9 @@ type runtimeAttachment struct {
 	// removedStats holds the final counters of the branch's nodes, taken as
 	// detach removed them: removed nodes leave the graph's Stats.
 	removedStats atomic.Pointer[map[string]pipeline.NodeStats]
+	// removedSpec is the branch's spec as detach found it, so a detached
+	// branch reports the same node set from Spec as from Stats.
+	removedSpec atomic.Pointer[pipeline.Spec]
 }
 
 func (a *runtimeAttachment) allAnchorTaps() []string {
@@ -713,6 +717,18 @@ func (a *runtimeAttachment) Name() string {
 func (a *runtimeAttachment) Spec() pipeline.Spec {
 	if a == nil || a.owner == nil {
 		return pipeline.Spec{}
+	}
+	return a.branchSpec()
+}
+
+// branchSpec is the branch's own graph: its live nodes, or once detach has
+// removed them, the spec it recorded on the way out.
+func (a *runtimeAttachment) branchSpec() pipeline.Spec {
+	if final := a.removedSpec.Load(); final != nil {
+		spec := *final
+		spec.Nodes = slices.Clone(spec.Nodes)
+		spec.Edges = slices.Clone(spec.Edges)
+		return spec
 	}
 	return a.specFromGraph(a.owner.Describe())
 }
@@ -769,7 +785,7 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) 
 	spec := pipeline.Spec{}
 	if a.owner != nil {
 		_, destinationState = a.owner.lifecycleStates()
-		spec = a.specFromGraph(a.owner.Describe())
+		spec = a.branchSpec()
 	}
 	if a.stopped {
 		state = BranchDetached
@@ -916,6 +932,8 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 // is discarded with the aborted write.
 func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 	var first error
+	final := a.specFromGraph(graph.Spec())
+	a.removedSpec.Store(&final)
 	for i := range a.routes {
 		if slices.Contains(a.nodes, pipeline.NodeRef(a.routes[i].From)) {
 			continue // leaves with its node
