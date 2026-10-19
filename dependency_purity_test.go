@@ -13,8 +13,8 @@ import (
 // the core may depend on github.com/thesyncim/* modules, the standard library,
 // and the narrow third-party runtime set required by the built-in pure-Go AAC
 // backend. Other third-party code (pion, compression backends, comparison
-// libraries, purego) lives in nested modules — rtpav, webrtcav, playoutav,
-// player, libcodec, examples —
+// libraries, purego, gosrt) lives in nested modules — rtpav, webrtcav,
+// playoutav, srtav, player, libcodec, examples —
 // each with its own go.mod, so importing goav never pulls a transport
 // ecosystem into the consumer's module graph.
 //

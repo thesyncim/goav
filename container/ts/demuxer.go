@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -37,7 +38,7 @@ type FormatDemuxer struct {
 	synced bool
 	read   int64
 	open   bool
-	closed bool
+	closed atomic.Bool // Close may race a ReadInto blocked on the reader
 
 	pat        sectionBuffer
 	pmt        sectionBuffer
@@ -181,7 +182,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if out == nil || out.Packet == nil {
 		return format.ErrNilPacket
 	}
-	if d.closed || d.r == nil {
+	if d.closed.Load() || d.r == nil {
 		return io.EOF
 	}
 	for d.head == len(d.queue) {
@@ -224,8 +225,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 }
 
 func (d *FormatDemuxer) Close() error {
-	d.closed = true
-	d.r = nil
+	d.closed.Store(true)
 	return nil
 }
 

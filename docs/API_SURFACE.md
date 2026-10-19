@@ -149,7 +149,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `webrtcav.LocalTrack`; reuse one destination value when several Outputs
   should share one mux/sink.
 - **URL schemes**: `goav.URIInput`/`URI`/`Live`/`Reconnect` (`av.EventReconnect`); `provider.Scheme`/`InputScheme`/`DestinationScheme`/`Input`/`Output`/`ByteSource`;
-  `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
+  `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`, `UDP`); `srtav.SRT` (`ErrPassphrase`, `ErrDisconnected`, `RejectedError`);
   `webrtcav.WHEP`, `WHIP` (`Option`, `WithToken`, `WithHTTPClient`, `WithSession`, `StatusError`, `ErrWHEPDisconnected`, `ErrWHIPDisconnected`, `ErrWHIPCodecRefused`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
@@ -398,7 +398,7 @@ example modules. The module boundary is the dependency boundary:
   modernc runtime dependencies (see `docs/ADAPTERS.md`), with no `replace`
   directives. A nested `bundle` module would add a `go.mod` and per-module tags
   for no isolation the package boundary does not already provide.
-- **`rtpav`, `webrtcav`, `playoutav`**: nested transport/provider modules.
+- **`rtpav`, `webrtcav`, `playoutav`, `srtav`**: nested transport/provider modules.
   They require the root module (never the reverse), so importing goav pulls in
   no transport dependencies. RTP/WebRTC carry the Pion ecosystem; `playoutav`
   is dependency-light and proves scheduled playout through the same

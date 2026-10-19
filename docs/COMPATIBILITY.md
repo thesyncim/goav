@@ -148,8 +148,8 @@ Minimum Go version:
 Module scope:
 - Root module tag: `v0.1.0`.
 - Nested modules are not included in the root tag. `rtpav`, `webrtcav`,
-  `playoutav`, `player`, `libcodec`, and `cmd/goav` require separate prefixed tags if released.
-- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`libcodec`,
+  `playoutav`, `player`, `libcodec`, `srtav`, and `cmd/goav` require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`libcodec`/`srtav`,
   then `cmd/goav`, as needed.
 
 API surface:

@@ -183,6 +183,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/rtpav`](rtpav) | RTP ingest: jitter buffer, depacketizers, RTCP feedback (Pion) |
 | [`goav/webrtcav`](webrtcav) | WebRTC remote tracks as inputs (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
+| [`goav/srtav`](srtav) | MPEG-TS over SRT in and out: caller, listener, encryption (gosrt) |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 
