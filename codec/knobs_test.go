@@ -12,7 +12,7 @@ import (
 func knobbed() Descriptor {
 	return Descriptor{
 		ID:      av.CodecH264,
-		Backend: BackendInfo{Name: "openh264", Kind: KindNative},
+		Backend: BackendInfo{Name: "openh264", Kind: KindLib},
 		Knobs: []Knob{
 			{Name: "bitrate", Type: KnobInt, Min: 1000, Max: 100_000_000, Live: true},
 			{Name: "gop", Type: KnobInt, Min: 1, Max: 1000},

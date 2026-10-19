@@ -78,10 +78,10 @@ func (r *SimpleRegistry) addBackend(backend registered) {
 }
 
 // Prefer sets the order Select tries the backends of codec id in mode when a
-// request names none: backend names (openh264) or kinds (hardware, native,
+// request names none: backend names (openh264) or kinds (hardware, lib,
 // go), most preferred first. An empty id or mode applies to every codec or
 // mode; the most specific order wins. Backends the order leaves out follow
-// in the default order: no kind, hardware, native, go, later registrations
+// in the default order: no kind, hardware, lib, go, later registrations
 // first within a kind.
 func (r *SimpleRegistry) Prefer(id av.CodecID, mode Mode, order ...string) {
 	if r.preference == nil {

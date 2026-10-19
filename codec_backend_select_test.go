@@ -71,7 +71,7 @@ func TestCodecBackendSelectionIsVisible(t *testing.T) {
 		t.Fatalf("no encoder requirement in %+v", report.RequiredAdapters)
 	}
 	encoder := report.RequiredAdapters[i]
-	if encoder.Backend != "fakehw (hardware)" || !strings.Contains(encoder.BackendReason, "hardware > native > go") || !slices.Equal(encoder.Alternatives, []string{"govpx (go)"}) {
+	if encoder.Backend != "fakehw (hardware)" || !strings.Contains(encoder.BackendReason, "hardware > lib > go") || !slices.Equal(encoder.Alternatives, []string{"govpx (go)"}) {
 		t.Fatalf("encoder requirement = %+v", encoder)
 	}
 

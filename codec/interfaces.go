@@ -72,7 +72,7 @@ type BackendInfo struct {
 }
 
 // BackendKind is what a backend runs on, which ranks it when a request names
-// no backend: hardware first, then native libraries, then pure Go. A backend
+// no backend: hardware first, then shared libraries, then pure Go. A backend
 // without a kind (an application's own factory) ranks ahead of all three.
 type BackendKind string
 
@@ -81,8 +81,9 @@ const (
 	// KindHardware is a hardware codec reached through the OS, such as
 	// VideoToolbox.
 	KindHardware BackendKind = "hardware"
-	// KindNative is a software codec in a native library, such as OpenH264.
-	KindNative BackendKind = "native"
+	// KindLib is a software codec in a shared library or OS framework bound at
+	// run time, such as OpenH264.
+	KindLib BackendKind = "lib"
 	// KindGo is a pure-Go codec.
 	KindGo BackendKind = "go"
 )

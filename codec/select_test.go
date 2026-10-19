@@ -26,7 +26,7 @@ func backendDescriptor(id av.CodecID, name string, kind BackendKind, mutate ...f
 func h264Registry() *SimpleRegistry {
 	r := NewRegistry()
 	r.RegisterEncoder(backendDescriptor(av.CodecH264, "goh264", KindGo), namedEncoder("goh264"))
-	r.RegisterEncoder(backendDescriptor(av.CodecH264, "openh264", KindNative, func(d *Descriptor) {
+	r.RegisterEncoder(backendDescriptor(av.CodecH264, "openh264", KindLib, func(d *Descriptor) {
 		d.Profiles = []string{"baseline", "main", "high"}
 	}), namedEncoder("openh264"))
 	r.RegisterEncoder(backendDescriptor(av.CodecH264, "videotoolbox", KindHardware, func(d *Descriptor) {
@@ -53,10 +53,10 @@ func TestSelectDefaultOrderIsHardwareNativeGo(t *testing.T) {
 	if choice.Encoder != namedEncoder("videotoolbox") || choice.Descriptor.Backend.Name != "videotoolbox" {
 		t.Fatalf("chose %s, want videotoolbox", choice.Descriptor.Backend.Name)
 	}
-	if got := BackendList(choice.Alternatives); got != "openh264 (native), goh264 (go)" {
+	if got := BackendList(choice.Alternatives); got != "openh264 (lib), goh264 (go)" {
 		t.Fatalf("alternatives = %q", got)
 	}
-	if !strings.Contains(choice.Reason, "hardware > native > go") {
+	if !strings.Contains(choice.Reason, "hardware > lib > go") {
 		t.Fatalf("reason = %q", choice.Reason)
 	}
 }
@@ -102,7 +102,7 @@ func TestSelectNamedBackendNeverSubstitutes(t *testing.T) {
 	}
 	_, err := r.Select(Need{ID: av.CodecH264, Mode: ModeEncode, Backend: "x264"})
 	var failure *SelectError
-	if !errors.As(err, &failure) || !errors.Is(err, ErrNotFound) || BackendList(failure.Satisfying) != "videotoolbox (hardware), openh264 (native), goh264 (go)" {
+	if !errors.As(err, &failure) || !errors.Is(err, ErrNotFound) || BackendList(failure.Satisfying) != "videotoolbox (hardware), openh264 (lib), goh264 (go)" {
 		t.Fatalf("missing backend = %v, want not found listing the satisfying backends", err)
 	}
 	_, err = r.Select(Need{ID: av.CodecH264, Mode: ModeEncode, Backend: "openh264", BitDepth: 10})
@@ -168,7 +168,7 @@ func TestSelectSkipsBackendsThatCannotHonorTheSettings(t *testing.T) {
 		rc.Values = []string{"cbr", "vbr"}
 		d.Knobs = []Knob{KnobBitrate, rc}
 	}), namedEncoder("videotoolbox"))
-	r.RegisterEncoder(backendDescriptor(av.CodecH264, "openh264", KindNative, func(d *Descriptor) {
+	r.RegisterEncoder(backendDescriptor(av.CodecH264, "openh264", KindLib, func(d *Descriptor) {
 		d.Knobs = []Knob{KnobBitrate, KnobRateControl, KnobQP, {Name: "entropy", Type: KnobEnum, Values: []string{"cavlc", "cabac"}}}
 	}), namedEncoder("openh264"))
 	for settings, want := range map[string]string{"rc=vbr": "videotoolbox", "rc=cqp": "openh264", "entropy=cabac": "openh264"} {
@@ -179,7 +179,7 @@ func TestSelectSkipsBackendsThatCannotHonorTheSettings(t *testing.T) {
 		}
 	}
 	_, err := r.Select(Need{ID: av.CodecH264, Mode: ModeEncode, Backend: "videotoolbox", Settings: map[string]string{"rc": "cqp"}})
-	if err == nil || !strings.Contains(err.Error(), "rc=cqp: want one of cbr, vbr") || !strings.Contains(err.Error(), "backends that can: openh264 (native)") {
+	if err == nil || !strings.Contains(err.Error(), "rc=cqp: want one of cbr, vbr") || !strings.Contains(err.Error(), "backends that can: openh264 (lib)") {
 		t.Fatalf("named unfit = %v", err)
 	}
 }
@@ -188,7 +188,7 @@ func TestSelectSkipsBackendsThatCannotHonorTheSettings(t *testing.T) {
 // registered descriptor-only is unavailable, not unknown, with its status.
 func TestSelectNamedNotInstalledBackendSaysSo(t *testing.T) {
 	r := h264Registry()
-	r.RegisterDescriptor(backendDescriptor(av.CodecH264, "x264", KindNative, func(d *Descriptor) {
+	r.RegisterDescriptor(backendDescriptor(av.CodecH264, "x264", KindLib, func(d *Descriptor) {
 		d.Modes = []Mode{ModeEncode}
 		d.Backend.Status = "not-installed"
 	}))

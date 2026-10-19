@@ -101,7 +101,7 @@ func (e *SelectError) Error() string {
 func (e *SelectError) Unwrap() error { return e.Err }
 
 // BackendList names descriptors' backends for display, each with its kind:
-// "videotoolbox (hardware), openh264 (native)".
+// "videotoolbox (hardware), openh264 (lib)".
 func BackendList(descriptors []Descriptor) string {
 	names := make([]string, 0, len(descriptors))
 	for i := range descriptors {
@@ -267,7 +267,7 @@ func kindRank(kind BackendKind) int {
 		return 0
 	case KindHardware:
 		return 1
-	case KindNative:
+	case KindLib:
 		return 2
 	case KindGo:
 		return 4
@@ -279,7 +279,7 @@ func (r *SimpleRegistry) preferenceReason(need Need, chosen registered) string {
 	if order := r.preferenceFor(need.ID, need.Mode); preferenceRank(order, chosen.desc.Backend) < len(order) {
 		return "runtime preference " + strings.Join(order, " > ")
 	}
-	return "default preference: hardware > native > go"
+	return "default preference: hardware > lib > go"
 }
 
 func (r *SimpleRegistry) descriptorsFor(id av.CodecID, mode Mode) []Descriptor {
