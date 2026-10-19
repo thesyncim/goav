@@ -474,12 +474,23 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 		return nil
 	}))
 
+	// A second fork of the rule needs its own conversion, to 16kHz: each
+	// branch's inserted resample is its own node.
+	var lowRate atomic.Int32
+	lowSink := Sink(SinkFunc("low", func(_ context.Context, msg Message) error {
+		if msg.Kind == pipeline.MessageFrame && msg.Frame != nil && msg.Frame.Audio != nil {
+			lowRate.Store(int32(msg.Frame.Audio.SampleRate))
+		}
+		return nil
+	}))
+	rule := input.OnStream(MatchStreamID(late.ID)).Auto(shape.AllowResample())
 	task, err := solverTestOpusRuntime(testBundleFilters()).Build(ctx,
-		input.OnStream(MatchStreamID(late.ID)).
-			Auto(shape.AllowResample()).
-			Encode(codec.Opus(codec.Bitrate(96_000))).
+		rule.Encode(codec.Opus(codec.Bitrate(96_000))).
 			As("enc").
 			To(encodedSink),
+		rule.Require(shape.Frame(av.MediaAudio, shape.Audio(16_000, codec.Stereo, ""))).
+			As("low").
+			To(lowSink),
 		input.Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
@@ -499,6 +510,16 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 		return false
 	})
 	waitForCount(t, "encoded late packets", 1, encoded.Load)
+	waitForCondition(t, "16kHz frames on the low fork", func() bool { return lowRate.Load() == 16_000 })
+	resamples := 0
+	for _, node := range task.Describe().Nodes {
+		if strings.Contains(node.Name, "-late-mic") && strings.Contains(node.Name, "resample") {
+			resamples++
+		}
+	}
+	if resamples != 2 {
+		t.Fatalf("resample nodes = %d, want one per rule branch:\n%s", resamples, specText(task.Describe()))
+	}
 	close(stop)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
