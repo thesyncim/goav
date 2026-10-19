@@ -52,6 +52,7 @@ const (
 	FormatMatroska FormatID = "matroska"
 	FormatWebM     FormatID = "webm"
 	FormatMP4      FormatID = "mp4"
+	FormatTS       FormatID = "ts"
 )
 
 // ProtocolID names how an input or output is reached: a file-like reader, a

@@ -50,7 +50,7 @@ func nextName(kind string) string {
 // for: every well-known av.Codec* id.
 var runtimeCodecs = []av.CodecID{
 	av.CodecOpus, av.CodecVorbis, av.CodecFLAC, av.CodecAAC,
-	av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1,
+	av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1, av.CodecHEVC,
 	av.CodecPCM, av.CodecTextUTF8,
 }
 
@@ -59,7 +59,7 @@ var runtimeCodecs = []av.CodecID{
 // transport framings rtp and webrtc are not byte containers and are skipped).
 var runtimeFormats = []av.FormatID{
 	av.FormatFLV, av.FormatOgg, av.FormatIVF, av.FormatAnnexB,
-	av.FormatMatroska, av.FormatWebM, av.FormatMP4,
+	av.FormatMatroska, av.FormatWebM, av.FormatMP4, av.FormatTS,
 }
 
 // Runtime builds the deterministic test runtime. It contains exactly:
@@ -67,11 +67,11 @@ var runtimeFormats = []av.FormatID{
 //   - the standard frame filters (resample, resize), so shape-solver
 //     conversions work;
 //   - Codec(id) for every well-known av.Codec* id (opus, vorbis, flac, aac,
-//     vp8, vp9, h264, av1, pcm, text_utf8) — the passthrough fake, so
+//     vp8, vp9, h264, av1, hevc, pcm, text_utf8) — the passthrough fake, so
 //     .Encode(codec.Opus()) round-trips bytes instead of running a real
 //     encoder;
 //   - Format(id) for every well-known container av.Format* id (flv, ogg, ivf,
-//     annexb, matroska, webm, mp4) — the byte-faithful fake container, so
+//     annexb, matroska, webm, mp4, ts) — the byte-faithful fake container, so
 //     goav.Write destinations and goav.FileInput sources work without real
 //     containers;
 //   - runconfig.WithClock(NewClock()), so realtime pacing advances a fake clock
