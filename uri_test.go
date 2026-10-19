@@ -76,7 +76,7 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 		t.Fatalf("err = %v, want input_scheme_unsupported", err)
 	}
 	registered, _ := buildErr.Detail[string]("registered_schemes")
-	if !strings.Contains(registered, "file") {
+	if !strings.Contains(registered, "file") || !strings.Contains(registered, "https") {
 		t.Fatalf("registered_schemes = %q", registered)
 	}
 	if fixes := strings.Join(buildErr.FixLines(), "\n"); !strings.Contains(fixes, `runconfig.Scheme("whep", yourScheme)`) {

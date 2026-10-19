@@ -257,7 +257,9 @@ func cloneURL(u *url.URL) *url.URL {
 // schemeProviders names where each well-known scheme comes from, so an
 // unknown-scheme refusal can name the exact fix.
 var schemeProviders = map[string]string{
-	"file": `register runconfig.Scheme("file", scheme.File()), or build the runtime with bundle.New`,
+	"file":  `register runconfig.Scheme("file", scheme.File()), or build the runtime with bundle.New`,
+	"http":  `register runconfig.Scheme("http", scheme.HTTP()), or build the runtime with bundle.New`,
+	"https": `register runconfig.Scheme("https", scheme.HTTP()), or build the runtime with bundle.New`,
 }
 
 func uriInvalidError(code errcode.Code, operation, node string, cause error) error {

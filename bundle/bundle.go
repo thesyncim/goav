@@ -150,4 +150,6 @@ func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconf
 
 var schemeOptions = []runconfig.Option{
 	runconfig.Scheme("file", scheme.File()),
+	runconfig.Scheme("http", scheme.HTTP()),
+	runconfig.Scheme("https", scheme.HTTP()),
 }
