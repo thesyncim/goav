@@ -6,7 +6,7 @@ toolchain go1.27.2
 
 require (
 	github.com/ebitengine/purego v0.11.0
-	github.com/thesyncim/goav v0.0.0-20261019180427-a7325d37129b
+	github.com/thesyncim/goav v0.0.0-20261019190350-8d48e39764a9
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4
 )
 
