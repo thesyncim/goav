@@ -102,6 +102,9 @@ func TestReleasedBufferMisuseIsLoud(t *testing.T) {
 }
 
 func TestPooledBuffersRecycleWithoutAllocating(t *testing.T) {
+	if raceEnabled {
+		t.Skip("sync.Pool drops items under the race detector; the pin runs without -race")
+	}
 	warm := NewBuffer(3 << 20)
 	warm.Release() // warm the class
 	if allocs := testing.AllocsPerRun(100, func() {

@@ -49,30 +49,6 @@ func (s *bufferedPacketSource) Close() error {
 	return nil
 }
 
-type bufferedFrameSource struct {
-	name    string
-	frame   av.Frame
-	done    chan struct{}
-	message Message
-}
-
-func (s *bufferedFrameSource) Name() string {
-	return s.name
-}
-
-func (s *bufferedFrameSource) Start(ctx context.Context, emitter Emitter) error {
-	defer close(s.done)
-	s.message.Kind = MessageFrame
-	s.message.Packet = nil
-	s.message.Frame = &s.frame
-	s.message.Event = nil
-	return emitter.Emit(ctx, &s.message)
-}
-
-func (s *bufferedFrameSource) Close() error {
-	return nil
-}
-
 type bufferedBlockingSink struct {
 	name        string
 	started     chan struct{}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -246,6 +247,9 @@ func TestNewDemuxSourceValidation(t *testing.T) {
 }
 
 func TestDemuxSourceAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	demuxer := &fakeDemuxer{
 		steps: []demuxStep{{packet: true, stream: "audio"}},
 	}

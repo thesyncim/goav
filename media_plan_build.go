@@ -109,18 +109,6 @@ func joinPlanWithRuntime(plan *joinPlan, rt *Runtime) *joinPlan {
 	return &clone
 }
 
-func graphPlanOperationsByBranch(operations []workOperation) map[string][]workOperation {
-	out := make(map[string][]workOperation)
-	for i := range operations {
-		branch := operations[i].Branch
-		if branch == "" {
-			continue
-		}
-		out[branch] = append(out[branch], operations[i])
-	}
-	return out
-}
-
 // mediaShapeFromMediaTransform is the frame shape a lowered transform
 // produces.
 func mediaShapeFromMediaTransform(transform mediaTransform) shape.Spec {

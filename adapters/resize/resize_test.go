@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/raceflag"
 )
 
 func TestRegister(t *testing.T) {
@@ -163,6 +164,9 @@ func TestFilterRequiresOutputCapacity(t *testing.T) {
 }
 
 func TestFilterAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	resizer := newTestFilter(t, filter.ResizeConfig{Width: 2, Height: 2}, videoStream(4, 4, av.PixelFormatYUV420P))
 	frame := patternedVideoFrame("video", 4, 4, av.PixelFormatYUV420P)
 	result := filter.Result{Frames: []av.Frame{preallocVideoFrame(2, 2)}[:0]}

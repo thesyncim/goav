@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -140,6 +141,9 @@ func TestSinkFuncDeliveryAllocs(t *testing.T) {
 // slots, the join sync state reuses participant scratch, and the mixed output
 // rides a borrowed stage-owned buffer that buffered graphs copy before queueing.
 func TestAudioMixStepAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	ctx := context.Background()
 	for _, tt := range []struct {
 		name string
@@ -174,6 +178,9 @@ func TestAudioMixStepAllocs(t *testing.T) {
 // reusable stage-owned slots, output planes are reused, and the emitted canvas
 // is borrowed for the downstream lifetime contract.
 func TestVideoCompositeStepAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	ctx := context.Background()
 	composite := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
 		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)

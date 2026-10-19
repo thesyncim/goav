@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/raceflag"
 	govpxlib "github.com/thesyncim/govpx"
 )
 
@@ -205,6 +206,9 @@ func TestPacketLossInterFrameRequestsOneKeyframe(t *testing.T) {
 // from the pool once the previous picture was released, as the stage does
 // after publishing it.
 func TestPrepareI420FrameAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip(raceflag.SkipReason)
+	}
 	frame := av.Frame{Planes: make([]av.Plane, 3)}
 
 	if allocs := testing.AllocsPerRun(1000, func() {
