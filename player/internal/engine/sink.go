@@ -19,13 +19,13 @@ var _ pipeline.Sink = Sink{}
 func (Sink) Name() string { return "player" }
 
 // Handle routes decoded frames to the engine's queues; a discontinuity (a
-// seek landed) flushes them so the new position re-prerolls.
+// seek landed) flushes them once per seek, so the new position re-prerolls.
 func (s Sink) Handle(ctx context.Context, msg *pipeline.Message) error {
 	switch {
 	case msg == nil:
 	case msg.Kind == pipeline.MessageEvent && msg.Event != nil:
 		if msg.Event.Type == av.EventDiscontinuity {
-			s.Engine.Flush()
+			s.Engine.Discontinuity()
 		}
 	case msg.Kind == pipeline.MessageFrame && msg.Frame != nil:
 		switch {

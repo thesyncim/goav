@@ -39,7 +39,11 @@ func openSpeaker(e *engine.Engine) (stop func(), err error) {
 	}
 	p := ctx.NewPlayer(fill{e})
 	p.SetBufferSize(int(speakerBuffer.Seconds()*engine.OutputRate) * engine.BytesPerFrame)
-	e.SetDevice(func() int { return p.BufferedSize() / engine.BytesPerFrame })
+	// Past the player buffer oto reports, a sample still waits in the device
+	// queue (oto keeps it full: speakerBuffer, split into periods on darwin)
+	// and then the hardware's own output latency, where the platform
+	// reports one. Both delay what is heard, so both shift the heard position.
+	e.SetDevice(func() int { return p.BufferedSize() / engine.BytesPerFrame }, speakerBuffer+hardwareLatency())
 	p.Play()
 	// The engine's device callback keeps the player reachable while it plays
 	// (oto closes a collected player).

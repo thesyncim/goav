@@ -123,6 +123,28 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	if moved := e.Stats().Position - paused; moved > 5*time.Millisecond || moved < -5*time.Millisecond {
 		t.Fatalf("position moved %v while paused", moved)
 	}
+	// A seek while paused shows the target's picture, still paused.
+	mu.Lock()
+	seeking, shown = true, nil
+	mu.Unlock()
+	if err := e.Seek(ctx, task, 500*time.Millisecond, true); err != nil {
+		t.Fatalf("paused seek: %v", err)
+	}
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		mu.Lock()
+		n := len(shown)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+	}
+	time.Sleep(150 * time.Millisecond)
+	mu.Lock()
+	if n := len(shown); n == 0 || n > 2 || shown[n-1] != 500*time.Millisecond {
+		t.Fatalf("paused seek to 500ms showed %v, want one picture, the keyframe at 500ms", shown)
+	}
+	seeking, shown, lastPTS = false, nil, 0
+	mu.Unlock()
 	if err := task.Resume(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +155,7 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	mu.Lock()
 	seeking = true
 	mu.Unlock()
-	e.BeginSeek()
-	if err := task.Control(ctx, control.Seek(100*time.Millisecond)); err != nil {
+	if err := e.Seek(ctx, task, 100*time.Millisecond, false); err != nil {
 		t.Fatalf("task refused Seek: %v", err)
 	}
 	time.Sleep(400 * time.Millisecond)

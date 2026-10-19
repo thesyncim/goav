@@ -11,22 +11,32 @@ import (
 )
 
 // fakeDevice is a deterministic speaker: time moves only when the test steps
-// it, each step pulls exactly that much audio from the engine, and buffered
-// models an output buffer of that many frames ahead of the DAC.
+// it, each step pulls exactly that much audio from the engine. Between Fill
+// and the DAC it models what oto has: buffered frames in the player (which it
+// reports), then the device queue plus hardware latency (which the device
+// reports once, as a constant: see setQueue).
 type fakeDevice struct {
 	t        *testing.T
 	e        *Engine
 	now      time.Duration
 	buffered int
+	queue    time.Duration
 	last     []byte
 }
 
 func newFakeDevice(t *testing.T, latency time.Duration) *fakeDevice {
 	d := &fakeDevice{t: t}
 	d.e = New(latency, func() time.Duration { return d.now })
-	d.e.SetDevice(func() int { return d.buffered })
+	d.e.SetDevice(func() int { return d.buffered }, 0)
 	d.e.Clock().Now() // anchor the clock at zero
 	return d
+}
+
+// setQueue models a device queue (and hardware latency) of q past the player
+// buffer, and tells the engine, as openSpeaker does.
+func (d *fakeDevice) setQueue(q time.Duration) {
+	d.queue = q
+	d.e.SetDevice(func() int { return d.buffered }, q)
 }
 
 // step plays d of device time in 1ms pulls, keeping buffered frames in hand.
@@ -34,7 +44,7 @@ func (d *fakeDevice) step(total time.Duration) {
 	for elapsed := time.Duration(0); elapsed < total; elapsed += time.Millisecond {
 		d.now += time.Millisecond
 		played := durationToFrames(d.now)
-		want := played + int64(d.buffered)
+		want := played + int64(d.buffered) + durationToFrames(d.queue)
 		if n := want - d.e.written.Load(); n > 0 {
 			d.last = make([]byte, n*BytesPerFrame)
 			d.e.Fill(d.last)
@@ -180,15 +190,18 @@ func TestSlowDisplayDropsLateFrames(t *testing.T) {
 // The heard position subtracts what the device holds but has not played.
 func TestHeardPositionExcludesDeviceBuffer(t *testing.T) {
 	d := newFakeDevice(t, 50*time.Millisecond)
-	d.buffered = 2048 // ~42.7ms in the device's hands
+	d.buffered = 2048 // ~42.7ms in the player buffer
+	// oto's 40ms device queue (darwin: 4 x 10ms) plus ~12ms of hardware
+	// latency: unaccounted, the picture would lead the sound by 52ms.
+	d.setQueue(52 * time.Millisecond)
 	d.pushAudio(0, time.Second)
 	d.step(300 * time.Millisecond)
 	m, ok := d.master()
 	if !ok {
 		t.Fatal("no master clock")
 	}
-	// Playback started on the first pull (1s >= latency); the device then
-	// played 300ms of it, the buffered frames still pending.
+	// Playback started on the first pull (1s >= latency); the speaker has
+	// played 300ms of it, the player buffer and device queue still pending.
 	if !near(m, 300*time.Millisecond, 2*time.Millisecond) {
 		t.Fatalf("master = %v, want ~300ms heard", m)
 	}
@@ -495,5 +508,96 @@ func TestBeginSeekDropsStaleMediaUntilTheDiscontinuity(t *testing.T) {
 	d.pushAudio(6*time.Second, 6100*time.Millisecond)
 	if d.e.queuedLocked() == 0 {
 		t.Fatal("media dropped after a refused seek")
+	}
+}
+
+// Through a device queue, frames are still shown when their audio is heard,
+// not when it is handed to the device.
+func TestVideoWaitsForAudioThroughTheDeviceQueue(t *testing.T) {
+	d := newFakeDevice(t, 100*time.Millisecond)
+	d.buffered = 1920
+	d.setQueue(52 * time.Millisecond)
+	d.pushAudio(0, time.Second)
+	d.pushVideo(0, time.Second, 40*time.Millisecond)
+	for range 80 {
+		d.step(10 * time.Millisecond)
+		if f := d.e.NextVideo(d.e.Clock().Now()); f != nil {
+			pts, _ := f.PTS.ToDuration()
+			f.Release()
+			// The speaker has played d.now of audio (the first pull started
+			// playback at once), so the frame due is the one at d.now.
+			if late := d.now - pts; late < -earlyTolerance || late > 10*time.Millisecond {
+				t.Fatalf("frame %v shown with the speaker at %v", pts, d.now)
+			}
+		}
+	}
+}
+
+func discontinuity(t *testing.T, e *Engine) {
+	t.Helper()
+	msg := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventDiscontinuity}}
+	if err := (Sink{Engine: e}).Handle(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Both branches of a seek deliver a discontinuity; the seek flushes once, so
+// the second leaves the first branch's fresh media alone.
+func TestOneSeekFlushesOnce(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 500*time.Millisecond)
+	d.step(100 * time.Millisecond) // the epoch has been heard
+	discontinuity(t, d.e)          // the video branch's: flushes
+	if d.e.queuedLocked() != 0 {
+		t.Fatal("first discontinuity of a seek did not flush")
+	}
+	d.pushVideo(3*time.Second, 3100*time.Millisecond, 40*time.Millisecond)
+	discontinuity(t, d.e) // the audio branch's, for the same seek
+	if len(d.e.video) != 3 {
+		t.Fatalf("second discontinuity of one seek flushed fresh video: %d queued", len(d.e.video))
+	}
+	// A later seek, once the new position has been heard, flushes again.
+	d.pushAudio(3*time.Second, 3500*time.Millisecond)
+	d.step(100 * time.Millisecond)
+	discontinuity(t, d.e)
+	if len(d.e.video) != 0 || d.e.queuedLocked() != 0 {
+		t.Fatal("a new seek did not flush")
+	}
+}
+
+// A seek made while paused waits for its discontinuity however long the
+// pause lasts, then previews its first picture; the wait for a missing
+// discontinuity is charged only while playing.
+func TestPausedSeekWaitsAndPreviews(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 500*time.Millisecond)
+	d.step(100 * time.Millisecond)
+	d.e.SetPaused(true)
+	d.e.BeginSeek()
+	d.step(3 * time.Second)
+	d.pushVideo(200*time.Millisecond, 300*time.Millisecond, 40*time.Millisecond) // stale
+	if len(d.e.video) != 0 {
+		t.Fatal("stale media accepted after a long paused seek")
+	}
+	discontinuity(t, d.e)
+	d.pushVideo(5*time.Second, 5100*time.Millisecond, 40*time.Millisecond)
+	if !d.e.WaitPicture(context.Background(), time.Second) {
+		t.Fatal("no picture queued after the paused seek")
+	}
+	f := d.e.NextVideo(d.e.Clock().Now())
+	if f == nil {
+		t.Fatal("paused seek previewed nothing")
+	}
+	if pts, _ := f.PTS.ToDuration(); pts != 5*time.Second {
+		t.Fatalf("previewed %v, want the target 5s", pts)
+	}
+	f.Release()
+
+	d.e.SetPaused(false)
+	d.e.BeginSeek()
+	d.step(seekWait + 10*time.Millisecond)
+	d.pushVideo(7*time.Second, 7040*time.Millisecond, 40*time.Millisecond)
+	if len(d.e.video) == 0 {
+		t.Fatal("a seek with no discontinuity kept dropping past its wait")
 	}
 }
