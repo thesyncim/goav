@@ -11,6 +11,8 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+Entries since 2026-10-19 live in changelog.d/ until release.
+
 - Fix: the offline order now also covers nested joins and joins with a
   Select arm, on either runner: a join bounds its arms at the turn, passing
   over a file whose arm it holds back, instead of blocking a delivery in

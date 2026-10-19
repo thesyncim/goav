@@ -35,4 +35,4 @@
 
 ## Release Notes
 
-- [ ] CHANGELOG.md was updated, or this PR is intentionally internal-only.
+- [ ] A changelog.d/ fragment was added, or this PR is intentionally internal-only.
