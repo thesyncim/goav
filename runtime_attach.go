@@ -501,7 +501,12 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 	if attachment == nil {
 		return nil
 	}
-	first := t.stopAttachmentChildrenLocked(ctx, input)
+	first, stranded := t.stopAttachmentChildrenLocked(ctx, input)
+	if stranded {
+		// A child that could not stop still reads this branch: it stays
+		// attached, and a later detach finishes both.
+		return first
+	}
 	attachment.stopMu.Lock()
 	defer attachment.stopMu.Unlock()
 	if attachment.stopped {
@@ -552,19 +557,27 @@ func (t *task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttac
 	}
 }
 
-func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) error {
+// stopAttachmentChildrenLocked stops the attachments anchored on this one's
+// taps and nodes. Each child is tried once: one that does not stop (its
+// context ended) is never reselected, and stranded reports that one is
+// still attached.
+func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) (first error, stranded bool) {
 	if input.runtime == nil {
-		return nil
+		return nil, false
 	}
-	var first error
+	tried := map[*runtimeAttachment]bool{}
 	for {
-		child := t.childAttachmentLocked(input.runtime)
+		child := t.childAttachmentLocked(input.runtime, tried)
 		if child == nil {
-			return first
+			return first, stranded
 		}
+		tried[child] = true
 		childInput := runtimeDetachInputForRuntimeAttachment(child, input.disposition)
 		if err := t.stopAttachmentLocked(ctx, childInput); first == nil && err != nil {
 			first = err
+		}
+		if !child.stopped {
+			stranded = true
 		}
 	}
 }
@@ -602,7 +615,7 @@ func detachDispositionLabel(disposition oldBranchDisposition) string {
 	}
 }
 
-func (t *task) childAttachmentLocked(parent *runtimeAttachment) *runtimeAttachment {
+func (t *task) childAttachmentLocked(parent *runtimeAttachment, skip map[*runtimeAttachment]bool) *runtimeAttachment {
 	if parent == nil {
 		return nil
 	}
@@ -617,7 +630,7 @@ func (t *task) childAttachmentLocked(parent *runtimeAttachment) *runtimeAttachme
 		nodes[parent.nodes[i].String()] = struct{}{}
 	}
 	for attachment := range t.attachments {
-		if attachment == nil || attachment == parent || attachment.stopped {
+		if attachment == nil || attachment == parent || attachment.stopped || skip[attachment] {
 			continue
 		}
 		for _, anchor := range attachment.allAnchorTaps() {
