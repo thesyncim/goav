@@ -80,8 +80,9 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 	if !strings.Contains(registered, "file") || !strings.Contains(registered, "https") {
 		t.Fatalf("registered_schemes = %q", registered)
 	}
-	if fixes := strings.Join(buildErr.FixLines(), "\n"); !strings.Contains(fixes, `runconfig.Scheme("whep", yourScheme)`) {
-		t.Fatalf("fixes do not name the registration:\n%s", fixes)
+	if fixes := strings.Join(buildErr.FixLines(), "\n"); !strings.Contains(fixes, `runconfig.Scheme("whep", webrtcav.WHEP())`) ||
+		!strings.Contains(fixes, "github.com/thesyncim/goav/webrtcav") {
+		t.Fatalf("fixes do not name the whep provider:\n%s", fixes)
 	}
 
 	// A bare runtime registers no schemes at all.
