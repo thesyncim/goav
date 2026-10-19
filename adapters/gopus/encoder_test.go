@@ -146,3 +146,29 @@ func TestOpusEncoderControlIsTyped(t *testing.T) {
 		t.Fatalf("open with a mistyped Control: err = %v, want the type mismatch", err)
 	}
 }
+
+// TestOpusEncodeAllocs pins the steady-state encode path: a 20 ms frame
+// encodes into a caller-owned result without allocating.
+func TestOpusEncodeAllocs(t *testing.T) {
+	ctx := context.Background()
+	encoder := &Encoder{}
+	if err := encoder.Open(ctx, opusEncodeConfig()); err != nil {
+		t.Fatal(err)
+	}
+	frame := opusTestFrame()
+	frame.Planes[0].Buffer.Bytes = make([]byte, 960*2)
+	frame.Audio.Samples = 960
+	frame.Duration = av.SamplesDuration(960, 48000)
+	result := opusEncodeResult(8, 4000)
+	n := int64(0)
+	if allocs := testing.AllocsPerRun(1000, func() {
+		frame.PTS = av.Timestamp{Value: n * 960, Base: av.TimeBase{Num: 1, Den: 48000}}
+		n++
+		result.Packets, result.Events = result.Packets[:0], result.Events[:0]
+		if err := encoder.EncodeInto(ctx, &frame, &result); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("encode allocs = %v, want 0", allocs)
+	}
+}

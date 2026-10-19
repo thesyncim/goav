@@ -66,3 +66,5 @@
 - `docs/ERROR_CATALOG.md` lists every code a goav refusal can carry (90, by
   family), generated from the source and pinned complete by
   `TestErrorCatalogDocMatchesErrcodeCatalog`, instead of 13 of them.
+- Opus and AV1 encode are allocation-pinned (`TestOpusEncodeAllocs`,
+  `TestAV1EncodeAllocs`: 0 per frame), as PERFORMANCE.md already claimed.

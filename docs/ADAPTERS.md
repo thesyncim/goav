@@ -156,7 +156,8 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
 `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`,
-`TestDecodePacketLossConcealmentAllocs`, decoder/encoder `*Allocs` tests) that
+`TestDecodePacketLossConcealmentAllocs`, `TestOpusEncodeAllocs`, `TestAV1EncodeAllocs`,
+decoder/encoder `*Allocs` tests) that
 fails the suite if the hot path starts allocating. The repo-wide
 proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 
