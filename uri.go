@@ -241,6 +241,9 @@ var schemeProviders = map[string]string{
 	"https":     `register runconfig.Scheme("https", scheme.HTTP()), or build the runtime with bundle.New`,
 	"whep":      `register runconfig.Scheme("whep", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
 	"whep+http": `register runconfig.Scheme("whep+http", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whip":      `register runconfig.Scheme("whip", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whips":     `register runconfig.Scheme("whips", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whip+http": `register runconfig.Scheme("whip+http", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
 }
 
 func uriInvalidError(code errcode.Code, operation, node string, cause error) error {

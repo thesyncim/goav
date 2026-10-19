@@ -156,7 +156,27 @@ live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 | --- | --- | --- |
 | `file`, bare paths | `scheme.File()`, in `bundle.Schemes` | in and out, random access |
 | `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
-| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WHEPToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
+| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.Token(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
+| `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.Token(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
+
+WHEP and WHIP share `Token`, `HTTPClient`, and `PeerConfig`; a refused request is a
+`*webrtcav.StatusError`, which names no URL.
+
+## RTP and WebRTC egress
+
+`rtpav.NewPacketizer` is the inverse of each depacketizer: H264 (single NAL, STAP-A, FU-A,
+SPS/PPS before every IDR), VP8, VP9 (non-flexible), AV1 (OBU aggregation), and Opus, into a
+reused `PacketizeResult` with no allocation per packet. `rtpav.Send(w)` is a media destination
+for `goav.Sink` over a `PacketWriter` (`rtpav.DialUDP`): one SSRC per stream, sender reports,
+NACK from a bounded history, PLI/FIR as `control.Keyframe` and REMB as `control.SetBitrate` on
+the encoder feeding the stream. `webrtcav.LocalTrack(track, sender)` sends one stream on a Pion
+track, and WHIP builds on the same sender (TWCC through Pion's send-side estimator).
+
+A media sink declares what it takes (`InputShapes`), learns its streams with their extradata
+(`OpenStreams`), and gets the task's control path (`UseControl`), all optional
+(`provider.Output`). Frames reaching one are encoded to its first codec the runtime can encode,
+as Describe and Explain show; other codecs are refused with the fix (`.Decode()`, or an explicit
+`.Encode`). Egress is paced by its source: a file publishes in real time behind `playout`.
 
 ## Descriptor-only boundaries
 
