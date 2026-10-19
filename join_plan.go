@@ -23,10 +23,11 @@ type joinArmStagePlan struct {
 // joinArmPlan is one planned arm: its input, the statically selected stream,
 // and the planned per-arm nodes (optional decode, optional arm stage).
 type joinArmPlan struct {
-	// input indexes the recipe input a leaf arm reads; spec is that input.
-	input     int
-	spec      InputSpec
-	inputName string
+	// input indexes the recipe input a leaf arm reads; sourceShape is the
+	// shape that input declares.
+	input       int
+	sourceShape shape.Spec
+	inputName   string
 	// sourceNode is the leaf arm's planned source node name, resolved across
 	// every leaf in the join tree so repeated inputs stay disambiguated.
 	sourceNode string
@@ -244,8 +245,7 @@ func (p *joinPlan) firstArmSourceShape() shape.Spec {
 	if arm.sub != nil {
 		return shape.FromStream(arm.sub.joined, arm.sub.joinedDomain)
 	}
-	spec, _ := declaredSourceShape(arm.spec)
-	return spec
+	return arm.sourceShape
 }
 
 // allTaps collects this join's taps, the taps its arm chains declared, and

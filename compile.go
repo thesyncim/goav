@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 // Run builds the Outputs into one task and runs it to completion. It returns
@@ -117,12 +118,106 @@ func (o recipeCompileOptions) Context() context.Context {
 	return context.Background()
 }
 
+// compileRequest is everything one compile reads: the recipe DAG, its
+// Outputs, the facts of the input and destination handles the DAG indexes,
+// the stream matches its rules name, and the host that checks the handles.
+type compileRequest struct {
+	Graph   recipeir.Graph
+	Outputs []compileOutput
+	Inputs  []compileInput
+	Dests   []compileDestination
+	Matches []sourcepkg.StreamMatch
+	Host    compileHost
+}
+
+// compileOutput is one Output: the node it routes (a NodeInput for
+// input.To) and its destination nodes in .To order.
+type compileOutput struct {
+	From  recipeir.NodeID
+	Dests []recipeir.NodeID
+}
+
+// compileInput is what the compiler knows of one input before it opens.
+type compileInput struct {
+	IR recipeir.Input
+	// Name names the input in a stream selection; SourceNode and
+	// SourceDetail are its planned source node.
+	Name         string
+	SourceNode   string
+	SourceDetail string
+	// Shape is the shape the input declares, if it declares one; Frames
+	// reports a declared frame shape.
+	Shape    shape.Spec
+	HasShape bool
+	Frames   bool
+	// Live reports an input that delivers on its own clock.
+	Live bool
+	// Demuxed reports an input a demuxer opens (a file or URI).
+	Demuxed bool
+	// EventDomain is the domain the input's stream events arrive in.
+	EventDomain shape.MediaDomain
+}
+
+// compileDestination is what the compiler knows of one destination.
+type compileDestination struct {
+	// Invalid is why the handle is unusable, or "".
+	Invalid string
+	// Label is the destination's own name, or "".
+	Label string
+	// Group identifies a destination copies of one handle share, or "".
+	Group string
+	IR    recipeir.Destination
+	// Sink reports a sink destination: SinkName and SinkDetail name it.
+	Sink       bool
+	SinkName   string
+	SinkDetail string
+	// HasOutput reports a byte destination; Output is its address.
+	HasOutput bool
+	Output    format.Output
+	// Format is the container asked for; ResolvedFormat the one the
+	// output resolved to.
+	Format         av.FormatID
+	ResolvedFormat av.FormatID
+}
+
+// sharesGroup reports two destinations one handle's copies made.
+func (d compileDestination) sharesGroup(other compileDestination) bool {
+	return d.Group != "" && d.Group == other.Group
+}
+
+// openFormat is the container the destination opens.
+func (d compileDestination) openFormat() av.FormatID {
+	if d.ResolvedFormat != "" {
+		return d.ResolvedFormat
+	}
+	return d.Format
+}
+
+// compileHost checks what only the concrete handles know, at the point in
+// the pass order the checks have always run. order lists each recipe
+// destination's index in compileRequest.Dests.
+type compileHost interface {
+	ValidateHandles(operation string, order []int, names []string) error
+	ResolveOutputs(ctx context.Context, order []int, names []string) ([]av.FormatID, error)
+	ProbeInputs(ctx context.Context) ([]format.ProbeResult, error)
+}
+
+// inputsLive reports whether any input delivers on its own clock.
+func inputsLive(inputs []compileInput) bool {
+	for i := range inputs {
+		if inputs[i].Live {
+			return true
+		}
+	}
+	return false
+}
+
 // recipeCompileState is one recipe under compilation: its IR (the DAG, the
 // branches derived from it, inputs, destinations), the concrete handles the
 // IR indexes, and what the passes resolve along the way.
 type recipeCompileState struct {
 	operation string
-	graph     *recipeGraph
+	req       *compileRequest
 	recipe    recipeir.Recipe
 	runtime   *Runtime
 	options   recipeCompileOptions
@@ -133,11 +228,13 @@ type recipeCompileState struct {
 	// remux are the whole-input copies (input.To): inputs and destinations.
 	remux []remuxOutput
 
-	inputAttachments       []InputSpec
-	outputAttachments      []destinationSpec
+	// outputs are the facts of the recipe's destinations, in recipe order;
+	// outputSlots index each in req.Dests.
+	outputs                []compileDestination
+	outputSlots            []int
 	outputDestinationNames []string
 	inputProbes            []format.ProbeResult
-	streamRules            []streamRule
+	streamRules            []streamRulePlan
 
 	// joins are the planned joins, by graph node.
 	joins     map[recipeir.NodeID]*joinPlan
@@ -157,7 +254,12 @@ type recipeCompileState struct {
 	destIndex map[recipeir.NodeID]int
 
 	shapeDiagnostics []plan.Diagnostic
-	graphPlan        graphPlan
+	// lowered reports the recipe lowered: composed is its compose graph,
+	// spec the graph it describes, and work its work plan.
+	lowered  bool
+	composed composeGraph
+	spec     pipeline.Spec
+	work     workPlan
 }
 
 // branchFacts are what the lowering knows of one branch beyond its IR.
@@ -197,15 +299,71 @@ type recipeCompilePass struct {
 	fn   func(*recipeCompileState) error
 }
 
-// compileRecipe runs the compiler passes over one recipe DAG: derive and
+// compileRecipe compiles one recipe DAG against rt: it projects the DAG and
+// its handles into the compile request, runs the compiler, and binds the
+// result back to the handles the build opens.
+func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
+	rt = g.compileRuntime(rt)
+	handles := g.handles(rt)
+	result, err := runCompile(g.compileRequest(handles), rt, options)
+	if err != nil {
+		return recipeResolved{}, err
+	}
+	resolved := recipeResolved{
+		recipe:            result.recipe,
+		runtime:           rt,
+		inputAttachments:  handles.inputs,
+		outputAttachments: handles.outputs(result.outputSlots),
+		inputProbes:       result.inputProbes,
+		outputFormats:     result.outputFormats,
+		streamRules:       g.handles(rt).streamRules(result.streamRules),
+		name:              result.name,
+		rulesSource:       result.rulesSource,
+		rulesDomain:       result.rulesDomain,
+	}
+	if result.lowered {
+		resolved.graphPlan = newGraphPlan(rt, result.spec, result.work, &recipeLowerer{
+			runtime:   rt,
+			recipe:    result.recipe,
+			joins:     result.joins,
+			joinOrder: result.joinOrder,
+			graph:     result.graph,
+			inputs:    resolved.inputAttachments,
+			outputs:   resolved.outputAttachments,
+		})
+	}
+	return resolved, nil
+}
+
+// compileResult is what one compile resolves: the recipe IR, its planned
+// joins and compose graph, the spec and work plan it lowers to, and what the
+// passes learned of the inputs and destinations.
+type compileResult struct {
+	recipe        recipeir.Recipe
+	joins         map[recipeir.NodeID]*joinPlan
+	joinOrder     []recipeir.NodeID
+	graph         composeGraph
+	lowered       bool
+	spec          pipeline.Spec
+	work          workPlan
+	inputProbes   []format.ProbeResult
+	outputFormats map[string]av.FormatID
+	outputSlots   []int
+	streamRules   []streamRulePlan
+	name          string
+	rulesSource   string
+	rulesDomain   shape.MediaDomain
+}
+
+// runCompile runs the compiler passes over one recipe DAG: derive and
 // validate its branches, check its inputs and destinations, preflight the
 // adapters, plan its joins, solve its shapes, and lower it to the one graph
 // plan Describe, Explain, and Build read.
-func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
+func runCompile(req *compileRequest, rt *Runtime, options recipeCompileOptions) (compileResult, error) {
 	state := recipeCompileState{
 		operation: "build job",
-		graph:     g,
-		runtime:   g.compileRuntime(rt),
+		req:       req,
+		runtime:   rt,
 		options:   options,
 		inserted:  map[string]recipeir.NodeID{},
 	}
@@ -232,21 +390,24 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 	}
 	for _, pass := range passes {
 		if err := pass.fn(&state); err != nil {
-			return recipeResolved{}, compilerPassError(state.operation, pass.name, err)
+			return compileResult{}, compilerPassError(state.operation, pass.name, err)
 		}
 	}
-	return recipeResolved{
-		recipe:            state.recipe,
-		runtime:           state.runtime,
-		graphPlan:         state.graphPlan,
-		inputAttachments:  state.inputAttachments,
-		outputAttachments: state.outputAttachments,
-		inputProbes:       state.inputProbes,
-		outputFormats:     state.outputFormatMap(),
-		streamRules:       state.streamRules,
-		name:              state.recipeName(),
-		rulesSource:       state.ruleSourceNode(),
-		rulesDomain:       state.ruleSourceDomain(),
+	return compileResult{
+		recipe:        state.recipe,
+		joins:         state.joins,
+		joinOrder:     state.joinOrder,
+		graph:         state.composed,
+		lowered:       state.lowered,
+		spec:          state.spec,
+		work:          state.work,
+		inputProbes:   state.inputProbes,
+		outputFormats: state.outputFormatMap(),
+		outputSlots:   state.outputSlots,
+		streamRules:   state.streamRules,
+		name:          state.recipeName(),
+		rulesSource:   state.ruleSourceNode(),
+		rulesDomain:   state.ruleSourceDomain(),
 	}, nil
 }
 
@@ -322,8 +483,8 @@ func (s *recipeCompileState) soleJoinRoot() (recipeir.NodeID, bool) {
 
 func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	formats := make(map[string]av.FormatID)
-	for i := range s.outputAttachments {
-		formatID := destinationSpecFormat(s.outputAttachments[i])
+	for i := range s.outputs {
+		formatID := s.outputs[i].openFormat()
 		if formatID == "" {
 			continue
 		}
@@ -551,10 +712,7 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 // --- attachments ---
 
 func (s *recipeCompileState) validateAttachments() error {
-	if err := validateJobInputs(s.inputAttachments); err != nil {
-		return err
-	}
-	return validateDestinationSpecs(s.operation, s.outputAttachments, s.outputDestinationNames...)
+	return s.req.Host.ValidateHandles(s.operation, s.outputSlots, s.outputDestinationNames)
 }
 
 // validateStreamOutputKinds refuses a branch whose output kinds its stream
@@ -703,11 +861,13 @@ func (s *recipeCompileState) validateOutputFormatAdapters() error {
 	if !s.options.preflight {
 		return nil
 	}
-	outputs, err := validateOutputFormatAdapters(s.options.Context(), s.adapterRuntime(), s.outputAttachments, s.outputDestinationNames...)
+	formats, err := s.req.Host.ResolveOutputs(s.options.Context(), s.outputSlots, s.outputDestinationNames)
 	if err != nil {
 		return err
 	}
-	s.outputAttachments = outputs
+	for i := range formats {
+		s.outputs[i].ResolvedFormat = formats[i]
+	}
 	return nil
 }
 
@@ -715,7 +875,7 @@ func (s *recipeCompileState) validateInputFormatAdapters() error {
 	if !s.options.preflight {
 		return nil
 	}
-	probes, err := validateInputFormatAdapters(s.options.Context(), s.adapterRuntime(), s.inputAttachments)
+	probes, err := s.req.Host.ProbeInputs(s.options.Context())
 	if err != nil {
 		return err
 	}

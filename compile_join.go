@@ -36,8 +36,7 @@ func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet)
 	if p, ok := s.joins[id]; ok {
 		return p, nil
 	}
-	g := s.graph
-	node := g.node(id)
+	node := s.req.Graph.Nodes[id]
 	kind := node.Join.Kind
 	tree := &joinTreeSnapshot{kind: joinKind(kind)}
 	if node.Join.Sync {
@@ -145,15 +144,15 @@ func (s *recipeCompileState) joinEncode(id recipeir.NodeID) (codec.Spec, bool) {
 // planJoinArm resolves one arm: its plan, its canvas position, and the arm's
 // own operations after what streams already lower.
 func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at recipeir.Point, sets []inputStreamSet) (joinArmPlan, *compositeRegion, []recipeir.Operation, error) {
-	g := s.graph
+	g := s.req.Graph
 	name, kind, profile := p.name, string(p.tree.kind), p.profile
 	var region *compositeRegion
 	if at.Set {
 		region = &compositeRegion{x: at.X, y: at.Y}
 	}
-	path := g.path(armID)
+	path := g.Path(armID)
 	root := path[0]
-	rootNode := g.node(root)
+	rootNode := g.Nodes[root]
 	feed, fed := s.armFeed(path)
 	start := 1
 	if fed {
@@ -165,7 +164,7 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 	}
 	var armOps []recipeir.Operation
 	for _, id := range path[start:] {
-		operation := g.node(id).Op
+		operation := g.Nodes[id].Op
 		operation.Node = id
 		if operation.Kind == recipeir.OpName {
 			continue
@@ -223,7 +222,7 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 	switch {
 	case fed:
 		armPlan = s.fedArm(p, feed, input, set, rootNode.Select)
-	case joinArmBindsAtOpen(s.inputAttachments[input], set):
+	case joinArmBindsAtOpen(s.req.Inputs[input], set):
 		bound, err := planJoinBindArm(name, kind, profile, recipeIRSelector(rootNode.Select), set)
 		if err != nil {
 			return joinArmPlan{}, nil, nil, err
@@ -241,7 +240,7 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 		armPlan = joinArmPlan{inputName: set.name, stream: stream, domain: set.domain}
 	}
 	armPlan.input = input
-	armPlan.spec = s.inputAttachments[input]
+	armPlan.sourceShape = s.req.Inputs[input].Shape
 	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}
@@ -293,8 +292,8 @@ func (s *recipeCompileState) armFeed(path []recipeir.NodeID) (recipeir.NodeID, b
 // that node carries, known statically when the input's streams are.
 func (s *recipeCompileState) fedArm(p *joinPlan, feed recipeir.NodeID, input int, set inputStreamSet, selector plan.StreamSelect) joinArmPlan {
 	domain := set.domain
-	for _, id := range s.graph.path(feed)[1:] {
-		switch s.graph.node(id).Op.Kind {
+	for _, id := range s.req.Graph.Path(feed)[1:] {
+		switch s.req.Graph.Nodes[id].Op.Kind {
 		case plan.OpDecode:
 			domain = shape.DomainFrame
 		case plan.OpEncode:

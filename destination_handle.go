@@ -72,20 +72,6 @@ func newDirectDestinationRef(name string, dest destinationSpec) destinationRef {
 	}
 }
 
-// branchDestinationNames derives a branch's destination names from its
-// destination handles, so BranchSpec keeps no parallel name list — the
-// destinationRef handles are the single source of truth.
-func branchDestinationNames(destinations []destinationRef) []string {
-	if len(destinations) == 0 {
-		return nil
-	}
-	names := make([]string, len(destinations))
-	for i := range destinations {
-		names[i] = destinations[i].name
-	}
-	return names
-}
-
 func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
 	if dest.origin != destinationOriginConstructed {
 		return destinationSpec{}, fmt.Errorf("destination is empty; construct it with goav.Write(...), goav.URI(...), goav.Sink(...), goav.Writer(...), or goav.Custom(...)")

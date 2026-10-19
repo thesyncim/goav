@@ -29,11 +29,6 @@ type destinationSpec struct {
 	err            error
 }
 
-type namedDestinationSpec struct {
-	name   string
-	output destinationSpec
-}
-
 type branchDestinationFacts struct {
 	routingName        string
 	label              string
@@ -64,20 +59,12 @@ func branchDestinationFactsFromSpec(name string, output destinationSpec) branchD
 	}
 }
 
-func destinationSpecOutput(destination destinationSpec) format.Output {
-	return destination.output
-}
-
 func destinationGraphFormat(output destinationSpec) av.FormatID {
 	return output.format
 }
 
 func destinationOpenFormat(output destinationSpec) av.FormatID {
 	return destinationSpecFormat(output)
-}
-
-func destinationIdentity(destination namedDestinationSpec) string {
-	return destinationIdentityFromFacts(branchDestinationFactsFromSpec(destination.name, destination.output))
 }
 
 func destinationIdentityFromFacts(facts branchDestinationFacts) string {
@@ -103,10 +90,6 @@ func destinationSinkName(output destinationSpec) string {
 		return ""
 	}
 	return output.sink.Name()
-}
-
-func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDestinationSpec) bool {
-	return destinationIdentity(first) != "" && destinationIdentity(first) == destinationIdentity(second)
 }
 
 func destinationHandle(spec destinationSpec) Destination {

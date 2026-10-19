@@ -32,7 +32,7 @@ func (s *recipeCompileState) solveOperationShapes() error {
 			continue
 		}
 		for j := range solved {
-			if solved[j].Node >= 0 && solved[j].Node < recipeir.NodeID(len(s.graph.graph.Nodes)) && solved[j].Kind == s.graph.graph.Nodes[solved[j].Node].Op.Kind {
+			if solved[j].Node >= 0 && solved[j].Node < recipeir.NodeID(len(s.req.Graph.Nodes)) && solved[j].Kind == s.req.Graph.Nodes[solved[j].Node].Op.Kind {
 				continue
 			}
 			// A conversion: its node is keyed by the operation it feeds.
@@ -126,7 +126,7 @@ func (s *recipeCompileState) validateDestinationShapes() error {
 		final := s.finalStreamShape(i)
 		node := recipeIRStreamName(stream)
 		for _, dest := range s.facts[i].dests {
-			destination := s.outputAttachments[dest]
+			destination := s.outputs[dest]
 			kind := s.recipe.Destinations[dest].Kind
 			if err := validateRecipeDestinationShape(s.operation, node, s.outputDestinationNames[dest], kind, destination, final); err != nil {
 				return err
@@ -136,11 +136,11 @@ func (s *recipeCompileState) validateDestinationShapes() error {
 	return nil
 }
 
-func validateRecipeDestinationShape(operation string, node string, destinationName string, kind recipeir.DestinationKind, destination destinationSpec, spec shape.Spec) error {
+func validateRecipeDestinationShape(operation string, node string, destinationName string, kind recipeir.DestinationKind, destination compileDestination, spec shape.Spec) error {
 	if kind == recipeir.DestinationKindSink {
 		return nil
 	}
-	if kind == recipeir.DestinationKindUnknown && !destinationSpecHasOutput(destination) {
+	if kind == recipeir.DestinationKindUnknown && !destination.HasOutput {
 		return nil
 	}
 	if spec.Domain == shape.DomainPacket {
@@ -149,8 +149,8 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 	return destinationShapeMismatchError(operation, node, destinationName, destination, spec)
 }
 
-func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
-	label := firstNonEmpty(destinationName, destination.label("destination"))
+func destinationShapeMismatchError(operation string, node string, destinationName string, destination compileDestination, spec shape.Spec) error {
+	label := firstNonEmpty(destinationName, destination.Label, "destination")
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationShapeMismatchCode),

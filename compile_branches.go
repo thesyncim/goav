@@ -42,14 +42,14 @@ type derivedBranch struct {
 }
 
 func (s *recipeCompileState) deriveBranches() error {
-	g := s.graph
+	g := s.req
 	var paths []streamPath
-	for _, out := range g.outputs {
-		if g.node(out.from).Kind == recipeir.NodeInput {
-			s.remux = append(s.remux, remuxOutput{input: g.node(out.from).Input, nodes: out.dests})
+	for _, out := range g.Outputs {
+		if g.Graph.Nodes[out.From].Kind == recipeir.NodeInput {
+			s.remux = append(s.remux, remuxOutput{input: g.Graph.Nodes[out.From].Input, nodes: out.Dests})
 			continue
 		}
-		paths = append(paths, streamPath{nodes: g.path(out.from), dests: out.dests})
+		paths = append(paths, streamPath{nodes: g.Graph.Path(out.From), dests: out.Dests})
 	}
 	if len(s.remux) != 0 && len(paths) != 0 {
 		return streamInvalidError("", "input.To(...) copies every stream; route single streams with input.Video().To(...) instead")
@@ -58,9 +58,9 @@ func (s *recipeCompileState) deriveBranches() error {
 	byRoot := map[recipeir.NodeID][]streamPath{}
 	for _, path := range paths {
 		root := path.nodes[0]
-		switch g.node(root).Kind {
+		switch g.Graph.Nodes[root].Kind {
 		case recipeir.NodeAnchor:
-			return streamInvalidError(g.rootOf(root).tap, "a stream from task.Tap, task.Track, or task.Route attaches to that running task: task.Attach(ctx, outputs...)")
+			return streamInvalidError(g.Graph.Nodes[root].Anchor.Tap, "a stream from task.Tap, task.Track, or task.Route attaches to that running task: task.Attach(ctx, outputs...)")
 		}
 		if _, ok := byRoot[root]; !ok {
 			roots = append(roots, root)
@@ -72,12 +72,12 @@ func (s *recipeCompileState) deriveBranches() error {
 	var forks, lone []derivedBranch
 	var rules []recipeir.NodeID
 	for _, root := range roots {
-		if g.node(root).Kind == recipeir.NodeRule {
+		if g.Graph.Nodes[root].Kind == recipeir.NodeRule {
 			rules = append(rules, root)
 			continue
 		}
-		leaves := g.groupLeaves(byRoot[root])
-		if len(leaves) == 1 && !g.pathHasOp(leaves[0].nodes[1:], streamOpBuffer) && !g.pathHasOp(leaves[0].nodes[1:], streamOpName) {
+		leaves := groupLeaves(g.Graph, byRoot[root])
+		if len(leaves) == 1 && !g.Graph.HasOp(leaves[0].nodes[1:], recipeir.OpBuffer) && !g.Graph.HasOp(leaves[0].nodes[1:], recipeir.OpName) {
 			lone = append(lone, derivedBranch{root: root, leaf: leaves[0], lone: true})
 			continue
 		}
@@ -102,9 +102,8 @@ func (s *recipeCompileState) deriveBranches() error {
 		lone[i].name = name
 	}
 	branches := append(forks, lone...)
-	s.inputAttachments = append([]InputSpec(nil), g.inputs...)
-	for i := range g.inputs {
-		s.recipe.Inputs = append(s.recipe.Inputs, recipeIRInputFromSpec(g.inputs[i]))
+	for i := range g.Inputs {
+		s.recipe.Inputs = append(s.recipe.Inputs, g.Inputs[i].IR)
 	}
 	if err := s.assignDestinations(branches); err != nil {
 		return err
@@ -123,9 +122,9 @@ func (s *recipeCompileState) deriveBranches() error {
 			return err
 		}
 	}
-	s.recipe.Graph = g.graph
+	s.recipe.Graph = g.Graph
 	if s.runtime != nil {
-		s.recipe.Policies.Realtime = s.runtime.realtime || inputsAreLive(g.inputs)
+		s.recipe.Policies.Realtime = s.runtime.realtime || inputsLive(g.Inputs)
 	}
 	for _, root := range rules {
 		if err := s.deriveRule(root, byRoot[root], names); err != nil {
@@ -141,7 +140,7 @@ func (s *recipeCompileState) rootName(root recipeir.NodeID) string {
 	if name, ok := s.joinNames[root]; ok {
 		return name
 	}
-	switch s.graph.rootOf(root).media {
+	switch s.req.Graph.Nodes[root].Select.Type {
 	case av.MediaVideo:
 		return "video"
 	case av.MediaAudio:
@@ -159,7 +158,7 @@ func (s *recipeCompileState) claimJoinNames(roots []recipeir.NodeID) {
 	used := map[string]struct{}{}
 	var claim func(id recipeir.NodeID)
 	claim = func(id recipeir.NodeID) {
-		node := s.graph.node(id)
+		node := s.req.Graph.Nodes[id]
 		if node.Kind != recipeir.NodeJoin {
 			for _, parent := range node.Parents {
 				claim(parent)
@@ -189,20 +188,23 @@ func (s *recipeCompileState) assignDestinations(branches []derivedBranch) error 
 		if _, ok := index[node]; ok {
 			return nil
 		}
-		dest := s.graph.dests[s.graph.node(node).Output]
-		spec, err := destinationSpecFromDestination(dest)
-		if err != nil {
-			return destinationInvalidError("build stream", firstNonEmpty(owner, "stream"), err.Error())
+		slot := s.req.Graph.Nodes[node].Output
+		dest := s.req.Dests[slot]
+		if dest.Invalid != "" {
+			return destinationInvalidError("build stream", firstNonEmpty(owner, "stream"), dest.Invalid)
 		}
-		name := spec.label(fmt.Sprintf("%s-%d", firstNonEmpty(owner, "output"), position+1))
-		if first, ok := byName[name]; ok && !destinationsShareExplicitGroup(namedDestinationSpec{name: name, output: s.outputAttachments[first]}, namedDestinationSpec{name: name, output: spec}) {
+		name := firstNonEmpty(dest.Label, fmt.Sprintf("%s-%d", firstNonEmpty(owner, "output"), position+1))
+		if first, ok := byName[name]; ok && !s.outputs[first].sharesGroup(dest) {
 			return destinationNameClashError(name)
 		}
-		index[node] = len(s.outputAttachments)
-		byName[name] = len(s.outputAttachments)
-		s.outputAttachments = append(s.outputAttachments, spec)
+		index[node] = len(s.outputs)
+		byName[name] = len(s.outputs)
+		s.outputs = append(s.outputs, dest)
+		s.outputSlots = append(s.outputSlots, slot)
 		s.outputDestinationNames = append(s.outputDestinationNames, name)
-		s.recipe.Destinations = append(s.recipe.Destinations, recipeIRDestinationFromSpec(name, spec))
+		ir := dest.IR
+		ir.Name = name
+		s.recipe.Destinations = append(s.recipe.Destinations, ir)
 		return nil
 	}
 	for _, branch := range branches {
@@ -228,23 +230,23 @@ func (s *recipeCompileState) assignDestinations(branches []derivedBranch) error 
 // with the packet copy a never-decoded packet stream carries, and its
 // destinations.
 func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBranch) (recipeir.Stream, branchFacts, error) {
-	g := s.graph
-	root := g.node(branch.root)
+	g := s.req
+	root := g.Graph.Nodes[branch.root]
 	stream := recipeir.Stream{Name: branch.name, Named: branch.named, Root: branch.root, Input: -1}
 	facts := branchFacts{lone: branch.lone}
 	switch root.Kind {
 	case recipeir.NodeSelect:
 		stream.Input = root.Input
 		stream.Selector = root.Select
-		if len(g.inputs) > 1 {
-			stream.Selector.Input = g.inputs[root.Input].inputName(g.inputs[root.Input].graphSourceNodeName())
+		if len(g.Inputs) > 1 {
+			stream.Selector.Input = g.Inputs[root.Input].Name
 		}
-		facts.frames = inputStartsFrameDomain(g.inputs[root.Input])
+		facts.frames = g.Inputs[root.Input].Frames
 	case recipeir.NodeJoin:
-		facts.frames = g.joinOutputFrames(branch.root)
+		facts.frames = joinOutputFrames(g, branch.root)
 	}
 	ops := branch.leaf.nodes[1:]
-	decodes := g.pathHasOp(ops, streamOpDecode)
+	decodes := g.Graph.HasOp(ops, plan.OpDecode)
 	if !facts.frames && !decodes && (root.Kind == recipeir.NodeSelect || !branch.lone) {
 		key := fmt.Sprintf("copy@%d", branch.root)
 		if !s.rootCopiesOnly(branch.root, all) {
@@ -253,7 +255,7 @@ func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBra
 		stream.Operations = append(stream.Operations, s.insertedOperation(key, branch.root, opCopy()))
 	}
 	for _, id := range ops {
-		operation := g.node(id).Op
+		operation := g.Graph.Nodes[id].Op
 		if operation.Kind == recipeir.OpName || operation.Kind == recipeir.OpBuffer {
 			// A name and a queue are facts of the branch, not work.
 			continue
@@ -261,7 +263,7 @@ func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBra
 		operation.Node = id
 		stream.Operations = append(stream.Operations, operation)
 	}
-	if buffer, ok := g.pathBuffer(ops); ok {
+	if buffer, ok := pathBuffer(g.Graph, ops); ok {
 		stream.Buffer = buffer.Buffer
 	}
 	for _, dest := range branch.leaf.dests {
@@ -275,7 +277,7 @@ func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBra
 // branches share one packet copy.
 func (s *recipeCompileState) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) bool {
 	for _, branch := range branches {
-		if branch.root == root && s.graph.pathHasOp(branch.leaf.nodes[1:], streamOpDecode) {
+		if branch.root == root && s.req.Graph.HasOp(branch.leaf.nodes[1:], plan.OpDecode) {
 			return false
 		}
 	}
@@ -287,10 +289,8 @@ func (s *recipeCompileState) rootCopiesOnly(root recipeir.NodeID, branches []der
 func (s *recipeCompileState) insertedOperation(key string, parent recipeir.NodeID, operation recipeir.Operation) recipeir.Operation {
 	id, ok := s.inserted[key]
 	if !ok {
-		id = recipeir.NodeID(len(s.graph.graph.Nodes))
-		s.graph.graph.Nodes = append(s.graph.graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
-		s.graph.ops = append(s.graph.ops, streamOp{})
-		s.graph.roots = append(s.graph.roots, nil)
+		id = recipeir.NodeID(len(s.req.Graph.Nodes))
+		s.req.Graph.Nodes = append(s.req.Graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
 		s.inserted[key] = id
 	}
 	operation.Node = id
@@ -314,9 +314,9 @@ func (s *recipeCompileState) markShared() {
 }
 
 // pathBuffer is the queue a path declares: its last Buffer.
-func (g *recipeGraph) pathBuffer(nodes []recipeir.NodeID) (recipeir.Operation, bool) {
+func pathBuffer(g recipeir.Graph, nodes []recipeir.NodeID) (recipeir.Operation, bool) {
 	for i := len(nodes) - 1; i >= 0; i-- {
-		if op := g.node(nodes[i]).Op; op.Kind == recipeir.OpBuffer {
+		if op := g.Nodes[nodes[i]].Op; op.Kind == recipeir.OpBuffer {
 			return op, true
 		}
 	}
@@ -326,17 +326,17 @@ func (g *recipeGraph) pathBuffer(nodes []recipeir.NodeID) (recipeir.Operation, b
 // groupLeaves merges Outputs that route the same work: paths ending at one
 // node, or differing only by As names after it, are one branch with several
 // destinations.
-func (g *recipeGraph) groupLeaves(paths []streamPath) []leafGroup {
+func groupLeaves(g recipeir.Graph, paths []streamPath) []leafGroup {
 	var groups []leafGroup
 	byLeaf := map[recipeir.NodeID][]int{}
 	for _, path := range paths {
 		// Paths through the same work are one branch unless their names after
 		// it differ: a different name makes another branch over the same
 		// nodes, and an unnamed path joins the first branch over its work.
-		leaf, name := g.workLeaf(path.nodes), g.trailingName(path.nodes)
+		leaf, name := workLeaf(g, path.nodes), trailingName(g, path.nodes)
 		placed := false
 		for _, i := range byLeaf[leaf] {
-			groupName := g.trailingName(groups[i].nodes)
+			groupName := trailingName(g, groups[i].nodes)
 			if name != "" && groupName != "" && name != groupName {
 				continue
 			}
@@ -356,42 +356,28 @@ func (g *recipeGraph) groupLeaves(paths []streamPath) []leafGroup {
 }
 
 // trailingName is the name a path's last As after its work gives it.
-func (g *recipeGraph) trailingName(nodes []recipeir.NodeID) string {
-	if last := len(nodes) - 1; last > 0 && g.opOf(nodes[last]).kind == streamOpName {
-		return g.opOf(nodes[last]).name
+func trailingName(g recipeir.Graph, nodes []recipeir.NodeID) string {
+	if last := len(nodes) - 1; last > 0 && g.Nodes[nodes[last]].Op.Kind == recipeir.OpName {
+		return g.Nodes[nodes[last]].Op.Name
 	}
 	return ""
 }
 
 // workLeaf is the last node of a path that does work: trailing As names only
 // label it.
-func (g *recipeGraph) workLeaf(nodes []recipeir.NodeID) recipeir.NodeID {
+func workLeaf(g recipeir.Graph, nodes []recipeir.NodeID) recipeir.NodeID {
 	i := len(nodes) - 1
-	for i > 0 && g.opOf(nodes[i]).kind == streamOpName {
+	for i > 0 && g.Nodes[nodes[i]].Op.Kind == recipeir.OpName {
 		i--
 	}
 	return nodes[i]
 }
 
-func (g *recipeGraph) pathHasOp(nodes []recipeir.NodeID, kind streamOpKind) bool {
-	for _, n := range nodes {
-		if g.opOf(n).kind == kind {
-			return true
-		}
-	}
-	return false
-}
-
-func inputStartsFrameDomain(input InputSpec) bool {
-	spec, ok := declaredSourceShape(input)
-	return ok && spec.Domain == shape.DomainFrame
-}
-
 // joinOutputFrames reports whether a join emits frames: Mix and Composite do;
 // Select and custom joins forward their first input's domain unless the
 // custom stage declares its output.
-func (g *recipeGraph) joinOutputFrames(joinID recipeir.NodeID) bool {
-	node := g.node(joinID)
+func joinOutputFrames(req *compileRequest, joinID recipeir.NodeID) bool {
+	node := req.Graph.Nodes[joinID]
 	switch joinKind(node.Join.Kind) {
 	case joinMix, joinComposite:
 		return true
@@ -404,24 +390,26 @@ func (g *recipeGraph) joinOutputFrames(joinID recipeir.NodeID) bool {
 	if len(node.Parents) == 0 {
 		return true
 	}
-	return g.endsFrames(node.Parents[0])
+	return endsFrames(req, node.Parents[0])
 }
 
 // endsFrames reports whether a stream carries frames at its end.
-func (g *recipeGraph) endsFrames(id recipeir.NodeID) bool {
-	nodes := g.path(id)
+func endsFrames(req *compileRequest, id recipeir.NodeID) bool {
+	nodes := req.Graph.Path(id)
 	frames := true
-	switch g.node(nodes[0]).Kind {
+	switch root := req.Graph.Nodes[nodes[0]]; root.Kind {
 	case recipeir.NodeJoin:
-		frames = g.joinOutputFrames(nodes[0])
-	case recipeir.NodeSelect, recipeir.NodeRule:
-		frames = inputStartsFrameDomain(g.rootOf(nodes[0]).input)
+		frames = joinOutputFrames(req, nodes[0])
+	case recipeir.NodeSelect:
+		frames = req.Inputs[root.Input].Frames
+	case recipeir.NodeRule:
+		frames = req.Inputs[req.Graph.Nodes[root.Parents[0]].Input].Frames
 	}
 	for _, n := range nodes[1:] {
-		switch g.opOf(n).kind {
-		case streamOpDecode:
+		switch req.Graph.Nodes[n].Op.Kind {
+		case plan.OpDecode:
 			frames = true
-		case streamOpEncode:
+		case plan.OpEncode:
 			frames = false
 		}
 	}
@@ -442,11 +430,11 @@ func newStreamBranchNames() *streamBranchNames {
 	return &streamBranchNames{counts: map[string]int{}, explicit: map[string]bool{}}
 }
 
-func (n *streamBranchNames) next(g *recipeGraph, leaf leafGroup) string {
+func (n *streamBranchNames) next(req *compileRequest, leaf leafGroup) string {
 	name := ""
 	for i := len(leaf.nodes) - 1; i >= 0 && name == ""; i-- {
-		if op := g.opOf(leaf.nodes[i]); op.kind == streamOpName {
-			name = op.name
+		if op := req.Graph.Nodes[leaf.nodes[i]].Op; op.Kind == recipeir.OpName {
+			name = op.Name
 		}
 	}
 	if name != "" {
@@ -456,7 +444,7 @@ func (n *streamBranchNames) next(g *recipeGraph, leaf leafGroup) string {
 		n.explicit[name] = true
 	}
 	if name == "" && len(leaf.dests) != 0 {
-		label := g.dests[g.node(leaf.dests[0]).Output].spec.label("")
+		label := req.Dests[req.Graph.Nodes[leaf.dests[0]].Output].Label
 		name = strings.TrimSuffix(label, filepath.Ext(label))
 	}
 	if name == "" {

@@ -1467,7 +1467,7 @@ func validateAttachBranchShapeContract(stream recipeir.Stream, operations []reci
 			continue
 		}
 		destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", stream.Name, destinationName, destination.dest, final)
+		return destinationShapeMismatchError("attach runtime branch", stream.Name, destinationName, compileDestinationFromSpec(destination.dest), final)
 	}
 	return nil
 }

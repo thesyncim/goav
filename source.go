@@ -440,3 +440,9 @@ func (s *customSource) Close() error {
 	s.closed.Store(true)
 	return nil
 }
+
+// inputStartsFrameDomain reports an input that delivers decoded frames.
+func inputStartsFrameDomain(input InputSpec) bool {
+	spec, ok := declaredSourceShape(input)
+	return ok && spec.Domain == shape.DomainFrame
+}

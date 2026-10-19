@@ -29,8 +29,10 @@ import (
 
 // attachPlan is one attach group planned against a running task.
 type attachPlan struct {
-	task     *task
-	name     string
+	task *task
+	name string
+	// dests are the group's destination handles, in its recipe's order.
+	dests    []destinationSpec
 	state    *recipeCompileState
 	lowering *recipeLowering
 	branches []attachPlanBranch
@@ -122,7 +124,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 	t := p.task
 	graphSpec := t.graph.Spec()
 	live := t.tapsLocked()
-	s := &recipeCompileState{operation: "attach runtime branch", runtime: t.runtime, inserted: map[string]recipeir.NodeID{}}
+	s := &recipeCompileState{operation: "attach runtime branch", req: &compileRequest{}, runtime: t.runtime, inserted: map[string]recipeir.NodeID{}}
 	attach := &attachLowering{
 		name:    p.name,
 		anchors: map[recipeir.NodeID]pipeline.NodeRef{},
@@ -193,9 +195,10 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 				facts.dests = append(facts.dests, index)
 				continue
 			}
-			shared[key] = len(s.outputAttachments)
-			facts.dests = append(facts.dests, len(s.outputAttachments))
-			s.outputAttachments = append(s.outputAttachments, destination.dest)
+			shared[key] = len(s.outputs)
+			facts.dests = append(facts.dests, len(s.outputs))
+			s.outputs = append(s.outputs, compileDestinationFromSpec(destination.dest))
+			p.dests = append(p.dests, destination.dest)
 			s.outputDestinationNames = append(s.outputDestinationNames, destination.recipe.Name)
 		}
 		planned.dests = facts.dests
@@ -477,8 +480,8 @@ func streamOrAnchor(anchor attachAnchor, name string) av.Stream {
 // streams its branches deliver fit it, before anything opens.
 func (p *attachPlan) checkMuxes(ctx context.Context) error {
 	s := p.state
-	for dest := range s.outputAttachments {
-		destination := s.outputAttachments[dest]
+	for dest := range p.dests {
+		destination := p.dests[dest]
 		if destination.sink != nil {
 			continue
 		}
@@ -498,7 +501,8 @@ func (p *attachPlan) checkMuxes(ctx context.Context) error {
 		if issue, ok := runtimeMuxCompatibilityIssue(name, formatID, branches, streams, p.task.runtime); ok {
 			return muxCompatibilityBuildError("attach runtime branch", issue)
 		}
-		s.outputAttachments[dest].resolvedFormat = formatID
+		p.dests[dest].resolvedFormat = formatID
+		s.outputs[dest].ResolvedFormat = formatID
 	}
 	return nil
 }
@@ -527,7 +531,7 @@ func (p *attachPlan) open(ctx context.Context) error {
 				inShape = spec
 			}
 		}
-		opened, err := openComposeNode(ctx, service, node, in, p.state.outputAttachments, realtime, codec.DecodeBounds{})
+		opened, err := openComposeNode(ctx, service, node, in, p.dests, realtime, codec.DecodeBounds{})
 		if err != nil {
 			if node.kind == composeStep && node.transform.stage == nil {
 				return runtimeBranchTransformError(node.transform.name, err)

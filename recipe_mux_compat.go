@@ -34,7 +34,7 @@ func validateMuxCompatibility(state *recipeCompileState) error {
 	if !state.options.preflight {
 		return nil
 	}
-	issues := muxCompatibilityIssues(state.graphPlan.work, state.inputProbes, state.runtime)
+	issues := muxCompatibilityIssues(state.work, state.inputProbes, state.runtime)
 	if len(issues) == 0 {
 		return nil
 	}

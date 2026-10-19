@@ -295,3 +295,31 @@ const (
 	OpName   plan.OperationKind = "name"
 	OpBuffer plan.OperationKind = "buffer"
 )
+
+// Path lists the nodes from a stream's root to id: its select, rule, anchor,
+// or join, then its operations in order.
+func (g Graph) Path(id NodeID) []NodeID {
+	var nodes []NodeID
+	for {
+		nodes = append(nodes, id)
+		node := g.Nodes[id]
+		if node.Kind != NodeOp {
+			break
+		}
+		id = node.Parents[0]
+	}
+	for i, j := 0, len(nodes)-1; i < j; i, j = i+1, j-1 {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
+	}
+	return nodes
+}
+
+// HasOp reports whether any of nodes is an operation of kind.
+func (g Graph) HasOp(nodes []NodeID, kind plan.OperationKind) bool {
+	for _, n := range nodes {
+		if g.Nodes[n].Kind == NodeOp && g.Nodes[n].Op.Kind == kind {
+			return true
+		}
+	}
+	return false
+}

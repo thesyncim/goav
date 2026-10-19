@@ -41,9 +41,8 @@ type joinConformPlan struct {
 // opens: a demuxed input always does (its stream ids are the container's,
 // which two files share), and so does any input whose streams the plan does
 // not know.
-func joinArmBindsAtOpen(input InputSpec, set inputStreamSet) bool {
-	demuxed := input.provider == nil && input.source == nil
-	return demuxed || !set.known || len(set.streams) == 0
+func joinArmBindsAtOpen(input compileInput, set inputStreamSet) bool {
+	return input.Demuxed || !set.known || len(set.streams) == 0
 }
 
 // planJoinBindArm plans an arm bound when its input opens: by the chain's
