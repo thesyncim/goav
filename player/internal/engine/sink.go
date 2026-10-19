@@ -24,8 +24,13 @@ func (s Sink) Handle(ctx context.Context, msg *pipeline.Message) error {
 	switch {
 	case msg == nil:
 	case msg.Kind == pipeline.MessageEvent && msg.Event != nil:
-		if msg.Event.Type == av.EventDiscontinuity {
+		switch msg.Event.Type {
+		case av.EventDiscontinuity:
 			s.Engine.Discontinuity()
+		case av.EventEndOfStream:
+			// The source ended: what is queued plays out, and the last of
+			// it running dry is the end, not an underrun.
+			s.Engine.End()
 		}
 	case msg.Kind == pipeline.MessageFrame && msg.Frame != nil:
 		switch {

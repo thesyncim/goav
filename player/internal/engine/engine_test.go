@@ -601,3 +601,21 @@ func TestPausedSeekWaitsAndPreviews(t *testing.T) {
 		t.Fatal("a seek with no discontinuity kept dropping past its wait")
 	}
 }
+
+// The source's end of stream ends playback at the sink: the queue drains
+// without counting its final dry pull as an underrun.
+func TestEndOfStreamIsNotAnUnderrun(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 200*time.Millisecond)
+	eos := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventEndOfStream}}
+	if err := (Sink{Engine: d.e}).Handle(context.Background(), eos); err != nil {
+		t.Fatal(err)
+	}
+	d.step(400 * time.Millisecond)
+	if got := d.e.Stats().Underruns; got != 0 {
+		t.Fatalf("underruns = %d after the end of stream, want 0", got)
+	}
+	if !d.e.Drained() {
+		t.Fatal("not drained after the end of stream played out")
+	}
+}
