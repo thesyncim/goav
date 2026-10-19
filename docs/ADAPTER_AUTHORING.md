@@ -418,7 +418,7 @@ flag. The writer receives muxed bytes on the mux hot path. Teardown: the
 muxer finalizes, then `Commit` (run succeeded or drained detach) or `Abort`
 (run failed, mux write/close error, or build teardown), then `Close`; each
 exactly once. `goav.Writer(name, openFn)` is the contract-free shortcut;
-`goav.File` wraps an open writer (closed once iff it implements `io.Closer`).
+`goav.Write` wraps an open writer (closed once iff it implements `io.Closer`).
 Use via `.To(goav.Custom(name, p))`; the `Destination` value is the
 routing handle branches share.
 

@@ -6,8 +6,8 @@ should not stall a record branch, and an intentional drop should show up in
 stats instead of disappearing.
 
 Branch buffers are branch-local policy (`flow` package): `Blocking`,
-`DropOldest`, `DropNewest`, `Latest`, `Unbounded`, with options for copy
-bounds/mode, `MaxBytes`, and `MaxDelay` latency shedding.
+`DropOldest`, `DropNewest`, `Latest`, `Unbounded`, with `BufferMaxBytes` and
+`BufferMaxDelay` latency shedding.
 
 What holds today (all `-race` clean, with tests):
 
@@ -34,7 +34,7 @@ What holds today (all `-race` clean, with tests):
   next enters, trading pipelining across packets for the same bytes.
 - Encode ladders run their rungs in parallel by default: when one source fans
   out to two or more encoding branches, with only built-in operations and
-  goav-owned outputs (Write/File) each fed by one branch, each branch runs on
+  goav-owned outputs (Write/URI) each fed by one branch, each branch runs on
   its own worker. No caller code runs inside such a branch and each file still
   receives one branch's packets in order, so only wall time changes; a Sink,
   a `.Do` stage, or a shared output keeps the fanout serial unless a branch

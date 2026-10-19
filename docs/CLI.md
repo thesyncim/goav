@@ -15,7 +15,7 @@ goav ctl      --control unix://PATH <method> [key=value...]
 ```
 
 Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
-the SIMD codec paths run about twice as fast; `-tags goav_noplay` leaves the
+it enables the SIMD codec paths ([measured scope](PERFORMANCE.md)); `-tags goav_noplay` leaves the
 window out (a static Linux binary).
 
 ## The language

@@ -281,7 +281,7 @@ types stay unexported so the pinned package-level surface is the contract.
 
 Near-miss names are deliberate distinctions, one line each (each verified
 against the constructors in `input.go`/`provider.go`/`source.go`,
-`destination.go`, `stream.go`, `stream_compile.go`,
+`destination.go`, `stream.go`,
 `watch.go`, `task_control.go`, `task_pause.go`, `expert/expert.go`):
 
 - **Input vs Source vs provider.Source**: `FileInput` is the value input over

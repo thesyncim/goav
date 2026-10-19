@@ -68,3 +68,8 @@
   `TestErrorCatalogDocMatchesErrcodeCatalog`, instead of 13 of them.
 - Opus and AV1 encode are allocation-pinned (`TestOpusEncodeAllocs`,
   `TestAV1EncodeAllocs`: 0 per frame), as PERFORMANCE.md already claimed.
+- Docs say what the code does: the default bundle's concrete VP8/VP9/AV1
+  codecs (not "descriptor-only"), `goav.Write` (not `File`), no `From`, 13
+  benchmark workloads, the real buffer options, a WebM custom-destination
+  example the bundle can run, live provider transcode as working, RTP and
+  WebRTC as in-and-out modules, and every nested module in the README.

@@ -254,7 +254,7 @@ this list:
   matching element-for-element would reproduce the surface the grammar
   exists to avoid (`docs/GSTREAMER_ALTERNATIVE.md`).
 - **Hardware codec backends in core.** Core stays pure Go — every CI build
-  and test runs `CGO_ENABLED=0`, so a cgo import cannot land; acceleration
+  runs `CGO_ENABLED=0` (only race lanes enable cgo), so a cgo import cannot land; acceleration
   belongs in external adapters behind the `codec` extension points, where cgo
   is the adapter's choice.
 - **cgo in core.** Same gate; single-binary `CGO_ENABLED=0` deployment is a
@@ -290,7 +290,7 @@ The checklist below gates the tag. Each item names its current evidence.
   bad recipes and asserts rendered refusals, and
   `TestErrorCatalogDocMatchesErrcodeCatalog` pins `docs/ERROR_CATALOG.md` to
   every code a refusal can carry, generated from the source.
-- [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
+- [x] **Benchmarks present**: 13 measured workloads (`bench_test.go`) +
   pipeline/container suites plus perf-lab latency/RSS/pressure/control/fanout/
   container/real-Opus smoke; bench artifacts run in CI; methodology in
   `docs/PERFORMANCE.md`.

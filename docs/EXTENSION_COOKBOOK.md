@@ -139,13 +139,13 @@ custom path schemes outside the media graph until the planner knows what bytes
 will be written.
 
 ```go
-dest := goav.Writer("mem://voice.ogg",
+dest := goav.Writer("mem://voice.webm",
     func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
         // info.Format, info.Streams, info.Metadata, and info.Realtime are final.
         return upload, nil
     },
-    goav.Format(av.FormatOgg),
-    goav.MIME("audio/ogg"),
+    goav.Format(av.FormatWebM),
+    goav.MIME("audio/webm"),
     goav.Metadata(av.Metadata{"kind": "voice"}),
 )
 

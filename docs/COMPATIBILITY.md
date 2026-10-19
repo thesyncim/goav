@@ -83,7 +83,7 @@ retain, not as an automatic v1 promise.
 | Control-plane socket host | [`CONTROL_PLANE.md`](CONTROL_PLANE.md), `ctlserver` | Out-of-band live control over a socket or HTTP; an application-hosting concern. |
 | Broad `OnStream` dynamic rules | [`USE_CASES.md`](USE_CASES.md) | Only identity stream-rule cases are v1; broader dynamic breadth stays governed. |
 | `Mix` / `Composite` / `Select` / custom `Join` | [`MULTI_INPUT.md`](MULTI_INPUT.md), [`OPERATIONS.md`](OPERATIONS.md) | N-to-1 convergence; powerful but not a beginner workflow. |
-| Live provider transcode | [`USE_CASES.md`](USE_CASES.md) | Held until compiler support for live transcode is real, not just wired. |
+| Live provider transcode | [`USE_CASES.md`](USE_CASES.md) | Works (`TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput`); a provider such as RTP lives in a nested module, outside the beginner path. |
 
 Reaching for one of these is fine; they are first-class, governed features.
 The freeze only guarantees that `rt.Run(ctx, outputs...)` never forces a

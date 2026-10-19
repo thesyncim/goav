@@ -2,7 +2,7 @@
 
 # goav
 
-**Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>no cgo, no FFmpeg, no system libraries.
+**Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>the core needs no cgo, no FFmpeg, and no system libraries.
 
 [![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/COMPATIBILITY.md)
 
@@ -160,7 +160,7 @@ its tag; see [licenses](docs/ADAPTERS.md#licenses).
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 
-RTP and WebRTC inputs live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
+RTP and WebRTC, in and out, live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
 your own sources, codecs, and sinks plug in through small interfaces
 ([Extension cookbook](docs/EXTENSION_COOKBOOK.md)). More in [Use cases](docs/USE_CASES.md),
 [Operations](docs/OPERATIONS.md), and [`examples/`](examples), including a browser
@@ -182,19 +182,21 @@ your own sources, codecs, and sinks plug in through small interfaces
 | Module | Adds |
 | --- | --- |
 | `github.com/thesyncim/goav` | recipes, planner, runtime; bundled adapters in [`bundle`](bundle) |
-| [`goav/rtpav`](rtpav) | RTP ingest: jitter buffer, depacketizers, RTCP feedback (Pion) |
-| [`goav/webrtcav`](webrtcav) | WebRTC remote tracks as inputs (Pion) |
+| [`goav/rtpav`](rtpav) | RTP in and out: jitter buffer, (de)packetizers, RTCP feedback (Pion) |
+| [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 | [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
+| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, ctl ([CLI](docs/CLI.md)) |
+| [`goav/goavtest/expect`](goavtest/expect) | go-cmp assertions for pipeline tests |
 
 The core module never pulls in Pion.
 
 ## Status
 
 Pre-v1: breaking changes can land until the first tag. See [V1 scope](docs/COMPATIBILITY.md#v1-scope) and
-the [roadmap](docs/ROADMAP.md).
+the [roadmap](docs/ROADMAP.md). Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
 
 ---
 

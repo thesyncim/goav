@@ -5,8 +5,9 @@ the core import graph. Use this page to see what ships today, which paths are na
 design, and where to start if you need to add another implementation.
 
 Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
-`webrtcav`, `playoutav`) do not import sibling codec modules; concrete
-integrations live under `adapters/...` and `container/...`.
+`webrtcav`, `playoutav`) import no codec module (`rtpav`'s go.mod requires
+`goav1` for an integration test only); concrete integrations live under
+`adapters/...` and `container/...`.
 
 The root module requires only the four permissively licensed codec backends
 ([Licenses](#licenses)), pinned with their licenses by
@@ -156,9 +157,9 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
 `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`,
-`TestDecodePacketLossConcealmentAllocs`, `TestOpusEncodeAllocs`, `TestAV1EncodeAllocs`,
-decoder/encoder `*Allocs` tests) that
-fails the suite if the hot path starts allocating. The repo-wide
+`TestDecodePacketLossConcealmentAllocs`, `TestOpusEncodeAllocs`,
+`TestAV1EncodeAllocs`, and the other `*Allocs` tests) that fails the suite if
+the hot path starts allocating. The repo-wide
 proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 
 All adapters are intentionally narrow; richer features (SVC controls, color
@@ -222,12 +223,9 @@ whole or by stream, plays at its media time; a push source paces itself, or take
 
 ## Descriptor-only boundaries
 
-Default-build `govpx`, `goav1`, and `goh264` expose descriptors without
-importing concrete implementations, so applications can see planned media
-compatibility and build registries without forcing tagged code paths. Concrete
-factories replace descriptor-only registrations once each path has caller-owned
-output buffers and allocation tests. `goh264` remains decode-only in the
-default bundle for recipe encode: applications that need H.264 encoding must
+`govpx` and `goav1` register concrete decoders and encoders. `goh264` registers
+its descriptor alone unless built with `-tags goav_goh264`, so planning sees
+H.264 without linking it. It is decode-only for recipe encode: applications that need H.264 encoding must
 register an encoder explicitly: `libcodec.VideoToolbox()` or `libcodec.OpenH264()`
 (see Library codecs), `runconfig.WithEncoder`, or a codec adapter.
 
