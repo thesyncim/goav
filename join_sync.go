@@ -49,6 +49,8 @@ type joinSyncState struct {
 	// buffered frames (see admit); nil when admission is off. Built once and
 	// only read afterwards, so producers read the map without a lock.
 	gates map[av.StreamID]*joinArmGate
+	// arms are the same gates in input order.
+	arms []*joinArmGate
 	// released frees every waiting producer when the stage closes.
 	released     chan struct{}
 	releasedOnce sync.Once
@@ -67,6 +69,7 @@ const joinArmLeadFrames = 16
 type joinArmGate struct {
 	depth atomic.Int64
 	wake  chan struct{}
+	arm   int // the arm's index in inputs: its interleave.Gate name
 }
 
 // enableAdmission turns on per-arm backpressure. The planner enables it only
@@ -75,8 +78,10 @@ type joinArmGate struct {
 // needs to deliver the frame that frees it.
 func (s *joinSyncState) enableAdmission() {
 	s.gates = make(map[av.StreamID]*joinArmGate, len(s.inputs))
-	for _, id := range s.inputs {
-		s.gates[id] = &joinArmGate{wake: make(chan struct{}, 1)}
+	s.arms = make([]*joinArmGate, len(s.inputs))
+	for i, id := range s.inputs {
+		s.arms[i] = &joinArmGate{wake: make(chan struct{}, 1), arm: i}
+		s.gates[id] = s.arms[i]
 	}
 	s.released = make(chan struct{})
 }
@@ -107,15 +112,25 @@ func (s *joinSyncState) admit(ctx context.Context, msg *pipeline.Message) error 
 	return nil
 }
 
-// admits reports, without blocking, whether admit would let msg through now:
-// the order's check (interleave.Gate) before it parks an arm's source.
-func (s *joinSyncState) admits(m any) bool {
+// arm names the arm a frame message belongs to (interleave.Gate), false for
+// what admit always passes.
+func (s *joinSyncState) arm(m any) (int, bool) {
 	msg, _ := m.(*pipeline.Message)
 	if s.gates == nil || msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
-		return true
+		return 0, false
 	}
 	gate := s.gates[msg.Frame.StreamID]
-	if gate == nil || gate.depth.Load() < joinArmLeadFrames {
+	if gate == nil {
+		return 0, false
+	}
+	return gate.arm, true
+}
+
+// admits reports, without blocking, whether admit would take more of arm
+// now: the time order's check (interleave.Gate) before it grants the turn to
+// a source that feeds the arm.
+func (s *joinSyncState) admits(arm int) bool {
+	if arm < 0 || arm >= len(s.arms) || s.arms[arm].depth.Load() < joinArmLeadFrames {
 		return true
 	}
 	select {

@@ -16,11 +16,14 @@ type Source interface {
 	ByTime(Token) bool
 }
 
-// Gate is a converging stage's admission (pipeline.Admitter) that the time
-// order can check without blocking: Admits reports whether Admit would let
-// msg, the *pipeline.Message about to be delivered, through now. A source
-// the stage holds back gives up its turn, and only the turn's holder decides,
-// by asking Admits, when it may resume, so the Go scheduler never does.
+// Gate is a converging stage (pipeline.Admitter) whose arm bound the time
+// order can enforce at the turn instead of in Admit: Arm names the arm msg,
+// the *pipeline.Message being delivered, is a frame of (false for messages
+// the stage never holds back), and Admits reports, without blocking, whether
+// the stage would take more of that arm now. An ordered run never calls
+// Admit on a Gate; it passes over a source whose arm is held back, so which
+// source runs next is decided by the order, never by the Go scheduler.
 type Gate interface {
-	Admits(Token, any) bool
+	Arm(tok Token, msg any) (int, bool)
+	Admits(tok Token, arm int) bool
 }

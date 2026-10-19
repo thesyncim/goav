@@ -140,14 +140,11 @@ func (g *directRunner) deliver(ctx context.Context, from *directEmitter, dst *di
 		// Admission runs on the producer's goroutine before the delivery
 		// registers, so a converging stage can hold one upstream back without
 		// holding anything its siblings need.
-		if order := g.order.Load(); order != nil {
-			// An ordered run parks the turn's holder instead of blocking in it.
-			if err := order.admit(ctx, dst.admit, msg); err != nil {
+		// An ordered run bounds a join's arms at the turn instead.
+		if order := g.order.Load(); order == nil || !order.admit(dst.admit, msg) {
+			if err := dst.admit.Admit(ctx, msg); err != nil {
 				return false, err
 			}
-		}
-		if err := dst.admit.Admit(ctx, msg); err != nil {
-			return false, err
 		}
 	}
 	// A free node is taken with one CAS from 0 to 1, which can only succeed

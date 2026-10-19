@@ -17,6 +17,9 @@ import (
 type bufferedRunner struct {
 	topology[*bufferedNode]
 	pending inflight // queued, not-yet-handled messages, for the drain
+	// order is the running time order (time_order.go), set for an ordered
+	// run so a delivery into a join charges its source.
+	order   atomic.Pointer[timeOrder]
 	workers sync.WaitGroup
 	runCtx  context.Context
 	running bool
@@ -237,6 +240,8 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	var order *timeOrder
 	if ordered := timeOrderedSources(g.config.Realtime, true, g.snap.Load(), sources, (*bufferedNode).sourceOf); ordered != nil {
 		order = newTimeOrder(ordered, func() { g.pending.wait(runCtx.Done()) })
+		g.order.Store(order)
+		defer g.order.Store(nil)
 	}
 	var runs sync.WaitGroup
 	for i, node := range sources {
@@ -247,11 +252,10 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 			continue
 		}
 		emitter := &timeOrderedEmitter{emitter: &node.emitter, order: order, index: i}
-		turnCtx := order.context(runCtx, i)
 		runs.Go(func() {
 			defer order.leave(i)
-			order.enter(turnCtx, i)
-			g.fail.report(node.source.Start(turnCtx, emitter))
+			order.enter(runCtx, i)
+			g.fail.report(node.source.Start(runCtx, emitter))
 		})
 	}
 
@@ -535,8 +539,11 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	if node.admit != nil {
 		// Admission runs on the producer's goroutine before it takes a slot,
 		// so holding one upstream back blocks nothing else.
-		if err := node.admit.Admit(ctx, msg); err != nil {
-			return false, err
+		// An ordered run bounds a join's arms at the turn instead.
+		if order := g.order.Load(); order == nil || !order.admit(node.admit, msg) {
+			if err := node.admit.Admit(ctx, msg); err != nil {
+				return false, err
+			}
 		}
 	}
 	q := &node.queue

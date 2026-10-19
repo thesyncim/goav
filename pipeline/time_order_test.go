@@ -62,17 +62,22 @@ func (s *orderSink) Handle(_ context.Context, msg *Message) error {
 
 func runTimedGraph(t *testing.T, realtime bool, stage Stage, sources ...*timedSource) []string {
 	t.Helper()
-	graph, err := NewGraph(GraphConfig{Name: "order", Realtime: realtime})
+	return runTimedGraphWith(t, GraphConfig{Name: "order", Realtime: realtime}, stage, sources...)
+}
+
+func runTimedGraphWith(t *testing.T, config GraphConfig, stage Stage, sources ...*timedSource) []string {
+	t.Helper()
+	graph, err := NewGraph(config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sink := &orderSink{}
 	target := "sink"
-	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+	if _, err := graph.AddSink(sink, config.Buffer); err != nil {
 		t.Fatal(err)
 	}
 	if stage != nil {
-		if _, err := graph.AddStage(stage, BufferPolicy{}); err != nil {
+		if _, err := graph.AddStage(stage, config.Buffer); err != nil {
 			t.Fatal(err)
 		}
 		if err := graph.Connect(Route{From: stage.Name(), To: []string{"sink"}}); err != nil {
@@ -81,7 +86,7 @@ func runTimedGraph(t *testing.T, realtime bool, stage Stage, sources ...*timedSo
 		target = stage.Name()
 	}
 	for _, source := range sources {
-		if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		if _, err := graph.AddSource(source, config.Buffer); err != nil {
 			t.Fatal(err)
 		}
 		if err := graph.Connect(Route{From: source.name, To: []string{target}}); err != nil {
@@ -283,12 +288,13 @@ func pairArm(msg *Message) int {
 
 func (g *pairGate) Name() string { return g.name }
 func (g *pairGate) Close() error { return nil }
-func (g *pairGate) Admits(_ interleave.Token, m any) bool {
+func (g *pairGate) Arm(_ interleave.Token, m any) (int, bool) {
 	msg := m.(*Message)
-	return msg.Kind != MessagePacket || g.depth[pairArm(msg)].Load() < g.lead
+	return pairArm(msg), msg.Kind == MessagePacket
 }
+func (g *pairGate) Admits(_ interleave.Token, arm int) bool { return g.depth[arm].Load() < g.lead }
 func (g *pairGate) Admit(ctx context.Context, msg *Message) error {
-	for !g.Admits(interleave.Token{}, msg) {
+	for msg.Kind == MessagePacket && !g.Admits(interleave.Token{}, pairArm(msg)) {
 		select {
 		case <-g.wake[pairArm(msg)]:
 		case <-ctx.Done():
@@ -329,13 +335,14 @@ func (g *pairGate) Handle(ctx context.Context, msg *Message, emitter Emitter) er
 	return nil
 }
 
-// TestDirectRunParksASourceItsJoinHoldsBack pins the order through a join:
-// b's packets are all later than a's, so a runs first until the join holds
-// its arm back; a then gives up the turn, b runs, and a resumes as soon as
-// the join admits it again. Without that handoff a would wait in Admit
-// holding the turn b needs. Arrivals and pairs come out the same on every
-// run, and no arm ever leads by more than the join allows.
-func TestDirectRunParksASourceItsJoinHoldsBack(t *testing.T) {
+// TestTimeOrderBoundsAJoinsArms pins the order through a join on either
+// runner: b's packets are all later than a's, so a runs first until the
+// join holds its arm back; the order then passes a over, b runs, and a is
+// granted again once the join admits it. An ordered run never blocks in
+// Admit, so this pass-over is the only bound: without it a would pour all
+// its packets into the join. Arrivals and pairs come out the same on every
+// run, and no arm leads by more than one packet past the join's lead.
+func TestTimeOrderBoundsAJoinsArms(t *testing.T) {
 	var first []string
 	a := &timedSource{name: "a", ordered: true}
 	b := &timedSource{name: "b", ordered: true}
@@ -343,9 +350,13 @@ func TestDirectRunParksASourceItsJoinHoldsBack(t *testing.T) {
 		a.times = append(a.times, i)
 		b.times = append(b.times, 1000+i)
 	}
-	for range 50 {
+	for run := range 100 {
+		config := GraphConfig{Name: "order"}
+		if run%2 == 1 {
+			config.Buffer = BufferPolicy{Capacity: 4, Drop: DropBlock}
+		}
 		gate := newPairGate("join", 2)
-		got := runTimedGraph(t, false, gate, a, b)
+		got := runTimedGraphWith(t, config, gate, a, b)
 		if len(got) != 80 || !slices.Equal(got[:3], []string{"+a@0", "+a@1", "+b@1000"}) {
 			t.Fatalf("delivered %v, want 40 arrivals and 40 paired packets, a held after two", got)
 		}
@@ -360,11 +371,11 @@ func TestDirectRunParksASourceItsJoinHoldsBack(t *testing.T) {
 	}
 }
 
-// TestTimeOrderCoversOnlyGatedJoins pins which graphs with converging stages
+// TestTimeOrderCoversGatedJoins pins which graphs with converging stages
 // keep the order: every source must take part and every converging stage
-// must be a Gate fed through single-producer nodes. A nested join, a plain
-// Admitter, or a source outside the order runs them all freely.
-func TestTimeOrderCoversOnlyGatedJoins(t *testing.T) {
+// must be a Gate, nested or on the buffered runner. A plain Admitter or a
+// source outside the order runs them all freely.
+func TestTimeOrderCoversGatedJoins(t *testing.T) {
 	type shape struct {
 		name     string
 		nested   bool
@@ -375,10 +386,10 @@ func TestTimeOrderCoversOnlyGatedJoins(t *testing.T) {
 	}
 	for _, tc := range []shape{
 		{name: "gated join", want: true},
-		{name: "nested gated joins", nested: true},
+		{name: "nested gated joins", nested: true, want: true},
 		{name: "plain admitter", plain: true},
 		{name: "source outside the order", optOut: true},
-		{name: "buffered graph", buffered: true},
+		{name: "buffered gated join", buffered: true, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := GraphConfig{Name: "order"}

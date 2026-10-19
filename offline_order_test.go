@@ -175,6 +175,37 @@ func TestOfflineJoinsAndLaddersWriteTheSameBytes(t *testing.T) {
 				in("c.webm", f.audioA).Audio().To(o),
 			}
 		}},
+		{"nested mix beside a file's video", false, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			inner := goav.Mix(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode())
+			return []goav.Output{
+				goav.Mix(inner, in("d.webm", f.audioA).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"nested ByPTS mix with an inner arm 5s ahead", false, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			inner := goav.Mix(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioAhead).Audio().Decode(), goav.ByPTS())
+			return []goav.Output{
+				goav.Mix(inner, in("d.webm", f.audioB).Audio().Decode(), goav.ByPTS()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"mix with a select arm beside a file's video", true, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			selected := goav.Select(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode())
+			return []goav.Output{
+				goav.Mix(selected, in("d.webm", f.audioA).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"select beside a file's video", true, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			return []goav.Output{
+				goav.Select(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
 		{"promoted ladder from two files", true, func(out func(string) goav.Destination) []goav.Output {
 			a := in("a.webm", f.videoA).Video().Decode()
 			b := in("b.webm", f.videoB).Video().Decode()
