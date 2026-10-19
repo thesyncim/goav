@@ -366,3 +366,43 @@ func videoTestStream(codec av.CodecID) av.Stream {
 		},
 	}
 }
+
+// A keyframe split across RTP packets is detected on its first fragment; the
+// assembled frame must keep that flag, not take the last fragment's.
+func TestVideoDepacketizerFragmentedKeyframeKeepsKeyframe(t *testing.T) {
+	cases := []struct {
+		name         string
+		depacketizer Depacketizer
+		first, last  []byte
+		want         []byte
+		keyframe     bool
+	}{
+		{"vp8 key", NewVP8Depacketizer(videoTestStream(av.CodecVP8)), []byte{0x10, 0x50, 0x01}, []byte{0x00, 0x9d, 0x01, 0x2a}, []byte{0x50, 0x01, 0x9d, 0x01, 0x2a}, true},
+		{"vp8 delta", NewVP8Depacketizer(videoTestStream(av.CodecVP8)), []byte{0x10, 0x51, 0x01}, []byte{0x00, 0x9c, 0x01}, []byte{0x51, 0x01, 0x9c, 0x01}, false},
+		{"vp9 key", NewVP9Depacketizer(videoTestStream(av.CodecVP9)), []byte{0x08, 0xaa, 0xab}, []byte{0x04, 0xbb}, []byte{0xaa, 0xab, 0xbb}, true},
+		{"vp9 delta", NewVP9Depacketizer(videoTestStream(av.CodecVP9)), []byte{0x48, 0xaa}, []byte{0x44, 0xbb}, []byte{0xaa, 0xbb}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			payload := PayloadCodec{ClockRate: 90000}
+			out := DepacketizeResult{Packets: make([]av.Packet, 0, 1), Events: make([]av.Event, 0, 1)}
+			if err := tc.depacketizer.PushInto(ctx, &rtp.Packet{Timestamp: 3000, Payload: tc.first}, payload, &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Packets) != 0 {
+				t.Fatalf("packets after first fragment = %+v", out.Packets)
+			}
+			if err := tc.depacketizer.PushInto(ctx, &rtp.Packet{Marker: true, Timestamp: 3000, Payload: tc.last}, payload, &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Packets) != 1 {
+				t.Fatalf("packets = %+v", out.Packets)
+			}
+			got := out.Packets[0]
+			if got.Keyframe != tc.keyframe || !bytes.Equal(got.Payload.Bytes, tc.want) {
+				t.Fatalf("keyframe=%v bytes=%x, want keyframe=%v bytes=%x", got.Keyframe, got.Payload.Bytes, tc.keyframe, tc.want)
+			}
+		})
+	}
+}

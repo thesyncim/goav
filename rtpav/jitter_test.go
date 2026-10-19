@@ -160,3 +160,77 @@ func TestJitterRingLostExcludesBuffered(t *testing.T) {
 		t.Fatalf("lost = %d, want 7 (buffered 12 and 13 are not lost)", stats.Lost)
 	}
 }
+
+// End-of-stream flush releases what is buffered in sequence order, not in
+// ring-slot order.
+func TestJitterRingFlushReleasesInSequenceOrder(t *testing.T) {
+	ctx := context.Background()
+	jitter, err := NewJitterRing(JitterConfig{Capacity: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := JitterResult{Ready: make([]*rtp.Packet, 0, 8), Events: make([]av.Event, 0, 2)}
+	for _, seq := range []uint16{5, 7, 8} {
+		if err := jitter.PushInto(ctx, &rtp.Packet{SSRC: 1, SequenceNumber: seq}, &result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := jitterSeqs(result.Ready); !equalSeqs(got, []uint16{5}) {
+		t.Fatalf("ready = %v, want [5]", got)
+	}
+	result.Reset()
+	if err := jitter.FlushInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	if got := jitterSeqs(result.Ready); !equalSeqs(got, []uint16{7, 8}) {
+		t.Fatalf("flush = %v, want [7 8]", got)
+	}
+}
+
+// Slots are positioned relative to the next expected sequence number, so
+// packets either side of the uint16 wrap never share a slot.
+func TestJitterRingReordersAcrossSequenceRollover(t *testing.T) {
+	ctx := context.Background()
+	jitter, err := NewJitterRing(JitterConfig{Capacity: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := JitterResult{Ready: make([]*rtp.Packet, 0, 4), Events: make([]av.Event, 0, 2)}
+	var released []uint16
+	for _, seq := range []uint16{65533, 65535, 0, 65534} {
+		result.Reset()
+		if err := jitter.PushInto(ctx, &rtp.Packet{SSRC: 1, SequenceNumber: seq}, &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Events) != 0 {
+			t.Fatalf("events after %d = %+v", seq, result.Events)
+		}
+		released = append(released, jitterSeqs(result.Ready)...)
+	}
+	if want := []uint16{65533, 65534, 65535, 0}; !equalSeqs(released, want) {
+		t.Fatalf("released = %v, want %v", released, want)
+	}
+	if stats := jitter.Stats(); stats.Lost != 0 || stats.Reordered != 0 || stats.Buffered != 0 || stats.Expected != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+}
+
+func jitterSeqs(packets []*rtp.Packet) []uint16 {
+	seqs := make([]uint16, len(packets))
+	for i := range packets {
+		seqs[i] = packets[i].SequenceNumber
+	}
+	return seqs
+}
+
+func equalSeqs(a, b []uint16) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

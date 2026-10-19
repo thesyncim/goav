@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
@@ -31,6 +34,10 @@ type feedbackDepacketizer struct {
 }
 
 type testEmitter func(context.Context, *pipeline.Message) error
+
+func (r *fakeTrackRTPReader) SetReadDeadline(time.Time) error {
+	return nil
+}
 
 func (r *fakeTrackRTPReader) ReadRTP() (*rtp.Packet, interceptor.Attributes, error) {
 	if r.reads < len(r.packets) {
@@ -547,5 +554,178 @@ func TestCodecIDFromMIME(t *testing.T) {
 		if codec != tc.codec || media != tc.media {
 			t.Fatalf("%s -> %s/%s, want %s/%s", tc.mime, codec, media, tc.codec, tc.media)
 		}
+	}
+}
+
+// blockingTrackRTPReader blocks each read until a packet is sent, packets is
+// closed (EOF), or a read deadline at or before now is set — the Pion
+// TrackRemote contract the reader's interruption relies on.
+type blockingTrackRTPReader struct {
+	mu      sync.Mutex
+	packets chan *rtp.Packet
+	reading chan struct{}
+	expired chan struct{}
+}
+
+func newBlockingTrackRTPReader() *blockingTrackRTPReader {
+	return &blockingTrackRTPReader{
+		packets: make(chan *rtp.Packet),
+		reading: make(chan struct{}, 8),
+		expired: make(chan struct{}),
+	}
+}
+
+func (r *blockingTrackRTPReader) ReadRTP() (*rtp.Packet, interceptor.Attributes, error) {
+	r.mu.Lock()
+	expired := r.expired
+	r.mu.Unlock()
+	r.reading <- struct{}{}
+	select {
+	case packet, ok := <-r.packets:
+		if !ok {
+			return nil, nil, io.EOF
+		}
+		return packet, nil, nil
+	case <-expired:
+		return nil, nil, os.ErrDeadlineExceeded
+	}
+}
+
+func (r *blockingTrackRTPReader) SetReadDeadline(deadline time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	select {
+	case <-r.expired:
+		if deadline.IsZero() || deadline.After(time.Now()) {
+			r.expired = make(chan struct{})
+		}
+	default:
+		if !deadline.IsZero() && !deadline.After(time.Now()) {
+			close(r.expired)
+		}
+	}
+	return nil
+}
+
+func waitRead(t *testing.T, reader *blockingTrackRTPReader) {
+	t.Helper()
+	select {
+	case <-reader.reading:
+	case <-time.After(5 * time.Second):
+		t.Fatal("read never started")
+	}
+}
+
+func readAsync(reader TrackReader, ctx context.Context) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := reader.ReadRTP(ctx)
+		done <- err
+	}()
+	return done
+}
+
+func waitReadResult(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked read was not interrupted")
+		return nil
+	}
+}
+
+func opusRemoteTrack(payloadType uint8) RemoteTrack {
+	return RemoteTrack{
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2},
+			PayloadType:        webrtc.PayloadType(payloadType),
+		},
+		Stream: av.Stream{ID: "audio", Epoch: 1},
+	}
+}
+
+// An idle read blocked in the transport returns promptly when its context is
+// cancelled, and the reader stays usable with a fresh context.
+func TestTrackReaderContextCancelInterruptsBlockedRead(t *testing.T) {
+	blocking := newBlockingTrackRTPReader()
+	reader := newTrackReader(opusRemoteTrack(111), blocking)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := readAsync(reader, ctx)
+	waitRead(t, blocking)
+	cancel()
+	if err := waitReadResult(t, done); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	done = readAsync(reader, context.Background())
+	waitRead(t, blocking)
+	packet := &rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 7}}
+	blocking.packets <- packet
+	if err := waitReadResult(t, done); err != nil {
+		t.Fatalf("read after cancel: %v", err)
+	}
+}
+
+// Close interrupts a read blocked in the transport; it returns ErrClosed.
+func TestTrackReaderCloseInterruptsBlockedRead(t *testing.T) {
+	blocking := newBlockingTrackRTPReader()
+	reader := newTrackReader(opusRemoteTrack(111), blocking)
+	done := readAsync(reader, context.Background())
+	waitRead(t, blocking)
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitReadResult(t, done); !errors.Is(err, ErrClosed) {
+		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+// A same-codec payload-type renegotiation that lands while the source is
+// blocked in a read applies to the packet that read returns.
+func TestTrackReaderPayloadUpdateDuringBlockedReadFeedsRTPSource(t *testing.T) {
+	blocking := newBlockingTrackRTPReader()
+	remote := opusRemoteTrack(111)
+	reader := newTrackReader(remote, blocking)
+	streams, err := reader.Streams(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := rtpav.NewSource(rtpav.SourceConfig{
+		Receiver:      reader,
+		Depacketizers: []rtpav.Depacketizer{rtpav.NewOpusDepacketizer(streams[0])},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		<-blocking.reading
+		update := opusRemoteTrack(112)
+		if err := reader.UpdateCodec(context.Background(), TrackCodecUpdate{Codec: update.Codec}); err != nil {
+			t.Error(err)
+		}
+		blocking.packets <- &rtp.Packet{Header: rtp.Header{PayloadType: 112, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{4, 5}}
+		<-blocking.reading
+		close(blocking.packets)
+	}()
+	var packets []av.Packet
+	var events []av.Event
+	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		switch msg.Kind {
+		case pipeline.MessagePacket:
+			packets = append(packets, *msg.Packet)
+		case pipeline.MessageEvent:
+			events = append(events, *msg.Event)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 || packets[0].CodecEpoch != 2 || packets[0].PTS.Value != 960 {
+		t.Fatalf("packets = %+v", packets)
+	}
+	if len(events) < 2 || events[0].Type != av.EventCodecChanged || events[0].Epoch != 2 || events[len(events)-1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v", events)
 	}
 }

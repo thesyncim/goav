@@ -11,6 +11,19 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix media-boundary bugs from an external review. RTP: fragmented VP8/VP9
+  keyframes keep `Keyframe` (it was taken from the last fragment); RTP
+  timestamps are extended per stream epoch, so a 32-bit wrap is a +960 step,
+  not a backward discontinuity; `JitterRing` positions packets relative to the
+  next expected sequence number, so flush is in sequence order and no capacity
+  collides across the uint16 wrap; a payload type the current map cannot
+  resolve is retried after the receiver's queued events, so a renegotiation
+  during a blocked read applies to the packet that read returns, while a
+  packet the old map resolves keeps the old epoch. WebRTC: a blocked
+  `ReadRTP` returns promptly on context cancel or `Close` (read deadlines, no
+  goroutine per read). goh264 (`goav_goh264`): reordered and flushed frames
+  carry their own picture's PTS, duration, and epoch, pinned by a committed
+  12-frame B-frame fixture checked against ffmpeg's per-frame md5.
 - Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
   limit instead of panicking (offset+length wrapped negative). Found by the
   fuzz smoke.

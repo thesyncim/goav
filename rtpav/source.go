@@ -60,7 +60,8 @@ type sourceTimestampState struct {
 	streamID    av.StreamID
 	initialized bool
 	epoch       av.Epoch
-	timestamp   av.Timestamp
+	// timestamp is the last extended (unwrapped) timestamp.
+	timestamp av.Timestamp
 }
 
 var _ pipeline.Source = (*Source)(nil)
@@ -174,12 +175,19 @@ func (s *Source) handleRTP(ctx context.Context, emitter pipeline.Emitter, packet
 }
 
 func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, packet *rtp.Packet) error {
-	if s.payloads == nil {
-		return ErrPayloadNotFound
-	}
-	payload, ok := s.payloads.Lookup(packet.PayloadType)
+	payload, ok := s.lookupPayload(packet.PayloadType)
 	if !ok {
-		return ErrPayloadNotFound
+		// The receiver may have renegotiated while the read that produced
+		// this packet was blocked. Events it queued then precede the packet:
+		// apply them (refreshing the map and the depacketizers' epoch) and
+		// resolve again. A packet the current map resolves never takes a
+		// newer map: its update applies from the next read.
+		if err := s.emitReceiverEvents(ctx, emitter); err != nil {
+			return err
+		}
+		if payload, ok = s.lookupPayload(packet.PayloadType); !ok {
+			return ErrPayloadNotFound
+		}
 	}
 	depacketizer := s.depacketizerFor(payload)
 	if depacketizer == nil {
@@ -208,6 +216,13 @@ func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, pack
 		}
 	}
 	return nil
+}
+
+func (s *Source) lookupPayload(payloadType uint8) (PayloadCodec, bool) {
+	if s.payloads == nil {
+		return PayloadCodec{}, false
+	}
+	return s.payloads.Lookup(payloadType)
 }
 
 func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
@@ -479,6 +494,13 @@ func (s *Source) observePacketTimestamp(ctx context.Context, emitter pipeline.Em
 	if !state.initialized || state.epoch != packet.CodecEpoch {
 		state.init(packet)
 		return nil
+	}
+	// RTP timestamps are 32-bit and start anywhere, so a stream wraps in
+	// practice. Extend each one by its signed 32-bit step from the previous
+	// timestamp of this stream epoch; the step is exact across the wrap and
+	// for small reorders, and already-extended timestamps pass unchanged.
+	if packet.PTS.Base == state.timestamp.Base {
+		packet.PTS.Value = state.timestamp.Value + int64(int32(uint32(packet.PTS.Value)-uint32(state.timestamp.Value)))
 	}
 	gap, ok := packet.PTS.Sub(state.timestamp)
 	if !ok {

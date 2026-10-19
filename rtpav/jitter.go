@@ -14,14 +14,18 @@ type JitterConfig struct {
 }
 
 // JitterRing is a fixed-capacity, allocation-free JitterBuffer: packets slot
-// by sequence number and release in order, with loss and reordering surfaced
-// as events and stats.
+// by their distance from the next expected sequence number and release in
+// order, with loss and reordering surfaced as events and stats. Positioning
+// is relative to expected, never raw sequence modulo capacity, so any
+// capacity orders correctly across the uint16 wrap.
 type JitterRing struct {
 	slots       []jitterSlot
 	initialized bool
 	ssrc        uint32
 	expected    uint16
-	stats       JitterStats
+	// head is the slot holding expected; it moves only with expected.
+	head  int
+	stats JitterStats
 }
 
 type jitterSlot struct {
@@ -48,6 +52,7 @@ func (b *JitterRing) Reset() {
 	b.initialized = false
 	b.ssrc = 0
 	b.expected = 0
+	b.head = 0
 	b.stats = JitterStats{}
 }
 
@@ -89,7 +94,7 @@ func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterR
 		b.dropUntil(seq)
 	}
 
-	slot := &b.slots[int(seq)%len(b.slots)]
+	slot := &b.slots[b.slotFor(seq)]
 	if slot.full {
 		b.stats.Reordered++
 	} else {
@@ -122,14 +127,14 @@ func (b *JitterRing) PopInto(ctx context.Context, pkt *rtp.Packet) (bool, error)
 	if !b.initialized {
 		return false, nil
 	}
-	slot := &b.slots[int(b.expected)%len(b.slots)]
+	slot := &b.slots[b.head]
 	if !slot.full || slot.seq != b.expected {
 		return false, nil
 	}
 	*pkt = *slot.packet
 	slot.full = false
 	slot.packet = nil
-	b.expected++
+	b.advance()
 	b.stats.Expected = b.expected
 	b.stats.Buffered = b.buffered()
 	return true, nil
@@ -140,8 +145,10 @@ func (b *JitterRing) FlushInto(ctx context.Context, out *JitterResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for i := range b.slots {
-		slot := &b.slots[i]
+	// Walk from head: slot order relative to head is sequence order. Gaps
+	// are skipped, and expected ends past the last packet released.
+	for remaining := b.buffered(); remaining > 0; b.advance() {
+		slot := &b.slots[b.head]
 		if !slot.full {
 			continue
 		}
@@ -150,7 +157,9 @@ func (b *JitterRing) FlushInto(ctx context.Context, out *JitterResult) error {
 		}
 		slot.full = false
 		slot.packet = nil
+		remaining--
 	}
+	b.stats.Expected = b.expected
 	b.stats.Buffered = 0
 	return nil
 }
@@ -168,6 +177,7 @@ func (b *JitterRing) init(pkt *rtp.Packet) {
 	b.initialized = true
 	b.ssrc = pkt.SSRC
 	b.expected = pkt.SequenceNumber
+	b.head = 0
 }
 
 func (b *JitterRing) dropUntil(seq uint16) {
@@ -175,12 +185,13 @@ func (b *JitterRing) dropUntil(seq uint16) {
 		b.slots[i] = jitterSlot{}
 	}
 	b.expected = seq
+	b.head = 0
 	b.stats.Buffered = 0
 }
 
 func (b *JitterRing) drainReady(out *JitterResult) error {
 	for {
-		slot := &b.slots[int(b.expected)%len(b.slots)]
+		slot := &b.slots[b.head]
 		if !slot.full || slot.seq != b.expected {
 			return nil
 		}
@@ -189,7 +200,22 @@ func (b *JitterRing) drainReady(out *JitterResult) error {
 		}
 		slot.full = false
 		slot.packet = nil
-		b.expected++
+		b.advance()
+	}
+}
+
+// slotFor positions seq by its distance from expected; callers have checked
+// that distance is inside the window.
+func (b *JitterRing) slotFor(seq uint16) int {
+	return (b.head + int(seq-b.expected)) % len(b.slots)
+}
+
+// advance moves expected and head together.
+func (b *JitterRing) advance() {
+	b.expected++
+	b.head++
+	if b.head == len(b.slots) {
+		b.head = 0
 	}
 }
 

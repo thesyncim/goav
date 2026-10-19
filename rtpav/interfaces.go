@@ -147,6 +147,8 @@ type FeedbackWriter interface {
 // PacketReader is the transport seam Receive adapts: it declares the streams
 // it carries, resolves payload types, and delivers RTP packets until io.EOF.
 // Events surfaces transport-side events (loss, stream changes); nil is fine.
+// A payload-map change is announced with av.EventCodecChanged; a packet the
+// previous map cannot resolve is resolved after the events queued so far.
 type PacketReader interface {
 	Streams(context.Context) ([]av.Stream, error)
 	PayloadMap() PayloadMap
