@@ -32,15 +32,15 @@ type PlannedMuxStream struct {
 
 // validateMuxCompatibility refuses, before a build opens anything, a
 // destination whose format cannot carry the streams planned into it.
-func validateMuxCompatibility(state *State) error {
-	if !state.Req.Preflight {
+func validateMuxCompatibility(state *recipeState) error {
+	if !state.req.Preflight {
 		return nil
 	}
-	issues := MuxCompatibilityIssues(state.work, state.inputProbes, state.Env)
+	issues := MuxCompatibilityIssues(state.work, state.inputProbes, state.env)
 	if len(issues) == 0 {
 		return nil
 	}
-	return MuxCompatibilityBuildError(state.Operation, issues[0])
+	return MuxCompatibilityBuildError(state.operation, issues[0])
 }
 
 func MuxCompatibilityIssues(
@@ -56,7 +56,7 @@ func MuxCompatibilityIssues(
 		if output.Operation != plan.OpMux || output.Format == "" {
 			continue
 		}
-		streams := MuxOutputStreams(output, branches, operations, work.Inputs, inputProbes)
+		streams := muxOutputStreams(output, branches, operations, work.Inputs, inputProbes)
 		if issue, ok := CheckKnownMuxCompatibility(output, streams, env); ok {
 			issues = append(issues, issue)
 		}
@@ -64,7 +64,7 @@ func MuxCompatibilityIssues(
 	return issues
 }
 
-func MuxOutputStreams(
+func muxOutputStreams(
 	output WorkDestination,
 	branchesByName map[string]WorkBranch,
 	operations map[string]WorkOperation,
@@ -197,23 +197,23 @@ func MuxStreamTimeBase(stream av.Stream) av.TimeBase {
 }
 
 func CheckKnownMuxCompatibility(output WorkDestination, streams []PlannedMuxStream, env Env) (MuxCompatibilityIssue, bool) {
-	if issue, ok := CheckMuxTimebaseCompatibility(output, streams); ok {
+	if issue, ok := checkMuxTimebaseCompatibility(output, streams); ok {
 		return issue, true
 	}
 	if desc, ok := muxerDescriptorForRuntime(env, output.Format); ok {
-		if issue, checked := CheckDescriptorMuxCompatibility(output, streams, desc); checked {
+		if issue, checked := checkDescriptorMuxCompatibility(output, streams, desc); checked {
 			return issue, true
 		}
 	}
 	switch output.Format {
 	case av.FormatIVF:
-		return CheckSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
+		return checkSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
 			av.CodecVP8: true,
 			av.CodecVP9: true,
 			av.CodecAV1: true,
 		}, "IVF destinations support one VP8, VP9, or AV1 video stream")
 	case av.FormatAnnexB:
-		return CheckSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
+		return checkSingleVideoMuxCompatibility(output, streams, map[av.CodecID]bool{
 			av.CodecH264: true,
 		}, "Annex B destinations support one H264 video stream")
 	default:
@@ -235,12 +235,12 @@ func muxerDescriptorForRuntime(env Env, formatID av.FormatID) (format.Descriptor
 	return desc, true
 }
 
-func CheckDescriptorMuxCompatibility(output WorkDestination, streams []PlannedMuxStream, desc format.Descriptor) (MuxCompatibilityIssue, bool) {
+func checkDescriptorMuxCompatibility(output WorkDestination, streams []PlannedMuxStream, desc format.Descriptor) (MuxCompatibilityIssue, bool) {
 	if desc.MinStreams > 0 && len(streams) < desc.MinStreams {
-		return newMuxCompatibilityIssue(output, streams, DescriptorMuxReason(output.Format, desc)), true
+		return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
 	}
 	if desc.MaxStreams > 0 && len(streams) > desc.MaxStreams {
-		return newMuxCompatibilityIssue(output, streams, DescriptorMuxReason(output.Format, desc)), true
+		return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
 	}
 	if len(desc.Media) == 0 && len(desc.Codecs) == 0 {
 		return MuxCompatibilityIssue{}, false
@@ -248,16 +248,16 @@ func CheckDescriptorMuxCompatibility(output WorkDestination, streams []PlannedMu
 	for i := range streams {
 		stream := streams[i]
 		if stream.Media != "" && len(desc.Media) != 0 && !MediaAllowed(desc.Media, stream.Media) {
-			return newMuxCompatibilityIssue(output, streams, DescriptorMuxReason(output.Format, desc)), true
+			return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
 		}
 		if stream.Codec != "" && len(desc.Codecs) != 0 && !codecAllowed(desc.Codecs, stream.Codec) {
-			return newMuxCompatibilityIssue(output, streams, DescriptorMuxReason(output.Format, desc)), true
+			return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
 		}
 	}
 	return MuxCompatibilityIssue{}, false
 }
 
-func CheckMuxTimebaseCompatibility(output WorkDestination, streams []PlannedMuxStream) (MuxCompatibilityIssue, bool) {
+func checkMuxTimebaseCompatibility(output WorkDestination, streams []PlannedMuxStream) (MuxCompatibilityIssue, bool) {
 	for i := range streams {
 		base := streams[i].TimeBase
 		if base == (av.TimeBase{}) {
@@ -270,7 +270,7 @@ func CheckMuxTimebaseCompatibility(output WorkDestination, streams []PlannedMuxS
 	return MuxCompatibilityIssue{}, false
 }
 
-func DescriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
+func descriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
 	if desc.Metadata != nil && desc.Metadata["summary"] != "" {
 		return desc.Metadata["summary"]
 	}
@@ -328,7 +328,7 @@ func JoinCodecIDs(values []av.CodecID) string {
 	return strings.Join(out, ",")
 }
 
-func CheckSingleVideoMuxCompatibility(output WorkDestination, streams []PlannedMuxStream, codecs map[av.CodecID]bool, reason string) (MuxCompatibilityIssue, bool) {
+func checkSingleVideoMuxCompatibility(output WorkDestination, streams []PlannedMuxStream, codecs map[av.CodecID]bool, reason string) (MuxCompatibilityIssue, bool) {
 	if len(streams) != 1 {
 		return newMuxCompatibilityIssue(output, streams, reason), true
 	}

@@ -15,9 +15,9 @@ import (
 // buildRecipeWorkPlan renders a lowered recipe into its work plan: one
 // branch per recipe branch, its operations from its root with the node each
 // runs as; a join's arms and its convergence lead the join's branches.
-func buildRecipeWorkPlan(s *State, l *Lowering, spec pipeline.Spec) WorkPlan {
-	outputs := planOutputsFromRecipeIR(s.Recipe.Destinations, s.outputFormatMap())
-	var branches []PlanBranch
+func buildRecipeWorkPlan(s *recipeState, l *lowering, spec pipeline.Spec) WorkPlan {
+	outputs := planOutputsFromRecipeIR(s.recipe.Destinations, s.outputFormatMap())
+	var branches []planBranch
 	var decisions []PlanDecision
 	var operations []WorkOperation
 	var workBranches []WorkBranch
@@ -41,8 +41,8 @@ func buildRecipeWorkPlan(s *State, l *Lowering, spec pipeline.Spec) WorkPlan {
 	remuxBranches, remuxDecisions := s.planRemuxBranches(outputs)
 	branches = append(branches, remuxBranches...)
 	decisions = append(decisions, remuxDecisions...)
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input >= 0 {
 			branch, branchDecisions := s.planStreamBranch(l, i, outputs)
 			branches = append(branches, branch)
@@ -59,7 +59,7 @@ func buildRecipeWorkPlan(s *State, l *Lowering, spec pipeline.Spec) WorkPlan {
 			workBranches = append(workBranches, joinBranches...)
 			taps = append(taps, p.allTaps()...)
 			diagnostics = append(diagnostics, p.allDiagnostics()...)
-			if !s.Facts[i].lone {
+			if !s.facts[i].lone {
 				join := p.joinedWorkOperation(p.Name, 0, armShape)
 				operations = append(operations, join)
 				workBranches = append(workBranches, WorkBranch{
@@ -77,7 +77,7 @@ func buildRecipeWorkPlan(s *State, l *Lowering, spec pipeline.Spec) WorkPlan {
 	work := WorkPlan{
 		Name:         cmp.Or(spec.Name, "goav"),
 		Realtime:     spec.Realtime,
-		Inputs:       workInputsFromRecipeIR(s.Recipe.Inputs),
+		Inputs:       workInputsFromRecipeIR(s.recipe.Inputs),
 		Streams:      s.workStreams(),
 		Operations:   operations,
 		Branches:     workBranches,
@@ -92,9 +92,9 @@ func buildRecipeWorkPlan(s *State, l *Lowering, spec pipeline.Spec) WorkPlan {
 
 // planStreamBranch plans one branch of an input's stream: the input's read,
 // the select, and the branch's operations, each on its planned node.
-func (s *State) planStreamBranch(l *Lowering, index int, outputs []PlanOutput) (PlanBranch, []PlanDecision) {
-	stream := s.Recipe.Streams[index]
-	input := s.Recipe.Inputs[stream.Input]
+func (s *recipeState) planStreamBranch(l *lowering, index int, outputs []planOutput) (planBranch, []PlanDecision) {
+	stream := s.recipe.Streams[index]
+	input := s.recipe.Inputs[stream.Input]
 	var spec shape.Spec
 	sourceShape, sourceShapeOK := recipeIRInputSourceShape(input)
 	plannedStream := stream
@@ -118,35 +118,35 @@ func (s *State) planStreamBranch(l *Lowering, index int, outputs []PlanOutput) (
 	for i := range operations {
 		operations[i].Node = l.operationNode(stream, operations[i], name)
 	}
-	if latency, ok := planPathLatencyDecision(s.Env, name, plannedStream.Operations); ok {
+	if latency, ok := planPathLatencyDecision(s.env, name, plannedStream.Operations); ok {
 		decisions = append(decisions, latency)
 	}
-	return PlanBranch{
+	return planBranch{
 		Name:       name,
 		Input:      s.inputName(stream.Input),
 		Stream:     plannedStream.Selector,
 		Shape:      spec,
 		Operations: operations,
-		Outputs:    PlanBranchDestinations(recipeIROutputRefsToStrings(stream.Outputs), outputs),
+		Outputs:    planBranchDestinations(recipeIROutputRefsToStrings(stream.Outputs), outputs),
 	}, decisions
 }
 
 // planJoinBranch plans one branch of a join's output: a lone branch carries
 // the join's convergence, a fork reads the joined stream.
-func (s *State) planJoinBranch(l *Lowering, index int, p *JoinPlan, outputs []PlanOutput, armShape shape.Spec) PlanBranch {
-	stream := s.Recipe.Streams[index]
+func (s *recipeState) planJoinBranch(l *lowering, index int, p *JoinPlan, outputs []planOutput, armShape shape.Spec) planBranch {
+	stream := s.recipe.Streams[index]
 	joined := p.joinedShape()
-	branch := PlanBranch{
+	branch := planBranch{
 		Name:    stream.Name,
 		Input:   p.Name,
 		Stream:  StreamSelectFromStream(p.Joined),
 		Shape:   joined,
-		Outputs: PlanBranchDestinations(recipeIROutputRefsToStrings(stream.Outputs), outputs),
+		Outputs: planBranchDestinations(recipeIROutputRefsToStrings(stream.Outputs), outputs),
 	}
-	var operations []PlanOperation
-	if s.Facts[index].lone {
+	var operations []planOperation
+	if s.facts[index].lone {
 		branch.Input = ""
-		operations = append(operations, PlanOperation{
+		operations = append(operations, planOperation{
 			Kind:      plan.OpJoin,
 			Component: p.Name,
 			Detail:    p.joinDetail(),
@@ -159,7 +159,7 @@ func (s *State) planJoinBranch(l *Lowering, index int, p *JoinPlan, outputs []Pl
 		operations = append(operations, planOperationFromRecipeIROperation(operation))
 	}
 	start := 0
-	if s.Facts[index].lone {
+	if s.facts[index].lone {
 		start = 1
 	}
 	shaped := planOperationsWithShape(stream.Name, joined, operations[start:])
@@ -173,13 +173,13 @@ func (s *State) planJoinBranch(l *Lowering, index int, p *JoinPlan, outputs []Pl
 
 // operationNode is the planned node one branch operation runs as, read from
 // the lowering; operations that plan no node keep their component's name.
-func (l *Lowering) operationNode(stream recipeir.Stream, operation PlanOperation, branch string) pipeline.NodeRef {
+func (l *lowering) operationNode(stream recipeir.Stream, operation planOperation, branch string) pipeline.NodeRef {
 	if operation.Node != "" {
 		return operation.Node
 	}
 	switch operation.Kind {
 	case plan.OpSelect:
-		return l.Refs[stream.Root]
+		return l.refs[stream.Root]
 	case plan.OpDemux, plan.OpDepacketize:
 		return pipeline.NodeRef(l.sourceNames[stream.Input])
 	case plan.OpShape:
@@ -198,10 +198,10 @@ func (l *Lowering) operationNode(stream recipeir.Stream, operation PlanOperation
 
 // tapBranches are the branches whose taps the work plan installs: every
 // branch, each tap anchored on the node before it.
-func (s *State) tapBranches(l *Lowering, outputs []PlanOutput) []PlanBranch {
-	var out []PlanBranch
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+func (s *recipeState) tapBranches(l *lowering, outputs []planOutput) []planBranch {
+	var out []planBranch
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input >= 0 {
 			branch, _ := s.planStreamBranch(l, i, outputs)
 			out = append(out, branch)
@@ -212,19 +212,19 @@ func (s *State) tapBranches(l *Lowering, outputs []PlanOutput) []PlanBranch {
 	return out
 }
 
-func (s *State) inputName(index int) string {
-	if index < 0 || index >= len(s.Recipe.Inputs) {
+func (s *recipeState) inputName(index int) string {
+	if index < 0 || index >= len(s.recipe.Inputs) {
 		return "input"
 	}
-	input := s.Recipe.Inputs[index]
+	input := s.recipe.Inputs[index]
 	return cmp.Or(input.Name, input.URI, fmt.Sprintf("input-%d", index))
 }
 
 // workStreams are the work plan's streams: the branches of input streams.
-func (s *State) workStreams() []WorkStream {
+func (s *recipeState) workStreams() []WorkStream {
 	var out []WorkStream
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input < 0 {
 			continue
 		}
@@ -253,7 +253,7 @@ func workStreamOperations(operations []recipeir.Operation) []recipeir.Operation 
 
 // selectedStream is the stream a branch of an input selects, when the input's
 // streams are known: declared, probed, or a live input's codec intent.
-func (s *State) selectedStream(stream recipeir.Stream) (av.Stream, bool) {
+func (s *recipeState) selectedStream(stream recipeir.Stream) (av.Stream, bool) {
 	if stream.Input < 0 {
 		return av.Stream{}, false
 	}
@@ -265,7 +265,7 @@ func (s *State) selectedStream(stream recipeir.Stream) (av.Stream, bool) {
 		}
 		return selected.Stream, true
 	}
-	input := s.Recipe.Inputs[stream.Input]
+	input := s.recipe.Inputs[stream.Input]
 	sourceShape, sourceShapeOK := recipeIRInputSourceShape(input)
 	if stream.Input < len(s.inputProbes) && len(s.inputProbes[stream.Input].Streams) != 0 {
 		probe := s.inputProbes[stream.Input]
@@ -319,7 +319,7 @@ func (p *JoinPlan) joinedWorkOperation(branch string, index int, armShape shape.
 
 // planOutputsWithWorkBranches fills each destination's branch refs from the
 // branches that route into it.
-func planOutputsWithWorkBranches(outputs []PlanOutput, branches []WorkBranch, ids map[string]string) []PlanOutput {
+func planOutputsWithWorkBranches(outputs []planOutput, branches []WorkBranch, ids map[string]string) []planOutput {
 	for i := range outputs {
 		id := ids[outputs[i].Name]
 		for j := range branches {
@@ -333,7 +333,7 @@ func planOutputsWithWorkBranches(outputs []PlanOutput, branches []WorkBranch, id
 
 // planRemuxBranches plans the whole-input copies: one packet-copy branch per
 // copied input, routed to every destination its Outputs name.
-func (s *State) planRemuxBranches(outputs []PlanOutput) ([]PlanBranch, []PlanDecision) {
+func (s *recipeState) planRemuxBranches(outputs []planOutput) ([]planBranch, []PlanDecision) {
 	var order []int
 	dests := map[int][]int{}
 	for _, remux := range s.remux {
@@ -346,14 +346,14 @@ func (s *State) planRemuxBranches(outputs []PlanOutput) ([]PlanBranch, []PlanDec
 			}
 		}
 	}
-	var branches []PlanBranch
+	var branches []planBranch
 	var decisions []PlanDecision
 	for _, input := range order {
-		routed := make([]PlanOutput, 0, len(dests[input]))
+		routed := make([]planOutput, 0, len(dests[input]))
 		for _, dest := range dests[input] {
 			routed = append(routed, outputs[dest])
 		}
-		inputBranches, inputDecisions := planCopyBranches(s, []recipeir.Input{s.Recipe.Inputs[input]}, true, routed)
+		inputBranches, inputDecisions := planCopyBranches(s, []recipeir.Input{s.recipe.Inputs[input]}, true, routed)
 		branches = append(branches, inputBranches...)
 		decisions = append(decisions, inputDecisions...)
 	}

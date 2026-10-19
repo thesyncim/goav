@@ -26,7 +26,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{builderr.RuntimeBranchInvalidCode, errcode.FamilyRuntimeBranch},
 		{errcode.StreamRuleInvalid, errcode.FamilyStreamRule},
 		{builderr.CompilerPassFailedCode, errcode.FamilyCompiler},
-		{errcode.Code(DiagnosticShapeConversionInserted), errcode.Family("diagnostic")},
+		{errcode.Code(diagnosticShapeConversionInserted), errcode.Family("diagnostic")},
 		{errcode.Code("crossfade_inputs"), errcode.FamilyJoin},
 		{errcode.Code("example_vendor_failure"), errcode.FamilyExternal},
 	}

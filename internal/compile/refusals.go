@@ -199,3 +199,88 @@ func StreamSelectFromAV(selector av.StreamSelector) plan.StreamSelect {
 		Name:     selector.Name,
 	}
 }
+
+func duplicateBranchDecodeError(node string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.BranchDecodeDuplicateCode),
+		Code:      builderr.BranchDecodeDuplicateCode,
+		Operation: "build branch",
+		Node:      node,
+		Reason:    "branch already decodes its input packets",
+		Fixes: builderr.Fixes([]string{
+			"call .Decode() once before frame operations",
+			"remove the second .Decode() call",
+		}),
+		Cause: builderr.ErrUnsupportedBuild,
+	}
+}
+
+func branchDecodeDomainError(node string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.BranchDecodeDomainMismatchCode),
+		Code:      builderr.BranchDecodeDomainMismatchCode,
+		Operation: "build branches",
+		Node:      node,
+		Reason:    "branch decoding requires a packet-domain stream point",
+		Fixes: builderr.Fixes([]string{
+			"omit .Decode() when the fork already starts after the stream's .Decode()",
+			"fork before .Decode() when a packet copy and a decoding fork share the stream: s := in.Video()",
+			"attach runtime decode branches from packet taps",
+		}),
+		Cause: builderr.ErrUnsupportedBuild,
+	}
+}
+
+func branchDestinationInvalidError(name string, reason string) error {
+	return DestinationInvalidError("build branch", cmp.Or(name, "branch"), reason)
+}
+
+func DestinationInvalidError(operation string, node string, reason string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.DestinationInvalidCode),
+		Code:      builderr.DestinationInvalidCode,
+		Operation: operation,
+		Node:      node,
+		Reason:    reason,
+		Fixes: builderr.Fixes([]string{
+			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
+			"pass one destination value to every chain that should share it",
+			"use distinct destination values for independent outputs",
+		}),
+		Cause: builderr.ErrUnsupportedBuild,
+	}
+}
+
+func GraphPlanInvalidError(reason string, details []string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.GraphPlanInvalidCode),
+		Code:      builderr.GraphPlanInvalidCode,
+		Operation: "build graph plan",
+		Reason:    reason,
+		Details:   builderr.DetailLines(append([]string(nil), details...)),
+		Fixes: builderr.Fixes([]string{
+			"compile recipes through Streams, joins, and Outputs: rt.Run(ctx, outputs...)",
+			"keep graph-plan nodes, edges, operations, and destinations in sync",
+		}),
+		Cause: builderr.ErrUnsupportedBuild,
+	}
+}
+
+func StreamRuleInvalidError(node string, reason string, suggestion string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(errcode.StreamRuleInvalid),
+		Code:      errcode.StreamRuleInvalid,
+		Operation: "build stream rule",
+		Node:      cmp.Or(node, "rule"),
+		Reason:    reason,
+		Fixes: builderr.Fixes([]string{
+			suggestion,
+		}),
+		Cause: builderr.ErrUnsupportedBuild,
+	}
+}

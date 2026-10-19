@@ -7,7 +7,75 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 )
+
+// runtimeBranchNodeName names an attached node under its branch.
+func runtimeBranchNodeName(branchName string, localName string) string {
+	return branchName + "/" + localName
+}
+
+func selectNodeName(selector av.StreamSelector) string {
+	if selector.Name != "" {
+		return "select-" + selector.Name
+	}
+	if selector.ID != "" {
+		return "select-" + string(selector.ID)
+	}
+	if selector.Codec != "" {
+		return "select-" + string(selector.Codec)
+	}
+	if selector.Type != "" {
+		return "select-" + string(selector.Type)
+	}
+	if selectorHasIndex(selector) {
+		return "select-" + strconv.Itoa(selector.Index)
+	}
+	return "select"
+}
+
+func EncodeNodeName(request EncodeRequest) string {
+	if request.Name != "" {
+		return "encode-" + request.Name
+	}
+	selector := request.Selector
+	if selector.Name != "" {
+		return "encode-" + selector.Name
+	}
+	if selector.ID != "" {
+		return "encode-" + string(selector.ID)
+	}
+	if selector.Codec != "" {
+		return "encode-" + string(selector.Codec)
+	}
+	if selector.Type != "" {
+		return "encode-" + string(selector.Type)
+	}
+	if selectorHasIndex(selector) {
+		return "encode-" + strconv.Itoa(selector.Index)
+	}
+	codecID := request.Config.Parameters.ID
+	if codecID == "" {
+		codecID = request.Config.Stream.Codec.ID
+	}
+	if codecID != "" {
+		return "encode-" + string(codecID)
+	}
+	return "encode"
+}
+
+func MuxNodeName(output format.Output, index int) string {
+	if output.Name != "" {
+		return output.Name
+	}
+	if output.URI != "" {
+		return output.URI
+	}
+	if index == 0 {
+		return "output"
+	}
+	return "output-" + strconv.Itoa(index)
+}
 
 func OutputNodeDetailWithFormat(output format.Output, formatID av.FormatID) string {
 	parts := []string{"mux"}
@@ -42,14 +110,14 @@ func DecodeRequestDetail(request DecodeRequest) string {
 }
 
 func EncodeNodeDetail(request EncodeRequest) string {
-	codecID := EncodeTargetCodec(request)
+	codecID := encodeTargetCodec(request)
 	if codecID == "" {
 		return "frames -> packets"
 	}
 	return JoinSpecDetail("frames -> packets", "codec="+string(codecID))
 }
 
-func EncodeTargetCodec(request EncodeRequest) av.CodecID {
+func encodeTargetCodec(request EncodeRequest) av.CodecID {
 	if request.Config.Parameters.ID != "" {
 		return request.Config.Parameters.ID
 	}
@@ -134,4 +202,38 @@ func JoinSpecDetail(parts ...string) string {
 		}
 	}
 	return strings.Join(clean, ", ")
+}
+
+type PlannedNode struct {
+	Ref  pipeline.NodeRef
+	Kind pipeline.NodeKind
+}
+
+func AddPlannedNode(nodes map[string]PlannedNode, spec *pipeline.Spec, name string, kind pipeline.NodeKind, ref pipeline.NodeRef, detail ...string) error {
+	if name == "" {
+		return pipeline.ErrUnknownNode
+	}
+	if _, ok := nodes[name]; ok {
+		return pipeline.ErrNodeExists
+	}
+	nodes[name] = PlannedNode{Ref: ref, Kind: kind}
+	spec.Nodes = append(spec.Nodes, pipeline.NodeSpec{Name: name, Kind: kind, Detail: firstDetail(detail)})
+	return nil
+}
+
+func firstDetail(detail []string) string {
+	for i := range detail {
+		if detail[i] != "" {
+			return detail[i]
+		}
+	}
+	return ""
+}
+
+func DescribedNodeDetail(node any) string {
+	describer, ok := node.(pipeline.NodeDescriber)
+	if !ok {
+		return ""
+	}
+	return describer.DescribeNode().Detail
 }

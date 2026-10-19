@@ -13,7 +13,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// workPlan is the executable plan for a build: the operations, taps, branches,
+// WorkPlan is the executable plan for a build: the operations, taps, branches,
 // destinations, and edges the lowering executes against the graph. It is built
 // once by the compile (buildWorkPlan) and every view — lowering validation,
 // Explain reports, and mux compatibility — renders from it.
@@ -46,7 +46,7 @@ type WorkStream struct {
 	Destinations []string
 }
 
-// workOperation is one planned operation. Destinations carries the stable
+// WorkOperation is one planned operation. Destinations carries the stable
 // destination IDs (workDestination.ID) a terminal operation routes into —
 // destination routing is by ID, never by display name.
 type WorkOperation struct {
@@ -74,7 +74,7 @@ type WorkTap struct {
 	Shared    bool
 }
 
-// workBranch is one planned branch. Operations and Destinations reference the
+// WorkBranch is one planned branch. Operations and Destinations reference the
 // plan's operations and destinations by their stable IDs.
 type WorkBranch struct {
 	ID           string
@@ -86,7 +86,7 @@ type WorkBranch struct {
 	Destinations []string
 }
 
-// workDestination is one planned destination. ID is the stable routing
+// WorkDestination is one planned destination. ID is the stable routing
 // identity derived from the destination handle's label (label+config identity
 // is deduplicated upstream: one label is one destination).
 type WorkDestination struct {
@@ -108,7 +108,7 @@ type workEdge struct {
 
 // workDestinationIDsByName maps destination display names to their stable IDs
 // while the planner intermediates still carry names.
-func WorkDestinationIDsByName(destinations []WorkDestination) map[string]string {
+func workDestinationIDsByName(destinations []WorkDestination) map[string]string {
 	out := make(map[string]string, len(destinations))
 	for i := range destinations {
 		if destinations[i].Name == "" {
@@ -119,7 +119,7 @@ func WorkDestinationIDsByName(destinations []WorkDestination) map[string]string 
 	return out
 }
 
-func WorkDestinationIDForName(ids map[string]string, name string) string {
+func workDestinationIDForName(ids map[string]string, name string) string {
 	if id, ok := ids[name]; ok {
 		return id
 	}
@@ -155,7 +155,7 @@ func recipeIROutputRefsToStrings(refs []recipeir.OutputRef) []string {
 	return out
 }
 
-func workDestinationsFromPlan(outputs []PlanOutput) []WorkDestination {
+func workDestinationsFromPlan(outputs []planOutput) []WorkDestination {
 	if len(outputs) == 0 {
 		return nil
 	}
@@ -177,7 +177,7 @@ func workDestinationsFromPlan(outputs []PlanOutput) []WorkDestination {
 // workOperationsFromBranches emits the ordered operation list in one walk over
 // the planned branches: each branch's operations followed by its destination
 // operations, with per-branch IDs and the running shape lineage.
-func workOperationsFromBranches(spec pipeline.Spec, branches []PlanBranch, outputs []PlanOutput, ids map[string]string) []WorkOperation {
+func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outputs []planOutput, ids map[string]string) []WorkOperation {
 	if len(branches) == 0 {
 		return nil
 	}
@@ -236,7 +236,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []PlanBranch, outpu
 				Detail:       "destination",
 				ShapeIn:      current,
 				ShapeOut:     current,
-				Destinations: []string{WorkDestinationIDForName(ids, destination)},
+				Destinations: []string{workDestinationIDForName(ids, destination)},
 			})
 			index++
 		}
@@ -244,7 +244,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []PlanBranch, outpu
 	return out
 }
 
-func workPlanOutputNodesByName(spec pipeline.Spec, outputs []PlanOutput) map[string]pipeline.NodeRef {
+func workPlanOutputNodesByName(spec pipeline.Spec, outputs []planOutput) map[string]pipeline.NodeRef {
 	out := make(map[string]pipeline.NodeRef, len(outputs))
 	used := make(map[int]struct{}, len(outputs))
 	for i := range outputs {
@@ -267,7 +267,7 @@ func workPlanOutputNodesByName(spec pipeline.Spec, outputs []PlanOutput) map[str
 	return out
 }
 
-func workPlanNodeMatchesOutput(node pipeline.NodeSpec, output PlanOutput) bool {
+func workPlanNodeMatchesOutput(node pipeline.NodeSpec, output planOutput) bool {
 	switch output.Operation {
 	case plan.OpSink:
 		return node.Kind == pipeline.NodeSink
@@ -278,8 +278,8 @@ func workPlanNodeMatchesOutput(node pipeline.NodeSpec, output PlanOutput) bool {
 	}
 }
 
-func planOutputsByName(outputs []PlanOutput) map[string]PlanOutput {
-	out := make(map[string]PlanOutput, len(outputs))
+func planOutputsByName(outputs []planOutput) map[string]planOutput {
+	out := make(map[string]planOutput, len(outputs))
 	for i := range outputs {
 		if outputs[i].Name == "" {
 			continue
@@ -289,7 +289,7 @@ func planOutputsByName(outputs []PlanOutput) map[string]PlanOutput {
 	return out
 }
 
-func workBranchesFromPlanAt(branches []PlanBranch, operations []WorkOperation, ids map[string]string, base int) []WorkBranch {
+func workBranchesFromPlanAt(branches []planBranch, operations []WorkOperation, ids map[string]string, base int) []WorkBranch {
 	if len(branches) == 0 {
 		return nil
 	}
@@ -302,7 +302,7 @@ func workBranchesFromPlanAt(branches []PlanBranch, operations []WorkOperation, i
 		branch := branches[i]
 		destinations := make([]string, 0, len(branch.Outputs))
 		for _, name := range branch.Outputs {
-			destinations = append(destinations, WorkDestinationIDForName(ids, name))
+			destinations = append(destinations, workDestinationIDForName(ids, name))
 		}
 		out = append(out, WorkBranch{
 			ID:           workBranchID(branch.Name, base+i),
@@ -366,7 +366,7 @@ func workBranchID(name string, index int) string {
 	return fmt.Sprintf("branch/%s/%d", cmp.Or(name, "main"), index)
 }
 
-// workDestinationID derives the stable destination ID from the destination's
+// WorkDestinationID derives the stable destination ID from the destination's
 // label. Labels are unique per plan: matching labels either belong to one
 // explicit mux group or fail as duplicate destinations, so the ID is stable
 // across plan orderings.
@@ -411,7 +411,7 @@ func workDestinationIndexByID(destinations []WorkDestination, id string) (int, b
 	return -1, false
 }
 
-// workDestinationNameByID resolves a destination's display name from its
+// WorkDestinationNameByID resolves a destination's display name from its
 // routing ID; views report names while the plan routes by ID.
 func WorkDestinationNameByID(destinations []WorkDestination, id string) string {
 	if index, ok := workDestinationIndexByID(destinations, id); ok {

@@ -8,7 +8,9 @@ import (
 	"github.com/thesyncim/goav/internal/builderr"
 )
 
-// validateBranchBuffer rejects branch buffers the runtime cannot install, in
+const RealtimeRecipeBufferCapacity = 32
+
+// ValidateBranchBuffer rejects branch buffers the runtime cannot install, in
 // terms of the goav BuildError vocabulary. The flow package owns the buffer
 // data and lowering; goav owns the build-time diagnostics that reference its
 // own error types.

@@ -22,7 +22,7 @@ type joinArmStagePlan struct {
 	stream    av.Stream
 }
 
-// joinArmPlan is one planned arm: its input, the statically selected stream,
+// JoinArmPlan is one planned arm: its input, the statically selected stream,
 // and the planned per-arm nodes (optional decode, optional arm stage).
 type JoinArmPlan struct {
 	// input indexes the recipe input a leaf arm reads; sourceShape is the
@@ -84,7 +84,7 @@ func (a *JoinArmPlan) joinStream() av.Stream {
 	return a.Stream
 }
 
-// joinPlan is one planned join: its N arms (each an input's stream, a nested
+// JoinPlan is one planned join: its N arms (each an input's stream, a nested
 // join, or a fed stream, with its optional bind, decode, and conversion)
 // converging into one join node whose output — the joined stream — the
 // join's branches read like any stream.
@@ -174,7 +174,7 @@ func joinTwoArmExample(kind string) string {
 	}
 }
 
-func ExplicitEncodeSoftInputShape(encode codec.Spec) shape.Spec {
+func explicitEncodeSoftInputShape(encode codec.Spec) shape.Spec {
 	if encode.Copy || encode.ID == "" {
 		return shape.Spec{}
 	}
@@ -298,7 +298,7 @@ func (p *JoinPlan) solveArmConversion(env Env, stream av.Stream, armName string)
 	}
 	actual := shape.FromStream(stream, shape.DomainFrame)
 	if actual.MediaKind == av.MediaAudio {
-		actual.Channels = MaxInt(actual.Channels, 1)
+		actual.Channels = max(actual.Channels, 1)
 	}
 	if shape.Conversions(actual, expected).Empty() {
 		return nil, nil
@@ -314,7 +314,7 @@ func (p *JoinPlan) solveArmConversion(env Env, stream av.Stream, armName string)
 			"feed the arm "+HumanizeShape(expected)+" media, or align its source format with the first arm (the join's format reference)")
 	}
 	p.diagnostics = append(p.diagnostics, plan.Diagnostic{
-		Code: DiagnosticShapeConversionInserted,
+		Code: diagnosticShapeConversionInserted,
 		Node: cmp.Or(armName, string(stream.ID)),
 		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
 			conversion.detail, p.Name, cmp.Or(armName, string(stream.ID))),
@@ -336,7 +336,7 @@ func (p *JoinPlan) solveArmConversion(env Env, stream av.Stream, armName string)
 	}, nil
 }
 
-// joinArmTransformStream is the input stream description the per-arm transform
+// JoinArmTransformStream is the input stream description the per-arm transform
 // stage opens against: the arm's selected stream with audio facts normalized
 // (at least one channel, S16 when the arm declared no sample format).
 func JoinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
@@ -349,7 +349,7 @@ func JoinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
 		Codec: av.CodecParameters{
 			Type:         av.MediaAudio,
 			SampleRate:   stream.Codec.SampleRate,
-			Channels:     MaxInt(stream.Codec.Channels, 1),
+			Channels:     max(stream.Codec.Channels, 1),
 			SampleFormat: cmp.Or(stream.Codec.SampleFormat, av.SampleFormatS16),
 			ClockRate:    uint32(stream.Codec.SampleRate),
 		},
@@ -389,7 +389,7 @@ func (p *JoinPlan) deriveJoinedDomain() shape.MediaDomain {
 	return shape.DomainFrame
 }
 
-// treeGraphBuffer returns the first profile-pinned graph buffer in the join
+// TreeGraphBuffer returns the first profile-pinned graph buffer in the join
 // tree that applies at this realtime setting: a nested Select still needs the
 // buffered per-node workers its control plane injects through, even under an
 // offline root whose own realtime-only pin (Mix/Composite) does not apply.

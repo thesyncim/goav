@@ -17,16 +17,16 @@ import (
 // working set: the branch planners lower the intent into these intermediates
 // and composeWorkPlan flattens them into the workPlan — the single plan the
 // compile emits. They are never stored or rendered after composition.
-type PlanBranch struct {
+type planBranch struct {
 	Name       string
 	Input      string
 	Stream     plan.StreamSelect
 	Shape      shape.Spec
-	Operations []PlanOperation
+	Operations []planOperation
 	Outputs    []string
 }
 
-type PlanOperation struct {
+type planOperation struct {
 	Kind      plan.OperationKind
 	Component string
 	Detail    string
@@ -43,7 +43,7 @@ type PlanOperation struct {
 	hasGraphNode bool
 }
 
-type PlanOutput struct {
+type planOutput struct {
 	Name       string
 	Operation  plan.OperationKind
 	Component  string
@@ -57,8 +57,8 @@ type PlanDecision struct {
 	Message string
 }
 
-func planOutputsFromRecipeIR(outputs []recipeir.Destination, formats map[string]av.FormatID) []PlanOutput {
-	out := make([]PlanOutput, 0, len(outputs))
+func planOutputsFromRecipeIR(outputs []recipeir.Destination, formats map[string]av.FormatID) []planOutput {
+	out := make([]planOutput, 0, len(outputs))
 	for i := range outputs {
 		output := outputs[i]
 		name := cmp.Or(output.Name, output.URI, fmt.Sprintf("output-%d", i))
@@ -70,7 +70,7 @@ func planOutputsFromRecipeIR(outputs []recipeir.Destination, formats map[string]
 		if output.URI != "" || output.Protocol != "" || output.MIMEType != "" || formatID != "" {
 			operation = plan.OpMux
 		}
-		out = append(out, PlanOutput{
+		out = append(out, planOutput{
 			Name:      name,
 			Operation: operation,
 			Component: cmp.Or(string(formatID), string(output.Protocol), output.MIMEType, "sink"),
@@ -90,8 +90,8 @@ func StreamSelectFromStream(stream av.Stream) plan.StreamSelect {
 	}
 }
 
-func planCopyBranches(state *State, inputs []recipeir.Input, copyRequested bool, outputs []PlanOutput) ([]PlanBranch, []PlanDecision) {
-	branches := make([]PlanBranch, 0, len(inputs))
+func planCopyBranches(state *recipeState, inputs []recipeir.Input, copyRequested bool, outputs []planOutput) ([]planBranch, []PlanDecision) {
+	branches := make([]planBranch, 0, len(inputs))
 	decisions := make([]PlanDecision, 0, len(inputs))
 	outputNames := planOutputNames(outputs)
 	for i := range inputs {
@@ -114,7 +114,7 @@ func planCopyBranches(state *State, inputs []recipeir.Input, copyRequested bool,
 			Message: copyMessage,
 		}
 		if spec.Domain == shape.DomainEvent {
-			operations = append(operations, PlanOperation{
+			operations = append(operations, planOperation{
 				Kind:      plan.OpShape,
 				Component: "shape",
 				Detail:    "event source",
@@ -126,14 +126,14 @@ func planCopyBranches(state *State, inputs []recipeir.Input, copyRequested bool,
 				Message: "source produces events for sink destinations",
 			}
 		} else {
-			operations = append(operations, PlanOperation{
+			operations = append(operations, planOperation{
 				Kind:      plan.OpCopy,
 				Component: "packet-copy",
 				Detail:    copyDetail,
 			})
 		}
 		operations = planOperationsWithShape(name, spec, operations)
-		branches = append(branches, PlanBranch{
+		branches = append(branches, planBranch{
 			Name:       cmp.Or(name, fmt.Sprintf("copy-%d", i)),
 			Input:      name,
 			Shape:      spec,
@@ -145,10 +145,10 @@ func planCopyBranches(state *State, inputs []recipeir.Input, copyRequested bool,
 	return branches, decisions
 }
 
-func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branchName string, initial shape.Spec, selectComponent string) ([]PlanOperation, []PlanDecision) {
+func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []PlanDecision) {
 	operations := planInputOperationsForShape(input, initial)
 	if initial.Domain == shape.DomainEvent && stream.Selector == (plan.StreamSelect{}) && len(stream.Operations) == 0 {
-		operations = append(operations, PlanOperation{
+		operations = append(operations, planOperation{
 			Kind:      plan.OpShape,
 			Component: "shape",
 			Detail:    "event source",
@@ -160,7 +160,7 @@ func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branch
 			Message: "source produces events for sink destinations",
 		}}
 	}
-	operations = append(operations, PlanOperation{
+	operations = append(operations, planOperation{
 		Kind:      plan.OpSelect,
 		Component: cmp.Or(selectComponent, selectorComponent(stream.Selector)),
 		Detail:    "select stream",
@@ -179,7 +179,7 @@ func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branch
 		})
 		return operations, decisions
 	}
-	operations = append(operations, PlanOperation{
+	operations = append(operations, planOperation{
 		Kind:      plan.OpCopy,
 		Component: "packet-copy",
 		Detail:    "no frame operation requested",
@@ -192,8 +192,8 @@ func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branch
 	return operations, decisions
 }
 
-func planRecipeIRStreamOperations(stream recipeir.Stream, branchName string) ([]PlanOperation, []PlanDecision) {
-	operations := make([]PlanOperation, 0, len(stream.Operations))
+func planRecipeIRStreamOperations(stream recipeir.Stream, branchName string) ([]planOperation, []PlanDecision) {
+	operations := make([]planOperation, 0, len(stream.Operations))
 	var decisions []PlanDecision
 	for i := range stream.Operations {
 		operation := stream.Operations[i]
@@ -222,13 +222,13 @@ func planRecipeIRStreamOperations(stream recipeir.Stream, branchName string) ([]
 	return operations, decisions
 }
 
-func planOperationFromRecipeIROperation(operation recipeir.Operation) PlanOperation {
+func planOperationFromRecipeIROperation(operation recipeir.Operation) planOperation {
 	out := planOperationOf(operation)
 	out.graphNode, out.hasGraphNode = operation.Node, true
 	return out
 }
 
-func planOperationOf(operation recipeir.Operation) PlanOperation {
+func planOperationOf(operation recipeir.Operation) planOperation {
 	switch operation.Kind {
 	case plan.OpTransform:
 		op := planRecipeIRTransformOperation(operation.Transform)
@@ -245,7 +245,7 @@ func planOperationOf(operation recipeir.Operation) PlanOperation {
 		case operation.Prefer != nil:
 			detail = "shape preference"
 		}
-		return PlanOperation{
+		return planOperation{
 			Kind:      plan.OpShape,
 			Component: cmp.Or(operation.Component, "shape"),
 			Detail:    detail,
@@ -257,7 +257,7 @@ func planOperationOf(operation recipeir.Operation) PlanOperation {
 		op.Shared = operation.Shared
 		return op
 	case plan.OpEncode:
-		return PlanOperation{
+		return planOperation{
 			Kind:      plan.OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
@@ -266,7 +266,7 @@ func planOperationOf(operation recipeir.Operation) PlanOperation {
 			Shared:    operation.Shared,
 		}
 	case plan.OpDecode:
-		return PlanOperation{
+		return planOperation{
 			Kind:      plan.OpDecode,
 			Component: cmp.Or(string(operation.Decode.ID), operation.Component),
 			Detail:    "packets to frames",
@@ -274,14 +274,14 @@ func planOperationOf(operation recipeir.Operation) PlanOperation {
 			Shared:    operation.Shared,
 		}
 	case plan.OpStage:
-		return PlanOperation{
+		return planOperation{
 			Kind:      plan.OpStage,
 			Component: operation.Component,
 			Detail:    "custom stage",
 			Shared:    operation.Shared,
 		}
 	case plan.OpCopy:
-		return PlanOperation{
+		return planOperation{
 			Kind:      plan.OpCopy,
 			Component: cmp.Or(operation.Component, "packet-copy"),
 			Detail:    cmp.Or(operation.Detail, "no frame operation requested"),
@@ -289,7 +289,7 @@ func planOperationOf(operation recipeir.Operation) PlanOperation {
 			Shared:    operation.Shared,
 		}
 	default:
-		return PlanOperation{
+		return planOperation{
 			Kind:      operation.Kind,
 			Component: operation.Component,
 			Shared:    operation.Shared,
@@ -306,7 +306,7 @@ func recipeIROperationKindPresent(operations []recipeir.Operation, kind plan.Ope
 	return false
 }
 
-func planInputOperationsForShape(input recipeir.Input, spec shape.Spec) []PlanOperation {
+func planInputOperationsForShape(input recipeir.Input, spec shape.Spec) []planOperation {
 	if input.Protocol == av.ProtocolCustom {
 		return nil
 	}
@@ -316,14 +316,14 @@ func planInputOperationsForShape(input recipeir.Input, spec shape.Spec) []PlanOp
 	switch {
 	case input.Realtime:
 		component := cmp.Or(string(input.Codec.ID), string(input.Protocol), "receive")
-		return []PlanOperation{{
+		return []planOperation{{
 			Kind:      plan.OpDepacketize,
 			Component: component,
 			Detail:    "receive live packets",
 			Shape:     mediaShapeFromInput(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	default:
-		return []PlanOperation{{
+		return []planOperation{{
 			Kind:      plan.OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
@@ -332,9 +332,9 @@ func planInputOperationsForShape(input recipeir.Input, spec shape.Spec) []PlanOp
 	}
 }
 
-func planRecipeIRTransformOperation(transform recipeir.Transform) PlanOperation {
+func planRecipeIRTransformOperation(transform recipeir.Transform) planOperation {
 	name := RecipeIRTransformFactoryName(transform)
-	return PlanOperation{
+	return planOperation{
 		Kind:      plan.OpTransform,
 		Component: cmp.Or(name, "transform"),
 		Detail:    cmp.Or(name, "transform frames"),
@@ -342,8 +342,8 @@ func planRecipeIRTransformOperation(transform recipeir.Transform) PlanOperation 
 	}
 }
 
-func planRecipeIRTapOperation(tap recipeir.Tap) PlanOperation {
-	return PlanOperation{
+func planRecipeIRTapOperation(tap recipeir.Tap) planOperation {
+	return planOperation{
 		Kind:      plan.OpTap,
 		Component: cmp.Or(tap.Name, "tap"),
 		Detail:    "named media outlet",
@@ -351,7 +351,7 @@ func planRecipeIRTapOperation(tap recipeir.Tap) PlanOperation {
 	}
 }
 
-func planTaps(branches []PlanBranch) []WorkTap {
+func planTaps(branches []planBranch) []WorkTap {
 	var taps []WorkTap
 	for i := range branches {
 		branch := branches[i]
@@ -374,11 +374,11 @@ func planTaps(branches []PlanBranch) []WorkTap {
 			// Copy and shape annotations lower to no dedicated node: they advance
 			// the shape but never move the tap anchor.
 			if operation.Kind == plan.OpCopy || operation.Kind == plan.OpShape {
-				currentShape = PlanShapeForOperation(currentShape, branch, operation)
+				currentShape = planShapeForOperation(currentShape, branch, operation)
 				continue
 			}
 			if operation.Kind != plan.OpTap {
-				currentShape = PlanShapeForOperation(currentShape, branch, operation)
+				currentShape = planShapeForOperation(currentShape, branch, operation)
 				// The tap anchors on the node the lowering planned for the work before it.
 				if operation.Node != "" {
 					currentNode = string(operation.Node)
@@ -405,13 +405,13 @@ func planTaps(branches []PlanBranch) []WorkTap {
 	return taps
 }
 
-func planOperationsWithShape(branchName string, baseShape shape.Spec, operations []PlanOperation) []PlanOperation {
+func planOperationsWithShape(branchName string, baseShape shape.Spec, operations []planOperation) []planOperation {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := append([]PlanOperation(nil), operations...)
+	out := append([]planOperation(nil), operations...)
 	spec := NormalizeTapShape(baseShape)
-	branch := PlanBranch{Name: branchName}
+	branch := planBranch{Name: branchName}
 	for i := range out {
 		operation := out[i]
 		if operation.Kind == plan.OpTap {
@@ -428,14 +428,14 @@ func planOperationsWithShape(branchName string, baseShape shape.Spec, operations
 	return out
 }
 
-func PlanShapeForOperation(current shape.Spec, branch PlanBranch, operation PlanOperation) shape.Spec {
+func planShapeForOperation(current shape.Spec, branch planBranch, operation planOperation) shape.Spec {
 	if !MediaShapeEmpty(operation.Shape) {
 		return operation.Shape
 	}
 	return planShapeAfterOperation(current, branch, operation)
 }
 
-func planShapeAfterOperation(spec shape.Spec, branch PlanBranch, operation PlanOperation) shape.Spec {
+func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planOperation) shape.Spec {
 	switch operation.Kind {
 	case plan.OpDepacketize:
 		if codecID := knownPlanCodec(operation.Component); codecID != "" {
@@ -558,14 +558,14 @@ func knownPlanCodec(component string) av.CodecID {
 	return codecID
 }
 
-func PlanBranchDestinations(targetRefs []string, outputs []PlanOutput) []string {
+func planBranchDestinations(targetRefs []string, outputs []planOutput) []string {
 	if len(targetRefs) != 0 {
 		return append([]string(nil), targetRefs...)
 	}
 	return planOutputNames(outputs)
 }
 
-func planOutputNames(outputs []PlanOutput) []string {
+func planOutputNames(outputs []planOutput) []string {
 	names := make([]string, 0, len(outputs))
 	for i := range outputs {
 		names = append(names, outputs[i].Name)
@@ -605,3 +605,32 @@ func codecComponent(codecID av.CodecID) string {
 func stringInSlice(needle string, haystack []string) bool {
 	return slices.Contains(haystack, needle)
 }
+
+// mediaShapeFromMediaTransform is the frame shape a lowered transform
+// produces.
+func mediaShapeFromMediaTransform(transform MediaTransform) shape.Spec {
+	switch {
+	case transform.Video != nil:
+		return MediaShapeFromRecipeIRTransform(recipeir.Transform{Kind: recipeir.TransformResize, Resize: *transform.Video})
+	case transform.Audio != nil:
+		return MediaShapeFromRecipeIRTransform(recipeir.Transform{Kind: recipeir.TransformResample, Resample: *transform.Audio})
+	default:
+		return shape.Spec{}
+	}
+}
+
+const (
+	diagnosticShapeConversionInserted = "shape_conversion_inserted"
+	diagnosticShapePreferenceApplied  = "shape_preference_applied"
+	diagnosticShapePreferenceIgnored  = "shape_preference_ignored"
+	DiagnosticDecodeCodecDeferred     = "decode_codec_deferred"
+	DiagnosticExplainPreflightError   = "explain_preflight_error"
+	diagnosticPacketCopy              = "packet_copy"
+	diagnosticFrameSource             = "frame_source"
+	diagnosticEventSource             = "event_source"
+	diagnosticDecodeRequired          = "decode_required"
+	diagnosticEncodeRequired          = "encode_required"
+	DiagnosticStreamRule              = "stream_rule"
+	DiagnosticPathLatencyBudget       = "path_latency_budget"
+	DiagnosticBufferedExecution       = "buffered_execution"
+)

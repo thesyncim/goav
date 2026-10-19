@@ -241,7 +241,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	mixed := av.NewBuffer(n)
 	mixS16Into(mixed.Bytes, inputs, n)
 	*audio = *base.Audio
-	audio.Samples = n / 2 / compile.MaxInt(base.Audio.Channels, 1)
+	audio.Samples = n / 2 / max(base.Audio.Channels, 1)
 	dst.StreamID = out
 	dst.Type = av.MediaAudio
 	dst.PTS = base.PTS

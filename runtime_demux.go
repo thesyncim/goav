@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -88,10 +87,10 @@ func demuxPacketBufferSize(streams []av.Stream) int {
 	size := 64 * 1024
 	for i := range streams {
 		if streams[i].Type == av.MediaAudio || streams[i].Codec.Type == av.MediaAudio {
-			size = compile.MaxInt(size, 4096)
+			size = max(size, 4096)
 		}
 		if streams[i].Type == av.MediaVideo || streams[i].Codec.Type == av.MediaVideo {
-			size = compile.MaxInt(size, 4<<20)
+			size = max(size, 4<<20)
 		}
 	}
 	return size

@@ -223,13 +223,13 @@ func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, re
 	if request.Media != "" {
 		details = append(details, "requested_media="+string(request.Media))
 	}
-	if media := DescriptorSupportedMedia(descriptors); len(media) != 0 {
+	if media := descriptorSupportedMedia(descriptors); len(media) != 0 {
 		details = append(details, "supported_media="+joinMediaTypes(media))
 	}
-	if sampleFormats := DescriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
+	if sampleFormats := descriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
 		details = append(details, "supported_sample_formats="+strings.Join(sampleFormats, ","))
 	}
-	if pixelFormats := DescriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
+	if pixelFormats := descriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &builderr.Refusal{
@@ -286,8 +286,8 @@ func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) CodecAdapter
 		Media:        FirstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Selector.Type, CodecMedia(encode.ID)),
 		SampleFormat: cmp.Or(encode.Parameters.SampleFormat, recipeIRStreamSampleFormat(stream)),
 		PixelFormat:  cmp.Or(encode.Parameters.PixelFormat, recipeIRStreamPixelFormat(stream)),
-		SampleRate:   FirstPositiveInt(encode.Parameters.SampleRate, recipeIRStreamResample(stream).SampleRate),
-		Channels:     FirstPositiveInt(encode.Parameters.Channels, recipeIRStreamResample(stream).Channels),
+		SampleRate:   firstPositiveInt(encode.Parameters.SampleRate, recipeIRStreamResample(stream).SampleRate),
+		Channels:     firstPositiveInt(encode.Parameters.Channels, recipeIRStreamResample(stream).Channels),
 	}
 }
 
@@ -297,8 +297,8 @@ func EncodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) C
 		Media:        FirstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, CodecMedia(spec.ID)),
 		SampleFormat: cmp.Or(spec.Parameters.SampleFormat, stream.Codec.SampleFormat),
 		PixelFormat:  cmp.Or(spec.Parameters.PixelFormat, stream.Codec.PixelFormat),
-		SampleRate:   FirstPositiveInt(spec.Parameters.SampleRate, stream.Codec.SampleRate),
-		Channels:     FirstPositiveInt(spec.Parameters.Channels, stream.Codec.Channels),
+		SampleRate:   firstPositiveInt(spec.Parameters.SampleRate, stream.Codec.SampleRate),
+		Channels:     firstPositiveInt(spec.Parameters.Channels, stream.Codec.Channels),
 	}
 }
 
@@ -370,7 +370,7 @@ func encodeAdapterIncompatibleError(operation string, stream recipeir.Stream, re
 	return EncodeAdapterIncompatibleErrorAt(operation, recipeIRStreamName(stream), request, descriptors)
 }
 
-// encodeAdapterIncompatibleErrorAt is the encoder-descriptor refusal for one
+// EncodeAdapterIncompatibleErrorAt is the encoder-descriptor refusal for one
 // node: planning reports it from shape facts, and encoder open reports it
 // from the real stream when facts arrive only with the opened input.
 func EncodeAdapterIncompatibleErrorAt(operation string, node string, request CodecAdapterRequest, descriptors []codec.Descriptor) error {
@@ -385,13 +385,13 @@ func EncodeAdapterIncompatibleErrorAt(operation string, node string, request Cod
 	if request.Media != "" {
 		details = append(details, "requested_media="+string(request.Media))
 	}
-	if media := DescriptorSupportedMedia(descriptors); len(media) != 0 {
+	if media := descriptorSupportedMedia(descriptors); len(media) != 0 {
 		details = append(details, "supported_media="+joinMediaTypes(media))
 	}
-	if sampleFormats := DescriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
+	if sampleFormats := descriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
 		details = append(details, "supported_sample_formats="+strings.Join(sampleFormats, ","))
 	}
-	if pixelFormats := DescriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
+	if pixelFormats := descriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &builderr.Refusal{
@@ -413,16 +413,16 @@ func EncodeAdapterIncompatibleErrorAt(operation string, node string, request Cod
 }
 
 func codecAdapterIncompatibilityField(request CodecAdapterRequest, descriptors []codec.Descriptor) (string, string, string) {
-	mediaCompatible := CodecDescriptorsMediaCompatible(descriptors, request.Media)
+	mediaCompatible := codecDescriptorsMediaCompatible(descriptors, request.Media)
 	if request.Media != "" && !mediaCompatible {
-		return "media", string(request.Media), joinMediaTypes(DescriptorSupportedMedia(descriptors))
+		return "media", string(request.Media), joinMediaTypes(descriptorSupportedMedia(descriptors))
 	}
-	mediaDescriptors := DescriptorsMatchingMedia(descriptors, request.Media)
-	if request.SampleFormat != "" && !CodecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
-		return "sample_format", request.SampleFormat, strings.Join(DescriptorSupportedSampleFormats(mediaDescriptors), ",")
+	mediaDescriptors := descriptorsMatchingMedia(descriptors, request.Media)
+	if request.SampleFormat != "" && !codecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
+		return "sample_format", request.SampleFormat, strings.Join(descriptorSupportedSampleFormats(mediaDescriptors), ",")
 	}
-	if request.PixelFormat != "" && !CodecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
-		return "pixel_format", request.PixelFormat, strings.Join(DescriptorSupportedPixelFormats(mediaDescriptors), ",")
+	if request.PixelFormat != "" && !codecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
+		return "pixel_format", request.PixelFormat, strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
 	}
 	if rates := descriptorSupportedSampleRates(mediaDescriptors); request.SampleRate > 0 && len(rates) != 0 && !slices.Contains(rates, request.SampleRate) {
 		return "sample_rate", strconv.Itoa(request.SampleRate), joinInts(rates)
@@ -430,7 +430,7 @@ func codecAdapterIncompatibilityField(request CodecAdapterRequest, descriptors [
 	return "codec", string(request.Codec), string(request.Codec)
 }
 
-func CodecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
+func codecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
 	if media == "" {
 		return true
 	}
@@ -442,7 +442,7 @@ func CodecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.Me
 	return false
 }
 
-func DescriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType) []codec.Descriptor {
+func descriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType) []codec.Descriptor {
 	if media == "" {
 		return descriptors
 	}
@@ -455,7 +455,7 @@ func DescriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType
 	return out
 }
 
-func CodecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
+func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
 	if sampleFormat == "" {
 		return true
 	}
@@ -468,7 +468,7 @@ func CodecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, samp
 	return false
 }
 
-func CodecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
+func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
 	if pixelFormat == "" {
 		return true
 	}
@@ -481,7 +481,7 @@ func CodecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixel
 	return false
 }
 
-func DescriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
+func descriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
 	out := make([]av.MediaType, 0, len(descriptors))
 	for i := range descriptors {
 		media := descriptors[i].Type
@@ -493,7 +493,7 @@ func DescriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
 	return out
 }
 
-func DescriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
+func descriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
 		out = MergeStringList(out, descriptors[i].Capabilities.SampleFormats)
@@ -501,7 +501,7 @@ func DescriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
 	return out
 }
 
-func DescriptorSupportedPixelFormats(descriptors []codec.Descriptor) []string {
+func descriptorSupportedPixelFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
 		out = MergeStringList(out, descriptors[i].Capabilities.PixelFormats)

@@ -22,7 +22,7 @@ func TestApplyShapeToStreamContracts(t *testing.T) {
 			SampleFormat: av.SampleFormatS16,
 		},
 	}
-	if got := ApplyShapeToStream(stream, shape.Spec{}); !reflect.DeepEqual(got, stream) {
+	if got := applyShapeToStream(stream, shape.Spec{}); !reflect.DeepEqual(got, stream) {
 		t.Fatalf("empty overlay = %+v, want unchanged %+v", got, stream)
 	}
 
@@ -36,7 +36,7 @@ func TestApplyShapeToStreamContracts(t *testing.T) {
 		Channels:     codec.Mono,
 		SampleFormat: av.SampleFormatF32,
 	}
-	got := ApplyShapeToStream(stream, overlay)
+	got := applyShapeToStream(stream, overlay)
 	if got.ID != "joined" ||
 		got.Type != av.MediaVideo ||
 		got.Codec.Type != av.MediaVideo ||
@@ -53,23 +53,23 @@ func TestApplyShapeToStreamContracts(t *testing.T) {
 }
 
 func TestCustomJoinArmExpectedContracts(t *testing.T) {
-	if got, ok := CustomJoinArmExpected(nil); ok || got != (shape.Spec{}) {
+	if got, ok := customJoinArmExpected(nil); ok || got != (shape.Spec{}) {
 		t.Fatalf("empty expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := CustomJoinArmExpected(shape.Set{
+	if got, ok := customJoinArmExpected(shape.Set{
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")),
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")),
 	}); ok || got != (shape.Spec{}) {
 		t.Fatalf("multi-shape expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := CustomJoinArmExpected(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}); ok || got != (shape.Spec{}) {
+	if got, ok := customJoinArmExpected(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}); ok || got != (shape.Spec{}) {
 		t.Fatalf("packet expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := CustomJoinArmExpected(shape.Set{shape.Frame(av.MediaAudio)}); ok || got != (shape.Spec{}) {
+	if got, ok := customJoinArmExpected(shape.Set{shape.Frame(av.MediaAudio)}); ok || got != (shape.Spec{}) {
 		t.Fatalf("formatless frame expected = %+v %v, want none", got, ok)
 	}
 
-	audioExpected, ok := CustomJoinArmExpected(shape.Set{
+	audioExpected, ok := customJoinArmExpected(shape.Set{
 		shape.Frame(
 			av.MediaAudio,
 			shape.Audio(48_000, codec.Stereo, av.SampleFormatF32),
@@ -88,7 +88,7 @@ func TestCustomJoinArmExpectedContracts(t *testing.T) {
 		t.Fatalf("audio expected = %+v %v, want %+v true", audioExpected, ok, wantAudio)
 	}
 
-	videoExpected, ok := CustomJoinArmExpected(shape.Set{
+	videoExpected, ok := customJoinArmExpected(shape.Set{
 		shape.Frame(
 			av.MediaVideo,
 			shape.Video(1280, 720, av.PixelFormatI420),
@@ -111,26 +111,26 @@ func TestCustomJoinShapeContractHelpers(t *testing.T) {
 	audioFrame := shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))
 	videoFrame := shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatI420))
 
-	if CustomJoinDecodesArms(nil) {
+	if customJoinDecodesArms(nil) {
 		t.Fatal("empty input contract decoded arms")
 	}
-	if CustomJoinDecodesArms(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}) {
+	if customJoinDecodesArms(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}) {
 		t.Fatal("packet input contract decoded arms")
 	}
-	if CustomJoinDecodesArms(shape.Set{audioFrame, shape.Packet(av.MediaAudio, av.CodecOpus)}) {
+	if customJoinDecodesArms(shape.Set{audioFrame, shape.Packet(av.MediaAudio, av.CodecOpus)}) {
 		t.Fatal("mixed-domain input contract decoded arms")
 	}
-	if !CustomJoinDecodesArms(shape.Set{audioFrame, videoFrame}) {
+	if !customJoinDecodesArms(shape.Set{audioFrame, videoFrame}) {
 		t.Fatal("all frame-domain input contract did not require decoded arms")
 	}
 
-	if got := CustomJoinMedia(shape.Set{audioFrame, shape.Frame(av.MediaAudio)}); got != av.MediaAudio {
+	if got := customJoinMedia(shape.Set{audioFrame, shape.Frame(av.MediaAudio)}); got != av.MediaAudio {
 		t.Fatalf("customJoinMedia uniform audio = %s, want audio", got)
 	}
-	if got := CustomJoinMedia(shape.Set{shape.Frame("")}); got != "" {
+	if got := customJoinMedia(shape.Set{shape.Frame("")}); got != "" {
 		t.Fatalf("customJoinMedia missing media = %s, want empty", got)
 	}
-	if got := CustomJoinMedia(shape.Set{audioFrame, videoFrame}); got != "" {
+	if got := customJoinMedia(shape.Set{audioFrame, videoFrame}); got != "" {
 		t.Fatalf("customJoinMedia mixed media = %s, want empty", got)
 	}
 }

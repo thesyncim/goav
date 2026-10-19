@@ -142,23 +142,23 @@ func inputsLive(inputs []Input) bool {
 // recipeCompileState is one recipe under compilation: its IR (the DAG, the
 // branches derived from it, inputs, destinations), the concrete handles the
 // IR indexes, and what the passes resolve along the way.
-type State struct {
-	Operation string
-	Req       *Request
-	Recipe    recipeir.Recipe
-	Env       Env
+type recipeState struct {
+	operation string
+	req       *Request
+	recipe    recipeir.Recipe
+	env       Env
 
 	// facts are the lowering facts of each branch, aligned with
 	// recipe.Streams.
-	Facts []BranchFacts
+	facts []branchFacts
 	// remux are the whole-input copies (input.To): inputs and destinations.
 	remux []remuxOutput
 
 	// outputs are the facts of the recipe's destinations, in recipe order;
 	// outputSlots index each in req.Dests.
-	Outputs                []Destination
+	outputs                []Destination
 	outputSlots            []int
-	OutputDestinationNames []string
+	outputDestinationNames []string
 	inputProbes            []format.ProbeResult
 	streamRules            []StreamRulePlan
 
@@ -175,7 +175,7 @@ type State struct {
 
 	// inserted are the nodes the planner inserted (packet copies and shape
 	// conversions), keyed so a node shared by several branches gets one.
-	Inserted map[string]recipeir.NodeID
+	inserted map[string]recipeir.NodeID
 	// destIndex indexes each output node's destination.
 	destIndex map[recipeir.NodeID]int
 
@@ -189,14 +189,14 @@ type State struct {
 }
 
 // branchFacts are what the lowering knows of one branch beyond its IR.
-type BranchFacts struct {
+type branchFacts struct {
 	// lone marks the only branch of a root that names no fork: it lowers
 	// under its root's identity.
 	lone bool
 	// frames reports that the branch's root carries frames.
-	Frames bool
+	frames bool
 	// dests indexes the branch's destinations, in .To order.
-	Dests []int
+	dests []int
 }
 
 type remuxOutput struct {
@@ -208,7 +208,7 @@ type remuxOutput struct {
 
 type recipeCompilePass struct {
 	name string
-	fn   func(*State) error
+	fn   func(*recipeState) error
 }
 
 // compileResult is what one compile resolves: the recipe IR, its planned
@@ -236,40 +236,40 @@ type Result struct {
 // adapters, plan its joins, solve its shapes, and lower it to the one graph
 // plan Describe, Explain, and Build read.
 func Compile(req *Request) (Result, error) {
-	state := State{
-		Operation: "build job",
-		Req:       req,
-		Env:       req.Env,
-		Inserted:  map[string]recipeir.NodeID{},
+	state := recipeState{
+		operation: "build job",
+		req:       req,
+		env:       req.Env,
+		inserted:  map[string]recipeir.NodeID{},
 	}
 	passes := []recipeCompilePass{
-		{"derive branches", (*State).deriveBranches},
+		{"derive branches", (*recipeState).deriveBranches},
 		{"validate stream rules", validateStreamRulesForCompile},
-		{"validate recipe shape", (*State).validateRecipeShape},
-		{"validate attachments", (*State).validateAttachments},
-		{"validate stream output kinds", (*State).validateStreamOutputKinds},
-		{"validate live stream selection", (*State).validateLiveStreamSelection},
-		{"validate output format adapters", (*State).validateOutputFormatAdapters},
-		{"validate decode adapters", (*State).validateDecodeAdapters},
-		{"validate encode adapters", (*State).validateEncodeAdapters},
-		{"validate transform adapters", (*State).validateTransformAdapters},
-		{"validate input format adapters", (*State).validateInputFormatAdapters},
-		{"validate known input stream selection", (*State).validateKnownInputStreamSelection},
-		{"plan joins", (*State).planJoins},
-		{"solve operation shapes", (*State).solveOperationShapes},
-		{"validate destination shapes", (*State).validateDestinationShapes},
-		{"validate known input decode adapters", (*State).validateKnownInputDecodeAdapters},
-		{"lower recipe", (*State).lower},
+		{"validate recipe shape", (*recipeState).validateRecipeShape},
+		{"validate attachments", (*recipeState).validateAttachments},
+		{"validate stream output kinds", (*recipeState).validateStreamOutputKinds},
+		{"validate live stream selection", (*recipeState).validateLiveStreamSelection},
+		{"validate output format adapters", (*recipeState).validateOutputFormatAdapters},
+		{"validate decode adapters", (*recipeState).validateDecodeAdapters},
+		{"validate encode adapters", (*recipeState).validateEncodeAdapters},
+		{"validate transform adapters", (*recipeState).validateTransformAdapters},
+		{"validate input format adapters", (*recipeState).validateInputFormatAdapters},
+		{"validate known input stream selection", (*recipeState).validateKnownInputStreamSelection},
+		{"plan joins", (*recipeState).planJoins},
+		{"solve operation shapes", (*recipeState).solveOperationShapes},
+		{"validate destination shapes", (*recipeState).validateDestinationShapes},
+		{"validate known input decode adapters", (*recipeState).validateKnownInputDecodeAdapters},
+		{"lower recipe", (*recipeState).lower},
 		{"validate mux compatibility", validateMuxCompatibility},
-		{"validate recipe runtime", (*State).validateRuntime},
+		{"validate recipe runtime", (*recipeState).validateRuntime},
 	}
 	for _, pass := range passes {
 		if err := pass.fn(&state); err != nil {
-			return Result{}, CompilerPassError(state.Operation, pass.name, err)
+			return Result{}, compilerPassError(state.operation, pass.name, err)
 		}
 	}
 	return Result{
-		Recipe:        state.Recipe,
+		Recipe:        state.recipe,
 		Joins:         state.joins,
 		JoinOrder:     state.joinOrder,
 		Graph:         state.composed,
@@ -286,7 +286,7 @@ func Compile(req *Request) (Result, error) {
 	}, nil
 }
 
-func CompilerPassError(operation string, pass string, err error) error {
+func compilerPassError(operation string, pass string, err error) error {
 	var refusal *builderr.Refusal
 	if !errors.As(err, &refusal) || refusal == nil {
 		return err
@@ -311,7 +311,7 @@ func CompilerPassError(operation string, pass string, err error) error {
 
 // recipeName names the recipe in Explain's summary: a recipe that is one
 // join is named after it.
-func (s *State) recipeName() string {
+func (s *recipeState) recipeName() string {
 	if root, ok := s.soleJoinRoot(); ok {
 		return s.joinNames[root]
 	}
@@ -320,27 +320,27 @@ func (s *State) recipeName() string {
 
 // soleJoinRoot reports the join a recipe is, when every branch reads one
 // join's output.
-func (s *State) soleJoinRoot() (recipeir.NodeID, bool) {
-	if len(s.Recipe.Streams) == 0 {
+func (s *recipeState) soleJoinRoot() (recipeir.NodeID, bool) {
+	if len(s.recipe.Streams) == 0 {
 		return 0, false
 	}
-	root := s.Recipe.Streams[0].Root
-	for i := range s.Recipe.Streams {
-		if s.Recipe.Streams[i].Root != root || s.Recipe.Streams[i].Input >= 0 {
+	root := s.recipe.Streams[0].Root
+	for i := range s.recipe.Streams {
+		if s.recipe.Streams[i].Root != root || s.recipe.Streams[i].Input >= 0 {
 			return 0, false
 		}
 	}
 	return root, true
 }
 
-func (s *State) outputFormatMap() map[string]av.FormatID {
+func (s *recipeState) outputFormatMap() map[string]av.FormatID {
 	formats := make(map[string]av.FormatID)
-	for i := range s.Outputs {
-		formatID := s.Outputs[i].openFormat()
+	for i := range s.outputs {
+		formatID := s.outputs[i].openFormat()
 		if formatID == "" {
 			continue
 		}
-		formats[s.OutputDestinationNames[i]] = formatID
+		formats[s.outputDestinationNames[i]] = formatID
 	}
 	if len(formats) == 0 {
 		return nil
@@ -351,18 +351,18 @@ func (s *State) outputFormatMap() map[string]av.FormatID {
 // validateRecipeShape checks what every branch must carry before any adapter
 // is consulted: a valid selector, encoder, and transforms. The DAG already
 // gives every branch an input and a destination.
-func (s *State) validateRecipeShape() error {
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+func (s *recipeState) validateRecipeShape() error {
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		node := recipeIRStreamName(stream)
-		if err := validateRecipeStreamSelector(s.Operation, node, recipeIRStreamSelector(stream)); err != nil {
+		if err := validateRecipeStreamSelector(s.operation, node, recipeIRStreamSelector(stream)); err != nil {
 			return err
 		}
-		if err := ValidateRecipeEncode(recipeIRStreamEncodeSpec(stream), s.Operation, stream.Name); err != nil {
+		if err := ValidateRecipeEncode(recipeIRStreamEncodeSpec(stream), s.operation, stream.Name); err != nil {
 			return err
 		}
 		for _, transform := range recipeIRStreamTransforms(stream) {
-			if err := validateRecipeIRTransform(s.Operation, node, transform); err != nil {
+			if err := validateRecipeIRTransform(s.operation, node, transform); err != nil {
 				return err
 			}
 		}
@@ -477,20 +477,20 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 	}
 }
 
-func (s *State) validateAttachments() error {
-	return s.Req.Host.ValidateHandles(s.Operation, s.outputSlots, s.OutputDestinationNames)
+func (s *recipeState) validateAttachments() error {
+	return s.req.Host.ValidateHandles(s.operation, s.outputSlots, s.outputDestinationNames)
 }
 
 // validateStreamOutputKinds refuses a branch whose output kinds its stream
 // cannot feed: decoded frames reach a mux only through an encoder, and one
 // branch cannot feed sinks and muxes from frames.
-func (s *State) validateStreamOutputKinds() error {
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
-		facts := s.Facts[i]
+func (s *recipeState) validateStreamOutputKinds() error {
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
+		facts := s.facts[i]
 		sink, mux := false, false
-		for _, dest := range facts.Dests {
-			if s.Recipe.Destinations[dest].Kind == recipeir.DestinationKindSink {
+		for _, dest := range facts.dests {
+			if s.recipe.Destinations[dest].Kind == recipeir.DestinationKindSink {
 				sink = true
 			} else {
 				mux = true
@@ -499,19 +499,19 @@ func (s *State) validateStreamOutputKinds() error {
 		encode := recipeIRStreamEncodeSpec(stream)
 		node := recipeIRStreamName(stream)
 		if sink && mux && !codecIntentSet(encode) {
-			return mixedStreamOutputError(s.Operation, node, stream.Selector.Type)
+			return mixedStreamOutputError(s.operation, node, stream.Selector.Type)
 		}
 		if mux && encode.ID == "" && !encode.Copy && s.streamEndsFrames(i) {
-			return streamEncodeMissingError(s.Operation, node, stream.Selector.Type)
+			return streamEncodeMissingError(s.operation, node, stream.Selector.Type)
 		}
 	}
 	return nil
 }
 
 // streamEndsFrames reports whether a branch carries frames at its end.
-func (s *State) streamEndsFrames(index int) bool {
-	frames := s.Facts[index].Frames
-	for _, operation := range s.Recipe.Streams[index].Operations {
+func (s *recipeState) streamEndsFrames(index int) bool {
+	frames := s.facts[index].frames
+	for _, operation := range s.recipe.Streams[index].Operations {
 		switch operation.Kind {
 		case plan.OpDecode:
 			frames = true
@@ -522,12 +522,12 @@ func (s *State) streamEndsFrames(index int) bool {
 	return frames
 }
 
-func (s *State) validateLiveStreamSelection() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateLiveStreamSelection() error {
+	if !s.req.Preflight {
 		return nil
 	}
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input < 0 {
 			continue
 		}
@@ -540,16 +540,16 @@ func (s *State) validateLiveStreamSelection() error {
 		if !s.streamNeedsDecode(i) {
 			continue
 		}
-		if err := validateLiveRecipeStreamSelection(s.Recipe.Inputs, stream); err != nil {
+		if err := validateLiveRecipeStreamSelection(s.recipe.Inputs, stream); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *State) validateKnownInputStreamSelection() error {
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+func (s *recipeState) validateKnownInputStreamSelection() error {
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input < 0 {
 			continue
 		}
@@ -574,17 +574,17 @@ func (s *State) validateKnownInputStreamSelection() error {
 // selectionNeedsUnion reports a branch of a recipe with several inputs: its
 // selection is checked against the stream sets of every input, narrowed to
 // its own.
-func (s *State) selectionNeedsUnion(stream recipeir.Stream) bool {
-	return len(s.Recipe.Inputs) > 1 || stream.Selector.Input != ""
+func (s *recipeState) selectionNeedsUnion(stream recipeir.Stream) bool {
+	return len(s.recipe.Inputs) > 1 || stream.Selector.Input != ""
 }
 
-func (s *State) validateStreamSelectionAcrossInputs(stream recipeir.Stream) error {
+func (s *recipeState) validateStreamSelectionAcrossInputs(stream recipeir.Stream) error {
 	_, _, err := SelectStreamAcrossInputSets(s.inputStreamSets(), recipeIRStreamSelector(stream), stream.Selector.Input)
 	return err
 }
 
-func (s *State) inputStreamSets() []InputStreamSet {
-	return jobInputStreamSets(s.Recipe.Inputs, s.inputProbes)
+func (s *recipeState) inputStreamSets() []InputStreamSet {
+	return jobInputStreamSets(s.recipe.Inputs, s.inputProbes)
 }
 
 func validateKnownProbeRecipeStreamSelection(probe format.ProbeResult, stream recipeir.Stream) error {
@@ -597,9 +597,9 @@ func validateKnownProbeRecipeStreamSelection(probe format.ProbeResult, stream re
 
 // streamNeedsDecode reports a branch of an input's packets that decodes,
 // transforms, or encodes them.
-func (s *State) streamNeedsDecode(index int) bool {
-	stream := s.Recipe.Streams[index]
-	if stream.Input < 0 || s.Facts[index].Frames {
+func (s *recipeState) streamNeedsDecode(index int) bool {
+	stream := s.recipe.Streams[index]
+	if stream.Input < 0 || s.facts[index].frames {
 		return false
 	}
 	return recipeIRStreamHasDecode(stream) ||
@@ -607,35 +607,35 @@ func (s *State) streamNeedsDecode(index int) bool {
 		recipeIRStreamEncodeSpec(stream).ID != ""
 }
 
-func (s *State) streamsNeedingDecode() []recipeir.Stream {
+func (s *recipeState) streamsNeedingDecode() []recipeir.Stream {
 	var out []recipeir.Stream
-	for i := range s.Recipe.Streams {
+	for i := range s.recipe.Streams {
 		if s.streamNeedsDecode(i) {
-			out = append(out, s.Recipe.Streams[i])
+			out = append(out, s.recipe.Streams[i])
 		}
 	}
 	return out
 }
 
-func (s *State) validateOutputFormatAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateOutputFormatAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
-	formats, err := s.Req.Host.ResolveOutputs(s.Req.context(), s.outputSlots, s.OutputDestinationNames)
+	formats, err := s.req.Host.ResolveOutputs(s.req.context(), s.outputSlots, s.outputDestinationNames)
 	if err != nil {
 		return err
 	}
 	for i := range formats {
-		s.Outputs[i].ResolvedFormat = formats[i]
+		s.outputs[i].ResolvedFormat = formats[i]
 	}
 	return nil
 }
 
-func (s *State) validateInputFormatAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateInputFormatAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
-	probes, err := s.Req.Host.ProbeInputs(s.Req.context())
+	probes, err := s.req.Host.ProbeInputs(s.req.context())
 	if err != nil {
 		return err
 	}
@@ -643,52 +643,52 @@ func (s *State) validateInputFormatAdapters() error {
 	return nil
 }
 
-func (s *State) validateDecodeAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateDecodeAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
 	streams := s.streamsNeedingDecode()
 	if len(streams) == 0 {
 		return nil
 	}
-	return validateRecipeIRDecodeAdapters(s.Operation, s.Env, s.Recipe.Inputs, streams)
+	return validateRecipeIRDecodeAdapters(s.operation, s.env, s.recipe.Inputs, streams)
 }
 
-func (s *State) validateEncodeAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateEncodeAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
-	return validateRecipeIREncodeAdapters(s.Operation, s.Env, s.Recipe.Streams)
+	return validateRecipeIREncodeAdapters(s.operation, s.env, s.recipe.Streams)
 }
 
-func (s *State) validateTransformAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateTransformAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
-	return validateRecipeIRTransformAdapters(s.Operation, s.Env, s.Recipe.Streams)
+	return validateRecipeIRTransformAdapters(s.operation, s.env, s.recipe.Streams)
 }
 
-func (s *State) validateKnownInputDecodeAdapters() error {
-	if !s.Req.Preflight {
+func (s *recipeState) validateKnownInputDecodeAdapters() error {
+	if !s.req.Preflight {
 		return nil
 	}
 	streams := s.streamsNeedingDecode()
 	if len(streams) == 0 {
 		return nil
 	}
-	return validateKnownRecipeIRDecodeAdapters(s.Operation, s.Env, s.inputProbes, streams)
+	return validateKnownRecipeIRDecodeAdapters(s.operation, s.env, s.inputProbes, streams)
 }
 
 // validateRuntime refuses a build without a runtime: a recipe builds on one,
 // which owns its adapters, buffers, and clock.
-func (s *State) validateRuntime() error {
-	if s.Req.Preflight && !s.Env.Present {
-		return RuntimeMissingError(s.Operation)
+func (s *recipeState) validateRuntime() error {
+	if s.req.Preflight && !s.env.Present {
+		return RuntimeMissingError(s.operation)
 	}
 	return nil
 }
 
-// runtimeMissingError is the no-runtime refusal.
+// RuntimeMissingError is the no-runtime refusal.
 func RuntimeMissingError(operation string) error {
 	return &builderr.Refusal{
 		Phase:     builderr.PhaseBuild,

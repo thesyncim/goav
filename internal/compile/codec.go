@@ -3,11 +3,13 @@ package compile
 import (
 	"bytes"
 	"fmt"
+	"maps"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/builderr"
+	"github.com/thesyncim/goav/shape"
 )
 
 func CloneCodecSpec(spec codec.Spec) codec.Spec {
@@ -40,7 +42,7 @@ func CodecParametersEqual(a, b av.CodecParameters) bool {
 		a.PixelFormat == b.PixelFormat &&
 		a.SampleFormat == b.SampleFormat &&
 		bufferEqual(a.ExtraData, b.ExtraData) &&
-		MetadataEqual(a.Attributes, b.Attributes)
+		metadataEqual(a.Attributes, b.Attributes)
 }
 
 func codecSettingsEqual(a, b codec.CodecSettings) bool {
@@ -62,17 +64,17 @@ func codecSettingsEqual(a, b codec.CodecSettings) bool {
 func bufferEqual(a, b av.Buffer) bool {
 	return a.Owner == nil &&
 		b.Owner == nil &&
-		BytesEqual(a.Bytes, b.Bytes)
+		bytesEqual(a.Bytes, b.Bytes)
 }
 
-func BytesEqual(a, b []byte) bool {
+func bytesEqual(a, b []byte) bool {
 	if (a == nil) != (b == nil) {
 		return false
 	}
 	return bytes.Equal(a, b)
 }
 
-func MetadataEqual(a, b av.Metadata) bool {
+func metadataEqual(a, b av.Metadata) bool {
 	if (a == nil) != (b == nil) {
 		return false
 	}
@@ -252,4 +254,53 @@ func validateRecipeEncodeValues(spec codec.Spec, operation string, node string) 
 	default:
 		return nil
 	}
+}
+
+// MediaShapeFromCodecSpec is the shape.Spec view of a codec spec. It stays in
+// goav (not the shape package) because it crosses codec.Spec and the codecMedia/
+// firstNonEmptyMedia helpers that live in the goav root.
+func MediaShapeFromCodecSpec(spec codec.Spec, domain shape.MediaDomain) shape.Spec {
+	out := shape.FromCodecParameters(spec.Parameters)
+	out.Domain = domain
+	if out.MediaKind == "" {
+		out.MediaKind = FirstNonEmptyMedia(spec.Type, CodecMedia(spec.ID))
+	}
+	if out.Codec == "" {
+		out.Codec = spec.ID
+	}
+	return out
+}
+
+// codecSpecInputShapes is the shape.Set view of a codec spec's input. It is a
+// goav function (not a method) because codec.Spec's data lives in the codec
+// package and shape.Set is reached through the goav-only codecMedia helper.
+func codecSpecInputShapes(spec codec.Spec) shape.Set {
+	if spec.Copy {
+		return shape.Set{shape.New(shape.Domain(shape.DomainPacket))}
+	}
+	media := FirstNonEmptyMedia(spec.Type, spec.Parameters.Type, CodecMedia(spec.ID))
+	if spec.ID == "" && !spec.Auto && media == "" {
+		return nil
+	}
+	return shape.Set{shape.Frame(media)}
+}
+
+func codecSpecOutputShapes(spec codec.Spec, input shape.Spec) shape.Set {
+	if spec.Copy {
+		input.Domain = shape.DomainPacket
+		return shape.Set{input}
+	}
+	out := input
+	out.Domain = shape.DomainPacket
+	out = shape.Merge(out, MediaShapeFromCodecSpec(spec, shape.DomainPacket))
+	return shape.Set{out}
+}
+
+func CloneMetadata(metadata av.Metadata) av.Metadata {
+	if metadata == nil {
+		return nil
+	}
+	cloned := make(av.Metadata, len(metadata))
+	maps.Copy(cloned, metadata)
+	return cloned
 }

@@ -13,7 +13,7 @@ import (
 // diagnostic, passes through; a refusal with none is named after its pass.
 func TestCompilerPassErrorContracts(t *testing.T) {
 	plain := errors.New("plain")
-	if got := CompilerPassError("compile", "lower", plain); got != plain {
+	if got := compilerPassError("compile", "lower", plain); got != plain {
 		t.Fatalf("plain compiler error = %v, want original", got)
 	}
 	diagnostic := &builderr.Refusal{
@@ -21,12 +21,12 @@ func TestCompilerPassErrorContracts(t *testing.T) {
 		Code:   builderr.StreamMissingCode,
 		Reason: "has diagnostic",
 	}
-	if got := CompilerPassError("compile", "lower", diagnostic); got != diagnostic {
+	if got := compilerPassError("compile", "lower", diagnostic); got != diagnostic {
 		t.Fatalf("diagnostic compiler error = %v, want original", got)
 	}
 	empty := &builderr.Refusal{}
 	var got *builderr.Refusal
-	if !errors.As(CompilerPassError("compile recipe", "lower", empty), &got) {
+	if !errors.As(compilerPassError("compile recipe", "lower", empty), &got) {
 		t.Fatal("wrapped error is not a refusal")
 	}
 	if got.Code != builderr.CompilerPassFailedCode ||
@@ -37,7 +37,7 @@ func TestCompilerPassErrorContracts(t *testing.T) {
 		!errors.Is(got, empty) {
 		t.Fatalf("wrapped compiler pass error = %+v", got)
 	}
-	if !errors.As(CompilerPassError("compile recipe", "lower", &builderr.Refusal{Operation: "build branch"}), &got) || got.Operation != "build branch" {
+	if !errors.As(compilerPassError("compile recipe", "lower", &builderr.Refusal{Operation: "build branch"}), &got) || got.Operation != "build branch" {
 		t.Fatalf("wrapped operation = %+v", got)
 	}
 }

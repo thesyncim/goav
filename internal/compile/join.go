@@ -12,7 +12,7 @@ import (
 )
 
 // planJoins plans every join of the recipe, nested ones first.
-func (s *State) planJoins() error {
+func (s *recipeState) planJoins() error {
 	s.joins = map[recipeir.NodeID]*JoinPlan{}
 	s.armDecodes = map[recipeir.NodeID]string{}
 	s.armTaps = map[recipeir.NodeID]bool{}
@@ -25,11 +25,11 @@ func (s *State) planJoins() error {
 	return nil
 }
 
-func (s *State) planJoin(id recipeir.NodeID, sets []InputStreamSet) (*JoinPlan, error) {
+func (s *recipeState) planJoin(id recipeir.NodeID, sets []InputStreamSet) (*JoinPlan, error) {
 	if p, ok := s.joins[id]; ok {
 		return p, nil
 	}
-	node := s.Req.Graph.Nodes[id]
+	node := s.req.Graph.Nodes[id]
 	kind := node.Join.Kind
 	tree := &JoinTreeSnapshot{Kind: JoinKind(kind)}
 	if node.Join.Sync {
@@ -49,11 +49,11 @@ func (s *State) planJoin(id recipeir.NodeID, sets []InputStreamSet) (*JoinPlan, 
 	if tree.Custom != nil && name != kind {
 		return nil, customJoinNameCollisionError(kind, name)
 	}
-	p := &JoinPlan{env: s.Env, Tree: tree, Profile: profile, Name: name, node: id}
+	p := &JoinPlan{env: s.env, Tree: tree, Profile: profile, Name: name, node: id}
 	if encode, ok := s.joinEncode(id); ok {
 		// An encoder's explicit format is the target a join over files
 		// converts to; otherwise its first input's format is.
-		p.target = ExplicitEncodeSoftInputShape(encode)
+		p.target = explicitEncodeSoftInputShape(encode)
 	}
 	if len(node.Parents) < 2 {
 		return nil, joinInputsError(kind, name)
@@ -102,7 +102,7 @@ func (s *State) planJoin(id recipeir.NodeID, sets []InputStreamSet) (*JoinPlan, 
 		} else if armPlan.stage == nil && profile.armExpected != nil {
 			// The solver converts a nested arm's output like any arm: an
 			// outer mix resamples a sub-mix that produced another rate.
-			stagePlan, err := p.solveArmConversion(s.Env, armPlan.Stream, armPlan.inputName)
+			stagePlan, err := p.solveArmConversion(s.env, armPlan.Stream, armPlan.inputName)
 			if err != nil {
 				return nil, err
 			}
@@ -120,12 +120,12 @@ func (s *State) planJoin(id recipeir.NodeID, sets []InputStreamSet) (*JoinPlan, 
 }
 
 // joinEncode is the first encoder a branch of the join's output declares.
-func (s *State) joinEncode(id recipeir.NodeID) (codec.Spec, bool) {
-	for i := range s.Recipe.Streams {
-		if s.Recipe.Streams[i].Root != id {
+func (s *recipeState) joinEncode(id recipeir.NodeID) (codec.Spec, bool) {
+	for i := range s.recipe.Streams {
+		if s.recipe.Streams[i].Root != id {
 			continue
 		}
-		for _, operation := range s.Recipe.Streams[i].Operations {
+		for _, operation := range s.recipe.Streams[i].Operations {
 			if operation.Kind == plan.OpEncode {
 				return operation.Encode, true
 			}
@@ -136,8 +136,8 @@ func (s *State) joinEncode(id recipeir.NodeID) (codec.Spec, bool) {
 
 // planJoinArm resolves one arm: its plan, its canvas position, and the arm's
 // own operations after what streams already lower.
-func (s *State) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipeir.Point, sets []InputStreamSet) (JoinArmPlan, *compositeRegion, []recipeir.Operation, error) {
-	g := s.Req.Graph
+func (s *recipeState) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipeir.Point, sets []InputStreamSet) (JoinArmPlan, *compositeRegion, []recipeir.Operation, error) {
+	g := s.req.Graph
 	name, kind, profile := p.Name, string(p.Tree.Kind), p.Profile
 	var region *compositeRegion
 	if at.Set {
@@ -215,7 +215,7 @@ func (s *State) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipeir.Poin
 	switch {
 	case fed:
 		armPlan = s.fedArm(p, feed, input, set, rootNode.Select)
-	case joinArmBindsAtOpen(s.Req.Inputs[input], set):
+	case joinArmBindsAtOpen(s.req.Inputs[input], set):
 		bound, err := planJoinBindArm(name, kind, profile, recipeIRSelector(rootNode.Select), set)
 		if err != nil {
 			return JoinArmPlan{}, nil, nil, err
@@ -233,7 +233,7 @@ func (s *State) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipeir.Poin
 		armPlan = JoinArmPlan{inputName: set.Name, Stream: stream, Domain: set.Domain}
 	}
 	armPlan.Input = input
-	armPlan.SourceShape = s.Req.Inputs[input].Shape
+	armPlan.SourceShape = s.req.Inputs[input].Shape
 	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
 		return JoinArmPlan{}, nil, nil, err
 	}
@@ -263,11 +263,11 @@ func (s *State) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipeir.Poin
 
 // armFeed is the deepest node of an arm's path that a branch of the recipe
 // lowers too: the arm reads it instead of opening its own path.
-func (s *State) armFeed(path []recipeir.NodeID) (recipeir.NodeID, bool) {
+func (s *recipeState) armFeed(path []recipeir.NodeID) (recipeir.NodeID, bool) {
 	for i := len(path) - 1; i >= 0; i-- {
 		id := path[i]
-		for j := range s.Recipe.Streams {
-			stream := s.Recipe.Streams[j]
+		for j := range s.recipe.Streams {
+			stream := s.recipe.Streams[j]
 			if stream.Root == id {
 				return id, true
 			}
@@ -283,10 +283,10 @@ func (s *State) armFeed(path []recipeir.NodeID) (recipeir.NodeID, bool) {
 
 // fedArm plans an arm that reads a node a branch lowers: its stream is what
 // that node carries, known statically when the input's streams are.
-func (s *State) fedArm(p *JoinPlan, feed recipeir.NodeID, input int, set InputStreamSet, selector plan.StreamSelect) JoinArmPlan {
+func (s *recipeState) fedArm(p *JoinPlan, feed recipeir.NodeID, input int, set InputStreamSet, selector plan.StreamSelect) JoinArmPlan {
 	domain := set.Domain
-	for _, id := range s.Req.Graph.Path(feed)[1:] {
-		switch s.Req.Graph.Nodes[id].Op.Kind {
+	for _, id := range s.req.Graph.Path(feed)[1:] {
+		switch s.req.Graph.Nodes[id].Op.Kind {
 		case plan.OpDecode:
 			domain = shape.DomainFrame
 		case plan.OpEncode:
@@ -319,8 +319,8 @@ func recipeIROperationsContainKind(operations []recipeir.Operation, kind plan.Op
 // a nested join, or the node a fed arm reads), its bind, decode, and
 // conversion, then the join node, whose convergence edges come after every
 // arm's chain.
-func (l *Lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
-	if ref, ok := l.Refs[id]; ok {
+func (l *lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
+	if ref, ok := l.refs[id]; ok {
 		return ref, nil
 	}
 	p := l.s.joins[id]
@@ -343,7 +343,7 @@ func (l *Lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 			}
 			upstream = ref
 		default:
-			if ref, ok := l.Refs[arm.decodeGraph]; ok && arm.hasDecodeGraph {
+			if ref, ok := l.refs[arm.decodeGraph]; ok && arm.hasDecodeGraph {
 				// Another join's arm planned this path's decoder: read it.
 				upstream, shared = ref, true
 				break
@@ -364,7 +364,7 @@ func (l *Lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 				Arm:    i,
 			})
 			if arm.hasDecodeGraph {
-				l.Refs[arm.decodeGraph] = upstream
+				l.refs[arm.decodeGraph] = upstream
 			}
 		}
 		if arm.stage != nil {
@@ -395,31 +395,31 @@ func (l *Lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 		armRefs = append(armRefs, upstream)
 	}
 	ref := l.add(ComposeNode{Kind: ComposeJoin, Name: p.Name, Detail: p.joinNodeDetail(), Inputs: armRefs, Join: p})
-	l.Refs[id] = ref
+	l.refs[id] = ref
 	l.nodeNames[id] = p.Name
 	return ref, nil
 }
 
 // ensure plans the node a fed arm reads before the join that reads it: a
 // select root, or a branch's operation and the work before it.
-func (l *Lowering) ensure(id recipeir.NodeID) (pipeline.NodeRef, error) {
-	if ref, ok := l.Refs[id]; ok {
+func (l *lowering) ensure(id recipeir.NodeID) (pipeline.NodeRef, error) {
+	if ref, ok := l.refs[id]; ok {
 		return ref, nil
 	}
 	s := l.s
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Root == id {
 			if err := l.root(id, i); err != nil {
 				return "", err
 			}
-			return l.Refs[id], nil
+			return l.refs[id], nil
 		}
 		for _, operation := range stream.Operations {
 			if operation.Node != id {
 				continue
 			}
-			if _, ok := l.Refs[stream.Root]; !ok {
+			if _, ok := l.refs[stream.Root]; !ok {
 				if err := l.root(stream.Root, i); err != nil {
 					return "", err
 				}
@@ -440,9 +440,9 @@ func (l *Lowering) ensure(id recipeir.NodeID) (pipeline.NodeRef, error) {
 
 // parentRefThrough is the planned node a branch carries at node: node's own
 // when it plans one, else the nearest before it.
-func (l *Lowering) parentRefThrough(index int, node recipeir.NodeID) pipeline.NodeRef {
-	if ref, ok := l.Refs[node]; ok && ref != "" {
+func (l *lowering) parentRefThrough(index int, node recipeir.NodeID) pipeline.NodeRef {
+	if ref, ok := l.refs[node]; ok && ref != "" {
 		return ref
 	}
-	return l.ParentRef(index, node)
+	return l.parentRef(index, node)
 }

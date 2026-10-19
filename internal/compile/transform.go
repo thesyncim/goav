@@ -182,7 +182,7 @@ func EmptyTransformSpecError(operation string, node string) error {
 	}
 }
 
-// transformResize is a resize transform's config for the lowering, nil for
+// TransformResize is a resize transform's config for the lowering, nil for
 // any other transform.
 func TransformResize(transform recipeir.Transform) *filter.ResizeConfig {
 	if transform.Kind != recipeir.TransformResize {
@@ -192,7 +192,7 @@ func TransformResize(transform recipeir.Transform) *filter.ResizeConfig {
 	return &config
 }
 
-// transformResample is a resample transform's config for the lowering, nil
+// TransformResample is a resample transform's config for the lowering, nil
 // for any other transform.
 func TransformResample(transform recipeir.Transform) *filter.ResampleConfig {
 	if transform.Kind != recipeir.TransformResample {

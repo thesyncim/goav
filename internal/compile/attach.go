@@ -13,7 +13,7 @@ import (
 	sourcepkg "github.com/thesyncim/goav/source"
 )
 
-// attachBranchPlan is one branch an attach group or a stream rule plans: its
+// AttachBranchPlan is one branch an attach group or a stream rule plans: its
 // name, media, operations, queue, and destinations.
 type AttachBranchPlan struct {
 	Name       string
@@ -30,14 +30,14 @@ type attachDestPlan struct {
 	Name string
 }
 
-// streamRulePlan is one planned OnStream rule: its match and the branches
+// StreamRulePlan is one planned OnStream rule: its match and the branches
 // it attaches for every stream that matches.
 type StreamRulePlan struct {
 	Match    sourcepkg.StreamMatch
 	Branches []AttachBranchPlan
 }
 
-// planAttach plans the branches each Output of an attach group hangs below
+// PlanAttach plans the branches each Output of an attach group hangs below
 // its anchor on the running task. taps are the task's taps by domain; a tap
 // an earlier Output declares is added to it.
 func PlanAttach(req *Request, taps map[string]shape.MediaDomain) ([][]AttachBranchPlan, error) {
@@ -134,8 +134,8 @@ func planAttachBranches(req *Request, paths []streamPath, frames bool, known boo
 }
 
 // deriveRule lowers the Outputs of one OnStream root into its rule.
-func (s *State) deriveRule(root recipeir.NodeID, paths []streamPath, names *streamBranchNames) error {
-	req := s.Req
+func (s *recipeState) deriveRule(root recipeir.NodeID, paths []streamPath, names *streamBranchNames) error {
+	req := s.req
 	node := req.Graph.Nodes[root]
 	match := req.Matches[node.Rule]
 	if match.Empty() {
@@ -162,35 +162,35 @@ func (s *State) deriveRule(root recipeir.NodeID, paths []streamPath, names *stre
 		})
 	}
 	s.streamRules = append(s.streamRules, StreamRulePlan{Match: match, Branches: branches})
-	s.Recipe.StreamRules = append(s.Recipe.StreamRules, facts)
+	s.recipe.StreamRules = append(s.recipe.StreamRules, facts)
 	return nil
 }
 
 // validateStreamRulesForCompile checks the structural prerequisites of
 // declared dynamic-stream rules: a single input to anchor on.
-func validateStreamRulesForCompile(s *State) error {
+func validateStreamRulesForCompile(s *recipeState) error {
 	if len(s.streamRules) == 0 {
 		return nil
 	}
-	if inputs := len(s.Req.Inputs); inputs != 1 {
+	if inputs := len(s.req.Inputs); inputs != 1 {
 		return StreamRuleInvalidError("", fmt.Sprintf("stream rules require exactly one input, got %d", inputs),
 			"run OnStream Outputs with Outputs of that one input only: input.OnStream(match).To(dst), input.Audio().To(out)")
 	}
 	return nil
 }
 
-func (s *State) ruleSourceNode() string {
-	if len(s.streamRules) == 0 || len(s.Req.Inputs) == 0 {
+func (s *recipeState) ruleSourceNode() string {
+	if len(s.streamRules) == 0 || len(s.req.Inputs) == 0 {
 		return ""
 	}
-	return s.Req.Inputs[0].SourceNode
+	return s.req.Inputs[0].SourceNode
 }
 
-func (s *State) ruleSourceDomain() shape.MediaDomain {
-	if len(s.streamRules) == 0 || len(s.Req.Inputs) == 0 {
+func (s *recipeState) ruleSourceDomain() shape.MediaDomain {
+	if len(s.streamRules) == 0 || len(s.req.Inputs) == 0 {
 		return ""
 	}
-	return s.Req.Inputs[0].EventDomain
+	return s.req.Inputs[0].EventDomain
 }
 
 // AttachGroup is one attach group a running task lowers: its branches are
@@ -218,45 +218,45 @@ type AttachGroup struct {
 // graph, in schedule order, named under its branches.
 type AttachPlan struct {
 	Nodes    []ComposeNode
-	lowering *Lowering
+	lowering *lowering
 }
 
 // LowerAttach lowers an attach group through the build's lowering: work its
 // branches share is one node, a destination several branches route to is
 // one node, and every node a branch alone reads is named under the branch.
 func LowerAttach(group AttachGroup) (*AttachPlan, error) {
-	s := &State{
-		Operation:              "attach runtime branch",
-		Req:                    &Request{Env: group.Env},
-		Env:                    group.Env,
-		Inserted:               map[string]recipeir.NodeID{},
-		Outputs:                group.Destinations,
-		OutputDestinationNames: group.Names,
+	s := &recipeState{
+		operation:              "attach runtime branch",
+		req:                    &Request{Env: group.Env},
+		env:                    group.Env,
+		inserted:               map[string]recipeir.NodeID{},
+		outputs:                group.Destinations,
+		outputDestinationNames: group.Names,
 	}
-	s.Recipe.Streams = group.Streams
+	s.recipe.Streams = group.Streams
 	for i := range group.Streams {
-		s.Facts = append(s.Facts, BranchFacts{Frames: group.Frames[i], Dests: group.Dests[i]})
+		s.facts = append(s.facts, branchFacts{frames: group.Frames[i], dests: group.Dests[i]})
 	}
-	l := NewRecipeLowering(s)
-	l.Attach = &AttachLowering{Name: group.Name, Anchors: group.Anchors, Routes: group.Routes, Pending: group.Pending}
-	if err := l.Plan(); err != nil {
+	l := newRecipeLowering(s)
+	l.attach = &attachLowering{name: group.Name, anchors: group.Anchors, routes: group.Routes, pending: group.Pending}
+	if err := l.plan(); err != nil {
 		return nil, err
 	}
-	return &AttachPlan{Nodes: l.G.Nodes, lowering: l}, nil
+	return &AttachPlan{Nodes: l.g.Nodes, lowering: l}, nil
 }
 
 // Ref is the planned node of the group's DAG node id.
 func (p *AttachPlan) Ref(id recipeir.NodeID) (pipeline.NodeRef, bool) {
-	ref, ok := p.lowering.Refs[id]
+	ref, ok := p.lowering.refs[id]
 	return ref, ok
 }
 
 // ParentRef is the planned node that feeds DAG node id on branch.
 func (p *AttachPlan) ParentRef(branch int, id recipeir.NodeID) pipeline.NodeRef {
-	return p.lowering.ParentRef(branch, id)
+	return p.lowering.parentRef(branch, id)
 }
 
 // Spec is the graph the group adds, as spec describes the running one.
 func (p *AttachPlan) Spec(spec pipeline.Spec) (pipeline.Spec, error) {
-	return p.lowering.G.Emit(spec)
+	return p.lowering.g.emit(spec)
 }

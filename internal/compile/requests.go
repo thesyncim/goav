@@ -12,6 +12,17 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+type EncodeRequest struct {
+	Name     string
+	Selector av.StreamSelector
+	Config   codec.EncodeConfig
+}
+
+type DecodeRequest struct {
+	Selector av.StreamSelector
+	Config   codec.Spec
+}
+
 type MediaTransform struct {
 	Name    string
 	Factory string

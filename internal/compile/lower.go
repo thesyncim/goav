@@ -40,7 +40,7 @@ const (
 	ComposeJoin
 )
 
-// composeNode is one planned node: its name and describe detail, the nodes it
+// ComposeNode is one planned node: its name and describe detail, the nodes it
 // consumes in connect order, and what the build makes it from.
 type ComposeNode struct {
 	Kind   composeNodeKind
@@ -74,7 +74,7 @@ type ComposeNode struct {
 	Target   pipeline.NodeRef
 }
 
-// composeGraph is the one schedule a recipe is described and built from.
+// ComposeGraph is the one schedule a recipe is described and built from.
 type ComposeGraph struct {
 	name  string
 	Nodes []ComposeNode
@@ -88,7 +88,7 @@ func (g *ComposeGraph) add(node ComposeNode) pipeline.NodeRef {
 // emit renders the schedule as a spec: the nodes in schedule order, then the
 // edges grouped by producer in schedule order, each producer's edges in
 // consumer order — the order a built graph reports them in.
-func (g ComposeGraph) Emit(spec pipeline.Spec) (pipeline.Spec, error) {
+func (g ComposeGraph) emit(spec pipeline.Spec) (pipeline.Spec, error) {
 	planned := make(map[string]PlannedNode, len(g.Nodes))
 	for _, node := range g.Nodes {
 		kind := pipeline.NodeStage
@@ -124,13 +124,13 @@ func (g ComposeGraph) Emit(spec pipeline.Spec) (pipeline.Spec, error) {
 	return spec, nil
 }
 
-// anchorRoute is the route a node reads an input by.
+// AnchorRoute is the route a node reads an input by.
 type AnchorRoute struct {
 	Policy pipeline.RoutePolicy
 	Label  string
 }
 
-// route is the route the node reads its input at index by: an attached
+// Route is the route the node reads its input at index by: an attached
 // node reads a live anchor by the anchor's own policy and label, and every
 // other input whole.
 func (n ComposeNode) Route(index int) AnchorRoute {
@@ -141,11 +141,11 @@ func (n ComposeNode) Route(index int) AnchorRoute {
 }
 
 // recipeLowering plans one recipe's composeGraph.
-type Lowering struct {
-	s *State
-	G ComposeGraph
+type lowering struct {
+	s *recipeState
+	g ComposeGraph
 	// refs are the planned nodes of DAG nodes; sources of inputs.
-	Refs    map[recipeir.NodeID]pipeline.NodeRef
+	refs    map[recipeir.NodeID]pipeline.NodeRef
 	sources map[int]pipeline.NodeRef
 	// groups are the selects (and their decodes) of selector groups.
 	groups       map[string]pipeline.NodeRef
@@ -162,28 +162,28 @@ type Lowering struct {
 	// sourceNames are the planned source node names, by input.
 	sourceNames []string
 	// attach is set when the recipe is an attach group.
-	Attach *AttachLowering
+	attach *attachLowering
 }
 
 // attachLowering is what lowering an attach group adds to a build's: its
 // roots are anchors on the running task — a live node, or a tap an earlier
 // branch of the group declares — and its nodes are named under the branch
 // that alone reads them, or the attachment when several do.
-type AttachLowering struct {
-	Name string
+type attachLowering struct {
+	name string
 	// anchors are the live nodes anchor roots read, and routes the routes
 	// they read them by.
-	Anchors map[recipeir.NodeID]pipeline.NodeRef
-	Routes  map[recipeir.NodeID]AnchorRoute
+	anchors map[recipeir.NodeID]pipeline.NodeRef
+	routes  map[recipeir.NodeID]AnchorRoute
 	// pending are the tap operations anchor roots on a tap the group itself
 	// declares read.
-	Pending map[recipeir.NodeID]recipeir.NodeID
+	pending map[recipeir.NodeID]recipeir.NodeID
 }
 
-func NewRecipeLowering(s *State) *Lowering {
-	return &Lowering{
+func newRecipeLowering(s *recipeState) *lowering {
+	return &lowering{
 		s:            s,
-		Refs:         map[recipeir.NodeID]pipeline.NodeRef{},
+		refs:         map[recipeir.NodeID]pipeline.NodeRef{},
 		sources:      map[int]pipeline.NodeRef{},
 		groups:       map[string]pipeline.NodeRef{},
 		groupDecodes: map[string]pipeline.NodeRef{},
@@ -191,42 +191,42 @@ func NewRecipeLowering(s *State) *Lowering {
 		counts:       map[string]int{},
 		owners:       map[recipeir.NodeID][]int{},
 		nodeNames:    map[recipeir.NodeID]string{},
-		sourceNames:  sourceNodeNames(s.Req.Inputs),
+		sourceNames:  sourceNodeNames(s.req.Inputs),
 	}
 }
 
-func (s *State) lower() error {
-	if !s.Env.Present && s.Req.Preflight {
+func (s *recipeState) lower() error {
+	if !s.env.Present && s.req.Preflight {
 		return nil
 	}
-	l := NewRecipeLowering(s)
-	if err := l.Plan(); err != nil {
+	l := newRecipeLowering(s)
+	if err := l.plan(); err != nil {
 		return err
 	}
-	spec := pipeline.Spec{Name: s.graphName(), Realtime: !s.Env.Present || s.Env.Realtime}
-	spec, err := l.G.Emit(spec)
+	spec := pipeline.Spec{Name: s.graphName(), Realtime: !s.env.Present || s.env.Realtime}
+	spec, err := l.g.emit(spec)
 	if err != nil {
 		return err
 	}
-	l.G.name = spec.Name
+	l.g.name = spec.Name
 	s.work = buildRecipeWorkPlan(s, l, spec)
-	s.lowered, s.composed, s.spec = true, l.G, spec
+	s.lowered, s.composed, s.spec = true, l.g, spec
 	return nil
 }
 
 // graphName names the task's graph: a recipe that is one join is named after
 // it.
-func (s *State) graphName() string {
+func (s *recipeState) graphName() string {
 	if root, ok := s.soleJoinRoot(); ok {
 		return "goav-" + s.joinNames[root]
 	}
 	return "goav"
 }
 
-func (l *Lowering) Plan() error {
+func (l *lowering) plan() error {
 	s := l.s
-	for i := range s.Recipe.Streams {
-		for _, operation := range s.Recipe.Streams[i].Operations {
+	for i := range s.recipe.Streams {
+		for _, operation := range s.recipe.Streams[i].Operations {
 			l.owners[operation.Node] = append(l.owners[operation.Node], i)
 		}
 	}
@@ -235,12 +235,12 @@ func (l *Lowering) Plan() error {
 	}
 	// The sources of the inputs streams read come first.
 	streamInputs := map[int]bool{}
-	for i := range s.Recipe.Streams {
-		if s.Recipe.Streams[i].Input >= 0 {
-			streamInputs[s.Recipe.Streams[i].Input] = true
+	for i := range s.recipe.Streams {
+		if s.recipe.Streams[i].Input >= 0 {
+			streamInputs[s.recipe.Streams[i].Input] = true
 		}
 	}
-	for input := range s.Req.Inputs {
+	for input := range s.req.Inputs {
 		if streamInputs[input] || s.ruleInput(input) {
 			l.source(input)
 		}
@@ -248,8 +248,8 @@ func (l *Lowering) Plan() error {
 	// Then each root: its select or join, and the work all its branches
 	// share.
 	seen := map[recipeir.NodeID]bool{}
-	for i := range s.Recipe.Streams {
-		root := s.Recipe.Streams[i].Root
+	for i := range s.recipe.Streams {
+		root := s.recipe.Streams[i].Root
 		if seen[root] {
 			continue
 		}
@@ -259,8 +259,8 @@ func (l *Lowering) Plan() error {
 		}
 	}
 	// Then each branch's own work.
-	l.leaves = make([]pipeline.NodeRef, len(s.Recipe.Streams))
-	for i := range s.Recipe.Streams {
+	l.leaves = make([]pipeline.NodeRef, len(s.recipe.Streams))
+	for i := range s.recipe.Streams {
 		leaf, err := l.branch(i)
 		if err != nil {
 			return err
@@ -268,17 +268,17 @@ func (l *Lowering) Plan() error {
 		l.leaves[i] = leaf
 	}
 	// Then the destinations.
-	for dest := range s.Outputs {
+	for dest := range s.outputs {
 		l.destination(dest)
 	}
 	return nil
 }
 
-func (s *State) ruleInput(input int) bool {
+func (s *recipeState) ruleInput(input int) bool {
 	return len(s.streamRules) != 0 && input == 0
 }
 
-func (l *Lowering) unique(name string) string {
+func (l *lowering) unique(name string) string {
 	out := name
 	for n := 2; l.names[out]; n++ {
 		out = name + "-" + strconv.Itoa(n)
@@ -287,13 +287,13 @@ func (l *Lowering) unique(name string) string {
 	return out
 }
 
-func (l *Lowering) add(node ComposeNode) pipeline.NodeRef {
+func (l *lowering) add(node ComposeNode) pipeline.NodeRef {
 	l.names[node.Name] = true
-	return l.G.add(node)
+	return l.g.add(node)
 }
 
 // source plans one input's source node, once.
-func (l *Lowering) source(input int) pipeline.NodeRef {
+func (l *lowering) source(input int) pipeline.NodeRef {
 	if ref, ok := l.sources[input]; ok {
 		return ref
 	}
@@ -301,7 +301,7 @@ func (l *Lowering) source(input int) pipeline.NodeRef {
 	ref := l.add(ComposeNode{
 		Kind:   ComposeSource,
 		Name:   name,
-		Detail: l.s.Req.Inputs[input].SourceDetail,
+		Detail: l.s.req.Inputs[input].SourceDetail,
 		Input:  input,
 	})
 	l.sources[input] = ref
@@ -311,22 +311,22 @@ func (l *Lowering) source(input int) pipeline.NodeRef {
 // named is the name of a planned node owner alone reads (or -1): an attach
 // group names a branch's own nodes under the branch, and the nodes several
 // of its branches share under the attachment.
-func (l *Lowering) named(owner int, name string) string {
+func (l *lowering) named(owner int, name string) string {
 	switch {
-	case l.Attach == nil:
+	case l.attach == nil:
 		return name
 	case owner >= 0:
-		return runtimeBranchNodeName(l.s.Recipe.Streams[owner].Name, name)
+		return runtimeBranchNodeName(l.s.recipe.Streams[owner].Name, name)
 	default:
-		return runtimeBranchNodeName(l.Attach.Name, name)
+		return runtimeBranchNodeName(l.attach.name, name)
 	}
 }
 
 // scope is the name a root's shared nodes are named in: an input stream's
 // kind, qualified by its input when the recipe has several, a join's name,
 // or an attached stream's own name.
-func (l *Lowering) scope(stream recipeir.Stream) string {
-	if l.Attach != nil {
+func (l *lowering) scope(stream recipeir.Stream) string {
+	if l.attach != nil {
 		return stream.Name
 	}
 	if stream.Input < 0 {
@@ -342,28 +342,28 @@ func selectGroupKey(stream recipeir.Stream) string {
 
 // root plans a root: an input stream's select, the decode right after it,
 // and the work every branch of the root shares; or a join.
-func (l *Lowering) root(root recipeir.NodeID, first int) error {
-	if l.Attach != nil {
+func (l *lowering) root(root recipeir.NodeID, first int) error {
+	if l.attach != nil {
 		// An attached root reads a live node, or the node before a tap an
 		// earlier branch of the group declares.
-		ref, ok := l.Attach.Anchors[root]
+		ref, ok := l.attach.anchors[root]
 		if !ok {
 			var err error
-			if ref, err = l.ensure(l.Attach.Pending[root]); err != nil {
+			if ref, err = l.ensure(l.attach.pending[root]); err != nil {
 				return err
 			}
 		}
-		l.Refs[root] = ref
+		l.refs[root] = ref
 		return l.trunk(root, first)
 	}
 	s := l.s
-	stream := s.Recipe.Streams[first]
+	stream := s.recipe.Streams[first]
 	if stream.Input < 0 {
 		ref, err := l.join(root)
 		if err != nil {
 			return err
 		}
-		l.Refs[root] = ref
+		l.refs[root] = ref
 		return l.trunk(root, first)
 	}
 	key := selectGroupKey(stream)
@@ -372,7 +372,7 @@ func (l *Lowering) root(root recipeir.NodeID, first int) error {
 		selector := recipeIRStreamSelector(stream)
 		selectRef = l.add(ComposeNode{
 			Kind:     ComposeSelect,
-			Name:     l.unique(branchComposeInputNodeName(SelectNodeName(selector), stream.Selector.Input)),
+			Name:     l.unique(branchComposeInputNodeName(selectNodeName(selector), stream.Selector.Input)),
 			Detail:   selectNodeDetail(selector),
 			Inputs:   []pipeline.NodeRef{l.source(stream.Input)},
 			Input:    stream.Input,
@@ -399,20 +399,20 @@ func (l *Lowering) root(root recipeir.NodeID, first int) error {
 			l.groupDecodes[key] = decodeRef
 		}
 	}
-	l.Refs[root] = selectRef
+	l.refs[root] = selectRef
 	return l.trunk(root, first)
 }
 
 // groupDecode reports the decode config of a selector group whose branches
 // decode right after the select: they share one decoder, so two branches
 // that declare different configs are refused.
-func (l *Lowering) groupDecode(key string) (codec.Spec, bool, error) {
+func (l *lowering) groupDecode(key string) (codec.Spec, bool, error) {
 	s := l.s
 	found := false
 	var config codec.Spec
 	owner := ""
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		if stream.Input < 0 || selectGroupKey(stream) != key {
 			continue
 		}
@@ -433,12 +433,12 @@ func (l *Lowering) groupDecode(key string) (codec.Spec, bool, error) {
 
 // dropDecodeEvents reports a recipe that is one lone branch decoding to
 // sinks without an encoder: its decode forwards no stream events.
-func (l *Lowering) dropDecodeEvents() bool {
+func (l *lowering) dropDecodeEvents() bool {
 	s := l.s
-	if len(s.Recipe.Streams) != 1 || !s.Facts[0].lone {
+	if len(s.recipe.Streams) != 1 || !s.facts[0].lone {
 		return false
 	}
-	return recipeIRStreamEncodeSpec(s.Recipe.Streams[0]).ID == ""
+	return recipeIRStreamEncodeSpec(s.recipe.Streams[0]).ID == ""
 }
 
 // firstWorkOperation is a branch's first operation that is not an
@@ -454,18 +454,18 @@ func firstWorkOperation(operations []recipeir.Operation) (recipeir.Operation, bo
 }
 
 // trunk plans the work every branch of a root shares, in order.
-func (l *Lowering) trunk(root recipeir.NodeID, first int) error {
+func (l *lowering) trunk(root recipeir.NodeID, first int) error {
 	s := l.s
 	var branches []int
-	for i := range s.Recipe.Streams {
-		if s.Recipe.Streams[i].Root == root {
+	for i := range s.recipe.Streams {
+		if s.recipe.Streams[i].Root == root {
 			branches = append(branches, i)
 		}
 	}
 	if len(branches) < 2 {
 		return nil
 	}
-	for _, operation := range s.Recipe.Streams[first].Operations {
+	for _, operation := range s.recipe.Streams[first].Operations {
 		if len(l.owners[operation.Node]) < len(branches) {
 			break
 		}
@@ -477,9 +477,9 @@ func (l *Lowering) trunk(root recipeir.NodeID, first int) error {
 }
 
 // branch plans a branch's own work and returns its last planned node.
-func (l *Lowering) branch(index int) (pipeline.NodeRef, error) {
-	stream := l.s.Recipe.Streams[index]
-	upstream := l.Refs[stream.Root]
+func (l *lowering) branch(index int) (pipeline.NodeRef, error) {
+	stream := l.s.recipe.Streams[index]
+	upstream := l.refs[stream.Root]
 	for _, operation := range stream.Operations {
 		ref, err := l.operation(index, operation)
 		if err != nil {
@@ -494,14 +494,14 @@ func (l *Lowering) branch(index int) (pipeline.NodeRef, error) {
 
 // parentRef is the planned node a branch's operation reads: the nearest
 // planned node before it on the branch.
-func (l *Lowering) ParentRef(index int, node recipeir.NodeID) pipeline.NodeRef {
-	stream := l.s.Recipe.Streams[index]
-	ref := l.Refs[stream.Root]
+func (l *lowering) parentRef(index int, node recipeir.NodeID) pipeline.NodeRef {
+	stream := l.s.recipe.Streams[index]
+	ref := l.refs[stream.Root]
 	for _, operation := range stream.Operations {
 		if operation.Node == node {
 			return ref
 		}
-		if planned, ok := l.Refs[operation.Node]; ok && planned != "" {
+		if planned, ok := l.refs[operation.Node]; ok && planned != "" {
 			ref = planned
 		}
 	}
@@ -510,12 +510,12 @@ func (l *Lowering) ParentRef(index int, node recipeir.NodeID) pipeline.NodeRef {
 
 // operation plans one operation of a branch, once: it returns the planned
 // node, or "" for an operation that plans none.
-func (l *Lowering) operation(index int, operation recipeir.Operation) (pipeline.NodeRef, error) {
-	if ref, ok := l.Refs[operation.Node]; ok {
+func (l *lowering) operation(index int, operation recipeir.Operation) (pipeline.NodeRef, error) {
+	if ref, ok := l.refs[operation.Node]; ok {
 		return ref, nil
 	}
 	s := l.s
-	stream := s.Recipe.Streams[index]
+	stream := s.recipe.Streams[index]
 	owners := l.owners[operation.Node]
 	owner := -1
 	name := l.scope(stream)
@@ -523,12 +523,12 @@ func (l *Lowering) operation(index int, operation recipeir.Operation) (pipeline.
 		owner = index
 		name = stream.Name
 	}
-	input := l.ParentRef(index, operation.Node)
+	input := l.parentRef(index, operation.Node)
 	var node ComposeNode
 	switch operation.Kind {
 	case plan.OpDecode:
-		if ref, ok := l.groupDecodes[selectGroupKey(stream)]; ok && stream.Input >= 0 && input == l.Refs[stream.Root] {
-			l.Refs[operation.Node] = ref
+		if ref, ok := l.groupDecodes[selectGroupKey(stream)]; ok && stream.Input >= 0 && input == l.refs[stream.Root] {
+			l.refs[operation.Node] = ref
 			l.nodeNames[operation.Node] = string(ref)
 			return ref, nil
 		}
@@ -541,7 +541,7 @@ func (l *Lowering) operation(index int, operation recipeir.Operation) (pipeline.
 			Decode:   CloneCodecSpec(operation.Decode),
 			// An attached decoder forwards no stream events: the anchor's
 			// own consumers saw them.
-			DropEvents: l.Attach != nil,
+			DropEvents: l.attach != nil,
 		}
 	case plan.OpTransform, plan.OpStage:
 		transform, err := l.transform(name, owner, operation)
@@ -560,12 +560,12 @@ func (l *Lowering) operation(index int, operation recipeir.Operation) (pipeline.
 		return "", nil
 	}
 	node.Inputs = []pipeline.NodeRef{input}
-	if l.Attach != nil {
+	if l.attach != nil {
 		node.routes = []AnchorRoute{l.anchorRoute(index, input)}
 	}
 	node.Owner = owner
 	ref := l.add(node)
-	l.Refs[operation.Node] = ref
+	l.refs[operation.Node] = ref
 	l.nodeNames[operation.Node] = node.Name
 	return ref, nil
 }
@@ -573,7 +573,7 @@ func (l *Lowering) operation(index int, operation recipeir.Operation) (pipeline.
 // transform names and configures one step: a stage keeps its own name (a
 // sync or playout gate is named for its stream and policy), a transform is
 // named for its adapter and its stream, numbered from its second.
-func (l *Lowering) transform(name string, owner int, operation recipeir.Operation) (MediaTransform, error) {
+func (l *lowering) transform(name string, owner int, operation recipeir.Operation) (MediaTransform, error) {
 	if operation.Kind == plan.OpStage {
 		if operation.Stage == nil {
 			return MediaTransform{}, branchChainStepError(name, "branch stage operation has no stage")
@@ -606,10 +606,10 @@ func (l *Lowering) transform(name string, owner int, operation recipeir.Operatio
 // encodes under the branch's name, unless the branch is the recipe's only
 // one and names no fork; an encoder several branches share keeps the
 // identity of the stream it encodes, as As names only a branch's own work.
-func (s *State) encodeRequest(index int, operation recipeir.Operation, shared bool) EncodeRequest {
-	stream := s.Recipe.Streams[index]
+func (s *recipeState) encodeRequest(index int, operation recipeir.Operation, shared bool) EncodeRequest {
+	stream := s.recipe.Streams[index]
 	config := encodeConfigFromSpec(operation.Encode)
-	if !shared && (len(s.Recipe.Streams) != 1 || stream.Named) {
+	if !shared && (len(s.recipe.Streams) != 1 || stream.Named) {
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(stream.Name)
 		}
@@ -622,13 +622,13 @@ func (s *State) encodeRequest(index int, operation recipeir.Operation, shared bo
 
 // destination plans one destination fed by every branch that routes to it,
 // in branch order.
-func (l *Lowering) destination(dest int) {
+func (l *lowering) destination(dest int) {
 	s := l.s
 	var inputs []pipeline.NodeRef
 	var routes []AnchorRoute
 	var feeds []int
-	for i := range s.Recipe.Streams {
-		for _, d := range s.Facts[i].Dests {
+	for i := range s.recipe.Streams {
+		for _, d := range s.facts[i].dests {
 			if d == dest {
 				inputs = append(inputs, l.leaves[i])
 				routes = append(routes, l.anchorRoute(i, l.leaves[i]))
@@ -636,18 +636,18 @@ func (l *Lowering) destination(dest int) {
 			}
 		}
 	}
-	spec := s.Outputs[dest]
+	spec := s.outputs[dest]
 	owner := -1
 	if len(feeds) == 1 {
 		owner = feeds[0]
 	}
 	if spec.Sink {
-		l.add(ComposeNode{Kind: ComposeSink, Name: l.destinationNamed(owner, destinationSinkNodeName(spec, s.OutputDestinationNames[dest], dest)), Detail: spec.SinkDetail, Inputs: inputs, routes: routes, Output: dest, Owner: owner})
+		l.add(ComposeNode{Kind: ComposeSink, Name: l.destinationNamed(owner, destinationSinkNodeName(spec, s.outputDestinationNames[dest], dest)), Detail: spec.SinkDetail, Inputs: inputs, routes: routes, Output: dest, Owner: owner})
 		return
 	}
 	output := spec.Output
 	if output.Name == "" {
-		output.Name = s.OutputDestinationNames[dest]
+		output.Name = s.outputDestinationNames[dest]
 	}
 	l.add(ComposeNode{Kind: ComposeMux, Name: l.destinationNamed(owner, MuxNodeName(output, dest)), Detail: OutputNodeDetailWithFormat(output, spec.Format), Inputs: inputs, routes: routes, Output: dest, Owner: owner})
 }
@@ -655,7 +655,7 @@ func (l *Lowering) destination(dest int) {
 // destinationNamed names a destination node: an attach group names a
 // destination one branch alone feeds under the branch, and keeps the name
 // of one several branches share.
-func (l *Lowering) destinationNamed(owner int, name string) string {
+func (l *lowering) destinationNamed(owner int, name string) string {
 	if owner < 0 {
 		return name
 	}
@@ -664,13 +664,13 @@ func (l *Lowering) destinationNamed(owner int, name string) string {
 
 // anchorRoute is the route the branch at index reads input by: its live
 // anchor's own policy and label when input is that anchor.
-func (l *Lowering) anchorRoute(index int, input pipeline.NodeRef) AnchorRoute {
-	if l.Attach == nil {
+func (l *lowering) anchorRoute(index int, input pipeline.NodeRef) AnchorRoute {
+	if l.attach == nil {
 		return AnchorRoute{}
 	}
-	root := l.s.Recipe.Streams[index].Root
-	if ref, ok := l.Attach.Anchors[root]; ok && ref == input {
-		return l.Attach.Routes[root]
+	root := l.s.recipe.Streams[index].Root
+	if ref, ok := l.attach.anchors[root]; ok && ref == input {
+		return l.attach.routes[root]
 	}
 	return AnchorRoute{}
 }
@@ -692,28 +692,28 @@ func destinationSinkNodeName(spec Destination, name string, index int) string {
 
 // planRemux plans whole-input copies: every input's source, then each
 // destination fed by all of them.
-func (l *Lowering) planRemux() error {
+func (l *lowering) planRemux() error {
 	s := l.s
 	for _, remux := range s.remux {
-		if input := s.Req.Inputs[remux.input]; !input.HasShape || input.Shape.Domain != shape.DomainEvent {
+		if input := s.req.Inputs[remux.input]; !input.HasShape || input.Shape.Domain != shape.DomainEvent {
 			continue
 		}
 		for _, dest := range remux.dests {
-			if !s.Outputs[dest].Sink {
+			if !s.outputs[dest].Sink {
 				// Events have no packets to mux.
 				return GraphPlanInvalidError("event source destination must be a sink", nil)
 			}
 		}
 	}
-	sources := make([]pipeline.NodeRef, len(s.Req.Inputs))
-	for input := range s.Req.Inputs {
+	sources := make([]pipeline.NodeRef, len(s.req.Inputs))
+	for input := range s.req.Inputs {
 		sources[input] = l.source(input)
 	}
-	for dest := range s.Outputs {
-		spec := s.Outputs[dest]
+	for dest := range s.outputs {
+		spec := s.outputs[dest]
 		// A destination reads the inputs whose copies its Outputs route to it.
 		var inputs []pipeline.NodeRef
-		for input := range s.Req.Inputs {
+		for input := range s.req.Inputs {
 			for _, remux := range s.remux {
 				if remux.input == input && slices.Contains(remux.dests, dest) {
 					inputs = append(inputs, sources[input])
@@ -722,20 +722,20 @@ func (l *Lowering) planRemux() error {
 			}
 		}
 		if spec.Sink {
-			l.add(ComposeNode{Kind: ComposeRemuxSink, Name: cmp.Or(spec.SinkName, s.OutputDestinationNames[dest], "sink"), Detail: spec.SinkDetail, Inputs: inputs, Output: dest})
+			l.add(ComposeNode{Kind: ComposeRemuxSink, Name: cmp.Or(spec.SinkName, s.outputDestinationNames[dest], "sink"), Detail: spec.SinkDetail, Inputs: inputs, Output: dest})
 			continue
 		}
 		output := spec.Output
 		if output.Name == "" {
-			output.Name = s.OutputDestinationNames[dest]
+			output.Name = s.outputDestinationNames[dest]
 		}
 		l.add(ComposeNode{Kind: ComposeRemuxMux, Name: MuxNodeName(output, dest), Detail: OutputNodeDetailWithFormat(output, spec.Format), Inputs: inputs, Output: dest})
 	}
 	return nil
 }
 
-func (s *State) String() string {
-	return fmt.Sprintf("recipe(%d streams)", len(s.Recipe.Streams))
+func (s *recipeState) String() string {
+	return fmt.Sprintf("recipe(%d streams)", len(s.recipe.Streams))
 }
 
 // sourceNodeNames are the planned source node names of inputs.

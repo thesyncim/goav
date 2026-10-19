@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -37,8 +38,8 @@ type derivedBranch struct {
 	lone  bool
 }
 
-func (s *State) deriveBranches() error {
-	g := s.Req
+func (s *recipeState) deriveBranches() error {
+	g := s.req
 	var paths []streamPath
 	for _, out := range g.Outputs {
 		if g.Graph.Nodes[out.From].Kind == recipeir.NodeInput {
@@ -99,7 +100,7 @@ func (s *State) deriveBranches() error {
 	}
 	branches := append(forks, lone...)
 	for i := range g.Inputs {
-		s.Recipe.Inputs = append(s.Recipe.Inputs, g.Inputs[i].IR)
+		s.recipe.Inputs = append(s.recipe.Inputs, g.Inputs[i].IR)
 	}
 	if err := s.assignDestinations(branches); err != nil {
 		return err
@@ -109,18 +110,18 @@ func (s *State) deriveBranches() error {
 		if err != nil {
 			return err
 		}
-		s.Recipe.Streams = append(s.Recipe.Streams, stream)
-		s.Facts = append(s.Facts, facts)
+		s.recipe.Streams = append(s.recipe.Streams, stream)
+		s.facts = append(s.facts, facts)
 	}
 	s.markShared()
-	for i := range s.Recipe.Streams {
+	for i := range s.recipe.Streams {
 		if err := s.validateStreamOperations(i); err != nil {
 			return err
 		}
 	}
-	s.Recipe.Graph = g.Graph
-	if s.Env.Present {
-		s.Recipe.Policies.Realtime = s.Env.Realtime || inputsLive(g.Inputs)
+	s.recipe.Graph = g.Graph
+	if s.env.Present {
+		s.recipe.Policies.Realtime = s.env.Realtime || inputsLive(g.Inputs)
 	}
 	for _, root := range rules {
 		if err := s.deriveRule(root, byRoot[root], names); err != nil {
@@ -132,11 +133,11 @@ func (s *State) deriveBranches() error {
 
 // rootName names a root's lone branch: the stream kind for an input's
 // stream, the join's node name for a join.
-func (s *State) rootName(root recipeir.NodeID) string {
+func (s *recipeState) rootName(root recipeir.NodeID) string {
 	if name, ok := s.joinNames[root]; ok {
 		return name
 	}
-	switch s.Req.Graph.Nodes[root].Select.Type {
+	switch s.req.Graph.Nodes[root].Select.Type {
 	case av.MediaVideo:
 		return "video"
 	case av.MediaAudio:
@@ -149,12 +150,12 @@ func (s *State) rootName(root recipeir.NodeID) string {
 // claimJoinNames gives every join its node name: the first join of a kind
 // takes the kind (mix), later ones a suffix (mix-2), claimed depth first from
 // each root in order, so a lone join keeps its historical name.
-func (s *State) claimJoinNames(roots []recipeir.NodeID) {
+func (s *recipeState) claimJoinNames(roots []recipeir.NodeID) {
 	s.joinNames = map[recipeir.NodeID]string{}
 	used := map[string]struct{}{}
 	var claim func(id recipeir.NodeID)
 	claim = func(id recipeir.NodeID) {
-		node := s.Req.Graph.Nodes[id]
+		node := s.req.Graph.Nodes[id]
 		if node.Kind != recipeir.NodeJoin {
 			for _, parent := range node.Parents {
 				claim(parent)
@@ -177,30 +178,30 @@ func (s *State) claimJoinNames(roots []recipeir.NodeID) {
 
 // assignDestinations orders the recipe's destinations by first use, scanning
 // the branches in order, and checks each handle's name.
-func (s *State) assignDestinations(branches []derivedBranch) error {
+func (s *recipeState) assignDestinations(branches []derivedBranch) error {
 	index := map[recipeir.NodeID]int{}
 	byName := map[string]int{}
 	add := func(node recipeir.NodeID, owner string, position int) error {
 		if _, ok := index[node]; ok {
 			return nil
 		}
-		slot := s.Req.Graph.Nodes[node].Output
-		dest := s.Req.Dests[slot]
+		slot := s.req.Graph.Nodes[node].Output
+		dest := s.req.Dests[slot]
 		if dest.Invalid != "" {
 			return DestinationInvalidError("build stream", cmp.Or(owner, "stream"), dest.Invalid)
 		}
 		name := cmp.Or(dest.Label, fmt.Sprintf("%s-%d", cmp.Or(owner, "output"), position+1))
-		if first, ok := byName[name]; ok && !s.Outputs[first].sharesGroup(dest) {
+		if first, ok := byName[name]; ok && !s.outputs[first].sharesGroup(dest) {
 			return DestinationNameClashError(name)
 		}
-		index[node] = len(s.Outputs)
-		byName[name] = len(s.Outputs)
-		s.Outputs = append(s.Outputs, dest)
+		index[node] = len(s.outputs)
+		byName[name] = len(s.outputs)
+		s.outputs = append(s.outputs, dest)
 		s.outputSlots = append(s.outputSlots, slot)
-		s.OutputDestinationNames = append(s.OutputDestinationNames, name)
+		s.outputDestinationNames = append(s.outputDestinationNames, name)
 		ir := dest.IR
 		ir.Name = name
-		s.Recipe.Destinations = append(s.Recipe.Destinations, ir)
+		s.recipe.Destinations = append(s.recipe.Destinations, ir)
 		return nil
 	}
 	for _, branch := range branches {
@@ -225,11 +226,11 @@ func (s *State) assignDestinations(branches []derivedBranch) error {
 // branchStream is one branch's IR: its root, its operations from the root
 // with the packet copy a never-decoded packet stream carries, and its
 // destinations.
-func (s *State) branchStream(branch derivedBranch, all []derivedBranch) (recipeir.Stream, BranchFacts, error) {
-	g := s.Req
+func (s *recipeState) branchStream(branch derivedBranch, all []derivedBranch) (recipeir.Stream, branchFacts, error) {
+	g := s.req
 	root := g.Graph.Nodes[branch.root]
 	stream := recipeir.Stream{Name: branch.name, Named: branch.named, Root: branch.root, Input: -1}
-	facts := BranchFacts{lone: branch.lone}
+	facts := branchFacts{lone: branch.lone}
 	switch root.Kind {
 	case recipeir.NodeSelect:
 		stream.Input = root.Input
@@ -237,13 +238,13 @@ func (s *State) branchStream(branch derivedBranch, all []derivedBranch) (recipei
 		if len(g.Inputs) > 1 {
 			stream.Selector.Input = g.Inputs[root.Input].Name
 		}
-		facts.Frames = g.Inputs[root.Input].Frames
+		facts.frames = g.Inputs[root.Input].Frames
 	case recipeir.NodeJoin:
-		facts.Frames = joinOutputFrames(g, branch.root)
+		facts.frames = joinOutputFrames(g, branch.root)
 	}
 	ops := branch.leaf.nodes[1:]
 	decodes := g.Graph.HasOp(ops, plan.OpDecode)
-	if !facts.Frames && !decodes && (root.Kind == recipeir.NodeSelect || !branch.lone) {
+	if !facts.frames && !decodes && (root.Kind == recipeir.NodeSelect || !branch.lone) {
 		key := fmt.Sprintf("copy@%d", branch.root)
 		if !s.rootCopiesOnly(branch.root, all) {
 			key = fmt.Sprintf("copy@%d/%s", branch.root, branch.name)
@@ -263,17 +264,17 @@ func (s *State) branchStream(branch derivedBranch, all []derivedBranch) (recipei
 		stream.Buffer = buffer.Buffer
 	}
 	for _, dest := range branch.leaf.dests {
-		facts.Dests = append(facts.Dests, s.destIndex[dest])
-		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(s.OutputDestinationNames[s.destIndex[dest]]))
+		facts.dests = append(facts.dests, s.destIndex[dest])
+		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(s.outputDestinationNames[s.destIndex[dest]]))
 	}
 	return stream, facts, nil
 }
 
 // rootCopiesOnly reports a packet root none of whose branches decode: its
 // branches share one packet copy.
-func (s *State) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) bool {
+func (s *recipeState) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) bool {
 	for _, branch := range branches {
-		if branch.root == root && s.Req.Graph.HasOp(branch.leaf.nodes[1:], plan.OpDecode) {
+		if branch.root == root && s.req.Graph.HasOp(branch.leaf.nodes[1:], plan.OpDecode) {
 			return false
 		}
 	}
@@ -282,27 +283,27 @@ func (s *State) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) b
 
 // insertedOperation is an operation the planner adds, on a node of its own:
 // the same key, from any branch, is the same node.
-func (s *State) insertedOperation(key string, parent recipeir.NodeID, operation recipeir.Operation) recipeir.Operation {
-	id, ok := s.Inserted[key]
+func (s *recipeState) insertedOperation(key string, parent recipeir.NodeID, operation recipeir.Operation) recipeir.Operation {
+	id, ok := s.inserted[key]
 	if !ok {
-		id = recipeir.NodeID(len(s.Req.Graph.Nodes))
-		s.Req.Graph.Nodes = append(s.Req.Graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
-		s.Inserted[key] = id
+		id = recipeir.NodeID(len(s.req.Graph.Nodes))
+		s.req.Graph.Nodes = append(s.req.Graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
+		s.inserted[key] = id
 	}
 	operation.Node = id
 	return operation
 }
 
 // markShared marks each operation whose node serves several branches.
-func (s *State) markShared() {
+func (s *recipeState) markShared() {
 	count := map[recipeir.NodeID]int{}
-	for i := range s.Recipe.Streams {
-		for _, operation := range s.Recipe.Streams[i].Operations {
+	for i := range s.recipe.Streams {
+		for _, operation := range s.recipe.Streams[i].Operations {
 			count[operation.Node]++
 		}
 	}
-	for i := range s.Recipe.Streams {
-		operations := s.Recipe.Streams[i].Operations
+	for i := range s.recipe.Streams {
+		operations := s.recipe.Streams[i].Operations
 		for j := range operations {
 			operations[j].Shared = count[operations[j].Node] > 1
 		}
@@ -501,9 +502,9 @@ func StreamSyncByPTSError() error {
 // it walks them from the root tracking the stream's domain and refuses an
 // operation its stream cannot feed. It also fixes each tap's domain and
 // position, which follow where the tap is.
-func (s *State) validateStreamOperations(index int) error {
-	stream := &s.Recipe.Streams[index]
-	frames := s.Facts[index].Frames
+func (s *recipeState) validateStreamOperations(index int) error {
+	stream := &s.recipe.Streams[index]
+	frames := s.facts[index].frames
 	return validateBranchOperations(stream, frames, frames && stream.Input >= 0, s.nodeShared)
 }
 
@@ -608,10 +609,10 @@ func validateBranchOperations(stream *recipeir.Stream, frames bool, frameSource 
 	return validateStreamDestinations(*stream)
 }
 
-func (s *State) nodeShared(id recipeir.NodeID) bool {
+func (s *recipeState) nodeShared(id recipeir.NodeID) bool {
 	count := 0
-	for i := range s.Recipe.Streams {
-		for _, operation := range s.Recipe.Streams[i].Operations {
+	for i := range s.recipe.Streams {
+		for _, operation := range s.recipe.Streams[i].Operations {
 			if operation.Node == id {
 				count++
 				break
@@ -723,7 +724,7 @@ func duplicateBranchDestinationError(name string, target string, firstIndex int,
 	}
 }
 
-// destinationNameClashError refuses two destinations one name labels apart:
+// DestinationNameClashError refuses two destinations one name labels apart:
 // copies of one handle that disagree, or distinct handles that share a name.
 func DestinationNameClashError(name string) error {
 	return &builderr.Refusal{
@@ -739,4 +740,20 @@ func DestinationNameClashError(name string) error {
 		}),
 		Cause: builderr.ErrUnsupportedBuild,
 	}
+}
+
+type ComponentValidator interface {
+	ValidateComponent() error
+}
+
+func ValidateStageComponent(stage pipeline.Stage) error {
+	if stage == nil {
+		return builderr.ErrNilStage
+	}
+	if validator, ok := stage.(ComponentValidator); ok {
+		if err := validator.ValidateComponent(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

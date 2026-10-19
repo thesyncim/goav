@@ -17,16 +17,16 @@ import (
 // and — under an active .Auto(...) policy — inserts the allowed conversions
 // as real planned operations. An insertion before a node several branches
 // share is one node, the same for every branch.
-func (s *State) solveOperationShapes() error {
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+func (s *recipeState) solveOperationShapes() error {
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		initial := s.initialStreamShape(i)
 		if _, join := s.joins[stream.Root]; join && stream.Input < 0 {
-			if err := validateExplicitEncodeShapes(s.Operation, stream, initial); err != nil {
+			if err := validateExplicitEncodeShapes(s.operation, stream, initial); err != nil {
 				return err
 			}
 		}
-		solved, diagnostics, err := SolveRecipeIROperationShapes(s.Operation, s.Env, stream, initial)
+		solved, diagnostics, err := SolveRecipeIROperationShapes(s.operation, s.env, stream, initial)
 		if err != nil {
 			return err
 		}
@@ -34,7 +34,7 @@ func (s *State) solveOperationShapes() error {
 			continue
 		}
 		for j := range solved {
-			if solved[j].Node >= 0 && solved[j].Node < recipeir.NodeID(len(s.Req.Graph.Nodes)) && solved[j].Kind == s.Req.Graph.Nodes[solved[j].Node].Op.Kind {
+			if solved[j].Node >= 0 && solved[j].Node < recipeir.NodeID(len(s.req.Graph.Nodes)) && solved[j].Kind == s.req.Graph.Nodes[solved[j].Node].Op.Kind {
 				continue
 			}
 			// A conversion: its node is keyed by the operation it feeds.
@@ -45,7 +45,7 @@ func (s *State) solveOperationShapes() error {
 			key := fmt.Sprintf("convert@%d/%s/%s", next, solved[j].Component, transformKey(solved[j].Transform))
 			solved[j] = s.insertedOperation(key, next, solved[j])
 		}
-		s.Recipe.Streams[i].Operations = solved
+		s.recipe.Streams[i].Operations = solved
 		s.shapeDiagnostics = append(s.shapeDiagnostics, diagnostics...)
 	}
 	s.markShared()
@@ -58,15 +58,15 @@ func transformKey(transform recipeir.Transform) string {
 
 // initialStreamShape is the shape a branch's operations start from: the
 // selected stream of its input, or its join's output.
-func (s *State) initialStreamShape(index int) shape.Spec {
-	stream := s.Recipe.Streams[index]
+func (s *recipeState) initialStreamShape(index int) shape.Spec {
+	stream := s.recipe.Streams[index]
 	if stream.Input < 0 {
 		if p, ok := s.joins[stream.Root]; ok {
 			return p.joinedShape()
 		}
 		return shape.Spec{Domain: shape.DomainFrame}
 	}
-	input := s.Recipe.Inputs[stream.Input]
+	input := s.recipe.Inputs[stream.Input]
 	var spec shape.Spec
 	sourceShape, sourceShapeOK := recipeIRInputSourceShape(input)
 	if selected, ok := s.selectedStream(stream); ok {
@@ -105,8 +105,8 @@ func normalizeRecipeIRPlanBranchShape(spec shape.Spec, stream recipeir.Stream, i
 }
 
 // finalStreamShape is the shape a branch delivers to its destinations.
-func (s *State) finalStreamShape(index int) shape.Spec {
-	stream := s.Recipe.Streams[index]
+func (s *recipeState) finalStreamShape(index int) shape.Spec {
+	stream := s.recipe.Streams[index]
 	current := NormalizeTapShape(s.initialStreamShape(index))
 	if current.MediaKind == "" {
 		current.MediaKind = stream.Selector.Type
@@ -122,15 +122,15 @@ func (s *State) finalStreamShape(index int) shape.Spec {
 
 // validateDestinationShapes refuses frames routed to a byte or mux
 // destination.
-func (s *State) validateDestinationShapes() error {
-	for i := range s.Recipe.Streams {
-		stream := s.Recipe.Streams[i]
+func (s *recipeState) validateDestinationShapes() error {
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
 		final := s.finalStreamShape(i)
 		node := recipeIRStreamName(stream)
-		for _, dest := range s.Facts[i].Dests {
-			destination := s.Outputs[dest]
-			kind := s.Recipe.Destinations[dest].Kind
-			if err := validateRecipeDestinationShape(s.Operation, node, s.OutputDestinationNames[dest], kind, destination, final); err != nil {
+		for _, dest := range s.facts[i].dests {
+			destination := s.outputs[dest]
+			kind := s.recipe.Destinations[dest].Kind
+			if err := validateRecipeDestinationShape(s.operation, node, s.outputDestinationNames[dest], kind, destination, final); err != nil {
 				return err
 			}
 		}
@@ -227,10 +227,10 @@ func validateExplicitEncodeShapes(operation string, stream recipeir.Stream, init
 	current := NormalizeTapShape(initial)
 	for i, step := range stream.Operations {
 		if step.Kind == plan.OpEncode {
-			if expected := ExplicitEncodeSoftInputShape(step.Encode); !MediaShapeEmpty(expected) && current.Domain == shape.DomainFrame {
+			if expected := explicitEncodeSoftInputShape(step.Encode); !MediaShapeEmpty(expected) && current.Domain == shape.DomainFrame {
 				if set := (shape.Set{expected}); !set.Accepts(current) {
 					err := recipeIROperationShapeFailureError(operation, recipeIRStreamName(stream), i, step, set, current)
-					if target, fixable := ShapeConversionTargetFromSet(current, set); fixable {
+					if target, fixable := shapeConversionTargetFromSet(current, set); fixable {
 						err = appendRecipeIRAutoFixSuggestions(err, current, target, step)
 					}
 					return err
@@ -240,4 +240,18 @@ func validateExplicitEncodeShapes(operation string, stream recipeir.Stream, init
 		current = RecipeIROperationOutputShape(current, step)
 	}
 	return nil
+}
+
+// recipeIRInputSourceShape is the stream shape a provider or custom source
+// declares, normalized.
+func recipeIRInputSourceShape(input recipeir.Input) (shape.Spec, bool) {
+	switch input.Kind {
+	case recipeir.InputKindCustomSource, recipeir.InputKindProvider:
+	default:
+		return shape.Spec{}, false
+	}
+	if input.SourceShape.Domain == "" {
+		return shape.Spec{}, false
+	}
+	return recipeir.NormalizeSourceShape(input.Name, input.SourceShape), true
 }
