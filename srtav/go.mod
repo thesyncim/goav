@@ -6,7 +6,7 @@ toolchain go1.27.2
 
 require (
 	github.com/datarhei/gosrt v0.12.0
-	github.com/thesyncim/goav v0.0.0-20261019212155-cc793aae9530
+	github.com/thesyncim/goav v0.0.0-20261019214133-4f648264277d
 )
 
 require (
