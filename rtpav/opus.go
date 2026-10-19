@@ -71,3 +71,34 @@ func (d *OpusDepacketizer) HandleEvent(ctx context.Context, event *av.Event) err
 	applyCodecChangedEvent(&d.stream, av.CodecOpus, event)
 	return nil
 }
+
+// opusPacketizer sends one Opus packet per RTP packet (RFC 7587): Opus
+// frames never fragment, so a packet larger than the MTU is refused.
+type opusPacketizer struct {
+	budget int
+	clock  uint32
+}
+
+func (p *opusPacketizer) Codec() av.CodecID { return av.CodecOpus }
+
+func (p *opusPacketizer) PacketizeInto(ctx context.Context, packet *av.Packet, payload PayloadCodec, out *PacketizeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data := packet.Payload.Bytes
+	if len(data) == 0 {
+		return ErrInvalidPayload
+	}
+	if len(data) > p.budget {
+		return ErrFrameTooLarge
+	}
+	ts, err := rtpTimestamp(packet, payload, p.clock)
+	if err != nil {
+		return err
+	}
+	out.open(payload.PayloadType, ts)
+	out.write(data...)
+	out.close()
+	out.seal(false)
+	return nil
+}

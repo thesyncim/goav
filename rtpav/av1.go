@@ -295,3 +295,197 @@ func leb128Size(value int) int {
 	}
 	return size
 }
+
+const (
+	av1OBUSequenceHeader = 1
+	av1OBUPadding        = 15
+)
+
+// av1Element is one OBU as an RTP aggregation element: its header with
+// obu_has_size_field cleared (the element length carries the size) and its
+// payload.
+type av1Element struct {
+	header  [2]byte
+	hlen    int
+	payload []byte
+}
+
+func (e *av1Element) size() int { return e.hlen + len(e.payload) }
+
+// av1Span is one element, or a fragment of one, placed in a packet.
+type av1Span struct {
+	element, offset, length int
+}
+
+// av1Packetizer sends AV1 temporal units in the RTP payload format of the
+// AV1 RTP specification (v1.0): OBUs aggregate into packets behind an
+// aggregation header (Z, Y, W, N), fragmenting across packets when large;
+// temporal delimiters, tile lists, and padding are dropped, and a keyframe
+// without a sequence header gets the last one seen (in band, or the
+// stream's av1C extradata).
+type av1Packetizer struct {
+	budget    int
+	clock     uint32
+	sequence  []byte
+	seqHeader av1Element
+	elements  []av1Element
+	spans     []av1Span
+}
+
+func newAV1Packetizer(stream av.Stream, budget int) *av1Packetizer {
+	p := &av1Packetizer{budget: budget, clock: clockOr(stream.Codec.ClockRate, defaultVideoClockRate)}
+	extra := stream.Codec.ExtraData.Bytes
+	if len(extra) >= 4 && extra[0]&0x80 != 0 {
+		extra = extra[4:] // av1C: the config OBUs follow its four bytes
+	}
+	p.eachElement(extra, func(e av1Element, obuType int) bool {
+		if obuType == av1OBUSequenceHeader {
+			p.learn(e)
+		}
+		return true
+	})
+	return p
+}
+
+func (p *av1Packetizer) Codec() av.CodecID { return av.CodecAV1 }
+
+func (p *av1Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, payload PayloadCodec, out *PacketizeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ts, err := rtpTimestamp(packet, payload, p.clock)
+	if err != nil {
+		return err
+	}
+	p.elements = p.elements[:0]
+	sequence := false
+	if !p.eachElement(packet.Payload.Bytes, func(e av1Element, obuType int) bool {
+		switch obuType {
+		case av1OBUTemporalDelimiter, av1OBUTileList, av1OBUPadding:
+			return true
+		case av1OBUSequenceHeader:
+			sequence = true
+			p.learn(e)
+		}
+		p.elements = append(p.elements, e)
+		return true
+	}) || len(p.elements) == 0 {
+		return ErrInvalidPayload
+	}
+	if packet.Keyframe && !sequence && len(p.sequence) != 0 {
+		p.elements = append(p.elements, av1Element{})
+		copy(p.elements[1:], p.elements)
+		p.elements[0] = p.seqHeader
+	}
+	first := true
+	element, offset := 0, 0
+	for element < len(p.elements) {
+		p.spans = p.spans[:0]
+		used := 0 // the packet's elements, every one length-prefixed
+		for element < len(p.elements) {
+			rest := p.elements[element].size() - offset
+			space := p.budget - 1 - used
+			var n int
+			if len(p.spans) < 3 {
+				// With W set, the packet's last element carries no length.
+				n = min(rest, space)
+			} else if rest+leb128Size(rest) <= space {
+				n = rest
+			} else {
+				n = space - leb128Size(space)
+			}
+			if n <= 0 {
+				break
+			}
+			p.spans = append(p.spans, av1Span{element: element, offset: offset, length: n})
+			used += leb128Size(n) + n
+			if n < rest {
+				offset += n
+				break
+			}
+			element, offset = element+1, 0
+		}
+		p.writePacket(out, payload.PayloadType, ts, first && packet.Keyframe, element < len(p.elements) && offset > 0)
+		first = false
+	}
+	out.seal(true)
+	return nil
+}
+
+// writePacket writes the planned spans as one packet: Z when its first span
+// continues an element, Y when its last one continues in the next packet.
+func (p *av1Packetizer) writePacket(out *PacketizeResult, payloadType uint8, ts uint32, newSequence bool, continues bool) {
+	var header byte
+	if p.spans[0].offset > 0 {
+		header |= av1ZMask
+	}
+	if continues {
+		header |= av1YMask
+	}
+	count := len(p.spans)
+	if count <= 3 {
+		header |= byte(count) << 4
+	}
+	if newSequence {
+		header |= av1NMask
+	}
+	out.open(payloadType, ts)
+	out.write(header)
+	for i, span := range p.spans {
+		if count > 3 || i < count-1 {
+			out.arena = appendLEB128(out.arena, span.length)
+		}
+		e := &p.elements[span.element]
+		from, to := span.offset, span.offset+span.length
+		if from < e.hlen {
+			out.write(e.header[from:min(to, e.hlen)]...)
+		}
+		if to > e.hlen {
+			out.write(e.payload[max(from-e.hlen, 0) : to-e.hlen]...)
+		}
+	}
+	out.close()
+}
+
+// learn keeps a copy of a sequence header for later keyframes that lack one.
+func (p *av1Packetizer) learn(e av1Element) {
+	p.sequence = append(p.sequence[:0], e.payload...)
+	p.seqHeader = e
+	p.seqHeader.payload = p.sequence
+}
+
+// eachElement parses an AV1 low-overhead bitstream into elements, stopping
+// at the first malformed OBU (false) or when fn returns false.
+func (p *av1Packetizer) eachElement(data []byte, fn func(av1Element, int) bool) bool {
+	for len(data) > 0 {
+		var e av1Element
+		if data[0]&0x80 != 0 {
+			return false
+		}
+		e.hlen = 1
+		if data[0]&0x04 != 0 {
+			e.hlen = 2
+		}
+		if len(data) < e.hlen {
+			return false
+		}
+		copy(e.header[:], data[:e.hlen])
+		e.header[0] &^= 0x02
+		obuType := int(data[0]&0x78) >> 3
+		body := data[e.hlen:]
+		size := len(body)
+		if data[0]&0x02 != 0 {
+			value, read, ok := readLEB128(body)
+			if !ok || value > len(body)-read {
+				return false
+			}
+			body, size = body[read:], value
+		}
+		e.payload = body[:size]
+		data = body[size:]
+		if !fn(e, obuType) {
+			return true
+		}
+	}
+	return true
+}

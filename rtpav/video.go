@@ -308,3 +308,172 @@ func payloadClockRate(payload PayloadCodec, stream av.Stream) uint32 {
 	}
 	return defaultVideoClockRate
 }
+
+// vp8Packetizer sends a VP8 frame (RFC 7741) behind a four-byte payload
+// descriptor carrying a 15-bit picture id, split into even fragments.
+type vp8Packetizer struct {
+	budget    int
+	clock     uint32
+	pictureID uint16
+}
+
+const vp8DescriptorSize = 4
+
+func (p *vp8Packetizer) Codec() av.CodecID { return av.CodecVP8 }
+
+func (p *vp8Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, payload PayloadCodec, out *PacketizeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	frame := packet.Payload.Bytes
+	if len(frame) == 0 {
+		return ErrInvalidPayload
+	}
+	ts, err := rtpTimestamp(packet, payload, p.clock)
+	if err != nil {
+		return err
+	}
+	chunk := evenChunk(len(frame), p.budget-vp8DescriptorSize)
+	for offset := 0; offset < len(frame); offset += chunk {
+		first := byte(0x80) // X: the extension byte follows
+		if offset == 0 {
+			first |= 0x10 // S: start of partition 0
+		}
+		out.open(payload.PayloadType, ts)
+		out.write(first, 0x80, 0x80|byte(p.pictureID>>8), byte(p.pictureID))
+		out.write(frame[offset:min(offset+chunk, len(frame))]...)
+		out.close()
+	}
+	out.seal(true)
+	p.pictureID = (p.pictureID + 1) & 0x7fff
+	return nil
+}
+
+// vp9Packetizer sends a VP9 frame in non-flexible mode (RFC 9628): a 15-bit
+// picture id on every packet, P on inter frames, and on a keyframe's first
+// packet the scalability structure with its resolution.
+type vp9Packetizer struct {
+	budget    int
+	clock     uint32
+	pictureID uint16
+	// width and height are the stream's, for keyframes whose header does not
+	// parse.
+	width, height int
+}
+
+const (
+	vp9DescriptorSize = 3
+	vp9SSSize         = 8
+)
+
+func (p *vp9Packetizer) Codec() av.CodecID { return av.CodecVP9 }
+
+func (p *vp9Packetizer) PacketizeInto(ctx context.Context, packet *av.Packet, payload PayloadCodec, out *PacketizeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	frame := packet.Payload.Bytes
+	if len(frame) == 0 {
+		return ErrInvalidPayload
+	}
+	ts, err := rtpTimestamp(packet, payload, p.clock)
+	if err != nil {
+		return err
+	}
+	keyframe, width, height, ok := vp9FrameInfo(frame)
+	if !ok {
+		keyframe, width, height = packet.Keyframe, p.width, p.height
+	}
+	for offset := 0; offset < len(frame); {
+		room := p.budget - vp9DescriptorSize
+		ss := keyframe && offset == 0 && width > 0 && height > 0
+		if ss {
+			room -= vp9SSSize
+		}
+		end := min(offset+evenChunk(len(frame)-offset, room), len(frame))
+		first := byte(0x80 | 0x01) // I: picture id; Z: no upper spatial layer
+		if !keyframe {
+			first |= 0x40 // P: inter-picture predicted
+		}
+		if offset == 0 {
+			first |= 0x08 // B: start of frame
+		}
+		if end == len(frame) {
+			first |= 0x04 // E: end of frame
+		}
+		if ss {
+			first |= 0x02 // V: scalability structure follows
+		}
+		out.open(payload.PayloadType, ts)
+		out.write(first, 0x80|byte(p.pictureID>>8), byte(p.pictureID))
+		if ss {
+			// One spatial layer with its resolution (N_S=0, Y=1, G=1) and a
+			// one-picture group: TID 0, switching up point, one reference
+			// one picture back.
+			out.write(0x18, byte(width>>8), byte(width), byte(height>>8), byte(height), 0x01, 0x14, 0x01)
+		}
+		out.write(frame[offset:end]...)
+		out.close()
+		offset = end
+	}
+	out.seal(true)
+	p.pictureID = (p.pictureID + 1) & 0x7fff
+	return nil
+}
+
+// vp9FrameInfo reads the uncompressed header of the frame's first frame: a
+// keyframe, and a keyframe's resolution. ok is false when it does not parse.
+func vp9FrameInfo(frame []byte) (keyframe bool, width int, height int, ok bool) {
+	bits := bitReader{data: frame}
+	if bits.read(2) != 2 { // frame_marker
+		return false, 0, 0, false
+	}
+	profile := bits.read(1) | bits.read(1)<<1
+	if profile == 3 {
+		bits.read(1)
+	}
+	if bits.read(1) == 1 { // show_existing_frame
+		return false, 0, 0, !bits.short
+	}
+	if bits.read(1) == 1 { // frame_type: inter
+		return false, 0, 0, !bits.short
+	}
+	bits.read(2) // show_frame, error_resilient_mode
+	if bits.read(24) != 0x498342 {
+		return false, 0, 0, false
+	}
+	if profile >= 2 {
+		bits.read(1) // ten_or_twelve_bit
+	}
+	if bits.read(3) != 7 { // color_space other than sRGB
+		bits.read(1) // color_range
+		if profile == 1 || profile == 3 {
+			bits.read(3) // subsampling_x, subsampling_y, reserved_zero
+		}
+	} else if profile == 1 || profile == 3 {
+		bits.read(1) // reserved_zero
+	}
+	width = int(bits.read(16)) + 1
+	height = int(bits.read(16)) + 1
+	return true, width, height, !bits.short
+}
+
+// bitReader reads big-endian bit fields; short reports reading past the end.
+type bitReader struct {
+	data  []byte
+	pos   int
+	short bool
+}
+
+func (b *bitReader) read(n int) uint32 {
+	var v uint32
+	for range n {
+		if b.pos >= len(b.data)*8 {
+			b.short = true
+			return 0
+		}
+		v = v<<1 | uint32(b.data[b.pos/8]>>(7-b.pos%8)&1)
+		b.pos++
+	}
+	return v
+}
