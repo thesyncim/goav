@@ -150,7 +150,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   should share one mux/sink.
 - **URL schemes**: `goav.URIInput`/`URI`/`Live`/`Reconnect` (`av.EventReconnect`); `provider.Scheme`/`InputScheme`/`DestinationScheme`/`Input`/`Output`/`ByteSource`;
   `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
-  `webrtcav.WHEP`, `WHIP` (`Option`, `WithToken`, `WithHTTPClient`, `WithSession`, `StatusError`, `ErrWHEPDisconnected`, `ErrWHIPDisconnected`, `ErrWHIPCodecRefused`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
+  `webrtcav.WHEP`, `WHIP` (`Option`, `WithToken`, `WithHTTPClient`, `WithSession`, `StatusError`, `ErrWHEPDisconnected`, `ErrWHIPDisconnected`, `ErrWHIPCodecRefused`);
+  `rtmpav.RTMP`, `Listen` (`Server`, `Option`, `WithTLSConfig`, `StatusError`, `ErrCodecRefused`, `ErrStreamEnded`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`

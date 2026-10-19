@@ -33,9 +33,10 @@ is `adapterproof/adapter_compat_test.go`.
   caller-owned result structs and preallocated output buffers.
 - Do not register encode/decode factories until the path is real. Optional
   modules stay behind build tags or compile-safe descriptor packages.
-- H.264 packets travel as Annex B inside goav: demuxers of length-prefixed
-  containers (MP4, Matroska) convert on read, their muxers convert back, and
-  the Annex B muxer writes the avcC parameter sets ahead of keyframes.
+- H.264 and HEVC packets travel as Annex B inside goav: demuxers of
+  length-prefixed containers (MP4, Matroska, FLV) convert on read, their
+  muxers convert back, and the Annex B muxer writes the avcC parameter sets
+  ahead of keyframes.
 - A packet's PTS is the time of its first decoded sample, so codec delay shows
   before zero: an Opus stream's first packet sits one pre-skip early. Opus
   ExtraData is always an RFC 7845 OpusHead (MP4 `dOps` converts on read);
@@ -125,11 +126,13 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 
 | Format | Direction | Media | Codecs | Streams | Notes |
 | --- | --- | --- | --- | --- | --- |
+| `flv` | demux | audio, video | aac, av1, flac, h264, hevc, opus, vp8, vp9 | 1+ | FLV and Enhanced RTMP v2 (E-FLV): FourCC headers, ModEx, multitrack; streams from onMetaData and a bounded read-ahead, later tracks and sequence changes as events |
 | `ivf` | demux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | demux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
 | `mp4` | demux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries in decode-time order, honors edit lists (B-frame delay, AAC priming, start delays), with keyframe seek |
 | `webm` | demux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
 | `annexb` | mux | video | h264 | 1 | Annex B destinations support one H264 video stream |
+| `flv` | mux | audio, video | aac, av1, flac, h264, hevc, opus, vp8, vp9 | 1+ | H.264 and AAC with legacy headers, the rest and later tracks enhanced; one tag per write, no allocation; patches onMetaData on a seekable output |
 | `ivf` | mux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | mux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
 | `mp4` | mux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 mux writes a progressive file to a seekable output and fragmented MP4 (a moof per video keyframe) to a pipe or realtime output, with edit lists for start delays, B-frame delay, and Opus pre-skip |
@@ -185,7 +188,7 @@ with `runconfig.Scheme` (last wins, never in `init()`): a `provider.InputScheme`
 URL without I/O to a `Source` or a `ByteSource`, a `provider.DestinationScheme` to a
 `Destination` (bytes) or a `pipeline.Sink` (media: WHIP, RTP out). Refusals name the
 registered schemes and the module, reports redact URLs, and `goav.Live`/`Reconnect` serve
-live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
+live inputs. SRT and HLS inputs are future schemes on the same seam.
 
 | Scheme | Provider | Notes |
 | --- | --- | --- |
@@ -193,9 +196,14 @@ live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 | `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
 | `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WithToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
 | `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.WithToken(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
+| `rtmp`, `rtmps` | `rtmpav.RTMP(rtmpav.WithTLSConfig(c))` | live in (play, FLV the runtime demuxes) and media out (publish): H.264, HEVC, AV1, VP9, AAC, Opus, FLAC packets, frames encoded to H.264 and AAC (`EncodeShapes`); a server stating its Enhanced RTMP codecs refuses others with `ErrCodecRefused` |
 
 WHEP and WHIP share `WithToken`, `WithHTTPClient`, and `WithSession`; a refused request is a
 `*webrtcav.StatusError`, which names no URL, and only 307/308 redirects are followed.
+RTMP is in the standard library (signed and simple handshakes, every chunk header form,
+E-RTMP connect negotiation) and interoperates with FFmpeg both ways. `rtmpav.Listen(addr)` is
+an ingest whose `Input("app/key")` is that stream's live input; its key is the credential, and
+reports redact an RTMP URL's key and query.
 
 ## RTP and WebRTC egress
 
@@ -208,7 +216,7 @@ NACK answered from a bounded history, PLI/FIR as `control.Keyframe` and REMB as
 stream. `webrtcav.LocalTrack(track, sender)` sends one stream on a Pion track, reattaching onto
 the same RTP sequence, and WHIP builds on the same sender (TWCC through Pion's estimator).
 
-A media sink declares what it takes (`InputShapes`), that it is live (`Live`), learns its
+A media sink declares what it takes (`InputShapes`) and encodes frames to (`EncodeShapes`), that it is live (`Live`), learns its
 streams with their extradata (`OpenStreams`), and gets the task's control path (`UseControl`),
 all optional (`provider.Output`). Frames reaching one are encoded to its first codec the runtime
 can encode, as Describe and Explain show; other codecs are refused with the fix (`.Decode()`,

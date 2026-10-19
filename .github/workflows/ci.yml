@@ -6,6 +6,7 @@ on:
     tags:
       - 'v*'
       - 'rtpav/v*'
+      - 'rtmpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
       - 'player/v*'
@@ -114,7 +115,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player libcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in rtpav rtmpav webrtcav playoutav player libcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -172,9 +173,12 @@ jobs:
           CGO_ENABLED=0 go test ./container/webm -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
           CGO_ENABLED=0 go test ./container/mp4 -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
           CGO_ENABLED=0 go test ./container/mp4 -run '^$' -fuzz=FuzzMuxRoundTrip -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/flv -run '^$' -fuzz=FuzzDemux -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/flv/amf0 -run '^$' -fuzz=FuzzDecode -fuzztime=10s
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzHandler -fuzztime=10s
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzConnection -fuzztime=10s
           (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzDepacketizers -fuzztime=10s)
+          (cd rtmpav && CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzChunkReader -fuzztime=10s)
           CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzRecipe -fuzztime=10s
 
       - name: Vet
@@ -228,6 +232,17 @@ jobs:
       - name: rtpav module
         if: matrix.full
         working-directory: rtpav
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
+      - name: rtmpav module
+        if: matrix.full
+        working-directory: rtmpav
         run: |
           CGO_ENABLED=0 go build ./...
           CGO_ENABLED=0 go test -count=1 ./...
@@ -345,7 +360,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|rtmpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
@@ -401,7 +416,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player libcodec goavtest/expect; do
+          for mod in rtpav rtmpav webrtcav playoutav player libcodec goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x

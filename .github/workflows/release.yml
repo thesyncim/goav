@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*'
       - 'rtpav/v*'
+      - 'rtmpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
       - 'player/v*'
@@ -52,7 +53,7 @@ jobs:
             draft="false"
           fi
           case "$tag" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|rtmpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: $tag" >&2
@@ -65,6 +66,7 @@ jobs:
           git checkout --detach "$tag"
           case "$tag" in
             rtpav/*) module_dir="rtpav" ;;
+            rtmpav/*) module_dir="rtmpav" ;;
             webrtcav/*) module_dir="webrtcav" ;;
             playoutav/*) module_dir="playoutav" ;;
             player/*) module_dir="player" ;;

@@ -34,7 +34,7 @@ repository page should say meanwhile.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec; do
+   for mod in goavtest/expect rtpav rtmpav webrtcav playoutav player libcodec; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -68,7 +68,7 @@ say why.
 
 ## Nested-module root pin
 
-`rtpav`, `webrtcav`, `playoutav`, and `goavtest/expect` require the root at a
+`rtpav`, `rtmpav`, `webrtcav`, `playoutav`, and `goavtest/expect` require the root at a
 pseudo-version of a commit on `main` (and `webrtcav` requires `rtpav` the same
 way), with a `replace` for local development. Consumers ignore `replace`, so
 the pin must resolve. The CI job `consumer-install` fetches every nested module
@@ -105,7 +105,7 @@ git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
 git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
-Tag order follows dependencies: root first, then `rtpav`, `webrtcav`,
+Tag order follows dependencies: root first, then `rtpav`, `rtmpav`, `webrtcav`,
 `playoutav`, `player`, and `libcodec`, then `cmd/goav` (it pins `player`).
 
 Nested-module tags need the standard multi-module dance, because consumers
