@@ -82,7 +82,7 @@ func (g *recipeGraph) anchorSource(anchor recipeir.NodeID, taps map[string]shape
 	case root.tap != "":
 		return branchSourceBinding{tap: root.tap, tapDomain: taps[root.tap]}
 	case root.track != nil:
-		return root.input.Track(*root.track).branchSource()
+		return root.input.track(*root.track).branchSource()
 	default:
 		route := *root.route
 		policy := route.Policy

@@ -46,9 +46,12 @@ func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 	return runtime
 }
 
-// Default is the bundled runtime with default options, built once and shared:
-// a runtime holds no per-run state, so every Run, Build, Describe, and Explain
-// here uses it. Build a runtime with New for other options.
+// Default is the process-wide bundled runtime: built with default options on
+// first use, then shared by every caller in the process for the life of the
+// process, and used by this package's Run, Build, Describe, and Explain. It is
+// safe to share because a runtime holds no per-run state. An application that wants its own clock,
+// buffer policy, or adapters builds a runtime with New instead; nothing
+// changes Default.
 func Default() *goav.Runtime {
 	return defaultRuntime()
 }

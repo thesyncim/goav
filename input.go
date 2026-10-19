@@ -94,10 +94,10 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	return spec
 }
 
-// InputOption configures an input value (FileInput, Source, Input, or
-// InputSpec.With). The direction-agnostic media options (Name, MIME,
-// Metadata) satisfy it. It is sealed — only goav option constructors implement
-// it.
+// InputOption configures an input value ([FileInput], [Source], [Input], or
+// [InputSpec.With]). Build one with [Name], [MIME], or [Metadata], the
+// direction-agnostic [MediaOption] constructors. It is sealed: only goav option
+// constructors implement it.
 type InputOption interface {
 	applyInput(*InputSpec)
 }

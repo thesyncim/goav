@@ -47,7 +47,7 @@ in.Audio() / .Video() / .Stream()         a goav.Stream value (StreamID/StreamIn
   reuse a Stream value, .As("hd")         fanout when work diverges; shared work runs once
   .To(Write|URI|Writer|Custom|Sink)       an Output; reuse one Destination to share a mux/sink
 in.To(dst)                                copy every stream of the input
-rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (default bundle)
+rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (bundle.Default: one process-wide runtime)
 Task: Run, Close
 goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime
 errors: *goav.BuildError matched with errors.As; branch on Family first; Detail[T](key) for typed facts; DetailLines/FixLines for rendered diagnostics

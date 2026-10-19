@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: `goav.StreamOption` is a sealed interface like `InputOption` and
+  `DestinationOption`, not a `func` over an unexported config; godoc now links
+  each option type to its constructors. Migration: none for callers of
+  `StreamID`/`StreamIndex`; code that called a `StreamOption` as a function
+  had no supported use.
+- Break: `InputSpec.Track` is gone; it returned an unexported anchor type and
+  duplicated `task.Track(input, stream)`. Migration: write
+  `task.Track(input, stream)`.
+- `bundle.Default` now documents that it is one process-wide runtime, built
+  on first use and shared for the life of the process.
+
 - Break: `Runtime.ExpertGraph()` is gone; the expert package reaches the
   runtime through an internal hook, so `Runtime`'s method set is `Run`,
   `Build`, `Describe`, `Explain`, and `Probe`. Migration: call
