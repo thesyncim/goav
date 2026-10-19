@@ -239,3 +239,16 @@ func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
 	}
 	return resolvedProviderSource(wrapped, name, detail)
 }
+
+// reconnecting wraps an opened live input in its reconnect policy, which
+// reopens it through the same open path.
+func (s InputSpec) reconnecting(build graphSourceBuild, reopen func(context.Context) (graphSourceBuild, error), clock av.Clock, report func(av.Event)) graphSourceBuild {
+	if s.reconnect == nil {
+		return build
+	}
+	build.source = newReconnectingSource(build.source, compile.DescribedNodeDetail(build.source), func(ctx context.Context) (pipeline.Source, error) {
+		next, err := reopen(ctx)
+		return next.source, err
+	}, *s.reconnect, clock, report)
+	return build
+}

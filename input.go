@@ -34,11 +34,13 @@ type InputSpec struct {
 	// bytes is a provider of container bytes, demuxed like a file input.
 	bytes provider.ByteSource
 	// uri is a URIInput, which the runtime binds to provider or bytes.
-	uri      *uriRef
-	source   *sourceInputSpec
-	codec    codec.Spec
-	name     string
-	realtime bool
+	uri *uriRef
+	// reconnect reopens a live input that fails (Reconnect).
+	reconnect *reconnectPolicy
+	source    *sourceInputSpec
+	codec     codec.Spec
+	name      string
+	realtime  bool
 	// wraps decorate the opened pipeline source (WrapSource), applied in
 	// declaration order after the input opens through the one source seam.
 	wraps []func(pipeline.Source) pipeline.Source
@@ -194,6 +196,21 @@ func (s InputSpec) validate() error {
 	}
 	if err := s.validateCustomSource(); err != nil {
 		return err
+	}
+	if s.reconnect != nil && (s.provider == nil && s.bytes == nil || !s.realtime && !s.input.Realtime) {
+		return &BuildError{
+			Phase:     phaseBuild,
+			Family:    errcode.FamilyForCode(inputInvalidCode),
+			Code:      inputInvalidCode,
+			Operation: "build input",
+			Node:      s.inputName("input"),
+			Reason:    errReconnectNotLive.Error() + ", and this one is not live",
+			fixes: buildErrorFixes([]string{
+				"drop goav.Reconnect: a file or an application-pushed source has no connection to restore",
+				"reconnect a live input: a live URL (whep://...) or a provider whose SourceShape declares Realtime",
+			}),
+			cause: errReconnectNotLive,
+		}
 	}
 	return s.validatePlainInput()
 }

@@ -228,32 +228,52 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 			realtime: shapeSpec.Realtime,
 		}, nil
 	case s.provider != nil:
-		return openProviderSource(ctx, s.provider, name, s.providerDetail(), service.taskClock())
+		open := func(ctx context.Context) (graphSourceBuild, error) {
+			return openProviderSource(ctx, s.provider, name, s.providerDetail(), service.taskClock())
+		}
+		build, err := open(ctx)
+		if err != nil {
+			return graphSourceBuild{}, err
+		}
+		return s.reconnecting(build, open, service.taskClock(), service.runtime.qosReportFunc()), nil
 	default:
-		input := s.formatInput()
 		qualifier := ""
 		if qualify {
 			qualifier = "@" + name
 		}
-		var reader io.ReadCloser
-		if s.bytes != nil {
-			var err error
-			if input, reader, err = openByteInput(ctx, s.bytes, input); err != nil {
-				return graphSourceBuild{}, err
-			}
+		open := func(ctx context.Context) (graphSourceBuild, error) {
+			return s.openDemuxed(ctx, service, qualifier)
 		}
-		build, err := service.openDemuxSource(ctx, input, qualifier, s.pinnedFormat(), reader)
+		build, err := open(ctx)
 		if err != nil {
 			return graphSourceBuild{}, err
 		}
-		return graphSourceBuild{
-			source:    build.source,
-			streams:   build.streams,
-			qualifier: qualifier,
-			domain:    shape.DomainPacket,
-			realtime:  input.Realtime,
-		}, nil
+		return s.reconnecting(build, open, service.taskClock(), service.runtime.qosReportFunc()), nil
 	}
+}
+
+// openDemuxed opens a file-like input or a byte provider's bytes and demuxes
+// them.
+func (s InputSpec) openDemuxed(ctx context.Context, service *builder, qualifier string) (graphSourceBuild, error) {
+	input := s.formatInput()
+	var reader io.ReadCloser
+	if s.bytes != nil {
+		var err error
+		if input, reader, err = openByteInput(ctx, s.bytes, input); err != nil {
+			return graphSourceBuild{}, err
+		}
+	}
+	build, err := service.openDemuxSource(ctx, input, qualifier, s.pinnedFormat(), reader)
+	if err != nil {
+		return graphSourceBuild{}, err
+	}
+	return graphSourceBuild{
+		source:    build.source,
+		streams:   build.streams,
+		qualifier: qualifier,
+		domain:    shape.DomainPacket,
+		realtime:  input.Realtime,
+	}, nil
 }
 
 // graphSourceNodeName returns the base planner node name for this input. Callers

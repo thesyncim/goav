@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -182,10 +183,12 @@ func TestURIRedactsCredentials(t *testing.T) {
 // testScheme is an in-memory scheme: inputs read data as container bytes,
 // destinations refuse.
 type testScheme struct {
-	data   []byte
-	live   bool
-	seen   string
-	opened int
+	data []byte
+	live bool
+	// breakFirst makes the first reader fail at its end instead of ending.
+	breakFirst bool
+	seen       string
+	opened     int
 }
 
 func (s *testScheme) Input(u *url.URL) (provider.Input, error) {
@@ -210,5 +213,9 @@ func (b testBytes) SourceShape() shape.Spec { return shape.Spec{Realtime: b.sche
 
 func (b testBytes) OpenBytes(context.Context) (io.ReadCloser, error) {
 	b.scheme.opened++
-	return io.NopCloser(bytes.NewReader(b.scheme.data)), nil
+	var reader io.Reader = bytes.NewReader(b.scheme.data)
+	if b.scheme.breakFirst && b.scheme.opened == 1 {
+		reader = io.MultiReader(reader, iotest.ErrReader(io.ErrUnexpectedEOF))
+	}
+	return io.NopCloser(reader), nil
 }

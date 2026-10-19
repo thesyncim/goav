@@ -553,6 +553,12 @@ const (
 	// the event from firing. A sink removed before its first media message
 	// stops gating readiness.
 	EventTaskReady EventType = "task_ready"
+	// EventReconnect reports a live input reconnecting under goav.Reconnect:
+	// Cause is why it dropped, Reason names the attempt and the wait, and
+	// Metadata carries "attempt" and "delay" (Go durations), or "state" set
+	// to "reconnected" once the input is back, followed by an
+	// EventDiscontinuity on the data path.
+	EventReconnect EventType = "reconnect"
 )
 
 // Event is one out-of-band signal: its type, the stream it concerns, and the
