@@ -9,6 +9,7 @@ on:
       - 'webrtcav/v*'
       - 'playoutav/v*'
       - 'player/v*'
+      - 'native/v*'
       - 'cmd/goav/v*'
   pull_request:
 
@@ -55,6 +56,15 @@ jobs:
           # release, and govulncheck then fails on already-fixed stdlib vulns.
           check-latest: true
           cache: true
+
+      # The native module's OpenH264 tests run against Cisco's own binary,
+      # pinned by hash (the build Cisco's patent license covers).
+      - name: Install Cisco OpenH264
+        if: matrix.full
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/openh264.so.bz2" http://ciscobinary.openh264.org/libopenh264-2.6.0-linux64.8.so.bz2
+          echo "27ab53323c110b76214c1c72222f459d17febbcd1e252136cadc292b0308d75b  $RUNNER_TEMP/openh264.so.bz2" | sha256sum -c -
+          bunzip2 -c "$RUNNER_TEMP/openh264.so.bz2" | sudo tee /usr/local/lib/libopenh264.so.8 >/dev/null
 
       - name: Changelog hygiene
         if: matrix.full && github.event_name == 'pull_request'
@@ -104,7 +114,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in rtpav webrtcav playoutav player native; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -259,6 +269,23 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
+      # Native codecs bind libraries through purego, so the module stays pure
+      # Go; GOAV_NATIVE_REQUIRE fails, instead of skipping, a backend that
+      # does not load.
+      - name: native module
+        if: matrix.full
+        working-directory: native
+        env:
+          GOAV_NATIVE_REQUIRE: openh264
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go test -run '^$' -bench . -benchtime=1x ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       # cmd/goav carries no replace directive, so `go install ...@version`
       # works; a temporary workspace builds it against this checkout instead
       # of its pinned root and player.
@@ -288,6 +315,7 @@ jobs:
             echo "::group::$target"
             (cd player && CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build ./...) || exit 1
             (cd cmd/goav && CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -o /dev/null .) || exit 1
+            (cd native && GOWORK=off CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go vet ./...) || exit 1
             echo "::endgroup::"
           done
 
@@ -305,7 +333,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|native/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
@@ -314,6 +342,32 @@ jobs:
           esac
           git verify-tag "${GITHUB_REF_NAME}"
           test -s CHANGELOG.md
+
+  # VideoToolbox and AudioToolbox exist only on macOS, so their conformance
+  # suites run here, next to Homebrew's OpenH264. A runner without a hardware
+  # video encoder registers VideoToolbox unavailable and its tests say so.
+  native-macos:
+    runs-on: macos-latest
+    env:
+      GOEXPERIMENT: simd
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+          cache: true
+      - name: Install OpenH264
+        run: brew install openh264
+      - name: native module
+        working-directory: native
+        env:
+          GOAV_NATIVE_REQUIRE: audiotoolbox,openh264
+        run: |
+          CGO_ENABLED=0 go test -count=1 -v -run 'TestVideoToolbox|TestAudioToolbox' . | grep -E '^\s*--- (SKIP|FAIL)|cannot run|unavailable' || true
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go test -run '^$' -bench . -benchtime=1x ./...
 
   # A nested module must be installable by a consumer with no checkout: no
   # workspace, no replace. The importer lives outside the repo and fetches the
@@ -334,7 +388,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player goavtest/expect; do
+          for mod in rtpav webrtcav playoutav player native goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x

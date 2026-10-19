@@ -140,7 +140,44 @@ setting truly belongs to the native library; a non-nil error fails the open.
 Register with `runconfig.WithDecoder(desc, factory)`, `runconfig.WithEncoder(desc,
 factory)`, `runconfig.WithCodecDescriptor(desc)` (capability-only), or a bundle
 via `runconfig.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
-should export `Register(*codec.SimpleRegistry)`.
+should export `Register(*codec.SimpleRegistry)`. A registry holds many backends
+per codec, keyed by `Descriptor.Backend.Name`: set `Backend.Kind` (hardware,
+native, go) so selection ranks yours, and declare `Descriptor.Knobs` so planning
+checks its settings and Explain lists them.
+
+## Native codec (`native/kit`)
+
+A codec in a C library or OS framework is a declaration plus a session; the kit
+binds the symbols (no cgo) and owns frame and packet conversion (I420/NV12,
+Annex B/AVCC, parameter sets), timestamps, pooled payloads, knobs, live
+controls, and Close:
+
+```go
+type symbols struct {
+	open   func(w, h, bitrate int32) uintptr `sym:"foo_open"`
+	encode func(foo uintptr, planes *[3]unsafe.Pointer, strides *[3]int32, key int32, out *byte, n int32, isKey *int32) int32 `sym:"foo_encode"`
+	close  func(foo uintptr) `sym:"foo_close"`
+}
+
+sym := &symbols{}
+option := kit.Register(kit.Codec{
+	ID: av.CodecH264, Media: av.MediaVideo, Backend: "foo", Kind: codec.KindNative,
+	Bitstream: kit.AnnexB,
+	Knobs:     []codec.Knob{codec.KnobBitrate},
+	Libraries: []kit.Library{{Name: "libfoo", Path: path, Fix: "install libfoo", Symbols: sym}},
+	NewVideoEncoder: newSession, // returns a kit.VideoEncoder calling sym
+})
+```
+
+The session implements `Encode(*kit.Picture, emit)`, `Flush(emit)`, and
+`Close()`; `native/kit/example_test.go` is this backend complete in 80 lines.
+`Version` refuses an ABI the declaration does not mirror, `kit.Params[T]`
+exposes a C parameter struct as raw parameters, `Picture.Owner` lends decoded
+memory without a copy, and `Reorder` puts decode-order output in presentation
+order. `codectest.Run(t, option)` is the whole conformance suite: round trips
+against the pure-Go codecs (PSNR, SNR), reference bitstreams, timestamps,
+keyframes, MP4 mux, knobs, live bitrate, Close and leaks, and a matrix across
+every other backend of the codec.
 
 ## Container (`format` package)
 
