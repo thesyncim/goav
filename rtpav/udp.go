@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -59,7 +60,7 @@ func (w *udpWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
 		return err
 	}
 	_, err = w.rtp.Write(w.buf[:n])
-	return err
+	return unrefused(err)
 }
 
 func (w *udpWriter) WriteRTCP(_ context.Context, packets []rtcp.Packet) error {
@@ -68,6 +69,16 @@ func (w *udpWriter) WriteRTCP(_ context.Context, packets []rtcp.Packet) error {
 		return err
 	}
 	_, err = w.rtcp.Write(data)
+	return unrefused(err)
+}
+
+// unrefused drops the refusal a connected UDP socket reports after an ICMP
+// port unreachable: a receiver that is not listening yet, or restarts, is
+// not a failed send.
+func unrefused(err error) error {
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return nil
+	}
 	return err
 }
 

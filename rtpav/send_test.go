@@ -267,3 +267,28 @@ func BenchmarkSend(b *testing.B) {
 		}
 	}
 }
+
+// TestSendToAnAbsentReceiver pins that RTP to a port nobody listens on yet
+// keeps sending: the ICMP refusals a connected socket reports are not send
+// failures.
+func TestSendToAnAbsentReceiver(t *testing.T) {
+	gone := listenUDPPair(t)
+	address := gone.address()
+	gone.rtp.Close()
+	gone.rtcp.Close()
+	writer, err := DialUDP(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := Send(writer, WithReportInterval(time.Millisecond))
+	defer sink.Close()
+	if err := sink.(interface {
+		OpenStreams(context.Context, []av.Stream) error
+	}).OpenStreams(context.Background(), []av.Stream{videoTestStream(av.CodecVP8)}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 20 {
+		sendPacket(t, sink, av.StreamID(av.CodecVP8), i, []byte{0x9c, 0x01, 0x02})
+		time.Sleep(time.Millisecond)
+	}
+}
