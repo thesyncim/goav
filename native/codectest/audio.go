@@ -134,7 +134,7 @@ func audioMux(t *testing.T, b backend, decoders []backend) {
 	for i := range out.packets {
 		packets[i] = &out.packets[i]
 	}
-	file, err := muxMP4(out.stream, packets)
+	file, err := muxMP4(out.stream, packets, false)
 	if err != nil {
 		t.Fatalf("%s: mux: %v", b.name(), err)
 	}

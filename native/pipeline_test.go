@@ -27,13 +27,25 @@ import (
 // hardware on a Mac that has it, else OpenH264.
 func nativeH264(t *testing.T) (string, runconfig.Option) {
 	t.Helper()
-	if kit.Probe(native.VideoToolbox()) == nil {
-		return "videotoolbox", native.VideoToolbox()
+	both := runconfig.Option(func(config *runconfig.Config) error {
+		for _, option := range []runconfig.Option{native.OpenH264(), native.VideoToolbox()} {
+			if err := option(config); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	config, err := runconfig.NewConfig(both)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := kit.Probe(native.OpenH264()); err != nil {
+	// Ask selection itself, as the runtime will: VideoToolbox can serve H.264
+	// on a Mac whose HEVC encoder is missing.
+	choice, err := config.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
+	if err != nil {
 		t.Skipf("no native H.264 encoder here: %v", err)
 	}
-	return "openh264", native.OpenH264()
+	return choice.Descriptor.Backend.Name, both
 }
 
 func requireAudioToolbox(t *testing.T) {
@@ -100,7 +112,7 @@ func TestLaunchProgramMuxesNativeH264AndAACIntoMP4(t *testing.T) {
 // pure-Go codecs, Describe names it, and Explain gives the reason.
 func TestRecipeChoosesTheNativeBackendAndExplainSaysWhy(t *testing.T) {
 	backend, h264 := nativeH264(t)
-	rt := bundle.MustNew(native.OpenH264(), native.VideoToolbox(), h264)
+	rt := bundle.MustNew(h264)
 	out := goavtest.Video(320, 240, 10).Video().Encode(codec.H264(codec.Bitrate(1_000_000))).To(goavtest.NewCollector().Sink())
 	spec, err := rt.Describe(out)
 	if err != nil {

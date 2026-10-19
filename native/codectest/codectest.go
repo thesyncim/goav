@@ -94,7 +94,7 @@ func discover(options []runconfig.Option) ([]backend, error) {
 		for _, mode := range desc.Modes {
 			choice, err := config.Codecs.Select(codec.Need{ID: desc.ID, Mode: mode, Backend: desc.Backend.Name})
 			key := string(desc.ID) + "/" + desc.Backend.Name + "/" + string(mode)
-			if err != nil || seen[key] {
+			if err != nil || seen[key] || !runnable(choice.Descriptor) {
 				continue
 			}
 			seen[key] = true
@@ -209,11 +209,22 @@ func notInstalled(options []runconfig.Option) []codec.Descriptor {
 	seen := map[string]bool{}
 	for _, desc := range config.Codecs.Descriptors() {
 		key := string(desc.ID) + "/" + desc.Backend.Name
-		if desc.Backend.Status == "active" || desc.Backend.Status == "" || seen[key] {
+		if runnable(desc) || seen[key] {
 			continue
 		}
 		seen[key] = true
 		out = append(out, desc)
 	}
 	return out
+}
+
+// runnable reports a backend whose status says it can run here; one that
+// registered with a factory but cannot (goaac off arm64, unsupported-target)
+// is skipped with its status like one registered descriptor-only.
+func runnable(desc codec.Descriptor) bool {
+	switch desc.Backend.Status {
+	case "", "active", "active-build-tagged":
+		return true
+	}
+	return false
 }

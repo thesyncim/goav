@@ -138,7 +138,9 @@ func (o *pixelOwner) Release() {
 	}
 }
 
-func (o *pixelOwner) Refs() int { return int(o.refs.Load()) }
+// Refs reports at least two: the buffer is locked read-only, so a holder that
+// wants to write a plane copies it first (av.Buffer.MakeWritable).
+func (o *pixelOwner) Refs() int { return max(int(o.refs.Load()), 2) }
 
 // Output callbacks reach their session through a handle: one callback per
 // signature serves every session.

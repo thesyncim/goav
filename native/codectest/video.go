@@ -207,20 +207,30 @@ func videoMux(t *testing.T, b backend, decoders []backend) {
 	for i := range out.packets {
 		packets[i] = &out.packets[i]
 	}
-	file, err := muxMP4(out.stream, packets)
-	if err != nil {
-		t.Fatalf("%s: mux: %v", b.name(), err)
-	}
-	stream, demuxed, err := demux(file, av.MediaVideo)
-	if err != nil {
-		t.Fatalf("%s: demux: %v", b.name(), err)
-	}
-	if len(demuxed) != videoFrames || stream.Codec.Width != videoWidth || stream.Codec.Height != videoHeight {
-		t.Fatalf("%s: demuxed %d packets of %dx%d", b.name(), len(demuxed), stream.Codec.Width, stream.Codec.Height)
-	}
-	for _, d := range decoders {
-		t.Run("decode/"+d.desc.Backend.Name, func(t *testing.T) {
-			checkDecoded(t, d, decodeAll(t, d, stream, demuxed), minPSNR)
+	for _, fragmented := range []bool{false, true} {
+		layout := map[bool]string{false: "progressive", true: "fragmented"}[fragmented]
+		t.Run(layout, func(t *testing.T) {
+			file, err := muxMP4(out.stream, packets, fragmented)
+			if err != nil {
+				t.Fatalf("%s: mux: %v", b.name(), err)
+			}
+			stream, demuxed, err := demux(file, av.MediaVideo)
+			if err != nil {
+				t.Fatalf("%s: demux: %v", b.name(), err)
+			}
+			if len(demuxed) != videoFrames || stream.Codec.Width != videoWidth || stream.Codec.Height != videoHeight {
+				t.Fatalf("%s: demuxed %d packets of %dx%d", b.name(), len(demuxed), stream.Codec.Width, stream.Codec.Height)
+			}
+			// The sample entry needs the codec configuration even when the
+			// encoder learns it only with its first packet.
+			if b.desc.ID == av.CodecH264 && len(stream.Codec.ExtraData.Bytes) == 0 {
+				t.Fatalf("%s: the %s MP4 has no avcC", b.name(), layout)
+			}
+			for _, d := range decoders {
+				t.Run("decode/"+d.desc.Backend.Name, func(t *testing.T) {
+					checkDecoded(t, d, decodeAll(t, d, stream, demuxed), minPSNR)
+				})
+			}
 		})
 	}
 }

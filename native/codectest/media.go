@@ -212,15 +212,20 @@ func demux(data []byte, media av.MediaType) (av.Stream, []av.Packet, error) {
 	}
 }
 
-// muxMP4 writes packets of stream into an MP4 file in memory.
-func muxMP4(stream av.Stream, packets []*av.Packet) ([]byte, error) {
+// muxMP4 writes packets of stream into an MP4 file in memory: progressive,
+// or fragmented as for HLS and other pipes.
+func muxMP4(stream av.Stream, packets []*av.Packet, fragmented bool) ([]byte, error) {
 	ctx := context.Background()
 	muxer, err := mp4.MuxerFactory{}.NewMuxer(ctx, av.FormatMP4)
 	if err != nil {
 		return nil, err
 	}
 	var out seekBuffer
-	if err := muxer.Open(ctx, format.Output{Name: "out.mp4", Writer: &out}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+	var writer io.Writer = &out
+	if fragmented {
+		writer = pipe{&out}
+	}
+	if err := muxer.Open(ctx, format.Output{Name: "out.mp4", Writer: writer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
 		return nil, err
 	}
 	for _, packet := range packets {
@@ -274,3 +279,8 @@ func muxable(id av.CodecID) bool {
 }
 
 var _ = codec.ErrClosed
+
+// pipe hides a writer's Seek, so the muxer writes fragments.
+type pipe struct{ w io.Writer }
+
+func (p pipe) Write(b []byte) (int, error) { return p.w.Write(b) }
