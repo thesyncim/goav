@@ -294,6 +294,21 @@ func BenchmarkBranchFanout(b *testing.B) {
 			runBenchTask(b, benchRuntime(), outs...)
 		})
 	}
+	// Real I420 frames on a buffered graph: every branch is its own queue, so a
+	// decoded 1280x720 frame (1.38 MB) reaches N sinks. B/op is what that
+	// fanout costs in payload memory per source packet.
+	video := passthroughI420Payload(b, benchFanoutW, benchFanoutH)
+	for _, n := range []int{2, 8} {
+		b.Run("i420/branches="+strconv.Itoa(n), func(b *testing.B) {
+			decoded := benchVideoPacketsSized("cam", b.N, benchFanoutW, benchFanoutH, video).Video().Decode()
+			outs := make([]goav.Output, n)
+			for i := range outs {
+				name := "branch-" + strconv.Itoa(i)
+				outs[i] = decoded.As(name).To(benchSink(name))
+			}
+			runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(16).PipelinePolicy())), outs...)
+		})
+	}
 }
 
 // BenchmarkSharedMuxGroup is the shared mux group: one video and one audio
@@ -528,4 +543,49 @@ func BenchmarkSourcePush(b *testing.B) {
 					To(benchSink("out")))
 		})
 	}
+}
+
+const benchFanoutW, benchFanoutH = 1280, 720
+
+// passthroughI420Payload returns one goavtest passthrough VP8 packet carrying
+// a width x height I420 frame, so decoding it yields a real-size frame.
+func passthroughI420Payload(b *testing.B, width, height int) []byte {
+	b.Helper()
+	out := goavtest.NewCollector()
+	err := benchRuntime().Run(context.Background(), benchVideoFrames("seed", 1, width, height).
+		Video().
+		Encode(codec.VP8()).
+		To(out.Sink()))
+	if err != nil {
+		b.Fatal(err)
+	}
+	packets := out.Packets()
+	if len(packets) != 1 {
+		b.Fatalf("seed encode produced %d packets, want 1", len(packets))
+	}
+	return append([]byte(nil), packets[0].Payload.Bytes...)
+}
+
+// benchVideoPacketsSized pushes n VP8-tagged keyframes of one shared payload
+// for a width x height stream at 30fps.
+func benchVideoPacketsSized(name string, n, width, height int, payload []byte) goav.InputSpec {
+	return goav.Source(name,
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
+		func(_ context.Context, push source.Push) error {
+			base := av.TimeBase{Num: 1, Den: 90_000}
+			packet := av.Packet{
+				Type:     av.MediaVideo,
+				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Keyframe: true,
+			}
+			for i := range n {
+				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
+				packet.DTS = packet.PTS
+				packet.Duration = av.Duration{Value: 3000, Base: base}
+				if _, err := push.Packet(&packet); err != nil {
+					return err
+				}
+			}
+			return push.EOS()
+		})
 }
