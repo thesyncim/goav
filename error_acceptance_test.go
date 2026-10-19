@@ -5,7 +5,7 @@
 // user fix. This file is the living spec of error quality, consumer side:
 // everything goes through the public grammar and goavtest. Deeper pins for
 // some cases live next to their planners (shape_solver_test.go,
-// recipe_api_test.go, recipe_compile_test.go); this file is the checklist.
+// recipe_stream_test.go, recipe_compile_test.go); this file is the checklist.
 
 package goav_test
 
