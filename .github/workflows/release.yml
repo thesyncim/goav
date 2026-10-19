@@ -7,6 +7,8 @@ on:
       - 'rtpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
+      - 'player/v*'
+      - 'cmd/goav/v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -49,7 +51,7 @@ jobs:
             draft="false"
           fi
           case "$tag" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: $tag" >&2
@@ -64,6 +66,8 @@ jobs:
             rtpav/*) module_dir="rtpav" ;;
             webrtcav/*) module_dir="webrtcav" ;;
             playoutav/*) module_dir="playoutav" ;;
+            player/*) module_dir="player" ;;
+            cmd/goav/*) module_dir="cmd/goav" ;;
             *) module_dir="." ;;
           esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -113,13 +117,17 @@ jobs:
             echo "goexperiment=${GOEXPERIMENT}"
             echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > dist/provenance.txt
-          go list -m -json all > dist/sbom-go-modules.json
+          # The CLI is its own module; a workspace builds it from this tag's
+          # tree rather than from the root and player versions it pins.
+          export GOWORK="$RUNNER_TEMP/goav.work"
+          go work init "$PWD" "$PWD/player" "$PWD/cmd/goav"
+          (cd cmd/goav && go list -m -json all) > dist/sbom-go-modules.json
           for goos in linux darwin; do
             for goarch in amd64 arm64; do
               dir="goav_${tag}_${goos}_${goarch}"
               mkdir -p "dist/$dir"
-              GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-                go build -trimpath -ldflags="-s -w" -o "dist/$dir/goav" ./cmd/goav
+              (cd cmd/goav && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+                go build -trimpath -ldflags="-s -w" -o "../../dist/$dir/goav" .)
               go version -m "dist/$dir/goav" > "dist/${dir}.buildinfo.txt"
               tar -C dist -czf "dist/${dir}.tar.gz" "$dir"
               rm -rf "dist/$dir"

@@ -213,7 +213,7 @@ Evidence:
 - Local patched-toolchain tests: `GOTOOLCHAIN=go1.27.2 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
 - Local race subset:
-  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./launch ./graphrender`.
+  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./ctlserver ./launch ./graphrender`.
 - Local static checks: `go vet ./...` and
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
 - Local formatting check: `test -z "$(gofmt -l .)"`.

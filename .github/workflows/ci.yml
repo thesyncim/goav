@@ -8,6 +8,8 @@ on:
       - 'rtpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
+      - 'player/v*'
+      - 'cmd/goav/v*'
   pull_request:
 
 permissions:
@@ -101,7 +103,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in rtpav webrtcav playoutav player; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -245,6 +247,35 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
+      - name: player module
+        if: matrix.full
+        working-directory: player
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
+      # cmd/goav carries no replace directive, so `go install ...@version`
+      # works; a temporary workspace builds it against this checkout instead
+      # of its pinned root and player.
+      - name: cmd/goav module
+        if: matrix.full
+        working-directory: cmd/goav
+        run: |
+          export GOWORK="$RUNNER_TEMP/goav.work"
+          go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/player" "$GITHUB_WORKSPACE/cmd/goav"
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go build -tags goav_noplay ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=0 go test -count=1 -tags goav_noplay ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       - name: Examples modules
         if: matrix.full
         run: |
@@ -259,7 +290,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
@@ -288,7 +319,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav goavtest/expect; do
+          for mod in rtpav webrtcav playoutav player goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x
@@ -297,3 +328,15 @@ jobs:
             go build ./...
             cd - >/dev/null
           done
+          # The CLI is installed with go install at a version, which refuses a
+          # module carrying replace directives: build it as a dependency and
+          # check its go.mod. (go install @SHA itself also needs the module on
+          # the default branch, for its deprecation lookup.)
+          dir="$(mktemp -d)"
+          cd "$dir"
+          go mod init x
+          go get "github.com/thesyncim/goav/cmd/goav@${SHA}"
+          go build -o goav github.com/thesyncim/goav/cmd/goav
+          ./goav elements | grep -q "play"
+          gomod="$(go mod download -json "github.com/thesyncim/goav/cmd/goav@${SHA}" | sed -n 's/.*"GoMod": "\(.*\)".*/\1/p')"
+          if grep -q '^replace' "$gomod"; then echo "cmd/goav/go.mod carries a replace directive; go install would refuse it" >&2; exit 1; fi

@@ -403,6 +403,9 @@ example modules. The module boundary is the dependency boundary:
   (`github.com/thesyncim/goav/rtpav`, `.../webrtcav`, `.../playoutav`).
   Each module owns its integration tests; the root module's dynamic package
   walk correctly stops at their `go.mod`.
+- **`player`, `cmd/goav`**: the playback window (Ebitengine and oto) and the CLI
+  that registers it as `play`, nested so the root carries no windowing or audio
+  dependency. `cmd/goav` has no `replace`, so `go install ...@version` works.
 - **runnable examples**: `examples/webrtc-runtime-ladder`,
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,

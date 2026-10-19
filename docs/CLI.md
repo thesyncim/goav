@@ -9,12 +9,15 @@ the library produce the same graph.
 goav run      [--runtime default|demo|test] [--control unix://PATH] [--serve ADDR] [-f FILE] '<program>'
 goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'
 goav explain  [--runtime ...] [-f FILE] '<program>'
+goav play     [-f FILE] FILE|'<program>'
 goav elements
 goav ctl      --control unix://PATH <method> [key=value...]
 ```
 
 Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
-the SIMD codec paths run about twice as fast.
+the SIMD codec paths run about twice as fast. The CLI is its own module, so the
+root keeps no windowing dependency; `-tags goav_noplay` leaves the window out
+(on Linux, a static binary).
 
 ## The language
 
@@ -43,7 +46,7 @@ the one above.
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto` |
 | Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! at X Y [, sync=pts])`, `select(a, b)` |
-| Destinations | `file PATH [format=]`, `hls PATH [segment= window= parts=]`, `null` |
+| Destinations | `file PATH [format=]`, `hls PATH [segment= window= parts=]`, `play [title= size=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings
 pass through `encode` (`encode av1 tune=zerolatency`). A mistake is refused
@@ -75,6 +78,12 @@ Runtimes: `default` is the bundled adapters; `demo` adds a deterministic clock,
 so `live` test sources run as fast as the graph allows; `test` is the
 `goavtest` runtime with fake codecs. `goav describe` prints the graph a program
 builds and `goav explain` its plan, without opening or creating any file.
+
+`play` is a window, [synced to the speaker](ADAPTERS.md#player): route decoded
+video and audio to it, and the program runs realtime on the speaker's clock
+(space pauses, arrows seek, `[` `]` change the rate). `goav play FILE` plays a
+file's streams; the summary adds what was presented, dropped, and the largest
+A/V offset.
 
 ## Serving HLS
 

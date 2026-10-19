@@ -18,7 +18,9 @@ scripts/bench/run.sh
 
 Use `staticcheck ./...` and `govulncheck ./...` when those tools are
 installed. Transport modules are nested modules; run their checks from
-`rtpav/`, `webrtcav/`, and `playoutav/` when a change touches them. Vector
+`rtpav/`, `webrtcav/`, `playoutav/`, and `player/` when a change touches them;
+`cmd/goav` pins its dependencies without a `replace`, so gate it in a workspace
+(`go work init . ./player ./cmd/goav` in a scratch `GOWORK`). Vector
 kernels use the Go `simd` package with a scalar fallback — no assembly.
 
 Update `CHANGELOG.md` for user-visible work. Internal-only pull requests may
