@@ -179,27 +179,29 @@ return the `LiveTask` its `Build` produces.
 Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
-What is convention only: inside the root package, the grammar -> plan -> build
-boundaries (the value grammar, the `compile*.go` passes and `WorkPlan`,
-graph/attach lowering) are file-naming conventions, not import-checked. The
-root package is deliberately one compilation unit.
+The compiler is its own package, `internal/compile`, below the root. The root
+keeps the value grammar (`stream.go`, `source.go`), `Runtime`, the task,
+attach/control/watch, the destination handles, and adapter opening.
+`recipe_graph.go` compiles Outputs into the recipe DAG and projects it into a
+`compile.Request`: the DAG, the facts of the input and destination handles it
+indexes, an `Env` of leaf-typed runtime settings, and a `Host` for the three
+checks only the handles can make, run at their old pass slots. `Compile`
+returns a `Result` (the recipe IR, the compose graph, the spec and work plan)
+that the build half opens; attach groups lower through `LowerAttach`. The
+compiler raises `builderr.Refusal` values; every root call that can refuse
+returns through `publicError`, so callers still see `*BuildError`.
 
-The data boundary is the recipe DAG: the value grammar (`stream.go`,
-`source.go`, `stream_rule.go`) builds Stream values, `recipe_graph.go`
-compiles Outputs into the DAG, and the compiler passes read the DAG plus the
-concrete input and destination handles it indexes.
-`TestGrammarFilesDoNotReadPlannerState` pins that the grammar never reads
-compiler state, and `TestRecipeIRImportsOnlyLeafPackages` that
-`internal/recipeir` imports only leaf vocabulary packages, never the root.
-
-Why the compiler still cannot move to `internal/` packages: a type-checked
-cross-file reference graph (measured 2026-07-02) closed the planner seed over
-99.5% of the root package's non-test code, so moving it would move the root
-package. The DAG narrows the waist — passes read plain DAG data — but the
-lowering still builds stages from root runtime types (`Runtime`, `InputSpec`,
-`Destination`), and relocating exported types is public-API churn (type
-identity and `reflect.Type.PkgPath` change even under aliases). The split
-stays an honest NO-GO.
+Pins: `TestInternalLeavesNeverImportRoot` (recipeir, builderr, and compile
+never import the root), `TestRootUsesCompileOnlyThroughEntry` (139 compile
+names, each allowlisted for the root files that use it, in seven groups: the
+entries, the work plan, the compose plan, node naming, shared refusals, mux
+facts, and stream/codec/shape helpers), `TestCompileRefusalsCrossThroughPublicError`,
+`TestRootDeclaresNoCompileAliases`, `TestOnlyRecipeGraphBuildsCompileRequest`,
+`TestGrammarFilesDoNotReadPlannerState`, and the exported-surface golden in
+`internal/compile/testdata/surface.golden` (173 names). Measured at the split
+(2026-10-19): root non-test code 24,354 → 14,684 lines; `internal/compile`
+10,110. The 2026-07 NO-GO measured a 99.5% closure because the entry methods
+lived with the passes; with them in root, the absorbed closure was 37%.
 
 ## Core media model
 
