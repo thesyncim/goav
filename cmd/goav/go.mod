@@ -5,12 +5,15 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
-	github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a
+	github.com/thesyncim/goav v0.0.0-20261019212155-cc793aae9530
 	github.com/thesyncim/goav/player v0.0.0-20261019200009-0b6c0c41379a
+	github.com/thesyncim/goav/srtav v0.0.0-20261019212155-cc793aae9530
 	github.com/thesyncim/goav/webrtcav v0.0.0-20261019200009-0b6c0c41379a
 )
 
 require (
+	github.com/benburkert/openpgp v0.0.0-20160410205803-c2471f86866c // indirect
+	github.com/datarhei/gosrt v0.12.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
 	github.com/ebitengine/hideconsole v1.0.0 // indirect

@@ -585,3 +585,17 @@ func TestRunGrantsWHIP(t *testing.T) {
 		t.Fatalf("describe =\n%s", text)
 	}
 }
+
+// TestRunGrantsSRT pins that the CLI grants and registers SRT: a program
+// publishes test audio to an srt URL as MPEG-TS, and the passphrase in the
+// URL stays out of the graph.
+func TestRunGrantsSRT(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"describe", `testsrc audio ! encode opus ! uri "srt://media.example:9000?streamid=live&passphrase=SECRETSECRET"`}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	text := stdout.String()
+	if !strings.Contains(text, "format=ts") || !strings.Contains(text, "srt://media.example:9000") || strings.Contains(text, "SECRET") {
+		t.Fatalf("describe =\n%s", text)
+	}
+}

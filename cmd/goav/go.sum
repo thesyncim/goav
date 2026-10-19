@@ -1,3 +1,7 @@
+github.com/benburkert/openpgp v0.0.0-20160410205803-c2471f86866c h1:8XZeJrs4+ZYhJeJ2aZxADI2tGADS15AzIF8MQ8XAhT4=
+github.com/benburkert/openpgp v0.0.0-20160410205803-c2471f86866c/go.mod h1:x1vxHcL/9AVzuk5HOloOEPrtJY0MaalYr78afXZ+pWI=
+github.com/datarhei/gosrt v0.12.0 h1:Tl9J7Cijgr/vGGRhZphM2P7YLYtYzl3LlDHsq7IR1j0=
+github.com/datarhei/gosrt v0.12.0/go.mod h1:zfujAMmiiyP6XsNS/UUSkRUbRNPzAVSqyFir9QctwM4=
 github.com/dustin/go-humanize v1.1.0 h1:dbKTrvD0klcbBV/h4AWJdMuZogJACoMlvWIWZ5b2xWg=
 github.com/dustin/go-humanize v1.1.0/go.mod h1:hc1CvRkJMsgxqjmjMQF3QNRAZBwY8AXBAzKYoSX9sFI=
 github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 h1:Tnc3YtzxhgsvNdNrER9wWkGJbyjOwyUuzjUY5rZK72k=
@@ -58,12 +62,14 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 h1:AK/gB43Mnz4qBh1lJC/2cX9udRlYB1QiyQynGo3vu1E=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
-github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a h1:VnCzRQPd/Da4lAfuBNdgmG3wVScc0yPfZ5nK5wwjNhc=
-github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
+github.com/thesyncim/goav v0.0.0-20261019212155-cc793aae9530 h1:9lCoEUM9Sk/z+neeruYomp/45cPiVuE2aCbdGGmzlPM=
+github.com/thesyncim/goav v0.0.0-20261019212155-cc793aae9530/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
 github.com/thesyncim/goav/player v0.0.0-20261019200009-0b6c0c41379a h1:NfhcuU68zd+2HVsTqzNyZznFGvzP0TUTCLYvH9pJ8N4=
 github.com/thesyncim/goav/player v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:pFf4emZtCnqBpWfQQ7QCPxvuGQqsHlpzFk7w7rGDtOA=
 github.com/thesyncim/goav/rtpav v0.0.0-20261019200009-0b6c0c41379a h1:Cbky9v3Gyi2o9UGy6Tcb5aHtWSTIcLFcJxmImcBFp60=
 github.com/thesyncim/goav/rtpav v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:ZCnFFmVoZhTE19LM4XcIlrX3RkPKgHQ0osSrwVeqWYg=
+github.com/thesyncim/goav/srtav v0.0.0-20261019212155-cc793aae9530 h1:qFhqDeLUAgL/rBHvGd3VXzRzWeYEv1aqW/kGjGyvtbM=
+github.com/thesyncim/goav/srtav v0.0.0-20261019212155-cc793aae9530/go.mod h1:x+AyJ7tz9Xkc2B3QW9jrNZH/Qf4XC7VE9bgxMI6bxCg=
 github.com/thesyncim/goav/webrtcav v0.0.0-20261019200009-0b6c0c41379a h1:gGZKAyo2QdYx4swhq1rSsQ3BEGevqFczYGxg39QTwM0=
 github.com/thesyncim/goav/webrtcav v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:xmw/2cS/gmqiGLKh27c4Mv/+V+yOgv8uCKWYMlVuM/g=
 github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c h1:Y6f8Qx3j5wCUFGEjmNlvpiGmmRrrpuJKscnIUSQz81k=
