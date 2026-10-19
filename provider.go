@@ -62,8 +62,8 @@ func (s InputSpec) withProvider(src provider.Input) InputSpec {
 		s.err = errProviderInputKind
 		return s
 	}
-	s.input.Realtime = spec.Realtime
-	s.realtime = spec.Realtime
+	s.input.Realtime = s.input.Realtime || spec.Realtime
+	s.realtime = s.realtime || spec.Realtime
 	return s
 }
 

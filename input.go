@@ -197,20 +197,10 @@ func (s InputSpec) validate() error {
 	if err := s.validateCustomSource(); err != nil {
 		return err
 	}
-	if s.reconnect != nil && (s.provider == nil && s.bytes == nil || !s.realtime && !s.input.Realtime) {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(inputInvalidCode),
-			Code:      inputInvalidCode,
-			Operation: "build input",
-			Node:      s.inputName("input"),
-			Reason:    errReconnectNotLive.Error() + ", and this one is not live",
-			fixes: buildErrorFixes([]string{
-				"drop goav.Reconnect: a file or an application-pushed source has no connection to restore",
-				"reconnect a live input: a live URL (whep://...) or a provider whose SourceShape declares Realtime",
-			}),
-			cause: errReconnectNotLive,
-		}
+	// A byte provider's liveness may show only when it opens (an http
+	// stream): openDemuxed checks it there.
+	if s.reconnect != nil && (s.provider == nil && s.bytes == nil || s.provider != nil && !s.realtime && !s.input.Realtime) {
+		return reconnectNotLiveError(s.inputName("input"), "this one is not live")
 	}
 	return s.validatePlainInput()
 }
@@ -434,4 +424,20 @@ func (r *Runtime) probeInput(ctx context.Context, input format.Input, pinned av.
 		return format.ProbeResult{Format: pinned, Score: 100, Reason: "declared by the input"}, nil
 	}
 	return r.formats.Probe(ctx, inputProbeRequest(input))
+}
+
+func reconnectNotLiveError(node, why string) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(inputInvalidCode),
+		Code:      inputInvalidCode,
+		Operation: "build input",
+		Node:      node,
+		Reason:    errReconnectNotLive.Error() + ", and " + why,
+		fixes: buildErrorFixes([]string{
+			"drop goav.Reconnect: a file or an application-pushed source has no connection to restore",
+			"mark an input that streams with goav.Live(), or reconnect a live provider (a whep URL)",
+		}),
+		cause: errReconnectNotLive,
+	}
 }

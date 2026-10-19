@@ -12,7 +12,7 @@ import (
 )
 
 // openByteInput opens a byte provider's reader and threads its random-access
-// capabilities into the demuxer's input.
+// and liveness capabilities into the demuxer's input.
 func openByteInput(ctx context.Context, src provider.ByteSource, input format.Input) (format.Input, io.ReadCloser, error) {
 	reader, err := src.OpenBytes(ctx)
 	if err != nil {
@@ -27,6 +27,11 @@ func openByteInput(ctx context.Context, src provider.ByteSource, input format.In
 	}
 	if sized, ok := reader.(interface{ Size() int64 }); ok {
 		input.Size = sized.Size()
+	}
+	if live, ok := reader.(interface{ Live() bool }); ok && live.Live() {
+		// A stream that turns out live when it opens (an Icecast mount)
+		// paces and reconnects like one declared live.
+		input.Realtime = true
 	}
 	return input, reader, nil
 }

@@ -20,8 +20,9 @@ import (
 // ends). A reconnect that delivers media resets the count. Each attempt, and
 // the recovery, publish an av.EventReconnect on the task's Watch, and the
 // input announces av.EventDiscontinuity downstream once it is back. It applies to live
-// provider and URI inputs (a whep URL, a live transport); a file or an
-// application-pushed source refuses it.
+// provider and URI inputs (a whep URL, a live transport, an http stream that
+// opens live, or any input marked Live); a file or an application-pushed
+// source refuses it.
 func Reconnect(attempts int, backoff time.Duration) InputOption {
 	return inputOption(func(spec *InputSpec) {
 		spec.reconnect = &reconnectPolicy{attempts: max(attempts, 0), backoff: backoff}
@@ -272,4 +273,17 @@ func (e *countingEmitter) count() int { return e.n }
 func (e countingDeliveryEmitter) EmitDelivery(ctx context.Context, msg *pipeline.Message) (pipeline.Delivery, error) {
 	e.n++
 	return e.delivery.EmitDelivery(ctx, msg)
+}
+
+// Live marks an input live: it delivers on its own clock (a capture device on
+// a pipe, an Icecast mount, an MPEG-TS stream over HTTP), so its run plans
+// realtime, Explain reports it live, and Reconnect applies. Providers declare
+// liveness with SourceShape().Realtime, and an http input that opens with no
+// length and no ranges, or as an Icecast stream, is live without it; Live
+// says so before anything opens.
+func Live() InputOption {
+	return inputOption(func(spec *InputSpec) {
+		spec.realtime = true
+		spec.input.Realtime = true
+	})
 }

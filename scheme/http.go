@@ -58,8 +58,11 @@ func Header(key, value string) HTTPOption {
 // progressively, keeping a window of recent bytes for short backward reads
 // and reading again from the start for longer ones.
 //
-// A read that waits 30s for data fails, and the run's context ends reads.
-// HTTP is an input scheme: it does not write.
+// A server that sends no length and takes no ranges (MPEG-TS over HTTP), or
+// an Icecast mount, is a live stream: it reads forward only, paces as live,
+// and its end is a drop goav.Reconnect recovers from. A read that waits 30s
+// for data fails, and the run's context ends reads. HTTP is an input
+// scheme: it does not write.
 func HTTP(options ...HTTPOption) provider.InputScheme {
 	config := httpConfig{headers: http.Header{}}
 	for _, option := range options {
@@ -172,6 +175,21 @@ const (
 
 var errStalled = fmt.Errorf("http: no data for %s", readIdle)
 
+var (
+	errLiveEnded  = errors.New("http: the live stream ended")
+	errLiveBehind = errors.New("http: a live stream does not read back past its window")
+)
+
+// icecast reports an Icecast or SHOUTcast response: its icy- headers.
+func icecast(header http.Header) bool {
+	for key := range header {
+		if strings.HasPrefix(key, "Icy-") {
+			return true
+		}
+	}
+	return false
+}
+
 // httpReader is an io.ReadSeeker and io.ReaderAt over an HTTP resource.
 // Calls serialize, so ReadAt is safe for concurrent use.
 type httpReader struct {
@@ -187,6 +205,8 @@ type httpReader struct {
 	// size is the resource length, or -1 when the server does not say.
 	size   int64
 	ranges bool
+	// live is a progressive stream without a length, or an Icecast one.
+	live bool
 	// validator is the If-Range value: a strong ETag, else Last-Modified.
 	validator string
 	etag      string
@@ -244,6 +264,7 @@ func (r *httpReader) open() error {
 		r.attach(resp, 0, end+1)
 	case http.StatusOK:
 		r.size = resp.ContentLength
+		r.live = r.size < 0 || icecast(resp.Header)
 		r.attach(resp, 0, -1)
 	case http.StatusRequestedRangeNotSatisfiable:
 		// Only an empty resource refuses bytes=0-.
@@ -363,6 +384,15 @@ func (r *httpReader) Size() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return max(r.size, 0)
+}
+
+// Live reports a stream rather than a file: a server that sends no length
+// and takes no ranges (MPEG-TS over HTTP), or an Icecast mount (icy-
+// headers). goav paces it as live and goav.Reconnect applies to it.
+func (r *httpReader) Live() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.live
 }
 
 // Close ends every request, unblocking a pending read.
@@ -502,6 +532,9 @@ func (r *httpReader) readProgressive(p []byte, off int64) (int, error) {
 		return n, nil
 	}
 	if r.body == nil || off < r.body.at {
+		if r.live {
+			return 0, errLiveBehind
+		}
 		if err := r.restart(); err != nil {
 			return 0, err
 		}
@@ -533,6 +566,11 @@ func (r *httpReader) fromWindow(p []byte, off int64) (int, bool) {
 
 func (r *httpReader) progressiveFailure(err error) error {
 	if err == io.EOF && r.ctx.Err() == nil && !r.body.guard.stalled.Load() {
+		if r.live {
+			// A live stream does not end: its end is a dropped connection,
+			// which goav.Reconnect recovers from.
+			return errLiveEnded
+		}
 		if r.size < 0 {
 			r.size = r.body.at
 		}

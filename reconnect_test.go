@@ -124,3 +124,21 @@ func TestReconnectReopensALiveByteInput(t *testing.T) {
 		t.Fatalf("opened = %d packets = %d, want the feed read twice", custom.opened, len(sink.Packets()))
 	}
 }
+
+// TestLiveMarksAnInputLive pins goav.Live: the input plans live before it
+// opens, and a URI input marked live takes a reconnect policy.
+func TestLiveMarksAnInputLive(t *testing.T) {
+	report, err := bundle.Explain(context.Background(), goav.FileInput("pipe.ivf", bytes.NewReader(tinyIVF()), goav.Live()).Video().To(goavtest.NewCollector().Sink()))
+	if err != nil || len(report.Inputs) != 1 || !report.Inputs[0].Realtime {
+		t.Fatalf("report = %+v err = %v, want a live input", report.Inputs, err)
+	}
+	custom := &testScheme{data: tinyIVF(), breakFirst: true}
+	rt := bundle.MustNew(runconfig.Scheme("cam", custom))
+	sink := goavtest.NewCollector()
+	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Live(), goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
+		t.Fatal(err)
+	}
+	if custom.opened != 2 {
+		t.Fatalf("opened = %d, want the live feed reopened", custom.opened)
+	}
+}
