@@ -11,6 +11,10 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- A nil layer in `goav.Composite` (or a nil arm of any join) is refused as
+  `stream_invalid` naming `goav.At(...)`, instead of panicking Describe,
+  Explain, and Build.
+
 - Removed the `branch_source_invalid` code: only the test-only builder
   spelling could raise it.
 

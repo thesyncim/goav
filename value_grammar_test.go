@@ -510,3 +510,17 @@ func TestRunReportsWhyItStopped(t *testing.T) {
 		t.Fatalf("canceled live input: Run = %v, want context.Canceled", err)
 	}
 }
+
+// TestValueGrammarRefusesNilCompositeLayer pins that a nil layer is a refusal
+// naming the fix, not a panic, on every runtime entry point.
+func TestValueGrammarRefusesNilCompositeLayer(t *testing.T) {
+	out := goav.Composite(nil).To(goavtest.NewCollector().Sink())
+	_, err := goavtest.Runtime().Describe(out)
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" || !strings.Contains(err.Error(), "goav.At(") {
+		t.Fatalf("Describe(Composite(nil)) err = %v, want stream_invalid naming goav.At", err)
+	}
+	if _, err := goavtest.Runtime().Build(context.Background(), out); !errors.As(err, &buildErr) {
+		t.Fatalf("Build(Composite(nil)) err = %v, want a BuildError", err)
+	}
+}
