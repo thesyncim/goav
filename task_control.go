@@ -211,7 +211,7 @@ func implicitControlTargets(kind string, targets []pipeline.NodeRef) ([]pipeline
 }
 
 func (t *task) controlSourceNodes() []pipeline.NodeRef {
-	spec := t.Describe()
+	spec := t.Spec()
 	var targets []pipeline.NodeRef
 	for _, node := range spec.Nodes {
 		if node.Kind == pipeline.NodeSource {
@@ -222,7 +222,7 @@ func (t *task) controlSourceNodes() []pipeline.NodeRef {
 }
 
 func (t *task) controlEntryNodes() []pipeline.NodeRef {
-	spec := t.Describe()
+	spec := t.Spec()
 	sources := make(map[pipeline.NodeRef]struct{}, len(spec.Nodes))
 	for _, node := range spec.Nodes {
 		if node.Kind == pipeline.NodeSource {
@@ -254,7 +254,7 @@ func (t *task) encoderNodesProducing(stream av.StreamID) []pipeline.NodeRef {
 		return nil
 	}
 	live := make(map[pipeline.NodeRef]struct{})
-	for _, node := range t.Describe().Nodes {
+	for _, node := range t.Spec().Nodes {
 		live[pipeline.NodeRef(node.Name)] = struct{}{}
 	}
 	var targets []pipeline.NodeRef

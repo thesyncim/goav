@@ -68,8 +68,8 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if specText(planned) != specText(task.Describe()) || specMermaid(planned) != specMermaid(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(planned) != specText(task.Spec()) || specMermaid(planned) != specMermaid(task.Spec()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)

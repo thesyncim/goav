@@ -51,7 +51,7 @@ func FuzzRecipe(f *testing.F) {
 		if describeErr != nil {
 			t.Fatalf("Build succeeds but Describe fails: %v", describeErr)
 		}
-		if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+		if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 			t.Fatalf("Describe() != Build()\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 		}
 		// The attach twin: an Output attached at one of the task's taps plans

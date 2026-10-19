@@ -54,8 +54,8 @@ func TestRuntimeGraphHandleRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if specText(planned) != specText(task.Describe()) {
-		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(planned) != specText(task.Spec()) {
+		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	if branchStats.Delivered != 2 || branchStats.Packets != 1 {
 		t.Fatalf("branch stats = %+v", branchStats)
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "screenshots/sample") || strings.Contains(text, "screenshots/out") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -288,7 +288,7 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	if base.count != 3 || leftStage.count != 1 || rightStage.count != 1 || leftSink.count != 1 || rightSink.count != 1 {
 		t.Fatalf("base=%d leftStage=%d rightStage=%d leftSink=%d rightSink=%d", base.count, leftStage.count, rightStage.count, leftSink.count, rightSink.count)
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -351,7 +351,7 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 	if err := builtTask.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
-	text := specText(builtTask.Describe())
+	text := specText(builtTask.Spec())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -415,7 +415,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	if _, ok := findTap(builtTask.Taps(), "video.sampled"); ok {
 		t.Fatalf("runtime tap still present after grouped detach: %+v", builtTask.Taps())
 	}
-	text := specText(builtTask.Describe())
+	text := specText(builtTask.Spec())
 	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -436,7 +436,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	if !errors.Is(err, errRuntimeRollbackConnect) {
 		t.Fatalf("err = %v, want rollback connect failure", err)
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec retained failed attachment nodes:\n%s", text)
 	}
@@ -525,7 +525,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 	if !strings.Contains(err.Error(), "same sink destination value") && !strings.Contains(err.Error(), "same destination value") {
 		t.Fatalf("err = %v, want shared-handle guidance", err)
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") || strings.Contains(text, "shared") {
 		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
 	}
@@ -556,7 +556,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.
 		!strings.Contains(err.Error(), "same destination value") {
 		t.Fatalf("err = %v, want grouped destination guidance", err)
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") {
 		t.Fatalf("spec mutated after duplicate target rejection:\n%s", text)
 	}
@@ -656,8 +656,8 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	if !muxers.muxers[0].closed {
 		t.Fatal("shared runtime mux destination was not closed by detach")
 	}
-	if strings.Contains(specText(builtTask.Describe()), "recording") {
-		t.Fatalf("spec retained shared mux destination after detach:\n%s", specText(builtTask.Describe()))
+	if strings.Contains(specText(builtTask.Spec()), "recording") {
+		t.Fatalf("spec retained shared mux destination after detach:\n%s", specText(builtTask.Spec()))
 	}
 }
 
@@ -763,7 +763,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 	if _, ok := findTap(task.Taps(), "video.sampled"); ok {
 		t.Fatalf("runtime tap still present after detach: %+v", task.Taps())
 	}
-	text := specText(task.Describe())
+	text := specText(task.Spec())
 	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
 		t.Fatalf("spec:\n%s", text)
 	}
@@ -1300,7 +1300,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 		Node: "source",
 	}}
 	defer mediaTask.Close()
-	before := mediaTask.Describe()
+	before := mediaTask.Spec()
 
 	_, err = mediaTask.Attach(ctx,
 		mediaTask.Tap("audio.frames").Resample(16_000, codec.Mono).Tap("audio.16k").As("voice").To(Sink(SinkFunc("voice", func(context.Context, Message) error {
@@ -1319,7 +1319,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	if !resampler.closed {
 		t.Fatal("runtime filter was not closed after duplicate-tap rejection")
 	}
-	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := mediaTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	taps := mediaTask.Taps()
@@ -1368,7 +1368,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 			Node: "source",
 		}},
 	}
-	before := mediaTask.Describe()
+	before := mediaTask.Spec()
 
 	_, err := mediaTask.Attach(ctx,
 		mediaTask.Tap("audio.frames").Resample(16_000, codec.Mono).Tap("audio.16k").As("voice").To(Sink(SinkFunc("voice", func(context.Context, Message) error {
@@ -1396,7 +1396,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	if !reflect.DeepEqual(graph.removed, []string{"voice/voice", "voice/resample-voice"}) {
 		t.Fatalf("removed = %v, want the sink and resample stage rolled back", graph.removed)
 	}
-	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := mediaTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range mediaTask.Taps() {
@@ -1443,7 +1443,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 			Node: "source",
 		}},
 	}
-	before := mediaTask.Describe()
+	before := mediaTask.Spec()
 
 	_, err := mediaTask.Attach(ctx,
 		mediaTask.Tap("audio.frames").
@@ -1486,7 +1486,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	if !reflect.DeepEqual(graph.removed, wantRemoved) {
 		t.Fatalf("removed = %v, want %v", graph.removed, wantRemoved)
 	}
-	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := mediaTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected terminal attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range mediaTask.Taps() {
@@ -1527,7 +1527,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 			Node: "source",
 		}},
 	}
-	before := mediaTask.Describe()
+	before := mediaTask.Spec()
 
 	_, err := mediaTask.Attach(ctx,
 		mediaTask.Tap("audio.frames").Resample(16_000, codec.Mono).As("monitor").To(Sink(sink)),
@@ -1557,7 +1557,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	if !reflect.DeepEqual(graph.removed, wantRemoved) {
 		t.Fatalf("removed = %v, want %v", graph.removed, wantRemoved)
 	}
-	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := mediaTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected sink attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range mediaTask.Taps() {
@@ -1609,7 +1609,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	if err := builtTask.Close(); err != nil {
 		t.Fatal(err)
 	}
-	before := builtTask.Describe()
+	before := builtTask.Spec()
 
 	_, err = builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
@@ -1645,7 +1645,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	if !muxers.muxers[0].closed {
 		t.Fatal("runtime muxer was not closed after attach to closed graph")
 	}
-	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := builtTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after closed-graph attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range builtTask.Taps() {
@@ -1695,7 +1695,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		},
 		Node: "source",
 	}}
-	before := builtTask.Describe()
+	before := builtTask.Spec()
 
 	_, err = builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
@@ -1731,7 +1731,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	if !muxers.muxers[0].closed {
 		t.Fatal("runtime muxer was not closed after duplicate-node rejection")
 	}
-	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := builtTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after duplicate-node attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range builtTask.Taps() {

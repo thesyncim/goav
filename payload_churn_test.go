@@ -137,7 +137,7 @@ func TestAttachDetachChurnPlateaus(t *testing.T) {
 	t.Logf("live heap at cycles %v: %v B; slope %.0f B/cycle", xs, ys, slope)
 
 	stats := task.Stats()
-	spec := task.Describe()
+	spec := task.Spec()
 	if len(stats.Nodes) != len(spec.Nodes) {
 		t.Errorf("Stats reports %d nodes, Describe shows %d: retired nodes still counted", len(stats.Nodes), len(spec.Nodes))
 	}

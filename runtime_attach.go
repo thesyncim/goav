@@ -730,7 +730,7 @@ func (a *runtimeAttachment) branchSpec() pipeline.Spec {
 		spec.Edges = slices.Clone(spec.Edges)
 		return spec
 	}
-	return a.specFromGraph(a.owner.Describe())
+	return a.specFromGraph(a.owner.Spec())
 }
 
 func (a *runtimeAttachment) specFromGraph(graph pipeline.Spec) pipeline.Spec {

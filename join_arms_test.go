@@ -43,13 +43,13 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 
 	// Exactly ONE decode node: the tapped chain decodes once, mid-graph.
 	decodeNodes := 0
-	for _, node := range task.Describe().Nodes {
+	for _, node := range task.Spec().Nodes {
 		if strings.Contains(node.Name, "decode") {
 			decodeNodes++
 		}
 	}
 	if decodeNodes != 1 {
-		t.Fatalf("decode nodes = %d, want exactly 1; nodes=%+v", decodeNodes, task.Describe().Nodes)
+		t.Fatalf("decode nodes = %d, want exactly 1; nodes=%+v", decodeNodes, task.Spec().Nodes)
 	}
 
 	// The arm tap is a first-class task tap anchored on the arm's decode node.
@@ -251,13 +251,13 @@ func TestStreamSharedByTwoJoinsDecodesOnce(t *testing.T) {
 	}
 	defer task.Close()
 	decodes := 0
-	for _, node := range task.Describe().Nodes {
+	for _, node := range task.Spec().Nodes {
 		if strings.Contains(node.Name, "decode") {
 			decodes++
 		}
 	}
 	if decodes != 1 {
-		t.Fatalf("decode nodes = %d, want 1:\n%s", decodes, specText(task.Describe()))
+		t.Fatalf("decode nodes = %d, want 1:\n%s", decodes, specText(task.Spec()))
 	}
 	taps := 0
 	for _, tap := range task.Taps() {

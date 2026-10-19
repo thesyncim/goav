@@ -98,9 +98,9 @@ func requireGeneratedCompositionDescribeMatchesBuild(t *testing.T, outs ...goav.
 		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
-	built := task.Describe()
+	built := task.Spec()
 	if !reflect.DeepEqual(planned, built) {
-		t.Fatalf("Describe() != BuildLive().Describe()\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+		t.Fatalf("Describe() != BuildLive().Spec()\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	return planned
 }
@@ -128,7 +128,7 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 	}
 
 	runtimePlan := generatedCompositionNormalizeRuntimeBranchSpec(
-		generatedCompositionSpecWithout(task.Describe(), "main"),
+		generatedCompositionSpecWithout(task.Spec(), "main"),
 		"monitor/",
 	)
 	if !reflect.DeepEqual(buildTimePlan, runtimePlan) {

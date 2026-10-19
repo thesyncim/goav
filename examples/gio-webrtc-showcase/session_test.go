@@ -149,7 +149,7 @@ type controlCaptureTask struct {
 	controls int
 }
 
-func (t *controlCaptureTask) Describe() pipeline.Spec { return pipeline.Spec{} }
+func (t *controlCaptureTask) Spec() pipeline.Spec { return pipeline.Spec{} }
 
 func (t *controlCaptureTask) Explain(context.Context) (plan.Report, error) {
 	return plan.Report{}, nil

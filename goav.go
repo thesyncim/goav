@@ -47,15 +47,18 @@ type LiveTask interface {
 	// Explain reports the planned workflow before any resource opens: inputs,
 	// branches, destinations, taps, shapes, planner decisions, and warnings.
 	Explain(context.Context) (plan.Report, error)
-	// Describe returns the structured graph spec — the same nodes and edges
-	// Run executes, node for node. Rendering lives outside core (graphrender).
-	Describe() pipeline.Spec
+	// Spec returns the structured graph spec — the same nodes and edges Run
+	// executes, node for node, and what Runtime.Describe predicted for the same
+	// Outputs. Stats reports over the same node set, as Attachment.Spec and
+	// Attachment.Stats do for a branch. Rendering lives outside core
+	// (graphrender).
+	Spec() pipeline.Spec
 	// Taps lists the stable attach points runtime branches can anchor from.
 	Taps() []TapSnapshot
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.
 	Snapshot() TaskSnapshot
 	// Stats returns per-node counters — packets, frames, drops by reason —
-	// over the node set Describe reports, with removed nodes counted only in
+	// over the node set Spec reports, with removed nodes counted only in
 	// the graph totals. They are readable while the task runs (lock-free atomic
 	// reads).
 	Stats() pipeline.GraphStats

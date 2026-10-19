@@ -63,7 +63,7 @@ func TestSpecAndStatsAgreeAcrossTaskBranchAndSnapshot(t *testing.T) {
 	attachment := attachDropBranch(t, ctx, task, "live", live)
 	waitFrameCount(ctx, &live.count, 1)
 
-	requireSpecStatsAgree(t, "task", task.Describe(), task.Stats())
+	requireSpecStatsAgree(t, "task", task.Spec(), task.Stats())
 	snap := task.Snapshot()
 	requireSpecStatsAgree(t, "task snapshot", snap.Spec, snap.Stats)
 	requireSpecStatsAgree(t, "branch", attachment.Spec(), attachment.Stats())

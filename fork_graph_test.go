@@ -220,8 +220,8 @@ func TestTapAnchorsFollowPlannedNodes(t *testing.T) {
 			if !found {
 				t.Fatalf("taps = %+v, want %s", task.Taps(), tt.tap)
 			}
-			if !strings.Contains(specText(task.Describe()), "stage "+tt.node+" ") {
-				t.Fatalf("tap node %s is not a graph node:\n%s", tt.node, specText(task.Describe()))
+			if !strings.Contains(specText(task.Spec()), "stage "+tt.node+" ") {
+				t.Fatalf("tap node %s is not a graph node:\n%s", tt.node, specText(task.Spec()))
 			}
 			if _, err := task.Attach(context.Background(), task.Tap(tt.tap).As("late").To(sink("late"))); err != nil {
 				t.Fatalf("attach from %s: %v", tt.tap, err)

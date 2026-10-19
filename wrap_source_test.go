@@ -71,10 +71,10 @@ func TestWrapSourceDecoratesCustomInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("Describe() != BuildLive() under WrapSource:\nplanned: %+v\nbuilt:   %+v", planned, built)
 	}
-	for _, node := range task.Describe().Nodes {
+	for _, node := range task.Spec().Nodes {
 		if node.Name == "renamed-by-decorator" {
 			t.Fatal("decorator renamed the input node; WrapSource must pin node identity")
 		}

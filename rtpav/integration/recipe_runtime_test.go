@@ -177,7 +177,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -706,7 +706,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 	if err := task.Run(ctx); err != nil {

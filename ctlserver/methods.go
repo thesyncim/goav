@@ -124,7 +124,7 @@ func builtinMethods() []*method {
 		define("describe", "the task's graph", func(_ context.Context, s *Server, _ *session, p describeParams) (any, error) {
 			switch p.Format {
 			case "", "json":
-				return s.task.Describe(), nil
+				return s.task.Spec(), nil
 			case "text", "dot", "mermaid":
 				target := "goav:graph"
 				if p.Format != "text" {

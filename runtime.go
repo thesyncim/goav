@@ -387,20 +387,20 @@ func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDes
 	}
 }
 
-func (t *task) Describe() pipeline.Spec {
+func (t *task) Spec() pipeline.Spec {
 	return t.graph.Spec()
 }
 
 func (t *task) Explain(context.Context) (plan.Report, error) {
 	if t.explainReportReady {
 		report := clonePlanReport(t.explainReport)
-		report.Graph = t.Describe()
+		report.Graph = t.Spec()
 		report.Taps = planTapRows(t.Taps())
 		return report, nil
 	}
 	return plan.Report{
 		Summary: "running media task",
-		Graph:   t.Describe(),
+		Graph:   t.Spec(),
 		Taps:    planTapRows(t.Taps()),
 	}, nil
 }
@@ -584,7 +584,7 @@ func (t *task) Snapshot() TaskSnapshot {
 	return TaskSnapshot{
 		State:        state,
 		Paused:       t.timeline != nil && t.timeline.pausedNow(),
-		Spec:         t.Describe(),
+		Spec:         t.Spec(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
 		Branches:     branches,

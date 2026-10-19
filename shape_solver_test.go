@@ -145,8 +145,8 @@ func TestAutoInsertsResampleBeforeEncode(t *testing.T) {
 		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run(): %v", err)
@@ -426,8 +426,8 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 }
 
@@ -510,8 +510,8 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 }
 

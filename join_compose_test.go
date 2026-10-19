@@ -96,7 +96,7 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 	}
 
 	// The fanout is the normal branch-compose topology hung off the join node.
-	spec := task.Describe()
+	spec := task.Spec()
 	hasJoin := false
 	for _, n := range spec.Nodes {
 		if n.Name == "mix" {

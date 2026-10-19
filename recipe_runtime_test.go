@@ -555,7 +555,7 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	if err := task.Run(ctx); err != nil {
@@ -737,7 +737,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := task.Describe()
+	spec := task.Spec()
 	text := specText(spec)
 	for _, want := range []string{
 		"input.ogg -> select-audio",
@@ -818,7 +818,7 @@ func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 	defer task.Close()
 
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -914,7 +914,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	}
 	defer task.Close()
 
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
 	}
 }
@@ -968,7 +968,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		t.Fatal(err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 }
@@ -1022,7 +1022,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 }
@@ -1133,7 +1133,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	if err := task.Run(ctx); err != nil {
@@ -1240,7 +1240,7 @@ func TestBranchCompositionPacketBranchDecodeSinkRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	if err := task.Run(ctx); err != nil {
@@ -1301,7 +1301,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	decodedTap, ok := findTap(task.Taps(), "audio.flow.decoded")
@@ -1389,7 +1389,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
+	if built := task.Spec(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	if err := task.Run(ctx); err != nil {
@@ -2195,7 +2195,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 		t.Fatal(err)
 	}
 	defer task.Close()
-	before := task.Describe()
+	before := task.Spec()
 
 	_, err = task.Attach(ctx,
 		task.Tap("audio.decoded").Resample(16_000, codec.Mono, func(config *filter.ResampleConfig) { config.SampleFormat = av.SampleFormatF32 }).As("voice").To(Sink(SinkFunc("voice", func(context.Context, Message) error {
@@ -2213,7 +2213,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 	if resampleFactory.config.Audio != nil {
 		t.Fatalf("runtime transform opened before descriptor preflight: %+v", resampleFactory.config.Audio)
 	}
-	if after := task.Describe(); !reflect.DeepEqual(before, after) {
+	if after := task.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	for _, tap := range task.Taps() {
@@ -2322,7 +2322,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	before := task.Describe()
+	before := task.Spec()
 
 	_, err = task.Attach(ctx,
 		task.Tap("audio.decoded").
@@ -2341,7 +2341,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 	if len(muxers.muxers) != 0 {
 		t.Fatalf("muxer opened before runtime mux preflight: %+v", muxers.muxers)
 	}
-	if after := task.Describe(); !reflect.DeepEqual(before, after) {
+	if after := task.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 }
@@ -2440,7 +2440,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 		Node: "source",
 	}}
 	defer builtTask.Close()
-	before := builtTask.Describe()
+	before := builtTask.Spec()
 	tapsBefore := builtTask.Taps()
 
 	archive := Write("archive.ogg", io.Discard)
@@ -2469,7 +2469,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 	if len(muxers.muxers) != 0 {
 		t.Fatalf("muxer opened before duplicate target validation: %+v", muxers.muxers)
 	}
-	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := builtTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after duplicate target attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 	if !reflect.DeepEqual(tapsBefore, builtTask.Taps()) {
@@ -2523,8 +2523,8 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
 	}
-	if strings.Contains(specText(builtTask.Describe()), "archive/") {
-		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))
+	if strings.Contains(specText(builtTask.Spec()), "archive/") {
+		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Spec()))
 	}
 }
 
@@ -2579,8 +2579,8 @@ func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264Encoder(t *testing.T)
 			t.Fatalf("%s err = %v, want encode_adapter_missing", tc.name, err)
 		}
 	}
-	if strings.Contains(specText(builtTask.Describe()), "h264/") {
-		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))
+	if strings.Contains(specText(builtTask.Spec()), "h264/") {
+		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Spec()))
 	}
 }
 
@@ -2636,7 +2636,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		Node: "source",
 	}}
 	defer builtTask.Close()
-	before := builtTask.Describe()
+	before := builtTask.Spec()
 
 	_, err = builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").Encode(codec.Codec(customPCM, av.MediaAudio)).As("record").To(Sink(SinkFunc("record", func(context.Context, Message) error {
@@ -2654,7 +2654,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 	if len(encoderFactory.configs) != 0 {
 		t.Fatalf("encoder opened before descriptor preflight: %+v", encoderFactory.configs)
 	}
-	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
+	if after := builtTask.Spec(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
 	}
 }

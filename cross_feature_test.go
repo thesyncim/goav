@@ -229,7 +229,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	select {
 	case <-mixedReady:
 	case <-ctx.Done():
-		t.Logf("spec:\n%s", specText(task.Describe()))
+		t.Logf("spec:\n%s", specText(task.Spec()))
 		t.Logf("stats: %+v", task.Stats().Nodes)
 		t.Fatal(ctx.Err())
 	}
@@ -821,8 +821,8 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != text {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, specText(task.Describe()))
+	if specText(task.Spec()) != text {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, specText(task.Spec()))
 	}
 }
 
@@ -853,7 +853,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if built := specText(task.Describe()); built != text {
+	if built := specText(task.Spec()); built != text {
 		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -914,7 +914,7 @@ func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if built := specText(task.Describe()); built != text {
+	if built := specText(task.Spec()); built != text {
 		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
 	}
 	if err := task.Run(context.Background()); err != nil {

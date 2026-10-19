@@ -125,7 +125,7 @@ enforcement that no longer exists. The inventory:
   `Require`/`Prefer`/`Tap`/`Buffer`/`As`/`To`); `Mix`/`Composite`/
   `Select`/`At`; `Task` lifecycle (`Run`/`Close`) plus structural
   built-task `CloseContext(ctx)`; opt-in task capability interfaces for
-  `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`), mutation
+  `Explain`, inspection (`Spec`/`Taps`/`Snapshot`/`Stats`), mutation
   (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`), controls
   (`Control`), and observation (`Watch`; unfiltered `Watch()` observes every
   task event); `New`, `Runtime.Run`/`Build`/`Describe`/`Explain`, and the `bundle` runtime helpers; structured

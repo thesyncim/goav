@@ -49,8 +49,8 @@ func TestRequireMetIsNoOp(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run(): %v", err)
@@ -126,8 +126,8 @@ func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 }
 
@@ -226,8 +226,8 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 }
 
@@ -395,8 +395,8 @@ func TestPreferWorksInBranches(t *testing.T) {
 		t.Fatalf("Build(): %v", err)
 	}
 	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	if specText(task.Spec()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Spec()))
 	}
 }
 

@@ -105,7 +105,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 }
 
 // TestAudioMixSyncByPTSAlignsOffsetArms: arm b starts one frame later than arm
-// a. Under SyncByPTS the leading region plays a alone (b's silence is the
+// a. Under ByPTS the leading region plays a alone (b's silence is the
 // summing identity), then the PTS-matched pairs sum — never a[i]+b[i+1] as
 // arrival pairing would produce.
 func TestAudioMixSyncByPTSAlignsOffsetArms(t *testing.T) {

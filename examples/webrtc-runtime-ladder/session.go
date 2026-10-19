@@ -195,10 +195,10 @@ func (s *session) stateLocked() stateResponse {
 		out.Branches = append(out.Branches, view)
 	}
 	if s.videoTask != nil {
-		out.VideoGraph = graphFromSpec("video", s.videoTask.Describe())
+		out.VideoGraph = graphFromSpec("video", s.videoTask.Spec())
 	}
 	if s.audioTask != nil {
-		out.AudioGraph = graphFromSpec("audio", s.audioTask.Describe())
+		out.AudioGraph = graphFromSpec("audio", s.audioTask.Spec())
 	}
 	out.Debug = s.debugLocked(out.VideoGraph, out.AudioGraph)
 	out.Events = append([]debugEvent(nil), s.events...)

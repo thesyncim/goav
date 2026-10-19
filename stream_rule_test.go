@@ -499,7 +499,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 	go func() { runErr <- task.Run(ctx) }()
 
 	waitForCondition(t, "inserted resample node attached", func() bool {
-		for _, node := range task.Describe().Nodes {
+		for _, node := range task.Spec().Nodes {
 			if strings.Contains(node.Name, "enc-late-mic/") && strings.Contains(node.Name, "resample") {
 				return true
 			}
@@ -509,13 +509,13 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 	waitForCount(t, "encoded late packets", 1, encoded.Load)
 	waitForCondition(t, "16kHz frames on the low fork", func() bool { return lowRate.Load() == 16_000 })
 	resamples := 0
-	for _, node := range task.Describe().Nodes {
+	for _, node := range task.Spec().Nodes {
 		if strings.Contains(node.Name, "-late-mic") && strings.Contains(node.Name, "resample") {
 			resamples++
 		}
 	}
 	if resamples != 2 {
-		t.Fatalf("resample nodes = %d, want one per rule branch:\n%s", resamples, specText(task.Describe()))
+		t.Fatalf("resample nodes = %d, want one per rule branch:\n%s", resamples, specText(task.Spec()))
 	}
 	close(stop)
 	if err := <-runErr; err != nil {
@@ -584,7 +584,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	nodesBefore := len(task.Describe().Nodes)
+	nodesBefore := len(task.Spec().Nodes)
 
 	attachErrors := task.Watch(WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
@@ -602,7 +602,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 		t.Fatal("no attach error event surfaced")
 	}
 
-	if got := len(task.Describe().Nodes); got != nodesBefore {
+	if got := len(task.Spec().Nodes); got != nodesBefore {
 		t.Fatalf("graph nodes = %d after failed rule attach, want %d (rollback)", got, nodesBefore)
 	}
 	if len(task.Snapshot().Branches) != 0 {

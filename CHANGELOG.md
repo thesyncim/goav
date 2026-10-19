@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: `LiveTask.Describe()` is now `LiveTask.Spec()`, the same name
+  `Attachment.Spec()` and the snapshots' `Spec` field use, beside `Stats` at
+  every level. `Runtime.Describe(outputs...)` keeps its name: it predicts the
+  graph before a build, and a built task's `Spec()` equals it. Migration:
+  `task.Describe()` becomes `task.Spec()`.
 - `Spec` and `Stats` report one node set at every level: the task, each
   `Attachment`, and `TaskSnapshot`/`BranchSnapshot`. A detached
   `Attachment`'s `Spec` used to go empty while its `Stats` kept the final

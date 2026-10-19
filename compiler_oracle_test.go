@@ -415,7 +415,7 @@ func TestCompilerOracle(t *testing.T) {
 			} else {
 				// Describe is the graph Build makes: the same nodes and edges.
 				if result.Describe != nil {
-					if got, want := marshalGolden(t, task.Describe()), marshalGolden(t, *result.Describe); !bytes.Equal(got, want) {
+					if got, want := marshalGolden(t, task.Spec()), marshalGolden(t, *result.Describe); !bytes.Equal(got, want) {
 						t.Errorf("built graph differs from Describe:\n--- built ---\n%s--- described ---\n%s", got, want)
 					}
 				}
