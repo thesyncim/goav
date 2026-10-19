@@ -432,7 +432,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 
 	_, err := task.Attach(ctx,
 		task.Route(pipeline.Route{From: graphNode{name: "source"}.Name()}).As("left").To(Sink(left)),
-		task.Route(pipeline.Route{From: graphNode{name: "source"}.Name()}).As("right").To(Sink(right)),
+		task.Route(pipeline.Route{From: graphNode{name: "source"}.Name(), Policy: pipeline.RouteByStream, Label: "video"}).As("right").To(Sink(right)),
 	)
 	if !errors.Is(err, errRuntimeRollbackConnect) {
 		t.Fatalf("err = %v, want rollback connect failure", err)
@@ -1348,6 +1348,8 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 		Output: av.MediaAudio,
 	}, resampleFactory))))
 	graph := newRuntimeRollbackGraph()
+	// The branch connects inside first; its edge from the anchor, last, fails.
+	graph.failConnectAt = 2
 	mediaTask := &task{
 		graph:   graph,
 		runtime: rt,
@@ -1389,11 +1391,11 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	if !resampler.closed {
 		t.Fatal("runtime filter was not closed after graph connect rollback")
 	}
-	if graph.connects != 1 {
-		t.Fatalf("connects = %d, want one failed connect", graph.connects)
+	if graph.connects != 2 {
+		t.Fatalf("connects = %d, want the anchor connect to fail after the branch's own", graph.connects)
 	}
-	if !reflect.DeepEqual(graph.removed, []string{"voice/resample-voice"}) {
-		t.Fatalf("removed = %v, want resample stage rolled back", graph.removed)
+	if !reflect.DeepEqual(graph.removed, []string{"voice/voice", "voice/resample-voice"}) {
+		t.Fatalf("removed = %v, want the sink and resample stage rolled back", graph.removed)
 	}
 	if after := mediaTask.Describe(); !reflect.DeepEqual(before, after) {
 		t.Fatalf("graph mutated after rejected attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
@@ -1422,7 +1424,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 	))
 	graph := newRuntimeRollbackGraph()
-	graph.failConnectAt = 3
+	graph.failConnectAt = 2
 	mediaTask := &task{
 		graph:   graph,
 		runtime: rt,
@@ -1478,8 +1480,8 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	if !muxers.muxers[0].closed {
 		t.Fatal("runtime muxer was not closed after terminal graph rollback")
 	}
-	if graph.connects != 3 {
-		t.Fatalf("connects = %d, want terminal connect failure after two successful branch connects", graph.connects)
+	if graph.connects != 2 {
+		t.Fatalf("connects = %d, want terminal connect failure after the branch's first connect", graph.connects)
 	}
 	wantRemoved := []string{"archive/archive.ogg", "archive/encode-archive", "archive/resample-archive"}
 	if !reflect.DeepEqual(graph.removed, wantRemoved) {
@@ -1505,7 +1507,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 		Output: av.MediaAudio,
 	}, resampleFactory))))
 	graph := newRuntimeRollbackGraph()
-	graph.failConnectAt = 2
+	graph.failConnectAt = 1
 	sink := &runtimeTestSink{name: "monitor"}
 	mediaTask := &task{
 		graph:   graph,
@@ -1549,8 +1551,8 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	if !sink.closed {
 		t.Fatal("runtime sink destination was not closed after graph rollback")
 	}
-	if graph.connects != 2 {
-		t.Fatalf("connects = %d, want sink connect failure after one successful branch connect", graph.connects)
+	if graph.connects != 1 {
+		t.Fatalf("connects = %d, want the sink connect, the branch's first, to fail", graph.connects)
 	}
 	wantRemoved := []string{"monitor/monitor", "monitor/resample-monitor"}
 	if !reflect.DeepEqual(graph.removed, wantRemoved) {

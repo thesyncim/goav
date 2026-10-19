@@ -691,14 +691,26 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 			}
 		}
 		nodes = append(nodes, ref)
-		for i, input := range node.inputs {
-			route := node.route(i)
-			next := pipeline.Route{From: input.String(), To: []string{node.name}, Policy: route.policy, Label: route.label}
+		for _, input := range node.inputs {
+			if !slices.Contains(nodes, input) {
+				continue
+			}
+			next := pipeline.Route{From: input.String(), To: []string{node.name}, Policy: pipeline.RouteAll}
 			if err := t.graph.Connect(next); err != nil {
 				return fail(runtimeBranchGraphError(p.connectOperation(node, input), node.name, err))
 			}
 			routes = append(routes, next)
 		}
+	}
+	// The branch is whole before anything reaches it: the edges from the
+	// running graph connect last, one route per anchor and route, so the
+	// first message the anchor sends — a switch's keyframe — finds every
+	// node downstream of it in place.
+	for _, ingress := range p.ingress(nodes) {
+		if err := t.graph.Connect(ingress); err != nil {
+			return fail(runtimeBranchGraphError("connect branch", ingress.To[0], err))
+		}
+		routes = append(routes, ingress)
 	}
 	attachment := &runtimeAttachment{
 		id:     nextRuntimeAttachmentID(p.name),
@@ -743,12 +755,32 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	return attachment, nil
 }
 
-// connectOperation names a failed connect: a branch connects from its
-// anchor, then stage to stage, then into its destinations.
-func (p *attachPlan) connectOperation(node composeNode, input pipeline.NodeRef) string {
-	if _, ok := p.anchors[input]; ok {
-		return "connect branch"
+// ingress groups the edges from the running graph into the patch: one route
+// per anchor node, policy, and label, into every node it feeds.
+func (p *attachPlan) ingress(planned []pipeline.NodeRef) []pipeline.Route {
+	var out []pipeline.Route
+	for _, node := range p.lowering.g.nodes {
+		for i, input := range node.inputs {
+			if slices.Contains(planned, input) {
+				continue
+			}
+			route := node.route(i)
+			at := slices.IndexFunc(out, func(r pipeline.Route) bool {
+				return r.From == input.String() && r.Policy == route.policy && r.Label == route.label
+			})
+			if at < 0 {
+				out = append(out, pipeline.Route{From: input.String(), Policy: route.policy, Label: route.label})
+				at = len(out) - 1
+			}
+			out[at].To = append(out[at].To, node.name)
+		}
 	}
+	return out
+}
+
+// connectOperation names a failed connect inside the patch: stage to stage,
+// or into a destination.
+func (p *attachPlan) connectOperation(node composeNode, input pipeline.NodeRef) string {
 	if node.kind == composeSink || node.kind == composeMux {
 		return "connect branch target"
 	}

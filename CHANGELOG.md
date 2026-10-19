@@ -11,6 +11,13 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- An attached branch connects to the running graph last: its nodes and
+  internal edges are installed first, and the edges from its anchors follow,
+  one route per anchor. A `Rebranch` with `SwitchAt(NextKeyframe())` no longer
+  loses the switching keyframe to a gate whose encoder was not connected yet.
+- A detach whose context ends while it stops dependent branches returns the
+  cancellation instead of spinning while holding the task's attach lock.
+
 - `FuzzRecipe` builds random value-grammar recipes (inputs, forks, joins,
   operations, taps, shared destinations) and an Output attached at a tap,
   and checks Describe never panics, Describe equals Build whenever the recipe
