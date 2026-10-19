@@ -176,7 +176,8 @@ A media sink declares what it takes (`InputShapes`), learns its streams with the
 (`OpenStreams`), and gets the task's control path (`UseControl`), all optional
 (`provider.Output`). Frames reaching one are encoded to its first codec the runtime can encode,
 as Describe and Explain show; other codecs are refused with the fix (`.Decode()`, or an explicit
-`.Encode`). Egress is paced by its source: a file publishes in real time behind `playout`.
+`.Encode`). Egress is paced by its source: a file publishes in real time with `playout` on each
+stream it selects (`file in.mp4 ! video ! playout ! uri "whips://host/live"`).
 
 ## Descriptor-only boundaries
 

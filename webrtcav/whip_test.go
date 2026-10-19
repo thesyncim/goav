@@ -433,44 +433,121 @@ func TestWHEPToWHIPRelay(t *testing.T) {
 }
 
 // TestLocalTrackSendsAndHearsKeyframeRequests pins the local track
-// destination: it takes the track's codec, and a PLI on its sender becomes
-// a keyframe control for the stream.
+// destination over a loopback peer connection pair: it takes the track's
+// codec and refuses another, its packets reach the remote peer, and the
+// remote's PLI becomes a keyframe control for the stream.
 func TestLocalTrackSendsAndHearsKeyframeRequests(t *testing.T) {
 	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000}, "v", "goav")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink := LocalTrack(track, nil)
+	if err := LocalTrack(track, nil).(interface {
+		OpenStreams(context.Context, []av.Stream) error
+	}).OpenStreams(context.Background(), []av.Stream{{ID: "v", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecH264}}}); err == nil {
+		t.Fatal("an H264 stream opened a VP8 track")
+	}
+	offerer, err := loopbackAPI().NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer offerer.Close()
+	answerer, err := loopbackAPI().NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer answerer.Close()
+	sender, err := offerer.AddTrack(track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := make(chan *webrtc.TrackRemote, 1)
+	answerer.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) { remote <- track })
+	connect(t, offerer, answerer)
+
+	sink := LocalTrack(track, sender)
 	if got := sink.(interface{ InputShapes() shape.Set }).InputShapes(); len(got) != 1 || got[0].Codec != av.CodecVP8 {
 		t.Fatalf("input shapes = %v", got)
 	}
-	var mu sync.Mutex
-	var controls []control.Control
+	controls := make(chan control.Control, 8)
 	sink.(interface {
 		UseControl(func(context.Context, control.Control) error)
 	}).UseControl(func(_ context.Context, ctrl control.Control) error {
-		mu.Lock()
-		defer mu.Unlock()
-		controls = append(controls, ctrl)
+		controls <- ctrl
 		return nil
 	})
-	open := sink.(interface {
-		OpenStreams(context.Context, []av.Stream) error
-	})
-	if err := open.OpenStreams(context.Background(), []av.Stream{{ID: "v", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecH264}}}); err == nil {
-		t.Fatal("an H264 stream opened a VP8 track")
-	}
-	sink = LocalTrack(track, nil)
 	if err := sink.(interface {
 		OpenStreams(context.Context, []av.Stream) error
 	}).OpenStreams(context.Background(), []av.Stream{{ID: "v", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, ClockRate: 90000}}}); err != nil {
 		t.Fatal(err)
 	}
-	packet := &av.Packet{StreamID: "v", Keyframe: true, Payload: av.Buffer{Bytes: []byte{0x10, 0, 0x9d}}, PTS: av.Timestamp{Value: 1, Base: av.RTPTimeBase(90000)}}
-	if err := sink.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}); err != nil {
+	defer sink.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sending := make(chan error, 1)
+	go func() {
+		tick := time.NewTicker(10 * time.Millisecond)
+		defer tick.Stop()
+		for i := 1; ; i++ {
+			select {
+			case <-ctx.Done():
+				sending <- nil
+				return
+			case <-tick.C:
+			}
+			packet := &av.Packet{StreamID: "v", Keyframe: i == 1, Payload: av.Buffer{Bytes: []byte{0x10, 0x00, 0x9d, 0x01}}, PTS: av.Timestamp{Value: int64(i) * 3000, Base: av.RTPTimeBase(90000)}}
+			if err := sink.Handle(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}); err != nil {
+				sending <- err
+				return
+			}
+		}
+	}()
+	var got *webrtc.TrackRemote
+	select {
+	case got = <-remote:
+	case <-ctx.Done():
+		t.Fatal("no remote track")
+	}
+	if packet, _, err := got.ReadRTP(); err != nil || len(packet.Payload) == 0 {
+		t.Fatalf("remote read: %v", err)
+	}
+	if err := answerer.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(got.SSRC())}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sink.Close(); err != nil {
+	select {
+	case ctrl := <-controls:
+		if ctrl.Type() != control.KeyframeType || ctrl.StreamID() != "v" {
+			t.Fatalf("control = %v for %q", ctrl.Type(), ctrl.StreamID())
+		}
+	case <-ctx.Done():
+		t.Fatal("no keyframe control after PLI")
+	}
+	cancel()
+	if err := <-sending; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// connect negotiates offerer with answerer, candidates gathered up front.
+func connect(t *testing.T, offerer, answerer *webrtc.PeerConnection) {
+	t.Helper()
+	offer, err := offerer.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gathered := webrtc.GatheringCompletePromise(offerer)
+	offerer.SetLocalDescription(offer)
+	<-gathered
+	if err := answerer.SetRemoteDescription(*offerer.LocalDescription()); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := answerer.CreateAnswer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gathered = webrtc.GatheringCompletePromise(answerer)
+	answerer.SetLocalDescription(answer)
+	<-gathered
+	if err := offerer.SetRemoteDescription(*answerer.LocalDescription()); err != nil {
 		t.Fatal(err)
 	}
 }
