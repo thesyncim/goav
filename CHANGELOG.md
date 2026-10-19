@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: `Runtime.ExpertGraph()` is gone; the expert package reaches the
+  runtime through an internal hook, so `Runtime`'s method set is `Run`,
+  `Build`, `Describe`, `Explain`, and `Probe`. Migration: call
+  `expert.Graph(runtime)`, which was the only supported use.
+
 - The recipe compiler moved out of the root package into `internal/compile`
   (validation, shape solving, join planning, lowering, and the spec and work
   plan it emits); the root keeps the grammar, `Runtime`, the task, attach, and

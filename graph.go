@@ -1,6 +1,6 @@
 // The internal handle-based graph layer behind the expert package: a fluent
 // builder over caller-provided pipeline nodes plus the string-based bridge
-// methods the expert package reaches through (*Runtime).ExpertGraph.
+// methods the expert package reaches through internal/expertgraph.
 
 package goav
 
@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/expertgraph"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -70,19 +71,22 @@ func (o graphOutlet) Name() string {
 	return o.name
 }
 
-// newExpertGraph returns the fluent handle builder over a goav runtime; the
-// expert package reaches it through the (*Runtime).ExpertGraph bridge, which
-// guarantees the concrete runtime type.
+// newExpertGraph returns the fluent handle builder over a goav runtime.
 func newExpertGraph(r *Runtime) *graphBuilder {
 	return &graphBuilder{builder: r.newBuilder()}
 }
 
-// ExpertGraph is the structural bridge behind expert.Graph: it returns the
-// graph core the expert package asserts against its own leaf-typed interface,
-// keeping expert types out of the root package. The any return is what makes
-// the assertion possible without an import in either direction.
-func (r *Runtime) ExpertGraph() any {
-	return newExpertGraph(r)
+// The expert package reaches the graph core through internal/expertgraph, not
+// through a method on Runtime: expert asserts the returned value against its
+// own leaf-typed interface, so neither package names the other's types.
+func init() {
+	expertgraph.Open = func(runtime any) any {
+		r, ok := runtime.(*Runtime)
+		if !ok || r == nil {
+			return nil
+		}
+		return newExpertGraph(r)
+	}
 }
 
 type graphBuilder struct {

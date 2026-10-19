@@ -160,8 +160,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`,
   `WithCloseWaitTimeout`, `WithMediaPools`, `WithShapeDelta`.
   `goav.Runtime` is a concrete type with unexported fields; its methods are
-  `Run`, `Build`, `Describe`, `Explain`, `Probe` (format lookup), and the
-  tier-C `ExpertGraph` bridge.
+  `Run`, `Build`, `Describe`, `Explain`, and `Probe` (format lookup);
+  `expert.Graph(runtime)` reaches it through an internal hook, not a method.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`, `NewBuffer`,
   `BufferOwner`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
