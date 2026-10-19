@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "kind": "flv",
+  "generated_at": "2026-10-19T21:12:31Z",
+  "go_version": "go version go1.27.2 darwin/arm64",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "package": "./container/flv",
+  "bench_regex": "Benchmark(MuxTags|MuxEnhancedTags|MuxMultitrackTags)$",
+  "benchtime": "100x",
+  "count": "1",
+  "source": "scripts/bench/baseline.sh flv ./container/flv",
+  "thresholds": {
+    "bytes_per_op_slack_ratio": 0.05,
+    "bytes_per_op_slack_min": 1024,
+    "bytes_per_op_cold_slack_ratio": 0.25,
+    "allocs_per_op_slack": 0,
+    "allocs_per_op_slack_ratio": 0.05,
+    "allocs_per_op_slack_min": 4,
+    "allocs_per_op_cold_threshold": 100,
+    "allocs_per_op_cold_slack_ratio": 0.5,
+    "allocs_per_op_cold_slack_min": 64
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkMuxEnhancedTags",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 3270
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkMuxMultitrackTags",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 5974
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkMuxTags",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 3624
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    }
+  ]
+}

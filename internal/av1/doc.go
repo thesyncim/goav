@@ -34,3 +34,15 @@ func StripTemporalDelimiters(data []byte) ([]byte, error) {
 	})
 	return out, nil
 }
+
+// AppendWithoutTemporalDelimiters appends the temporal unit data to dst
+// without its temporal delimiter OBUs.
+func AppendWithoutTemporalDelimiters(dst, data []byte) ([]byte, error) {
+	err := av1ForEachOBU(data, func(obu av1OBU) error {
+		if obu.Type != obuTemporalDelimiter {
+			dst = append(dst, obu.Data...)
+		}
+		return nil
+	})
+	return dst, err
+}

@@ -19,6 +19,7 @@ import (
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	resampleadapter "github.com/thesyncim/goav/adapters/resample"
 	resizeadapter "github.com/thesyncim/goav/adapters/resize"
+	flvadapter "github.com/thesyncim/goav/container/flv"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
@@ -95,7 +96,8 @@ func Options() []runconfig.Option {
 //
 //	rt, err := goav.New(bundle.Filters(), myCodecOption)
 //
-// Formats registers the container adapters: IVF, Annex B, Matroska, WebM, MP4.
+// Formats registers the container adapters: IVF, Annex B, Matroska, WebM, MP4,
+// FLV.
 func Formats() runconfig.Option { return group(formatOptions) }
 
 // Codecs registers the pure-Go codec adapters: Opus, AAC, VP8/VP9, AV1, H.264.
@@ -126,6 +128,7 @@ var formatOptions = []runconfig.Option{
 	runconfig.WithFormatAdapter(matroskaadapter.Register),
 	runconfig.WithFormatAdapter(webmadapter.Register),
 	runconfig.WithFormatAdapter(mp4adapter.Register),
+	runconfig.WithFormatAdapter(flvadapter.Register),
 }
 
 var codecOptions = []runconfig.Option{

@@ -28,7 +28,6 @@ func (w *boxWriter) end() {
 	binary.BigEndian.PutUint32(w.b[at:], uint32(len(w.b)-at))
 }
 
-func (w *boxWriter) u8(v uint8)     { w.b = append(w.b, v) }
 func (w *boxWriter) u16(v uint16)   { w.b = binary.BigEndian.AppendUint16(w.b, v) }
 func (w *boxWriter) u32(v uint32)   { w.b = binary.BigEndian.AppendUint32(w.b, v) }
 func (w *boxWriter) u64(v uint64)   { w.b = binary.BigEndian.AppendUint64(w.b, v) }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/vpx"
 )
 
 // MuxerFactory opens MP4 muxers behind the goav format extension point.
@@ -80,7 +81,7 @@ type muxTrack struct {
 	height     int
 	channels   int
 	sampleRate int
-	vp         vpInfo
+	vp         vpx.Keyframe
 	vpKnown    bool
 	scratch    []byte
 

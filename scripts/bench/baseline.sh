@@ -36,6 +36,8 @@ soak_regex="${BENCH_BASELINE_SOAK_REGEX:-Benchmark(SoakRecordDrift|LiveRoomSync|
 # The packetize hot path lives in the rtpav nested module, run from its own
 # directory.
 rtpav_regex="${BENCH_BASELINE_RTPAV_REGEX:-Benchmark(Packetize|Send)$}"
+# FLV tag muxing, the hot path an RTMP publish writes through.
+flv_regex="${BENCH_BASELINE_FLV_REGEX:-Benchmark(MuxTags|MuxEnhancedTags|MuxMultitrackTags)$}"
 
 cleanup() {
   if [ -z "${BENCH_BASELINE_TMP:-}" ]; then
@@ -108,12 +110,14 @@ case "$mode" in
     collect_suite pipeline ./pipeline "$pipeline_regex"
     collect_suite soak . "$soak_regex"
     collect_suite rtpav ./rtpav "$rtpav_regex" rtpav
+    collect_suite flv ./container/flv "$flv_regex"
     ;;
   check)
     check_suite root . "$root_regex"
     check_suite pipeline ./pipeline "$pipeline_regex"
     check_suite soak . "$soak_regex"
     check_suite rtpav ./rtpav "$rtpav_regex" rtpav
+    check_suite flv ./container/flv "$flv_regex"
     ;;
   *)
     echo "usage: scripts/bench/baseline.sh [generate|check]" >&2

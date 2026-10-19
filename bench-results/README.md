@@ -13,6 +13,7 @@ bench-results/
   reference/pipeline.json                # committed alloc/B-op ratchet: deterministic fanout rows
   reference/soak.json                    # committed alloc/B-op ratchet: soak/control smoke rows
   reference/rtpav.json                   # committed alloc/B-op ratchet: packetize and send rows (rtpav)
+  reference/flv.json                     # committed alloc/B-op ratchet: FLV tag muxing rows
   baseline/<timestamp>/<machine>.txt      # full benchmark and RSS transcript
   latency/<scenario>-<timestamp>.json     # p50/p95/p99 and ns/op summary
   rss/<scenario>-<timestamp>.json         # heap/sys/max-RSS summary

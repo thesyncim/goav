@@ -47,3 +47,23 @@ func (r *Reader) SkipUVLC() error {
 	_, err := r.Bits(zeros)
 	return err
 }
+
+// UE reads an unsigned Exp-Golomb code, the ue(v) of H.264 and HEVC
+// parameter sets.
+func (r *Reader) UE() (uint64, error) {
+	zeros := 0
+	for {
+		bit, err := r.Bits(1)
+		if err != nil {
+			return 0, err
+		}
+		if bit == 1 {
+			break
+		}
+		if zeros++; zeros > 31 {
+			return 0, r.Err
+		}
+	}
+	value, err := r.Bits(zeros)
+	return 1<<zeros - 1 + value, err
+}
