@@ -133,6 +133,9 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if out == nil {
 		return codec.ErrNilResult
 	}
+	if d.decoder == nil {
+		return codec.ErrClosed
+	}
 	for d.pendingPLC > 0 {
 		if err := d.decodeOne(nil, av.Timestamp{}, out); err != nil {
 			return err
