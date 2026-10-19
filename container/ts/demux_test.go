@@ -269,3 +269,53 @@ func TestDemuxRefusesUnreadPrograms(t *testing.T) {
 		t.Fatalf("%v, want ErrUnsupported naming the stream types", err)
 	}
 }
+
+// TestDemuxOpensPastASilentStream declares an audio stream that sends
+// nothing for six seconds of video: Open stops probing after 5s of media
+// instead of waiting for it, and the audio stream's parameters, once they
+// arrive, ride an av.EventCodecChanged ahead of its first packet.
+func TestDemuxOpensPastASilentStream(t *testing.T) {
+	streams, all := syntheticAV(t, 90000, 700)
+	var packets []av.Packet
+	for _, p := range all {
+		if dts, _ := ticks90k(p.DTS); p.Type == av.MediaVideo || dts >= 90000+6*90000 {
+			packets = append(packets, p)
+		}
+	}
+	data := muxBytes(t, MuxerOptions{}, streams, packets)
+	r := &liveReader{data: data, wait: make(chan struct{})}
+	close(r.wait)
+	d := NewFormatDemuxer()
+	ctx := context.Background()
+	if err := d.Open(ctx, format.Input{Reader: r}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	opened := d.Streams()
+	if len(opened) != 2 || opened[1].Codec.ID != av.CodecAAC || opened[1].Codec.SampleRate != 0 {
+		t.Fatalf("Open found %+v, want an unconfigured AAC stream", opened)
+	}
+	if read := len(data) - len(r.data); read > len(data)*9/10 {
+		t.Fatalf("Open read %d of %d bytes", read, len(data))
+	}
+	result := format.ReadResult{Packet: &av.Packet{}, Events: make([]av.Event, 0, 1)}
+	for {
+		result.Reset()
+		if err := d.ReadInto(ctx, &result); err != nil {
+			t.Fatalf("no codec change before the audio: %v", err)
+		}
+		if result.PacketReady && result.Packet.Type == av.MediaAudio {
+			t.Fatal("audio arrived before its codec change")
+		}
+		if len(result.Events) == 1 && result.Events[0].Type == av.EventCodecChanged {
+			e := result.Events[0]
+			if e.StreamID != "257" || e.Codec == nil || e.Codec.SampleRate != 48000 || e.Epoch != 1 {
+				t.Fatalf("codec change %+v", e)
+			}
+			break
+		}
+	}
+	result.Reset()
+	if err := d.ReadInto(ctx, &result); err != nil || !result.PacketReady || result.Packet.StreamID != "257" || result.Packet.CodecEpoch != 1 {
+		t.Fatalf("after the change: %+v, %v", result.Packet, err)
+	}
+}

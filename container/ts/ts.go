@@ -22,7 +22,10 @@ const (
 	pidNull   = 0x1fff
 	pidPMT    = 0x1000
 	pidStream = 0x0100
-	program   = 1
+	// pidFirstFree is the first PID a stream may keep: DVB reserves 0x10 to
+	// 0x1F for its SI tables (NIT, SDT, EIT, TDT).
+	pidFirstFree = 0x0020
+	program      = 1
 
 	tablePAT = 0x00
 	tablePMT = 0x02

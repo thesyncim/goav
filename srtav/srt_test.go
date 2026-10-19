@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -40,28 +41,35 @@ func freePort(t *testing.T) int {
 	return conn.LocalAddr().(*net.UDPAddr).Port
 }
 
-// awaitListener waits until something holds the port: the listener is up.
-func awaitListener(t *testing.T, port int) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
-		if err != nil {
-			return
+// untilReached runs a caller's send again while its call finds no listener
+// yet (the receiving run starts listening concurrently), for up to 10s. A
+// refusal, or any failure past the call, returns at once.
+func untilReached(send func() error) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := send()
+		if err == nil || time.Now().After(deadline) {
+			return err
 		}
-		conn.Close()
+		if text := err.Error(); !strings.Contains(text, "connection timeout") && !strings.Contains(text, "connection refused") {
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatal("the listener never came up")
 }
 
 // sendTone publishes a live test tone, encoded to Opus, to an srt URL: the
 // launch program `testsrc audio live ! encode opus ! uri …`, paced in real
-// time as a contribution encoder sends.
+// time as a contribution encoder sends, calling again until a listener is
+// up.
 func sendTone(ctx context.Context, rt *goav.Runtime, url string, d time.Duration) error {
-	outs, err := launch.Compile(fmt.Sprintf("testsrc audio rate=48000 channels=2 duration=%s live ! encode opus ! uri %q", d, url), launch.URIs("srt"))
-	if err != nil {
-		return err
-	}
-	return rt.Run(ctx, outs...)
+	return untilReached(func() error {
+		outs, err := launch.Compile(fmt.Sprintf("testsrc audio rate=48000 channels=2 duration=%s live ! encode opus ! uri %q", d, url), launch.URIs("srt"))
+		if err != nil {
+			return err
+		}
+		return rt.Run(ctx, outs...)
+	})
 }
 
 // TestEncodeOverSRTAndDecode runs testsrc → Opus → SRT → decode across
@@ -86,7 +94,6 @@ func TestEncodeOverSRTAndDecode(t *testing.T) {
 	receiveCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- rt.Run(receiveCtx, goav.URIInput(listen).Audio().Decode().To(frames.Sink())) }()
-	awaitListener(t, port)
 	if err := sendTone(ctx, rt, call, time.Second); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -123,9 +130,10 @@ func TestCopyOverSRT(t *testing.T) {
 	receiveCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- rt.Run(receiveCtx, goav.URIInput(fmt.Sprintf("srt://:%d", port)).To(got.Sink())) }()
-	awaitListener(t, port)
 	start := time.Now()
-	if err := rt.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.URI(fmt.Sprintf("srt://127.0.0.1:%d", port)))); err != nil {
+	if err := untilReached(func() error {
+		return rt.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.URI(fmt.Sprintf("srt://127.0.0.1:%d", port))))
+	}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	if took := time.Since(start); took < 300*time.Millisecond {
@@ -181,7 +189,6 @@ func TestPassphraseMismatch(t *testing.T) {
 	done := make(chan error, 1)
 	listen := fmt.Sprintf("srt://:%d?passphrase=%s&streamid=live/a", port, url.QueryEscape(secret))
 	go func() { done <- rt.Run(receiveCtx, goav.URIInput(listen).Audio().To(got.Sink())) }()
-	awaitListener(t, port)
 	send := func(query string) error {
 		return sendTone(ctx, rt, fmt.Sprintf("srt://127.0.0.1:%d?%s", port, query), 100*time.Millisecond)
 	}
@@ -227,7 +234,6 @@ func TestReconnect(t *testing.T) {
 	}()
 	send := func() {
 		t.Helper()
-		awaitListener(t, port)
 		call := fmt.Sprintf("srt://127.0.0.1:%d", port)
 		if err := sendTone(ctx, rt, call, 600*time.Millisecond); err != nil {
 			t.Fatalf("send: %v", err)
@@ -257,7 +263,6 @@ func TestReconnect(t *testing.T) {
 	if !errors.Is(drop.Cause, srtav.ErrDisconnected) {
 		t.Fatalf("dropped with %v, want ErrDisconnected", drop.Cause)
 	}
-	time.Sleep(100 * time.Millisecond) // past the backoff: the listener is up again
 	before := len(first)
 	send()
 	for {
@@ -293,5 +298,59 @@ func TestBindRefusals(t *testing.T) {
 		if _, err := scheme.Input(u); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v, want %q", raw, err, want)
 		}
+	}
+}
+
+// TestLargeWrite sends one 3 MB write, more than gosrt's 1024-packet send
+// queue holds at once (a 4K keyframe): it arrives whole instead of failing
+// as a disconnect.
+func TestLargeWrite(t *testing.T) {
+	port := freePort(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	listen, _ := url.Parse(fmt.Sprintf("srt://:%d", port))
+	call, _ := url.Parse(fmt.Sprintf("srt://127.0.0.1:%d", port))
+	in, err := srtav.SRT().(provider.InputScheme).Input(listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, 3<<20)
+	for i := range payload {
+		payload[i] = byte(i * 7)
+	}
+	got := make(chan []byte, 1)
+	go func() {
+		r, err := in.(provider.ByteSource).OpenBytes(ctx)
+		if err != nil {
+			t.Error(err)
+			got <- nil
+			return
+		}
+		defer r.Close()
+		buf := make([]byte, len(payload))
+		if n, err := io.ReadFull(r, buf); err != nil {
+			t.Errorf("read %d bytes: %v", n, err)
+		}
+		got <- buf
+	}()
+	out, err := srtav.SRT().(provider.DestinationScheme).Destination(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w provider.Writer
+	if err := untilReached(func() (err error) {
+		w, err = out.(provider.Destination).Open(ctx, provider.Info{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if b := <-got; !bytes.Equal(b, payload) {
+		t.Fatal("the 3 MB write arrived damaged")
 	}
 }

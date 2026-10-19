@@ -192,3 +192,30 @@ func TestProber(t *testing.T) {
 		}
 	}
 }
+
+// TestMuxKeepsPIDs keeps a stream id that is a free elementary PID and
+// assigns one for any other: a DVB SI PID, the PMT's, a name.
+func TestMuxKeepsPIDs(t *testing.T) {
+	streams, packets := syntheticAV(t, 90000, 6)
+	for _, tc := range []struct {
+		ids  [2]av.StreamID
+		want [2]av.StreamID
+	}{
+		{[2]av.StreamID{"300", "301"}, [2]av.StreamID{"300", "301"}},
+		{[2]av.StreamID{"17", "4096"}, [2]av.StreamID{"256", "257"}},
+		{[2]av.StreamID{"video", "257"}, [2]av.StreamID{"256", "257"}},
+	} {
+		ss := append([]av.Stream(nil), streams...)
+		ps := append([]av.Packet(nil), packets...)
+		for i := range ss {
+			ss[i].ID = tc.ids[i]
+		}
+		for i := range ps {
+			ps[i].StreamID = tc.ids[map[av.StreamID]int{"256": 0, "257": 1}[packets[i].StreamID]]
+		}
+		got := demuxBytes(t, muxBytes(t, MuxerOptions{}, ss, ps)).streams
+		if got[0].ID != tc.want[0] || got[1].ID != tc.want[1] {
+			t.Errorf("ids %v muxed as %s, %s; want %v", tc.ids, got[0].ID, got[1].ID, tc.want)
+		}
+	}
+}

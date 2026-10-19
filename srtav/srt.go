@@ -294,6 +294,8 @@ type conn struct {
 	srt       srt.Conn
 	ln        srt.Listener
 	lastWrite atomic.Int64 // unix nanoseconds, 0 before the first write
+	window    time.Time    // the burst window Write paces in, and its packets
+	inWindow  int
 	closed    atomic.Bool
 	closing   sync.Once
 }
@@ -310,16 +312,56 @@ func (c *conn) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// closeMargin is how long past the peer's delivery delay Close keeps a
+// session that wrote: the peer delivers on its own clock and receive tick,
+// measured here up to 100ms behind the delay it declared.
+const closeMargin = 250 * time.Millisecond
+
+// writeRetry bounds how long Write waits out a full send queue: gosrt
+// refuses a packet, with io.EOF, both when its 1024-packet queue is full
+// and when the session is gone, so a refusal is retried for this long
+// before it means the latter.
+const writeRetry = 500 * time.Millisecond
+
+// burst paces a large write: at most burstPackets per burstWindow. A
+// gosrt receiver delivers every packet due in one 10ms tick into a
+// 1024-packet queue and drops the overflow, so an access unit of more than
+// a megabyte (a 4K keyframe) sent at once would lose its tail there.
+const (
+	burstPackets = 512
+	burstWindow  = 10 * time.Millisecond
+)
+
 func (c *conn) Write(p []byte) (int, error) {
 	defer c.lastWrite.Store(time.Now().UnixNano())
 	for sent := 0; sent < len(p); {
-		n, err := c.srt.Write(p[sent:min(len(p), sent+tsPayload)])
+		c.pace()
+		chunk := p[sent:min(len(p), sent+tsPayload)]
+		n, err := c.srt.Write(chunk)
+		for wait := time.Millisecond; err != nil && wait < writeRetry && !c.closed.Load(); wait *= 2 {
+			time.Sleep(wait)
+			n, err = c.srt.Write(chunk)
+		}
 		sent += n
 		if err != nil {
 			return sent, c.ended(err)
 		}
 	}
 	return len(p), nil
+}
+
+// pace counts a packet into the current burst window, waiting for the next
+// window when this one is full.
+func (c *conn) pace() {
+	now := time.Now()
+	if now.Sub(c.window) >= burstWindow {
+		c.window, c.inWindow = now, 0
+	}
+	if c.inWindow == burstPackets {
+		time.Sleep(c.window.Add(burstWindow).Sub(now))
+		c.window, c.inWindow = time.Now(), 0
+	}
+	c.inWindow++
 }
 
 // ended reports a failed read or write: net.ErrClosed after Close, else the
@@ -335,9 +377,9 @@ func (c *conn) ended(err error) error {
 
 // Close ends the session. After writing, it first lets the peer have the
 // tail: it waits for the acknowledgement of everything sent, then for the
-// peer's delivery delay (its latency) past the last write, since the peer
-// drops what it has not delivered when the session closes. Each wait is
-// bounded by the latency and a second.
+// peer's delivery delay (its latency) and closeMargin past the last write,
+// since the peer drops what it has not delivered when the session closes.
+// The first wait is bounded by the latency and a second.
 func (c *conn) Close() error {
 	c.closing.Do(func() {
 		c.closed.Store(true)
@@ -350,7 +392,7 @@ func (c *conn) Close() error {
 					break
 				}
 			}
-			time.Sleep(time.Until(time.Unix(0, last).Add(delay + 20*time.Millisecond)))
+			time.Sleep(time.Until(time.Unix(0, last).Add(delay + closeMargin)))
 		}
 		c.srt.Close()
 		if c.ln != nil {

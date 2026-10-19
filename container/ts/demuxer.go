@@ -19,6 +19,10 @@ const (
 	// probeWindow bounds how far Open reads for the program and each
 	// stream's codec parameters.
 	probeWindow = 8 << 20
+	// probeSpan bounds it in media time too (5s, as ffmpeg analyzes): a live
+	// input whose PMT names a stream that sends nothing opens without its
+	// parameters, which arrive with av.EventCodecChanged if it ever does.
+	probeSpan = 5 * clock90k
 	// maxPES bounds one reassembled PES packet; a longer one is dropped.
 	maxPES = 8 << 20
 )
@@ -27,7 +31,8 @@ var timeBase = av.TimeBase{Num: 1, Den: clock90k}
 
 // FormatDemuxer reads the first program of a transport stream; it is a
 // format.Demuxer. Open reads until the PMT and every stream's codec
-// parameters are known (at most 8 MiB), keeping the packets it read.
+// parameters are known (at most 8 MiB or 5s of media), keeping the packets
+// it read.
 type FormatDemuxer struct {
 	r      io.Reader
 	buf    []byte
@@ -59,9 +64,12 @@ type FormatDemuxer struct {
 	head  int
 	pool  [][]byte
 
-	ref     int64 // the last timestamp, which the next unwraps against
-	haveRef bool
-	broken  bool // a time-base discontinuity is due before the next packet
+	firstDTS int64 // the probe's media span: the first DTS read, and the last
+	lastDTS  int64
+	spanned  bool
+	ref      int64 // the last timestamp, which the next unwraps against
+	haveRef  bool
+	broken   bool // a time-base discontinuity is due before the next packet
 }
 
 type demuxStream struct {
@@ -78,6 +86,7 @@ type demuxStream struct {
 	damaged    bool
 	lossNext   bool
 	breakNext  bool
+	changed    bool // configured after Open announced it: EventCodecChanged is due
 	pesLoss    bool // the PES being read follows lost data
 
 	tail     []byte // an ADTS frame the next PES completes
@@ -98,6 +107,7 @@ type unit struct {
 	corrupt  bool
 	loss     bool
 	broken   bool
+	epoch    av.Epoch
 }
 
 // NewFormatDemuxer returns a transport stream demuxer.
@@ -155,6 +165,9 @@ func (d *FormatDemuxer) probed() bool {
 	}
 	if d.pmtVersion < 0 {
 		return false
+	}
+	if d.spanned && d.lastDTS-d.firstDTS >= probeSpan {
+		return true
 	}
 	for _, st := range d.streams {
 		if !st.ready {
@@ -217,6 +230,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	d.pool = append(d.pool, u.data[:0])
 	p.StreamID = u.stream.stream.ID
 	p.Type = u.stream.stream.Type
+	p.CodecEpoch = u.epoch
 	p.PTS = av.Timestamp{Value: u.pts, Base: timeBase}
 	p.DTS = av.Timestamp{Value: u.dts, Base: timeBase}
 	p.Duration = u.duration
@@ -583,6 +597,10 @@ func (d *FormatDemuxer) finish(st *demuxStream) {
 		if flags == 3 {
 			dts = d.unwrap(readTimestamp(data[14:]))
 		}
+		if !d.spanned {
+			d.firstDTS, d.spanned = dts, true
+		}
+		d.lastDTS = dts
 	}
 	switch st.stream.Codec.ID {
 	case av.CodecH264, av.CodecHEVC:
@@ -633,7 +651,7 @@ func (d *FormatDemuxer) configureVideo(st *demuxStream, au []byte) {
 			return
 		}
 		params.ExtraData.Bytes = sets
-		st.ready = true
+		d.markReady(st)
 		return
 	}
 	record, err := h264.ConfigFromAnnexB(au)
@@ -646,7 +664,7 @@ func (d *FormatDemuxer) configureVideo(st *demuxStream, au []byte) {
 		}
 	}
 	params.ExtraData.Bytes = record
-	st.ready = true
+	d.markReady(st)
 }
 
 // aacUnits queues each ADTS frame of a PES packet as a raw access unit,
@@ -697,7 +715,7 @@ func (d *FormatDemuxer) configureAAC(st *demuxStream, config aacConfig) {
 	params.SampleRate = config.sampleRate()
 	params.Channels = config.channels
 	params.ExtraData.Bytes = config.audioSpecificConfig()
-	st.ready = true
+	d.markReady(st)
 }
 
 // opusUnits queues each Opus packet of a PES packet behind its control
@@ -719,7 +737,7 @@ func (d *FormatDemuxer) opusUnits(st *demuxStream, payload []byte, pts int64, ti
 			// their own: their packets flow unconfigured.
 			if head, channels, ok := opusHead(st.opusCode, trim); ok {
 				st.stream.Codec.ExtraData.Bytes, st.stream.Codec.Channels = head, channels
-				st.ready = true
+				d.markReady(st)
 			}
 		}
 		samples := opusSamples(packet)
@@ -731,6 +749,17 @@ func (d *FormatDemuxer) opusUnits(st *demuxStream, payload []byte, pts int64, ti
 		payload = payload[consumed:]
 	}
 	st.next, st.haveNext = at, true
+}
+
+// markReady records that st's codec parameters are known. Found after Open
+// announced the stream without them, they ride an av.EventCodecChanged
+// ahead of its next packet, on a new epoch.
+func (d *FormatDemuxer) markReady(st *demuxStream) {
+	st.ready = true
+	if d.open && st.announced {
+		st.stream.Epoch++
+		st.changed = true
+	}
 }
 
 // emit queues a unit of st, preceded by the events it needs: a time-base
@@ -745,10 +774,16 @@ func (d *FormatDemuxer) emit(st *demuxStream, u unit) {
 		stream := cloneStream(st.stream)
 		d.push(unit{event: av.Event{Type: av.EventStreamAdded, StreamID: stream.ID, Stream: &stream}})
 	}
+	if st.changed {
+		st.changed = false
+		params := cloneStream(st.stream).Codec
+		d.push(unit{event: av.Event{Type: av.EventCodecChanged, StreamID: st.stream.ID, Epoch: st.stream.Epoch, Codec: &params}})
+	}
 	u.stream = st
 	u.loss, st.pesLoss = st.pesLoss, false
 	u.broken, st.breakNext = st.breakNext, false
 	st.last = u.dts
+	u.epoch = st.stream.Epoch
 	buf := d.take(len(u.data))
 	u.data = append(buf, u.data...)
 	d.push(u)

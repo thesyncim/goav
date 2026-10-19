@@ -19,6 +19,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/scheme"
+	"github.com/thesyncim/goav/shape"
 )
 
 // freeUDPPort returns a loopback port nothing listens on.
@@ -32,18 +33,13 @@ func freeUDPPort(t *testing.T) int {
 	return conn.LocalAddr().(*net.UDPAddr).Port
 }
 
-// awaitUDPListener waits until something holds the port.
-func awaitUDPListener(t *testing.T, port int) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
-		if err != nil {
-			return
-		}
-		conn.Close()
-	}
-	t.Fatal("the receiver never listened")
-}
+// boundInput is a udp input opened before its run starts, so the sender
+// cannot race the receiver's bind.
+type boundInput struct{ io.ReadCloser }
+
+func (boundInput) SourceShape() shape.Spec { return shape.Spec{Format: av.FormatTS, Realtime: true} }
+
+func (b boundInput) OpenBytes(context.Context) (io.ReadCloser, error) { return b.ReadCloser, nil }
 
 // TestUDPCarriesATransportStream sends an MP4 as MPEG-TS over loopback UDP
 // and receives it with a second run: the sender plays at the file's media
@@ -65,8 +61,16 @@ func TestUDPCarriesATransportStream(t *testing.T) {
 	received := goavtest.NewCollector()
 	receiveCtx, stopReceiving := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	go func() { done <- rt.Run(receiveCtx, goav.URIInput(addr).To(received.Sink())) }()
-	awaitUDPListener(t, port)
+	u, _ := url.Parse(addr)
+	in, err := scheme.UDP().(provider.InputScheme).Input(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listening, err := in.(provider.ByteSource).OpenBytes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { done <- rt.Run(receiveCtx, goav.Input(boundInput{listening}).To(received.Sink())) }()
 	start := time.Now()
 	if err := rt.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.URI(addr))); err != nil {
 		t.Fatalf("send: %v", err)

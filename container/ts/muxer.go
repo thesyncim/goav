@@ -144,7 +144,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 // demuxed from a transport stream has, and assigns fallback otherwise.
 func streamPID(id av.StreamID, fallback uint16, used map[uint16]bool) uint16 {
 	pid := fallback
-	if v, err := strconv.ParseUint(string(id), 10, 13); err == nil && v >= 0x10 && v < pidNull && !used[uint16(v)] {
+	if v, err := strconv.ParseUint(string(id), 10, 13); err == nil && v >= pidFirstFree && v < pidNull && !used[uint16(v)] {
 		pid = uint16(v)
 	}
 	for used[pid] {
