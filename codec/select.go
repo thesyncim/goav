@@ -28,6 +28,10 @@ type Need struct {
 	// Realtime ranks backends that declare low-latency support first among
 	// otherwise equal candidates.
 	Realtime bool
+	// Settings are the knob settings the request makes of whichever backend
+	// serves it (CodecSettings.KnobSettings): a backend that declares knobs
+	// serves only when it takes every one of them, with that value.
+	Settings map[string]string
 }
 
 // Choice is the backend Select picked for a Need, why it was picked, and the
@@ -130,21 +134,11 @@ func modeNoun(mode Mode) string {
 }
 
 // Select picks the backend that serves need: the one need names, or else
-// the most preferred backend whose declared capabilities fit (see Prefer).
-// It never substitutes another backend for a named one, and reads only
-// declarations: nothing is loaded or opened.
+// the most preferred backend whose declared capabilities and knobs fit (see
+// Prefer). It never substitutes another backend for a named one, and reads
+// only declarations: nothing is loaded or opened.
 func (r *SimpleRegistry) Select(need Need) (Choice, error) {
 	candidates := r.candidates(need)
-	if len(candidates) == 0 {
-		failure := &SelectError{Need: need, Err: ErrNotFound}
-		if r.hasDescriptor(need.ID, need.Mode) {
-			failure.Err = ErrUnavailable
-			for _, desc := range r.descriptorsFor(need.ID, need.Mode) {
-				failure.Rejected = append(failure.Rejected, Rejection{Descriptor: desc, Reason: "registered without an implementation"})
-			}
-		}
-		return Choice{}, failure
-	}
 	var fitting []registered
 	var rejected []Rejection
 	for _, candidate := range candidates {
@@ -155,14 +149,20 @@ func (r *SimpleRegistry) Select(need Need) (Choice, error) {
 		fitting = append(fitting, candidate)
 	}
 	if need.Backend != "" {
-		index := slices.IndexFunc(candidates, func(candidate registered) bool {
-			return strings.EqualFold(candidate.desc.Backend.Name, need.Backend)
-		})
-		others := slices.DeleteFunc(slices.Clone(fitting), func(candidate registered) bool {
-			return strings.EqualFold(candidate.desc.Backend.Name, need.Backend)
-		})
+		named := func(name string) bool { return strings.EqualFold(name, need.Backend) }
+		others := slices.DeleteFunc(slices.Clone(fitting), func(candidate registered) bool { return named(candidate.desc.Backend.Name) })
+		index := slices.IndexFunc(candidates, func(candidate registered) bool { return named(candidate.desc.Backend.Name) })
 		if index < 0 {
-			return Choice{}, &SelectError{Need: need, Satisfying: descriptorsOf(others), Err: ErrNotFound}
+			failure := &SelectError{Need: need, Satisfying: descriptorsOf(others), Err: ErrNotFound}
+			// A named backend registered without an implementation (its
+			// library is not installed, say) is unavailable, and says why.
+			for _, desc := range r.descriptorsFor(need.ID, need.Mode) {
+				if named(desc.Backend.Name) {
+					failure.Err = ErrUnavailable
+					failure.Rejected = []Rejection{{Descriptor: desc, Reason: unimplemented(desc)}}
+				}
+			}
+			return Choice{}, failure
 		}
 		if err := candidates[index].desc.Check(need); err != nil {
 			return Choice{}, &SelectError{
@@ -174,14 +174,31 @@ func (r *SimpleRegistry) Select(need Need) (Choice, error) {
 		}
 		return choiceOf(candidates[index], "backend "+candidates[index].desc.Backend.Name+" requested", others), nil
 	}
+	if len(candidates) == 0 {
+		failure := &SelectError{Need: need, Err: ErrNotFound}
+		for _, desc := range r.descriptorsFor(need.ID, need.Mode) {
+			failure.Err = ErrUnavailable
+			failure.Rejected = append(failure.Rejected, Rejection{Descriptor: desc, Reason: unimplemented(desc)})
+		}
+		return Choice{}, failure
+	}
 	if len(fitting) == 0 {
 		return Choice{}, &SelectError{Need: need, Rejected: rejected, Err: ErrUnsupportedFormat}
 	}
-	reason := r.preferenceReason(fitting[0])
+	reason := r.preferenceReason(need, fitting[0])
 	if len(candidates) == 1 {
 		reason = "the only " + string(need.ID) + " " + modeNoun(need.Mode) + " registered"
 	}
 	return choiceOf(fitting[0], reason, fitting[1:]), nil
+}
+
+// unimplemented is why a descriptor-only backend cannot serve: its status
+// says why when it is not merely planned (not-installed, say).
+func unimplemented(desc Descriptor) string {
+	if status := desc.Backend.Status; status != "" && status != "active" {
+		return "registered without an implementation (" + status + ")"
+	}
+	return "registered without an implementation"
 }
 
 func choiceOf(chosen registered, reason string, others []registered) Choice {
@@ -208,6 +225,7 @@ func descriptorsOf(backends []registered) []Descriptor {
 // candidates are the backends serving need's codec and mode, most preferred
 // first.
 func (r *SimpleRegistry) candidates(need Need) []registered {
+	order := r.preferenceFor(need.ID, need.Mode)
 	var out []registered
 	for _, backend := range r.backends {
 		if backend.mode == need.Mode && backend.desc.ID == need.ID {
@@ -215,7 +233,7 @@ func (r *SimpleRegistry) candidates(need Need) []registered {
 		}
 	}
 	slices.SortStableFunc(out, func(a, b registered) int {
-		if d := r.preferenceRank(a.desc.Backend) - r.preferenceRank(b.desc.Backend); d != 0 {
+		if d := preferenceRank(order, a.desc.Backend) - preferenceRank(order, b.desc.Backend); d != 0 {
 			return d
 		}
 		if d := kindRank(a.desc.Backend.Kind) - kindRank(b.desc.Backend.Kind); d != 0 {
@@ -234,13 +252,13 @@ func (r *SimpleRegistry) candidates(need Need) []registered {
 
 // preferenceRank is the position of the first Prefer entry naming the
 // backend or its kind, or past the end when none does.
-func (r *SimpleRegistry) preferenceRank(backend BackendInfo) int {
-	for i, entry := range r.preference {
+func preferenceRank(order []string, backend BackendInfo) int {
+	for i, entry := range order {
 		if strings.EqualFold(entry, backend.Name) || (backend.Kind != "" && strings.EqualFold(entry, string(backend.Kind))) {
 			return i
 		}
 	}
-	return len(r.preference)
+	return len(order)
 }
 
 func kindRank(kind BackendKind) int {
@@ -257,9 +275,9 @@ func kindRank(kind BackendKind) int {
 	return 3
 }
 
-func (r *SimpleRegistry) preferenceReason(chosen registered) string {
-	if r.preferenceRank(chosen.desc.Backend) < len(r.preference) {
-		return "runtime preference " + strings.Join(r.preference, " > ")
+func (r *SimpleRegistry) preferenceReason(need Need, chosen registered) string {
+	if order := r.preferenceFor(need.ID, need.Mode); preferenceRank(order, chosen.desc.Backend) < len(order) {
+		return "runtime preference " + strings.Join(order, " > ")
 	}
 	return "default preference: hardware > native > go"
 }
@@ -294,6 +312,22 @@ func (d Descriptor) Check(need Need) error {
 		return fmt.Errorf("bit depth %d not supported (%s)", need.BitDepth, joinInts(bitDepths(capabilities)))
 	case capabilities.MaxWidth > 0 && need.Width > capabilities.MaxWidth, capabilities.MaxHeight > 0 && need.Height > capabilities.MaxHeight:
 		return fmt.Errorf("%dx%d exceeds the %dx%d maximum", need.Width, need.Height, capabilities.MaxWidth, capabilities.MaxHeight)
+	}
+	if d.Knobs != nil {
+		names := make([]string, 0, len(need.Settings))
+		for name := range need.Settings {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			knob, ok := d.Knob(name)
+			if !ok {
+				return fmt.Errorf("takes no setting %s", name)
+			}
+			if _, err := knob.Parse(need.Settings[name]); err != nil {
+				return errors.New(strings.TrimPrefix(err.Error(), ErrInvalidSetting.Error()+": "))
+			}
+		}
 	}
 	return nil
 }

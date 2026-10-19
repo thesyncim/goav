@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/spelling"
 )
 
@@ -157,9 +158,14 @@ func (v KnobValues) String(name string) string { return v.values[name] }
 // IsSet reports whether the request set the knob (not just its default).
 func (v KnobValues) IsSet(name string) bool { return v.set[name] }
 
-// Int returns an int or bool knob's value, 0 when empty.
+// Int returns an int knob's value, or a bool knob's as 1 or 0; 0 when
+// empty.
 func (v KnobValues) Int(name string) int {
-	n, _ := strconv.Atoi(v.values[name])
+	value := v.values[name]
+	if value == "true" {
+		return 1
+	}
+	n, _ := strconv.Atoi(value)
 	return n
 }
 
@@ -253,24 +259,19 @@ func (d Descriptor) ResolveKnobs(s CodecSettings, lowLatency bool) (KnobValues, 
 	slices.Sort(keys)
 	for _, key := range keys {
 		value := s.Custom[key]
-		lower := strings.ToLower(key)
-		switch {
-		case strings.HasSuffix(lower, "-params"):
-			if strings.TrimSuffix(lower, "-params") != backend {
-				continue
-			}
-			raw, err := d.parseRaw(value)
-			if err != nil {
-				return KnobValues{}, err
-			}
-			values.raw = append(values.raw, raw...)
-			continue
-		case strings.Contains(key, "."):
-			scope, name, _ := strings.Cut(key, ".")
+		if scope, ok := KnobScope(key); ok {
 			if !strings.EqualFold(scope, backend) {
 				continue
 			}
-			key = name
+			if strings.HasSuffix(key, "-params") {
+				raw, err := d.parseRaw(value)
+				if err != nil {
+					return KnobValues{}, err
+				}
+				values.raw = append(values.raw, raw...)
+				continue
+			}
+			key = key[len(scope)+1:]
 		}
 		if err := set(key, value); err != nil {
 			return KnobValues{}, err
@@ -339,4 +340,82 @@ func withSuggestion(err error, name string, names []string) error {
 		return fmt.Errorf("%w; did you mean %s?", err, near)
 	}
 	return err
+}
+
+// The common knobs. A backend that takes bitrate, rate control, quality, a
+// quantizer, speed, threads, tuning, a keyframe interval, or a low-latency
+// mode declares these, narrowing the values or range to what it honors, so a
+// recipe's settings mean the same whichever backend serves them, and
+// selection skips a backend that cannot honor one.
+var (
+	KnobBitrate     = Knob{Name: knobBitrate, Type: KnobInt, Min: 1000, Max: 2_000_000_000, Live: true, Help: "target bitrate in bits per second (2M, 800k)"}
+	KnobRateControl = Knob{Name: "rc", Type: KnobEnum, Values: []string{"cbr", "vbr", "cq", "cqp"}, Help: "rate control: constant or variable bitrate, constant quality (quality), or constant quantizer (qp)"}
+	KnobQuality     = Knob{Name: "quality", Type: KnobInt, Min: 0, Max: 100, Help: "constant-quality target, 0 to 100, higher is better"}
+	KnobQP          = Knob{Name: "qp", Type: KnobInt, Min: 0, Max: 255, Help: "constant quantizer, in the codec's own scale"}
+	KnobSpeed       = Knob{Name: "speed", Type: KnobInt, Min: 0, Max: 10, Help: "encoder effort, 0 slowest and best to 10 fastest"}
+	KnobThreads     = Knob{Name: "threads", Type: KnobInt, Min: 0, Max: 256, Help: "worker threads; 0 picks per core"}
+	KnobTune        = Knob{Name: "tune", Type: KnobEnum, Values: []string{"camera", "screen", "film", "animation", "grain", "latency"}, Help: "content tuning"}
+	KnobGOP         = Knob{Name: knobGOP, Type: KnobInt, Min: 0, Max: 1 << 20, Help: "frames between keyframes (codec.KeyframeInterval)"}
+	KnobRealtime    = Knob{Name: knobRealtime, Type: KnobBool, Help: "low-latency mode; on by default for realtime work"}
+)
+
+// KnobSettings are the knob settings s makes of whichever backend serves it,
+// by knob name: the typed common settings (bitrate, gop, profile, level) and
+// every codec.Setting not scoped to one backend.
+func (s CodecSettings) KnobSettings() map[string]string {
+	out := map[string]string{}
+	for name, value := range map[string]string{
+		knobBitrate: positiveText(s.Bitrate),
+		knobGOP:     positiveText(s.KeyframeInterval),
+		knobProfile: s.Profile,
+		knobLevel:   s.Level,
+	} {
+		if value != "" {
+			out[name] = value
+		}
+	}
+	for key, value := range s.Custom {
+		if _, ok := KnobScope(key); !ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+// KnobScope reports the backend a setting key is scoped to: openh264 for
+// openh264.rc and for the raw openh264-params.
+func KnobScope(key string) (string, bool) {
+	if scope, ok := strings.CutSuffix(key, "-params"); ok && scope != "" {
+		return scope, true
+	}
+	if scope, _, ok := strings.Cut(key, "."); ok && scope != "" {
+		return scope, true
+	}
+	return "", false
+}
+
+// CheckScopes refuses a setting scoped to a backend the registry holds no
+// descriptor of for codec id (openh264.rc with no openh264), with the nearest
+// backend name, so a misspelled scope is never silently skipped.
+func (r *SimpleRegistry) CheckScopes(id av.CodecID, s CodecSettings) error {
+	var names []string
+	for _, desc := range r.descriptors {
+		if desc.ID == id && !slices.Contains(names, desc.Backend.Name) {
+			names = append(names, desc.Backend.Name)
+		}
+	}
+	keys := make([]string, 0, len(s.Custom))
+	for key := range s.Custom {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		scope, ok := KnobScope(key)
+		if !ok || slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, scope) }) {
+			continue
+		}
+		err := fmt.Errorf("%w: setting %s is scoped to %s, which is no %s backend here (backends: %s)", ErrInvalidSetting, key, scope, id, strings.Join(names, ", "))
+		return withSuggestion(err, scope, names)
+	}
+	return nil
 }

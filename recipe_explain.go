@@ -458,7 +458,7 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 				})
 				continue
 			}
-			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "decoder", codecID, requiredBy, operation.Codec))
+			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "decoder", codecID, requiredBy, operation.Codec, workInputsLive(inputs)))
 		case plan.OpTransform:
 			name := operation.Component
 			if name == "" || name == "transform" {
@@ -470,7 +470,7 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 			if codecID == "" {
 				continue
 			}
-			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "encoder", codecID, requiredBy, operation.Codec))
+			requirements = appendAdapterRequirement(requirements, codecAdapterRequirement(resolved.runtime, "encoder", codecID, requiredBy, operation.Codec, workInputsLive(inputs)))
 		}
 	}
 	return requirements, warnings
@@ -610,7 +610,7 @@ func codecFactoryStatus(err error) string {
 	return "missing"
 }
 
-func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requiredBy string, spec codec.Spec) plan.AdapterRequirement {
+func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requiredBy string, spec codec.Spec, realtime bool) plan.AdapterRequirement {
 	requirement := plan.AdapterRequirement{
 		Kind:       kind,
 		Name:       string(codecID),
@@ -630,8 +630,9 @@ func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requi
 	spec.ID = codecID
 	request := compile.EncodeAdapterRequestFromPreparedStream(spec, av.Stream{})
 	if mode == codec.ModeDecode {
-		request = compile.CodecAdapterRequest{Codec: codecID, Backend: spec.Settings.Backend}
+		request = compile.CodecAdapterRequest{Codec: codecID, Backend: spec.Settings.Backend, Settings: spec.Settings}
 	}
+	request.Realtime = realtime || rt.realtime
 	if choice, err := rt.codecs.Select(request.Need(mode)); err == nil {
 		requirement.PixelFormats, requirement.SampleFormats = nil, nil
 		requirement = applyCodecDescriptorRequirement(requirement, []codec.Descriptor{choice.Descriptor})
@@ -999,4 +1000,14 @@ func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
 		})
 	}
 	return out
+}
+
+// workInputsLive reports a plan with a live input: its codecs run realtime.
+func workInputsLive(inputs []compile.WorkInput) bool {
+	for i := range inputs {
+		if inputs[i].Realtime {
+			return true
+		}
+	}
+	return false
 }

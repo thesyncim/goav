@@ -19,8 +19,8 @@ const (
 // Descriptor identifies a codec implementation and what it can do: identity,
 // media type, supported modes, and concrete capabilities. Registries key on
 // it, and the planner's compatibility checks read it before anything is
-// allocated or opened. Realtime declares low-latency support: realtime work
-// selects only backends that declare it.
+// allocated or opened. Realtime declares low-latency support: among otherwise
+// equal backends, realtime work selects one that declares it.
 type Descriptor struct {
 	ID           av.CodecID
 	Name         string

@@ -17,16 +17,18 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 		Name:     name,
 		Selector: compile.StreamSelectFromAV(request.Selector),
 	}
-	if _, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID); err != nil {
+	adapterRequest := compile.DecodeAdapterRequestFromStream(stream, planned)
+	adapterRequest.Backend = request.Config.Settings.Backend
+	adapterRequest.Settings = request.Config.Settings
+	adapterRequest.Realtime = realtime
+	choice, err := refuse(compile.SelectCodecBackend("build decode stage", name, b.runtime.codecs, adapterRequest, codec.ModeDecode))
+	var buildErr *BuildError
+	if failure := (*codec.SelectError)(nil); !errors.As(err, &buildErr) && errors.As(err, &failure) {
 		// A file's codec is known only once it opens, so this is where a
 		// descriptor-only decoder (H.264 without -tags goav_goh264) surfaces:
 		// typed, naming the build tag, instead of a bare codec sentinel.
-		return nil, publicError(compile.RecipeDecodeAdapterError("build decode stage", planned, stream.Codec.ID, b.runtime.codecs, err))
+		return nil, publicError(compile.RecipeDecodeAdapterError("build decode stage", planned, stream.Codec.ID, b.runtime.codecs, failure.Err))
 	}
-	adapterRequest := compile.DecodeAdapterRequestFromStream(stream, planned)
-	adapterRequest.Backend = request.Config.Settings.Backend
-	adapterRequest.Realtime = realtime
-	choice, err := refuse(compile.SelectCodecBackend("build decode stage", name, b.runtime.codecs, adapterRequest, codec.ModeDecode))
 	if err != nil {
 		return nil, err
 	}

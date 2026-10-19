@@ -79,7 +79,7 @@ func TestCodecBackendSelectionIsVisible(t *testing.T) {
 	if got := encodeDetail(t, rt, named); got != "frames -> packets, codec=vp8, backend=govpx (go)" {
 		t.Fatalf("named backend detail = %q", got)
 	}
-	preferGo := bundle.MustNew(hardwareVP8(), runconfig.WithCodecPreference(string(codec.KindGo)))
+	preferGo := bundle.MustNew(hardwareVP8(), runconfig.WithCodecPreference("", "", string(codec.KindGo)))
 	if got := encodeDetail(t, preferGo, out); got != "frames -> packets, codec=vp8, backend=govpx (go)" {
 		t.Fatalf("preference detail = %q", got)
 	}
@@ -156,4 +156,17 @@ func tempFiles(t *testing.T) launch.FileSystem {
 		t.Fatal(err)
 	}
 	return fs
+}
+
+// TestMisspelledKnobScopeIsRefused pins that a setting scoped to a backend
+// the runtime does not hold is refused with the nearest name, not dropped.
+func TestMisspelledKnobScopeIsRefused(t *testing.T) {
+	rt := bundle.MustNew(hardwareVP8())
+	task, err := rt.Build(context.Background(), goavtest.Video(320, 240, 2).Video().Encode(codec.VP8(codec.Setting("govp.speed", "4"))).To(goavtest.NewCollector().Sink()))
+	if err == nil {
+		task.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "scoped to govp, which is no vp8 backend here") || !strings.Contains(err.Error(), "did you mean govpx?") {
+		t.Fatalf("err = %v, want the scope refused with govpx suggested", err)
+	}
 }

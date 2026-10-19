@@ -324,6 +324,7 @@ func (r CodecAdapterRequest) Need(mode codec.Mode) codec.Need {
 		Width:        r.Width,
 		Height:       r.Height,
 		Realtime:     r.Realtime,
+		Settings:     r.Settings.KnobSettings(),
 	}
 }
 
@@ -388,10 +389,11 @@ func recipeIRStreamResize(stream recipeir.Stream) filter.ResizeConfig {
 func SelectCodecBackend(operation string, node string, registry *codec.SimpleRegistry, request CodecAdapterRequest, mode codec.Mode) (codec.Choice, error) {
 	choice, err := registry.Select(request.Need(mode))
 	if err == nil {
-		if mode == codec.ModeEncode {
-			if _, knobErr := choice.Descriptor.ResolveKnobs(request.Settings, request.Realtime); knobErr != nil {
-				return codec.Choice{}, codecKnobRefusal(operation, node, choice.Descriptor, knobErr)
-			}
+		if scopeErr := registry.CheckScopes(request.Codec, request.Settings); scopeErr != nil {
+			return codec.Choice{}, codecKnobRefusal(operation, node, mode, choice.Descriptor, scopeErr)
+		}
+		if _, knobErr := choice.Descriptor.ResolveKnobs(request.Settings, request.Realtime); knobErr != nil {
+			return codec.Choice{}, codecKnobRefusal(operation, node, mode, choice.Descriptor, knobErr)
 		}
 		return choice, nil
 	}
@@ -802,15 +804,19 @@ func recipeIRStreamNeedsDecode(stream recipeir.Stream) bool {
 
 // codecKnobRefusal refuses encode settings the chosen backend's knobs reject:
 // an unknown name (with the nearest knob) or a value outside its range.
-func codecKnobRefusal(operation string, node string, desc codec.Descriptor, cause error) error {
+func codecKnobRefusal(operation string, node string, mode codec.Mode, desc codec.Descriptor, cause error) error {
+	code := builderr.EncodeParameterInvalidCode
+	if mode == codec.ModeDecode {
+		code = builderr.DecodeAdapterIncompatibleCode
+	}
 	knobs := make([]string, len(desc.Knobs))
 	for i := range desc.Knobs {
 		knobs[i] = desc.Knobs[i].String()
 	}
 	return &builderr.Refusal{
 		Phase:     builderr.PhaseBuild,
-		Family:    errcode.FamilyForCode(builderr.EncodeParameterInvalidCode),
-		Code:      builderr.EncodeParameterInvalidCode,
+		Family:    errcode.FamilyForCode(code),
+		Code:      code,
 		Operation: operation,
 		Node:      node,
 		Reason:    cause.Error(),

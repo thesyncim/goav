@@ -20,7 +20,7 @@ var ErrNotFound = errors.New("codec: not found")
 type SimpleRegistry struct {
 	descriptors []Descriptor
 	backends    []registered
-	preference  []string
+	preference  map[preferenceKey][]string
 	sequence    int
 }
 
@@ -77,12 +77,32 @@ func (r *SimpleRegistry) addBackend(backend registered) {
 	r.backends = append(r.backends, backend)
 }
 
-// Prefer sets the order Select tries backends in when a request names none:
-// backend names (openh264) or kinds (hardware, native, go), most preferred
-// first. Backends the order leaves out follow in the default order: no kind,
-// hardware, native, go, later registrations first within a kind.
-func (r *SimpleRegistry) Prefer(order ...string) {
-	r.preference = slices.Clone(order)
+// Prefer sets the order Select tries the backends of codec id in mode when a
+// request names none: backend names (openh264) or kinds (hardware, native,
+// go), most preferred first. An empty id or mode applies to every codec or
+// mode; the most specific order wins. Backends the order leaves out follow
+// in the default order: no kind, hardware, native, go, later registrations
+// first within a kind.
+func (r *SimpleRegistry) Prefer(id av.CodecID, mode Mode, order ...string) {
+	if r.preference == nil {
+		r.preference = map[preferenceKey][]string{}
+	}
+	r.preference[preferenceKey{id, mode}] = slices.Clone(order)
+}
+
+type preferenceKey struct {
+	id   av.CodecID
+	mode Mode
+}
+
+// preferenceFor is the most specific order set for id in mode.
+func (r *SimpleRegistry) preferenceFor(id av.CodecID, mode Mode) []string {
+	for _, key := range []preferenceKey{{id, mode}, {id, ""}, {"", mode}, {"", ""}} {
+		if order, ok := r.preference[key]; ok {
+			return order
+		}
+	}
+	return nil
 }
 
 // Descriptors returns a copy of every registered descriptor.

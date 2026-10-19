@@ -15,9 +15,6 @@ import (
 // newEncodeStageNamed opens the encoder and returns its stage with the stream
 // it emits: config.Stream plus whatever the opened encoder reports.
 func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request compile.EncodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
-	if _, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID); err != nil {
-		return nil, av.Stream{}, err
-	}
 	name = firstNonEmpty(name, compile.EncodeNodeName(request))
 	// File inputs reveal their rate and geometry only once opened, so the
 	// backend is chosen here, against the real stream, before an adapter
