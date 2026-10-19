@@ -142,42 +142,46 @@ factory)`, `runconfig.WithCodecDescriptor(desc)` (capability-only), or a bundle
 via `runconfig.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
 should export `Register(*codec.SimpleRegistry)`. A registry holds many backends
 per codec, keyed by `Descriptor.Backend.Name`: set `Backend.Kind` (hardware,
-native, go) so selection ranks yours, and declare `Descriptor.Knobs` so planning
+lib, go) so selection ranks yours, and declare `Descriptor.Knobs` so planning
 checks its settings and Explain lists them.
 
-## Native codec (`native/kit`)
+## Add a codec (`libcodec/kit`)
 
-A codec in a C library or OS framework is a declaration plus a session; the kit
-binds the symbols (no cgo) and owns frame and packet conversion (I420/NV12,
-Annex B/AVCC, parameter sets), timestamps, pooled payloads, knobs, live
-controls, and Close:
+A codec in a shared library, from any module, is a declaration plus a session,
+written against public packages only. `libcodec/proof/extbackend` is a complete
+one in 104 lines: a lossless video codec over the system zlib. The kit binds its
+symbols (no cgo) when the runtime is built and owns everything between goav and
+the session: I420/NV12 and Annex B/AVCC conversion, parameter sets, timestamps,
+pooled payloads, knobs, live controls, and Close.
 
 ```go
 type symbols struct {
-	open   func(w, h, bitrate int32) uintptr `sym:"foo_open"`
-	encode func(foo uintptr, planes *[3]unsafe.Pointer, strides *[3]int32, key int32, out *byte, n int32, isKey *int32) int32 `sym:"foo_encode"`
-	close  func(foo uintptr) `sym:"foo_close"`
+	compress   func(dst *byte, dstLen *uint64, src *byte, srcLen uint64, level int32) int32 `sym:"compress2"`
+	uncompress func(dst *byte, dstLen *uint64, src *byte, srcLen uint64) int32              `sym:"uncompress"`
+	bound      func(srcLen uint64) uint64                                                   `sym:"compressBound"`
 }
 
 sym := &symbols{}
 option := kit.Register(kit.Codec{
-	ID: av.CodecH264, Media: av.MediaVideo, Backend: "foo", Kind: codec.KindNative,
-	Bitstream: kit.AnnexB,
-	Knobs:     []codec.Knob{codec.KnobBitrate},
-	Libraries: []kit.Library{{Name: "libfoo", Path: path, Fix: "install libfoo", Symbols: sym}},
-	NewVideoEncoder: newSession, // returns a kit.VideoEncoder calling sym
+	ID: "zlib", Media: av.MediaVideo, Backend: "zlib", Kind: codec.KindLib,
+	Knobs:     []codec.Knob{{Name: "level", Type: codec.KnobInt, Min: 0, Max: 9, Default: "6"}},
+	Libraries: []kit.Library{{Name: "libz", Path: kit.Find("/usr/lib/libz.1.dylib", "/usr/lib/x86_64-linux-gnu/libz.so.1"), Fix: "install zlib", Symbols: sym}},
+	NewVideoEncoder: newEncoder, // Encode(*kit.Picture, emit), Flush, Close; calls sym
+	NewVideoDecoder: newDecoder, // Decode(*kit.Packet, emit), Flush, Close
 })
 ```
 
-The session implements `Encode(*kit.Picture, emit)`, `Flush(emit)`, and
-`Close()`; `native/kit/example_test.go` is this backend complete in 80 lines.
-`Version` refuses an ABI the declaration does not mirror, `kit.Params[T]`
-exposes a C parameter struct as raw parameters, `Picture.Owner` lends decoded
-memory without a copy, and `Reorder` puts decode-order output in presentation
-order. `codectest.Run(t, option)` is the whole conformance suite: round trips
-against the pure-Go codecs (PSNR, SNR), reference bitstreams, timestamps,
-keyframes, MP4 mux, knobs, live bitrate, Close and leaks, and a matrix across
-every other backend of the codec.
+`bundle.New(option)` then serves `encode zlib media=video backend=zlib level=9`,
+Explain reports `zlib (lib)` with its knobs, and `codectest.Run(t, option)` is
+the whole conformance suite: round trips through every decoder of the codec
+(PSNR, SNR), reference bitstreams, timestamps, keyframes, MP4 mux, knobs, live
+bitrate, Close and leaks, and a matrix across the codec's other backends. Read
+knobs with the sized accessors (`Int32`, `Uint32`, `Uint16`) for C fields.
+`Version` refuses an ABI the declaration does not mirror, `Releases` lists the
+library's published builds (URL and SHA-256 per platform) for installers,
+`kit.Params[T]` exposes a C parameter struct as raw parameters, `Picture.Owner`
+lends decoded memory without a copy, and `Reorder` puts decode-order output in
+presentation order.
 
 ## Container (`format` package)
 

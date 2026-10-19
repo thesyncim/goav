@@ -409,9 +409,10 @@ example modules. The module boundary is the dependency boundary:
 - **`player`, `cmd/goav`**: the playback window (Ebitengine and oto) and the CLI
   that registers it as `play`, nested so the root carries no windowing or audio
   dependency. `cmd/goav` has no `replace`, so `go install ...@version` works.
-- **`native`**: codecs in OS frameworks and native libraries, bound through
-  purego (`native.VideoToolbox`, `AudioToolbox`, `OpenH264`), plus `native/kit`
-  and `native/codectest` for adding more; nested so the root loads nothing.
+- **`libcodec`**: codecs in shared libraries and OS frameworks, bound through
+  purego (`libcodec.VideoToolbox`, `AudioToolbox`, `OpenH264`), plus `libcodec/kit`
+  and `libcodec/codectest`, all public, for adding more from any module
+  (`libcodec/proof/extbackend` proves it); nested so the root loads nothing.
 - **runnable examples**: `examples/webrtc-runtime-ladder`,
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,
