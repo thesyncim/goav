@@ -156,3 +156,49 @@ func sortedEdges(edges []pipeline.EdgeSpec) []pipeline.EdgeSpec {
 	})
 	return out
 }
+
+// TestAttachSharesWorkItsOutputsShare pins operation-node identity across one
+// Attach: two Outputs that name apart the same encoded Stream read one
+// encoder, as they do at Build, and each keeps its own destination.
+func TestAttachSharesWorkItsOutputsShare(t *testing.T) {
+	ctx := context.Background()
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48_000, 1, make([]int16, 960)).Audio().Tap("raw").To(goavtest.NewCollector().Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	shared := task.Tap("raw").Encode(codec.Opus())
+	a, b := goavtest.NewCollector(), goavtest.NewCollector()
+	attachment, err := task.Attach(ctx, shared.As("first").To(a.Sink()), shared.As("second").To(b.Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoders, sinks := 0, 0
+	for _, node := range attachment.Spec().Nodes {
+		switch {
+		case strings.Contains(node.Name, "encode-"):
+			encoders++
+		case node.Kind == pipeline.NodeSink:
+			sinks++
+		}
+	}
+	if encoders != 1 || sinks != 2 {
+		t.Fatalf("attached %d encoders and %d sinks, want one shared encoder feeding two sinks:\n%s", encoders, sinks, specText(attachment.Spec()))
+	}
+	built := 0
+	spec, err := goavtest.Runtime().Describe(func() []goav.Output {
+		e := goavtest.Audio(48_000, 1, make([]int16, 960)).Audio().Encode(codec.Opus())
+		return []goav.Output{e.As("first").To(goavtest.NewCollector().Sink()), e.As("second").To(goavtest.NewCollector().Sink())}
+	}()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range spec.Nodes {
+		if strings.Contains(node.Name, "encode-") {
+			built++
+		}
+	}
+	if built != encoders {
+		t.Fatalf("Build plans %d encoders for the same shape, Attach %d", built, encoders)
+	}
+}
