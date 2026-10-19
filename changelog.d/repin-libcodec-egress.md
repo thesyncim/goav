@@ -1,0 +1,1 @@
+- Every nested module now requires the main commit with libcodec and WHIP egress, so installing the CLI, rtpav, webrtcav, player or libcodec resolves a root that has them.
