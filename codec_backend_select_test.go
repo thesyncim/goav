@@ -170,3 +170,32 @@ func TestMisspelledKnobScopeIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want the scope refused with govpx suggested", err)
 	}
 }
+
+// TestMisspelledKnobNamesEachBackendsReason pins that a setting no backend
+// takes, on a request naming none, is refused with each backend and why,
+// and the nearest setting, not as an unsupported codec.
+func TestMisspelledKnobNamesEachBackendsReason(t *testing.T) {
+	strict := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
+		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
+		for _, backend := range []codec.BackendInfo{{Name: "fakehw", Kind: codec.KindHardware}, {Name: "fakelib", Kind: codec.KindLib}} {
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Backend: backend, Knobs: []codec.Knob{codec.KnobBitrate}}, choice.Encoder)
+		}
+	})
+	rt, err := goav.New(strict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := rt.Build(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264(codec.Setting("bitrat", "1000"))).To(goavtest.NewCollector().Sink()))
+	if err == nil {
+		task.Close()
+	}
+	for _, want := range []string{"no h264 encoder backend takes the request", "fakehw takes no setting bitrat", "fakelib takes no setting bitrat", "did you mean bitrate?"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+	if !errors.Is(err, codec.ErrInvalidSetting) {
+		t.Fatalf("err = %v, want codec.ErrInvalidSetting", err)
+	}
+}
