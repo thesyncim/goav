@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `FuzzRecipe` builds random value-grammar recipes (inputs, forks, joins,
+  operations, taps, shared destinations) and an Output attached at a tap,
+  and checks Describe never panics, Describe equals Build whenever the recipe
+  builds, and the planned attach patch equals the applied one. CI's fuzz
+  smoke runs it.
+
 - A nil layer in `goav.Composite` (or a nil arm of any join) is refused as
   `stream_invalid` naming `goav.At(...)`, instead of panicking Describe,
   Explain, and Build.

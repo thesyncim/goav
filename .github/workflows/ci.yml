@@ -154,6 +154,7 @@ jobs:
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzHandler -fuzztime=10s
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzConnection -fuzztime=10s
           (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzDepacketizers -fuzztime=10s)
+          CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzRecipe -fuzztime=10s
 
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
