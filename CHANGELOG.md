@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Added the `player` nested module: a playback window with no cgo on any OS
+  (Ebitengine and oto). The speaker's played position is the task timeline's
+  clock, video is presented against the heard audio (late frames dropped,
+  early ones waited for), and the keys drive the task's own Pause, Seek, and
+  Rate. Programs route to it as `play`; `goav play FILE` plays a file.
+  `cmd/goav` is now its own module (same import path, no `replace`, so
+  `go install ...@latest` keeps working). Migration: the default Linux CLI is
+  now dynamically linked (it needs glibc, and libX11/libGL to play); build it
+  with `-tags goav_noplay` for the old static binary (scratch, Alpine).
+
 - Break: `LiveTask.Describe()` is now `LiveTask.Spec()`, the same name
   `Attachment.Spec()` and the snapshots' `Spec` field use, beside `Stats` at
   every level. `Runtime.Describe(outputs...)` keeps its name: it predicts the

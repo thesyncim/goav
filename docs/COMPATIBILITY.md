@@ -147,10 +147,10 @@ Minimum Go version:
 
 Module scope:
 - Root module tag: `v0.1.0`.
-- Nested modules are not included in the root tag. `rtpav`, `webrtcav`, and
-  `playoutav` require separate prefixed tags if released.
-- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav` as
-  needed.
+- Nested modules are not included in the root tag. `rtpav`, `webrtcav`,
+  `playoutav`, `player`, and `cmd/goav` require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`,
+  then `cmd/goav`, as needed.
 
 API surface:
 - Added exported symbols: `BuildError` helper methods, the value grammar
@@ -213,7 +213,7 @@ Evidence:
 - Local patched-toolchain tests: `GOTOOLCHAIN=go1.27.2 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
 - Local race subset:
-  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./launch ./graphrender`.
+  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./ctlserver ./launch ./graphrender`.
 - Local static checks: `go vet ./...` and
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
 - Local formatting check: `test -z "$(gofmt -l .)"`.

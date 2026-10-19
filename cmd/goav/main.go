@@ -20,6 +20,7 @@ const usage = `usage: goav <command> ...
   run       run a program
   describe  print the graph a program builds
   explain   print the plan a program builds, as JSON
+  play      play a file or a program in a window
   elements  list the elements a program can use
   ctl       inspect and steer a running task
 `
@@ -36,6 +37,8 @@ func run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	switch argv[0] {
 	case "run":
 		return runCommand(argv[1:], stdout, stderr)
+	case "play":
+		return playCommand(argv[1:], stdout, stderr)
 	case "describe":
 		return describeCommand(argv[1:], stdout, stderr)
 	case "explain":

@@ -11,10 +11,10 @@ integrations live under `adapters/...` and `container/...`.
 The root module keeps third-party dependencies pinned by
 `TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
 by the built-in pure-Go AAC backend is allowed outside `github.com/thesyncim/*`
-and the standard library. `rtpav`, `webrtcav`, and `playoutav` are nested
-modules with their own `go.mod`; RTP/WebRTC carry the Pion dependency tree,
-while playout is dependency-light. Importing goav alone never pulls transport
-modules in. Import paths are unchanged.
+and the standard library. `rtpav`, `webrtcav`, `playoutav`, `player`, and
+`cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
+Pion dependency tree, the player Ebitengine and oto, while playout is
+dependency-light. Importing goav alone never pulls them in. Import paths are unchanged.
 
 To write an adapter, use `docs/ADAPTER_AUTHORING.md` for the extension
 interfaces, lifecycle rules, error and ownership contracts, and required
@@ -62,6 +62,26 @@ same as built-ins.
 `playoutav` is the third source-provider proof: it adapts scheduled packets,
 frames, and events through `provider.Source` as a nested module, with no core
 runtime/provider changes beyond docs and CI enumeration.
+
+### Player
+
+`player.New()` is a window: route decoded video and audio to `w.Destination()`
+(`play` in programs) and call `w.Run(ctx, task)` on the main goroutine, or run
+`goav play FILE`. The speaker's played position, `w.Clock()`, is the task
+timeline's clock (`runconfig.WithClock` with `WithRealtime(true)`): media arrives
+as fast as it is heard, video follows the heard position (late frames dropped,
+early ones waited for), and the keys are the task's Pause, Seek, and Rate (the
+pitch follows the rate). YUV converts on the CPU (limited-range BT.601/709).
+
+| OS (amd64, arm64) | Window, audio | `CGO_ENABLED=0` | Needs at run time |
+| --- | --- | --- | --- |
+| macOS | Ebitengine (Metal), oto (AudioToolbox) via purego | builds, played on arm64 | nothing extra |
+| Windows | Ebitengine (DirectX), oto (WASAPI) via syscall | builds; not run | nothing extra |
+| Linux | Ebitengine (X11, OpenGL) via purego dlopen; oto (PulseAudio in Go, ALSA fallback) | builds; not run | libX11, libGL; PulseAudio/PipeWire or libasound |
+
+No OS needs cgo; `CGO_ENABLED=1` builds too. On Linux the dlopen makes the
+binary dynamically linked, so `cmd/goav` has a `goav_noplay` build tag for a
+static CLI. Without an audio device playback continues silently.
 
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
 The tables below mirror `bundle.Options()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
