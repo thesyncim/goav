@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: offline joins and buffered graphs over several files write the same
+  bytes on every run and at any GOMAXPROCS. A Mix or Composite (arrival or
+  ByPTS) beside another file's stream and two files into one mux behind a
+  `.Buffer` now keep the files in time order (a promoted ladder from several
+  files, already byte-stable per rung, is ordered and pinned too): a join
+  that holds an arm back hands the turn to the next file instead of
+  waiting on it, and a buffered graph finishes each packet's work before the
+  next packet enters (so it no longer pipelines across packets of several
+  files; a single input is unchanged). A file whose packets all come later
+  waits at its first packet instead of being read into queues. Nested joins
+  and joins on a buffered graph (a Select arm) still run free. No new API.
 - Every nested module (cmd/goav, player, playoutav, rtpav, webrtcav,
   goavtest/expect) now requires the main commit with URL schemes, so `go get`
   of any of them resolves a root that has `provider.Scheme`.
