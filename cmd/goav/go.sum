@@ -24,10 +24,10 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 h1:AK/gB43Mnz4qBh1lJC/2cX9udRlYB1QiyQynGo3vu1E=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
-github.com/thesyncim/goav v0.0.0-20261019133214-f7af0d8645c2 h1:/nX+EqQlAtTriJ7C5UVxoPB1xtxK1rdXYuBwc5jXaXU=
-github.com/thesyncim/goav v0.0.0-20261019133214-f7af0d8645c2/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
-github.com/thesyncim/goav/player v0.0.0-20261019133126-06dbe498841e h1:Fit8ISxi6YPhJhSemUGp8Bvr+wWV77At0uPnPNKKbz8=
-github.com/thesyncim/goav/player v0.0.0-20261019133126-06dbe498841e/go.mod h1:sVbD1JFjwcynJO6UksajXi4QENR5kGf9sgrjGcDxAEU=
+github.com/thesyncim/goav v0.0.0-20261019134941-b0f729bd5447 h1:42XWoG3ZyLSxQPB5jwuzQM7z/Q10kSt7YMfxkRfIaTY=
+github.com/thesyncim/goav v0.0.0-20261019134941-b0f729bd5447/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
+github.com/thesyncim/goav/player v0.0.0-20261019134941-b0f729bd5447 h1:YJucs2RVwUJgBnvZU1ckslWXyjwJsxkJGP0qYRxH+Gs=
+github.com/thesyncim/goav/player v0.0.0-20261019134941-b0f729bd5447/go.mod h1:sH555ww9Ul1OaLzuKWymVOksmGu24v1DJxzSZYJK4gI=
 github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c h1:Y6f8Qx3j5wCUFGEjmNlvpiGmmRrrpuJKscnIUSQz81k=
 github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c/go.mod h1:AptOp9vmEvj7Mag6wW7X0aXbrc721rxYZif2270NN2c=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=
