@@ -72,10 +72,10 @@ func runWindow(g *game) error {
 	return ebiten.RunGameWithOptions(g, nil)
 }
 
-func (g *game) result() (error, bool) {
+func (g *game) result() (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.taskErr, g.finished
+	return g.finished, g.taskErr
 }
 
 func (g *game) setStatus(s string) {
@@ -171,9 +171,11 @@ func (g *game) seek(delta time.Duration) {
 	e, task := g.w.engine, g.task
 	g.control(func() {
 		// Flush first: it releases a sink blocked on stale media, so the
-		// seek lands promptly; the new position re-prerolls.
-		e.Flush()
+		// seek lands promptly, and media from the old position is dropped
+		// until the seek's discontinuity; the new position re-prerolls.
+		e.BeginSeek()
 		if err := task.Control(context.Background(), control.Seek(target)); err != nil {
+			e.EndSeek()
 			g.setStatus(fmt.Sprintf("seek: %v", err))
 			return
 		}

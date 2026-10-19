@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 // fakeDevice is a deterministic speaker: time moves only when the test steps
@@ -466,5 +467,33 @@ func TestDeviceClockSleep(t *testing.T) {
 	cancel()
 	if err := e.Clock().Sleep(ctx, time.Hour); err != context.Canceled {
 		t.Fatalf("sleep on a done context returned %v", err)
+	}
+}
+
+// A seek drops the old position's in-flight media until its discontinuity
+// lands; a refused seek stops dropping at once.
+func TestBeginSeekDropsStaleMediaUntilTheDiscontinuity(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	sink := Sink{Engine: d.e}
+	d.pushAudio(0, 200*time.Millisecond)
+	d.e.BeginSeek()
+	d.pushAudio(200*time.Millisecond, 400*time.Millisecond) // stale, in flight
+	d.pushVideo(200*time.Millisecond, 300*time.Millisecond, 33*time.Millisecond)
+	if d.e.queuedLocked() != 0 || len(d.e.video) != 0 {
+		t.Fatal("stale media queued during a seek")
+	}
+	disc := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventDiscontinuity}}
+	if err := sink.Handle(context.Background(), disc); err != nil {
+		t.Fatal(err)
+	}
+	d.pushAudio(5*time.Second, 5100*time.Millisecond)
+	if d.e.queuedLocked() == 0 {
+		t.Fatal("media after the discontinuity dropped")
+	}
+	d.e.BeginSeek()
+	d.e.EndSeek()
+	d.pushAudio(6*time.Second, 6100*time.Millisecond)
+	if d.e.queuedLocked() == 0 {
+		t.Fatal("media dropped after a refused seek")
 	}
 }

@@ -170,7 +170,7 @@ func (w *Window) Run(ctx context.Context, task goav.LiveTask) error {
 	runErr := runWindow(g)
 	cancel()
 	closeErr := task.Close()
-	taskErr, finished := g.result()
+	finished, taskErr := g.result()
 	if !finished {
 		select {
 		case taskErr = <-done:

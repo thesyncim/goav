@@ -72,6 +72,8 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 		lit      int
 		lastPTS  time.Duration
 		backward bool
+		seeking  bool
+		shown    []time.Duration // frames presented while seeking
 	)
 	presenterDone := make(chan struct{})
 	go func() {
@@ -97,7 +99,10 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 					break
 				}
 			}
-			if pts < lastPTS {
+			if seeking {
+				shown = append(shown, pts)
+			}
+			if !seeking && pts < lastPTS {
 				backward = true
 			}
 			lastPTS = pts
@@ -125,14 +130,31 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	before := e.Stats().Position
-	e.Flush()
+	mu.Lock()
+	seeking = true
+	mu.Unlock()
+	e.BeginSeek()
 	if err := task.Control(ctx, control.Seek(100*time.Millisecond)); err != nil {
 		t.Fatalf("task refused Seek: %v", err)
 	}
-	mu.Lock()
-	lastPTS = 0
-	mu.Unlock()
 	time.Sleep(400 * time.Millisecond)
+	// What showed after the seek starts behind the old position and only moves
+	// forward: BeginSeek dropped the stale media, so no old picture flashed.
+	mu.Lock()
+	seeking, lastPTS = false, 0
+	// The presenter may already hold one frame from before the seek.
+	if len(shown) > 1 && shown[0] >= before {
+		shown = shown[1:]
+	}
+	if len(shown) == 0 || shown[0] >= before {
+		t.Fatalf("frames shown after seeking back from %v: %v", before, shown)
+	}
+	for i := 1; i < len(shown); i++ {
+		if shown[i] < shown[i-1] {
+			t.Fatalf("frames shown after the seek went backwards: %v", shown)
+		}
+	}
+	mu.Unlock()
 	if after := e.Stats().Position; after >= before {
 		t.Fatalf("position %v after seeking back from %v", after, before)
 	}

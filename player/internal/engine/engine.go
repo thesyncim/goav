@@ -91,6 +91,8 @@ type Engine struct {
 	ended    bool
 	closed   bool
 	sawAudio bool
+	// seekUntil is set while a seek's stale media is dropped (BeginSeek).
+	seekUntil time.Time
 
 	presented, dropped, underruns uint64
 	avOffset, maxAV               time.Duration
@@ -410,7 +412,7 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 	e.mu.Unlock()
 	for {
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch {
+		if e.closed || e.epoch != epoch || e.seekingLocked() {
 			e.mu.Unlock()
 			return nil
 		}
@@ -455,7 +457,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch {
+		if e.closed || e.epoch != epoch || e.seekingLocked() {
 			e.mu.Unlock()
 			ref.Release()
 			return nil
@@ -499,6 +501,39 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 func (e *Engine) Flush() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.flushLocked()
+}
+
+// seekWait bounds how long BeginSeek drops media waiting for the seek's
+// discontinuity.
+const seekWait = time.Second
+
+// BeginSeek flushes for a seek the caller is about to issue and drops the
+// media still in flight from the old position until the seek's
+// discontinuity arrives (or seekWait passes), so no stale picture flashes up
+// after the jump. Call EndSeek if the seek is refused.
+func (e *Engine) BeginSeek() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.flushLocked()
+	e.seekUntil = time.Now().Add(seekWait)
+}
+
+// EndSeek stops dropping media after a refused seek.
+func (e *Engine) EndSeek() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.seekUntil = time.Time{}
+}
+
+// seekingLocked reports whether media is stale: a seek was issued and its
+// discontinuity has not arrived yet.
+func (e *Engine) seekingLocked() bool {
+	return !e.seekUntil.IsZero() && time.Now().Before(e.seekUntil)
+}
+
+func (e *Engine) flushLocked() {
+	e.seekUntil = time.Time{}
 	e.epoch++
 	for _, f := range e.video {
 		f.Release()
