@@ -2,12 +2,14 @@
 //
 // The root goav package stays focused on recipe grammar. Import this package
 // when an application needs to configure a bare runtime, register custom
-// codecs, formats, or filters, change buffering, or inject clocks.
+// codecs, formats, filters, or URL schemes, change buffering, or inject
+// clocks.
 package runconfig
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -16,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -35,6 +38,9 @@ type Config struct {
 	MediaPools       bool
 	ShapeDeltas      []ShapeDeltaContributor
 	QoSPolicy        func(av.Event) []control.Control
+	// Schemes maps lower-case URL schemes to the providers goav.URIInput
+	// and goav.URI resolve through (see Scheme).
+	Schemes map[string]provider.Scheme
 }
 
 // ShapeDeltaRequest is passed to a runtime-registered shape solver extension
@@ -360,4 +366,40 @@ func WithClock(clock av.Clock) Option {
 		config.Clock = clock
 		return nil
 	}
+}
+
+// Scheme registers the provider goav.URIInput and goav.URI resolve URLs of
+// one scheme through, per runtime: runconfig.Scheme("whep", webrtcav.WHEP()).
+// Names are case-insensitive RFC 3986 schemes, and the last registration of
+// a name wins, so a runtime can replace a bundled scheme (an https client
+// with its own transport, say). bundle.Schemes registers file, http, and
+// https.
+func Scheme(name string, scheme provider.Scheme) Option {
+	return func(config *Config) error {
+		if scheme == nil {
+			return fmt.Errorf("scheme %q provider is nil", name)
+		}
+		key := strings.ToLower(name)
+		if !validScheme(key) {
+			return fmt.Errorf("scheme %q is not a URL scheme (a letter, then letters, digits, +, -, or .)", name)
+		}
+		if config.Schemes == nil {
+			config.Schemes = map[string]provider.Scheme{}
+		}
+		config.Schemes[key] = scheme
+		return nil
+	}
+}
+
+func validScheme(name string) bool {
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'):
+		default:
+			return false
+		}
+	}
+	return name != ""
 }

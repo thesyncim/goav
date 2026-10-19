@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thesyncim/goav/internal/redact"
 	"github.com/thesyncim/goav/internal/spelling"
 )
 
@@ -30,7 +31,8 @@ func (e *Error) Error() string {
 		fmt.Fprintf(&b, "launch: %s", e.Msg)
 	}
 	if e.src != "" && e.Line > 0 {
-		line := sourceLine(e.src, e.Pos)
+		// A URL's credentials are masked in place, so the caret stays aligned.
+		line := redact.Mask(sourceLine(e.src, e.Pos))
 		width := max(1, min(e.End, e.Pos+len(line)-(e.Column-1))-e.Pos)
 		fmt.Fprintf(&b, "\n    %s\n    %s%s", line, strings.Repeat(" ", visualWidth(line[:e.Column-1])), strings.Repeat("^", width))
 	}

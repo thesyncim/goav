@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/provider"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
@@ -81,6 +83,7 @@ func New(options ...runconfig.Option) (*Runtime, error) {
 		mediaPools:       pools,
 		shapeDeltas:      append([]runconfig.ShapeDeltaContributor(nil), config.ShapeDeltas...),
 		qosPolicy:        config.QoSPolicy,
+		schemes:          maps.Clone(config.Schemes),
 	}, nil
 }
 
@@ -117,6 +120,8 @@ type Runtime struct {
 	// qos is the per-task reporter recipe builds thread to lowering-time gates
 	// next to the timeline; nil on the shared runtime and explicit-graph paths.
 	qos *qosReporter
+	// schemes resolve URIInput and URI values (runconfig.Scheme).
+	schemes map[string]provider.Scheme
 }
 
 // Probe asks the runtime's registered probers which container format a

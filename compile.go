@@ -110,6 +110,7 @@ type recipeResolved struct {
 // its handles into the compile request, runs the compiler, and binds the
 // result back to the handles the build opens.
 func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
+	g.bindSchemes(rt)
 	rt = g.compileRuntime(rt)
 	handles := g.handles(rt)
 	req := g.compileRequest(handles)

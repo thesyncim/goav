@@ -2,11 +2,11 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -24,23 +24,47 @@ type (
 	}
 )
 
-// Input adapts a provider.Source into a recipe input. The provider's declared
-// shape seeds the input's codec intent and realtime policy, so the recipe
-// planner can select streams and pick decoders before the source is opened:
+// Input adapts a provider input into a recipe input: a provider.Source,
+// whose media the provider produces, or a provider.ByteSource, whose
+// container bytes the runtime probes (from goav.Name, goav.MIME, or
+// SourceShape().Format) and demuxes. The declared shape seeds the input's
+// codec intent and realtime policy, so the recipe planner can select streams
+// and pick decoders before the input is opened:
 //
 //	in := goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))
 //	err := rt.Run(ctx, in.Audio().To(out))
-func Input(src provider.Source, opts ...InputOption) InputSpec {
+func Input(src provider.Input, opts ...InputOption) InputSpec {
+	return applyInputOptions(inputSpecHandle(InputSpec{}.withProvider(src)), opts)
+}
+
+var errProviderInputKind = errors.New("goav: provider input implements neither provider.Source (OpenSource) nor provider.ByteSource (OpenBytes)")
+
+// withProvider binds src as the spec's input, keeping the naming facts a
+// URIInput already carries. A value that is both a Source and a ByteSource
+// opens as a Source.
+func (s InputSpec) withProvider(src provider.Input) InputSpec {
 	if src == nil {
-		return inputSpecHandle(InputSpec{err: errNilSource})
+		s.err = errNilSource
+		return s
 	}
 	spec := src.SourceShape()
-	return applyInputOptions(inputSpecHandle(InputSpec{
-		input:    format.Input{Realtime: spec.Realtime},
-		provider: src,
-		codec:    codecSpecFromSourceShape(spec),
-		realtime: spec.Realtime,
-	}), opts)
+	switch src := src.(type) {
+	case provider.Source:
+		s.provider = src
+		s.codec = codecSpecFromSourceShape(spec)
+	case provider.ByteSource:
+		s.bytes = src
+		if named, ok := src.(sourceProviderNamer); ok && s.input.Name == "" {
+			s.input.Name = named.Name()
+			s.name = s.input.Name
+		}
+	default:
+		s.err = errProviderInputKind
+		return s
+	}
+	s.input.Realtime = spec.Realtime
+	s.realtime = spec.Realtime
+	return s
 }
 
 // providerNodeName returns the provider's node name capability, defaulting to
@@ -84,7 +108,7 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // so scheduled emission paces on the task timeline: fake clocks make it
 // deterministic in tests and task-wide rate changes scale it live. The seam is
 // structural (a type assertion), so providers stay free of goav internals.
-func openProviderSource(ctx context.Context, src provider.Source, name string, clock av.Clock) (graphSourceBuild, error) {
+func openProviderSource(ctx context.Context, src provider.Source, name string, detail string, clock av.Clock) (graphSourceBuild, error) {
 	if src == nil {
 		return graphSourceBuild{}, errNilSource
 	}
@@ -102,7 +126,7 @@ func openProviderSource(ctx context.Context, src provider.Source, name string, c
 		domain = shape.DomainPacket
 	}
 	build := graphSourceBuild{
-		source:   resolvedProviderSource(source, name, providerNodeDetail(src)),
+		source:   resolvedProviderSource(source, name, detail),
 		streams:  streams,
 		domain:   domain,
 		realtime: spec.Realtime,
@@ -214,4 +238,17 @@ func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
 		}
 	}
 	return resolvedProviderSource(wrapped, name, detail)
+}
+
+// reconnecting wraps an opened live input in its reconnect policy, which
+// reopens it through the same open path.
+func (s InputSpec) reconnecting(build graphSourceBuild, reopen func(context.Context) (graphSourceBuild, error), clock av.Clock, report func(av.Event)) graphSourceBuild {
+	if s.reconnect == nil {
+		return build
+	}
+	build.source = newReconnectingSource(build.source, compile.DescribedNodeDetail(build.source), func(ctx context.Context) (pipeline.Source, error) {
+		next, err := reopen(ctx)
+		return next.source, err
+	}, *s.reconnect, clock, report)
+	return build
 }

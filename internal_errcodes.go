@@ -23,6 +23,7 @@ const (
 	outputFormatUnknownCode        = builderr.OutputFormatUnknownCode
 	outputMuxerMissingCode         = builderr.OutputMuxerMissingCode
 	outputDestinationMissingCode   = builderr.OutputDestinationMissingCode
+	outputSchemeUnsupportedCode    = builderr.OutputSchemeUnsupportedCode
 	destinationInvalidCode         = builderr.DestinationInvalidCode
 	destinationDuplicateCode       = builderr.DestinationDuplicateCode
 	destinationFormatUnknownCode   = builderr.DestinationFormatUnknownCode
@@ -58,6 +59,7 @@ const (
 	inputUnknownCode               = builderr.InputUnknownCode
 	inputFormatUnknownCode         = builderr.InputFormatUnknownCode
 	inputDemuxerMissingCode        = builderr.InputDemuxerMissingCode
+	inputSchemeUnsupportedCode     = builderr.InputSchemeUnsupportedCode
 	sourceCallbackMissingCode      = builderr.SourceCallbackMissingCode
 	sourceShapeInvalidCode         = builderr.SourceShapeInvalidCode
 	sourceShapeUnsupportedCode     = builderr.SourceShapeUnsupportedCode

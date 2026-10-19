@@ -46,6 +46,21 @@ func init() {
 	file.start, file.dest = fileValue, fileValue
 	builtin(file)
 
+	// uri: a URL, read or written like a file; a bare quoted URL is one too.
+	type uriArgs struct {
+		URI    string `launch:",positional,required" help:"url"`
+		Format string `launch:"format"`
+	}
+	uri := define[uriArgs]("uri", "read a URL at a pipeline's start, write one at its end", "source")
+	uriValue := func(_ *compiler, args reflect.Value) (value, error) {
+		a := argsOf[uriArgs](args)
+		ref, err := parseURIRef(a.URI)
+		ref.format = av.FormatID(a.Format)
+		return value{kind: kindFile, file: ref}, err
+	}
+	uri.start, uri.dest = uriValue, uriValue
+	builtin(uri)
+
 	builtin(testsrcElement())
 	builtin(hlsElement())
 

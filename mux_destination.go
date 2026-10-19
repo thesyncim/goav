@@ -45,7 +45,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		return output, nil, nil
 	}
 	if destination.custom == nil {
-		return output, nil, nil
+		return output, nil, destinationWriterMissing(firstNonEmpty(destination.name, output.Name, "destination"))
 	}
 	info := provider.Info{
 		Name:     firstNonEmpty(destination.name, output.Name, output.URI),

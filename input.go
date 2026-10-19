@@ -19,21 +19,28 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// InputSpec is one declared recipe input: a file-like reader, custom source, or
-// source provider, plus the optional name and MIME facts the planner uses
-// before opening it. Construct one with FileInput, Source, or
-// Input; configure it with options (Name, MIME, Metadata) and decorate the
-// opened source with WrapSource. Packet/frame codec facts come from a custom
-// Source or provider SourceShape declaration. The zero value is intentionally
-// not a valid input; construct input specs with FileInput, Source, or Input.
+// InputSpec is one declared recipe input: a file-like reader, a URL, a custom
+// source, or a provider input, plus the optional name and MIME facts the
+// planner uses before opening it. Construct one with FileInput, URIInput,
+// Source, or Input; configure it with options (Name, MIME, Metadata,
+// Reconnect) and decorate the opened source with WrapSource. Packet/frame
+// codec facts come from a custom Source or provider SourceShape declaration.
+// The zero value is intentionally not a valid input; construct input specs
+// with FileInput, URIInput, Source, or Input.
 type InputSpec struct {
 	origin   inputSpecOrigin
 	input    format.Input
 	provider provider.Source
-	source   *sourceInputSpec
-	codec    codec.Spec
-	name     string
-	realtime bool
+	// bytes is a provider of container bytes, demuxed like a file input.
+	bytes provider.ByteSource
+	// uri is a URIInput, which the runtime binds to provider or bytes.
+	uri *uriRef
+	// reconnect reopens a live input that fails (Reconnect).
+	reconnect *reconnectPolicy
+	source    *sourceInputSpec
+	codec     codec.Spec
+	name      string
+	realtime  bool
 	// wraps decorate the opened pipeline source (WrapSource), applied in
 	// declaration order after the input opens through the one source seam.
 	wraps []func(pipeline.Source) pipeline.Source
@@ -144,6 +151,10 @@ func (s InputSpec) formatInput() format.Input {
 }
 
 func (s InputSpec) validate() error {
+	var refusal *BuildError
+	if errors.As(s.err, &refusal) {
+		return refusal
+	}
 	if s.err != nil {
 		fixes := []string{
 			"check the input constructor arguments",
@@ -185,6 +196,21 @@ func (s InputSpec) validate() error {
 	}
 	if err := s.validateCustomSource(); err != nil {
 		return err
+	}
+	if s.reconnect != nil && (s.provider == nil && s.bytes == nil || !s.realtime && !s.input.Realtime) {
+		return &BuildError{
+			Phase:     phaseBuild,
+			Family:    errcode.FamilyForCode(inputInvalidCode),
+			Code:      inputInvalidCode,
+			Operation: "build input",
+			Node:      s.inputName("input"),
+			Reason:    errReconnectNotLive.Error() + ", and this one is not live",
+			fixes: buildErrorFixes([]string{
+				"drop goav.Reconnect: a file or an application-pushed source has no connection to restore",
+				"reconnect a live input: a live URL (whep://...) or a provider whose SourceShape declares Realtime",
+			}),
+			cause: errReconnectNotLive,
+		}
 	}
 	return s.validatePlainInput()
 }
@@ -247,7 +273,7 @@ func (s InputSpec) validateCustomSource() error {
 }
 
 func (s InputSpec) validatePlainInput() error {
-	if s.provider != nil {
+	if s.provider != nil || s.bytes != nil {
 		return nil
 	}
 	if s.source != nil {
@@ -299,7 +325,7 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		out.Kind = recipeir.InputKindCustomSource
 	case s.provider != nil:
 		out.Kind = recipeir.InputKindProvider
-	case s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil:
+	case s.bytes != nil, s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil:
 		out.Kind = recipeir.InputKindByteStream
 	}
 	if sourceShape, ok := declaredSourceShape(s); ok {
@@ -370,7 +396,7 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 			continue
 		}
 		input := inputs[i].input
-		result, err := rt.formats.Probe(ctx, inputProbeRequest(input))
+		result, err := rt.probeInput(ctx, input, inputs[i].pinnedFormat())
 		if err != nil {
 			return nil, inputFormatProbeError(input, err)
 		}
@@ -390,4 +416,22 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 		return spec.Domain
 	}
 	return shape.DomainPacket
+}
+
+// pinnedFormat is the container a byte provider declares
+// (SourceShape().Format), which replaces probing.
+func (s InputSpec) pinnedFormat() av.FormatID {
+	if s.bytes == nil {
+		return ""
+	}
+	return s.bytes.SourceShape().Format
+}
+
+// probeInput resolves an input's container: the pinned format when the input
+// declares one, else the runtime's probers over its name, URI, and MIME type.
+func (r *Runtime) probeInput(ctx context.Context, input format.Input, pinned av.FormatID) (format.ProbeResult, error) {
+	if pinned != "" {
+		return format.ProbeResult{Format: pinned, Score: 100, Reason: "declared by the input"}, nil
+	}
+	return r.formats.Probe(ctx, inputProbeRequest(input))
 }

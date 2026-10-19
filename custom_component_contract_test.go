@@ -720,12 +720,10 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 	if closeHook != closer {
 		t.Fatalf("close hook = %T, want original write closer", closeHook)
 	}
-	uriOutput, uriWriter, err := builder.openDestinationOutput(ctx, URI("mem://plain.ogg").spec, nil, av.FormatOgg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if uriOutput.URI != "mem://plain.ogg" || uriWriter != nil {
-		t.Fatalf("uri output=%+v writer=%T, want URI with nil writer", uriOutput, uriWriter)
+	// A URI resolves to a writer through a scheme; an unbound one has none,
+	// and no muxer is handed a nil writer.
+	if _, _, err := builder.openDestinationOutput(ctx, URI("mem://plain.ogg").spec, nil, av.FormatOgg); err == nil {
+		t.Fatal("unbound URI destination opened without a writer")
 	}
 
 	openErr := errors.New("destination open failed")
@@ -972,11 +970,11 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 		t.Fatalf("nil provider validate error = %v, want errNilSource", err)
 	}
 
-	if _, err := openProviderSource(context.Background(), nil, "nil", nil); !errors.Is(err, errNilSource) {
+	if _, err := openProviderSource(context.Background(), nil, "nil", "", nil); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil provider err = %v, want errNilSource", err)
 	}
 	openErr := errors.New("open source failed")
-	if _, err := openProviderSource(context.Background(), &componentSourceProvider{err: openErr}, "broken", nil); !errors.Is(err, openErr) {
+	if _, err := openProviderSource(context.Background(), &componentSourceProvider{err: openErr}, "broken", "", nil); !errors.Is(err, openErr) {
 		t.Fatalf("provider open err = %v, want openErr", err)
 	}
 
@@ -993,7 +991,7 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if got := providerNodeName(provider); got != "source" {
 		t.Fatalf("providerNodeName empty = %q, want source", got)
 	}
-	build, err := openProviderSource(context.Background(), provider, "renamed", nil)
+	build, err := openProviderSource(context.Background(), provider, "renamed", providerNodeDetail(provider), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -17,8 +18,18 @@ type demuxBuild struct {
 // openDemuxSource opens input as a demuxing graph source. With a qualifier the
 // source stamps every stream id it emits with it (see qualifiedDemuxer); the
 // returned streams keep the demuxer's own ids, the ids selection matches.
-func (b *builder) openDemuxSource(ctx context.Context, input format.Input, qualifier string) (demuxBuild, error) {
-	inputProbe, err := b.runtime.formats.Probe(ctx, inputProbeRequest(input))
+// pinned replaces probing; reader, a byte provider's, closes with the
+// demuxer (and on any failure here).
+func (b *builder) openDemuxSource(ctx context.Context, input format.Input, qualifier string, pinned av.FormatID, reader io.ReadCloser) (build demuxBuild, err error) {
+	if reader != nil {
+		reader = closeOnce(reader)
+		defer func() {
+			if err != nil {
+				_ = reader.Close()
+			}
+		}()
+	}
+	inputProbe, err := b.runtime.probeInput(ctx, input, pinned)
 	if err != nil {
 		return demuxBuild{}, inputFormatProbeError(input, err)
 	}
@@ -32,6 +43,9 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 	}
 	if demuxer == nil {
 		return demuxBuild{}, format.ErrNilDemuxer
+	}
+	if reader != nil {
+		demuxer = newByteInputDemuxer(demuxer, reader)
 	}
 	realtime := b.runtime.realtime || input.Realtime
 	if err := demuxer.Open(ctx, input, format.OpenOptions{

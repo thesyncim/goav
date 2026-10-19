@@ -159,16 +159,20 @@ func (p *parser) segment() ([]*termNode, error) {
 
 func (p *parser) term() (*termNode, error) {
 	t := p.peek()
-	if t.kind != tokWord {
-		if t.kind == tokString {
-			return nil, errorAt(t, "a quoted value cannot name an element", "start a step with an element name such as file, video, or encode")
+	var term *termNode
+	switch t.kind {
+	case tokWord:
+		p.next()
+		term = &termNode{name: t.text, pos: t.pos, end: t.end}
+		if p.peek().kind == tokLParen && p.peek().pos == t.end {
+			return p.call(term)
 		}
+	case tokString:
+		// A bare quoted URL is a uri step: "https://cdn/in.mp4" ! video.
+		p.next()
+		term = &termNode{name: "uri", pos: t.pos, end: t.end, args: []argNode{{value: t.text, pos: t.pos, end: t.end}}}
+	default:
 		return nil, errorAt(t, "expected an element, found "+describeToken(t), "start a step with an element name such as file, video, or encode")
-	}
-	p.next()
-	term := &termNode{name: t.text, pos: t.pos, end: t.end}
-	if p.peek().kind == tokLParen && p.peek().pos == t.end {
-		return p.call(term)
 	}
 	for {
 		a := p.peek()

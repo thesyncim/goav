@@ -40,7 +40,9 @@ type Input struct {
 	streams       []av.Stream
 }
 
-// Receive builds an RTP receive Input around a packet reader.
+// Receive builds an RTP receive Input around a packet reader. Without
+// WithCodec or WithDepacketizers, each stream the reader reports gets its
+// codec's built-in depacketizer (one stream per codec).
 func Receive(receiver PacketReader, options ...ReceiveOption) *Input {
 	input := &Input{receiver: receiver}
 	for i := range options {
@@ -225,6 +227,16 @@ func (in *Input) Detail() string {
 
 func (in *Input) depacketizersFor(streams []av.Stream) []Depacketizer {
 	depacketizers := append([]Depacketizer(nil), in.depacketizers...)
+	if in.codec.ID == "" && len(depacketizers) == 0 {
+		// No codec intent: every stream the reader reports gets its codec's
+		// built-in depacketizer, so one reader can carry audio and video.
+		for _, stream := range streams {
+			if depacketizer := defaultDepacketizerFor(stream.Codec.ID, stream); depacketizer != nil {
+				depacketizers = append(depacketizers, depacketizer)
+			}
+		}
+		return depacketizers
+	}
 	stream, ok := in.codecStream(streams)
 	if !ok {
 		return depacketizers

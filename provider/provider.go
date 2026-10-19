@@ -1,15 +1,18 @@
 // Package provider declares the contracts external transports and
-// destinations satisfy to plug into goav with zero goav changes: Source is
-// the seam goav.Input adapts into a recipe input, Destination (with Contract,
-// Info, Writer, TransactionalWriter, and OpenFunc) is the seam goav.Custom
-// and goav.Writer wrap behind destination handles. Implementations live
-// outside goav — rtpav.Receive and webrtcav.Track are Sources; an S3
-// uploader returning a TransactionalWriter is a Destination.
+// destinations satisfy to plug into goav with zero goav changes: Source and
+// ByteSource are the inputs goav.Input adapts into a recipe input,
+// Destination (with Contract, Info, Writer, TransactionalWriter, and
+// OpenFunc) is the seam goav.Custom and goav.Writer wrap behind destination
+// handles, and Scheme binds URLs to both, for goav.URIInput and goav.URI.
+// Implementations live outside goav — rtpav.Receive and webrtcav.Track are
+// Sources, webrtcav.WHEP is a Scheme; an S3 uploader returning a
+// TransactionalWriter is a Destination.
 package provider
 
 import (
 	"context"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -41,6 +44,47 @@ type Source interface {
 	OpenSource(ctx context.Context) (pipeline.Source, []av.Stream, error)
 	// SourceShape declares the shape of the media this provider produces.
 	SourceShape() shape.Spec
+}
+
+// Input is a recipe input a provider supplies: a Source, whose media it
+// produces itself, or a ByteSource, whose container bytes the runtime probes
+// and demuxes with its registered formats. Either declares its shape before
+// it opens; SourceShape().Realtime marks a live input, which planning,
+// Explain, and goav.Reconnect read. goav.Input refuses an Input that is
+// neither.
+type Input interface {
+	SourceShape() shape.Spec
+}
+
+// ByteSource is an input of container bytes: a file, an HTTP resource, an
+// object in a bucket, or a live transport carrying a muxed stream (MPEG-TS
+// over SRT, FLV over RTMP). The runtime opens it when the run starts, probes
+// the container from the input's name and MIME type, or takes
+// SourceShape().Format when set, and demuxes it with its registered formats.
+//
+// The reader may also implement io.ReaderAt, io.Seeker, and Size() int64;
+// random-access containers (MP4 with its index at the end) need ReaderAt or
+// Seeker. The runtime closes the reader when the input closes or the run's
+// context ends, which must unblock a pending Read.
+type ByteSource interface {
+	SourceShape() shape.Spec
+	OpenBytes(ctx context.Context) (io.ReadCloser, error)
+}
+
+// Scheme binds URLs of one scheme (file, https, whep, ...) to inputs and
+// destinations: goav.URIInput and goav.URI resolve through the schemes a
+// runtime registers with runconfig.Scheme. Binding is pure — it validates
+// the URL and performs no I/O, because Describe and Explain bind too; the
+// bound Input or Destination connects when the run opens it. A scheme that
+// serves one direction refuses the other with an error that wraps
+// errors.ErrUnsupported and names the fix.
+//
+// The *url.URL carries the caller's credentials verbatim (userinfo, token
+// query parameters): keep it inside the bound value, and name things by the
+// redacted form goav reports (the input's node name, Info.Name).
+type Scheme interface {
+	Input(u *url.URL) (Input, error)
+	Destination(u *url.URL) (Destination, error)
 }
 
 // Destination opens a custom destination behind a goav-owned Destination
