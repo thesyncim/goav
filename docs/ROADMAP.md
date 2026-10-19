@@ -210,8 +210,8 @@ this list:
   offline file inputs by time, which backpressure cannot do, is an internal
   runner policy, not an API, on both runners and through joins
   (`TestSeveralFileInputsInterleaveDeterministically`,
-  `TestOfflineJoinsAndLaddersWriteTheSameBytes`); nested joins and joins on
-  a buffered graph still run their arms free. The rest
+  `TestOfflineJoinsAndLaddersWriteTheSameBytes`); graphs with a live input or a
+  custom `pipeline.Admitter` run free. The rest
   of the time domain is landed and cited in "The settled model" above.
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `task.Detach` has explicit
