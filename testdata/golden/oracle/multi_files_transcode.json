@@ -35,12 +35,12 @@
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
       },
       {
         "name": "encode-video-2",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
       },
       {
         "name": "x.webm",
@@ -442,7 +442,9 @@
         ],
         "realtime": true,
         "requiredBy": "video",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp9 encoder registered"
       },
       {
         "kind": "encoder",
@@ -456,7 +458,9 @@
         ],
         "realtime": true,
         "requiredBy": "video-2",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp9 encoder registered"
       }
     ],
     "warnings": [
@@ -515,12 +519,12 @@
         {
           "name": "encode-video",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
         },
         {
           "name": "encode-video-2",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
         },
         {
           "name": "x.webm",

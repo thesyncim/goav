@@ -406,3 +406,18 @@ func validScheme(name string) bool {
 	}
 	return name != ""
 }
+
+// WithCodecPreference sets the order the runtime picks the backends of codec
+// id in mode (decode or encode) in when a recipe names none (codec.Backend
+// names one): backend names or kinds (codec.KindHardware, KindLib,
+// KindGo), most preferred first. An empty id or mode applies to every codec
+// or mode. Backends it leaves out follow the default order: hardware, then
+// shared libraries, then pure Go. Only backends whose declared capabilities and knobs
+// fit a request are candidates; one that fails to open is an error, never a
+// reason to try the next.
+func WithCodecPreference(id av.CodecID, mode codec.Mode, order ...string) Option {
+	return func(config *Config) error {
+		config.Codecs.Prefer(id, mode, order...)
+		return nil
+	}
+}

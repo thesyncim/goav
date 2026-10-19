@@ -25,12 +25,12 @@
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "encode-audio",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
       },
       {
         "name": "call.webm",
@@ -349,7 +349,9 @@
         ],
         "realtime": true,
         "requiredBy": "video",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       },
       {
         "kind": "encoder",
@@ -363,7 +365,9 @@
         ],
         "realtime": true,
         "requiredBy": "audio",
-        "status": "available"
+        "status": "available",
+        "backend": "gopus (go)",
+        "backendReason": "the only opus encoder registered"
       }
     ],
     "graph": {
@@ -392,12 +396,12 @@
         {
           "name": "encode-video",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "encode-audio",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
         },
         {
           "name": "call.webm",

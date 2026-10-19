@@ -18,8 +18,9 @@ func Descriptor() codec.Descriptor {
 			RTPPayloads:  []string{av.MIMEH264},
 			BuildTags:    []string{"goav_goh264"},
 		},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    "goh264",
+			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/goh264",
 			Package: "github.com/thesyncim/goav/adapters/goh264",
 			Status:  "planned-build-tagged",

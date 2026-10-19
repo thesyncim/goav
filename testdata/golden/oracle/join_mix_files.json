@@ -49,7 +49,7 @@
       {
         "name": "encode-mix",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
       },
       {
         "name": "mix.webm",
@@ -395,7 +395,9 @@
         ],
         "realtime": true,
         "requiredBy": "mix",
-        "status": "available"
+        "status": "available",
+        "backend": "gopus (go)",
+        "backendReason": "the only opus encoder registered"
       }
     ],
     "warnings": [
@@ -468,7 +470,7 @@
         {
           "name": "encode-mix",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
         },
         {
           "name": "mix.webm",

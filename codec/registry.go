@@ -3,6 +3,7 @@ package codec
 import (
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -11,21 +12,32 @@ import (
 var ErrNotFound = errors.New("codec: not found")
 
 // SimpleRegistry is the per-runtime codec registry: descriptors for
-// capability checks plus decoder/encoder factories keyed by codec id.
-// Registration is last-wins, so layering options can override defaults. It is
-// populated at runtime construction and read-only afterwards.
+// capability checks plus the decoder and encoder backends serving each codec.
+// It holds many backends per codec, keyed by codec, backend name, and mode;
+// registering the same identity again replaces it. Select picks the backend
+// for one request. It is populated at runtime construction and read-only
+// afterwards.
 type SimpleRegistry struct {
 	descriptors []Descriptor
-	decoders    map[av.CodecID]DecoderFactory
-	encoders    map[av.CodecID]EncoderFactory
+	backends    []registered
+	preference  map[preferenceKey][]string
+	sequence    int
+}
+
+// registered is one backend: the descriptor it registered with, its
+// factory, and when it registered (later registrations rank first among
+// equals, so layering options overrides defaults).
+type registered struct {
+	desc     Descriptor
+	mode     Mode
+	decoder  DecoderFactory
+	encoder  EncoderFactory
+	sequence int
 }
 
 // NewRegistry returns an empty codec registry.
 func NewRegistry() *SimpleRegistry {
-	return &SimpleRegistry{
-		decoders: make(map[av.CodecID]DecoderFactory),
-		encoders: make(map[av.CodecID]EncoderFactory),
-	}
+	return &SimpleRegistry{}
 }
 
 // RegisterDescriptor records a codec's capabilities without an
@@ -34,24 +46,63 @@ func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
 	r.upsertDescriptor(desc)
 }
 
-// RegisterDecoder records the descriptor (decode mode added) and the decoder
-// factory for its codec id; last registration wins.
+// RegisterDecoder records the descriptor (decode mode added) and adds its
+// backend as a decoder for the codec, replacing a decoder registered under
+// the same backend name.
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
 	desc.Modes = mergeModes(desc.Modes, []Mode{ModeDecode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
-		r.decoders[desc.ID] = factory
+		r.addBackend(registered{desc: cloneDescriptor(desc), mode: ModeDecode, decoder: factory})
 	}
 }
 
-// RegisterEncoder records the descriptor (encode mode added) and the encoder
-// factory for its codec id; last registration wins.
+// RegisterEncoder records the descriptor (encode mode added) and adds its
+// backend as an encoder for the codec, replacing an encoder registered under
+// the same backend name.
 func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
 	desc.Modes = mergeModes(desc.Modes, []Mode{ModeEncode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
-		r.encoders[desc.ID] = factory
+		r.addBackend(registered{desc: cloneDescriptor(desc), mode: ModeEncode, encoder: factory})
 	}
+}
+
+func (r *SimpleRegistry) addBackend(backend registered) {
+	r.sequence++
+	backend.sequence = r.sequence
+	r.backends = slices.DeleteFunc(r.backends, func(existing registered) bool {
+		return existing.mode == backend.mode && existing.desc.ID == backend.desc.ID && strings.EqualFold(existing.desc.Backend.Name, backend.desc.Backend.Name)
+	})
+	r.backends = append(r.backends, backend)
+}
+
+// Prefer sets the order Select tries the backends of codec id in mode when a
+// request names none: backend names (openh264) or kinds (hardware, lib,
+// go), most preferred first. An empty id or mode applies to every codec or
+// mode; the most specific order wins. Backends the order leaves out follow
+// in the default order: no kind, hardware, lib, go, later registrations
+// first within a kind.
+func (r *SimpleRegistry) Prefer(id av.CodecID, mode Mode, order ...string) {
+	if r.preference == nil {
+		r.preference = map[preferenceKey][]string{}
+	}
+	r.preference[preferenceKey{id, mode}] = slices.Clone(order)
+}
+
+type preferenceKey struct {
+	id   av.CodecID
+	mode Mode
+}
+
+// preferenceFor is the most specific order set for id in mode.
+func (r *SimpleRegistry) preferenceFor(id av.CodecID, mode Mode) []string {
+	for _, key := range []preferenceKey{{id, mode}, {id, ""}, {"", mode}, {"", ""}} {
+		if order, ok := r.preference[key]; ok {
+			return order
+		}
+	}
+	return nil
 }
 
 // Descriptors returns a copy of every registered descriptor.
@@ -83,46 +134,26 @@ func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 	return out, nil
 }
 
-// DecoderFactory returns the decoder factory for a codec id: ErrUnavailable
-// when only the descriptor is registered, ErrNotFound when nothing is.
+// DecoderFactory returns the decoder factory Select picks for a codec id with
+// no other requirement: ErrUnavailable when only descriptors are registered,
+// ErrNotFound when nothing is.
 func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
-	factory, ok := r.decoders[id]
-	if !ok {
-		if r.hasDescriptor(id, ModeDecode) {
-			return nil, ErrUnavailable
-		}
-		return nil, ErrNotFound
+	choice, err := r.Select(Need{ID: id, Mode: ModeDecode})
+	if err != nil {
+		return nil, errors.Unwrap(err)
 	}
-	return factory, nil
+	return choice.Decoder, nil
 }
 
-// EncoderFactory returns the encoder factory for a codec id: ErrUnavailable
-// when only the descriptor is registered, ErrNotFound when nothing is.
+// EncoderFactory returns the encoder factory Select picks for a codec id with
+// no other requirement: ErrUnavailable when only descriptors are registered,
+// ErrNotFound when nothing is.
 func (r *SimpleRegistry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
-	factory, ok := r.encoders[id]
-	if !ok {
-		if r.hasDescriptor(id, ModeEncode) {
-			return nil, ErrUnavailable
-		}
-		return nil, ErrNotFound
+	choice, err := r.Select(Need{ID: id, Mode: ModeEncode})
+	if err != nil {
+		return nil, errors.Unwrap(err)
 	}
-	return factory, nil
-}
-
-func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
-	if id == "" {
-		return false
-	}
-	for i := range r.descriptors {
-		desc := r.descriptors[i]
-		if desc.ID != id {
-			continue
-		}
-		if desc.Supports(mode) {
-			return true
-		}
-	}
-	return false
+	return choice.Encoder, nil
 }
 
 // Supports reports whether the descriptor lists the given mode.
@@ -147,6 +178,8 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned.Modes = append([]Mode(nil), desc.Modes...)
 	cloned.Profiles = append([]string(nil), desc.Profiles...)
 	cloned.Capabilities = cloneCapabilities(desc.Capabilities)
+	cloned.Knobs = slices.Clone(desc.Knobs)
+	cloned.RawKnobs = slices.Clone(desc.RawKnobs)
 	return cloned
 }
 
@@ -157,6 +190,7 @@ func cloneCapabilities(capabilities Capabilities) Capabilities {
 	cloned.SampleFormats = append([]string(nil), capabilities.SampleFormats...)
 	cloned.PixelFormats = append([]string(nil), capabilities.PixelFormats...)
 	cloned.SampleRates = append([]int(nil), capabilities.SampleRates...)
+	cloned.BitDepths = append([]int(nil), capabilities.BitDepths...)
 	cloned.RTPPayloads = append([]string(nil), capabilities.RTPPayloads...)
 	cloned.BuildTags = append([]string(nil), capabilities.BuildTags...)
 	return cloned
@@ -183,6 +217,12 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 	merged.Experimental = merged.Experimental || next.Experimental
 	merged.Capabilities = mergeCapabilities(merged.Capabilities, next.Capabilities)
 	merged.Backend = mergeBackend(merged.Backend, next.Backend)
+	if next.Knobs != nil {
+		merged.Knobs = slices.Clone(next.Knobs)
+	}
+	if next.RawKnobs != nil {
+		merged.RawKnobs = slices.Clone(next.RawKnobs)
+	}
 	return merged
 }
 
@@ -190,15 +230,25 @@ func mergeCapabilities(existing Capabilities, next Capabilities) Capabilities {
 	merged := existing
 	merged.SampleFormats = mergeStrings(merged.SampleFormats, next.SampleFormats)
 	merged.PixelFormats = mergeStrings(merged.PixelFormats, next.PixelFormats)
+	merged.BitDepths = mergeInts(merged.BitDepths, next.BitDepths)
+	if next.MaxWidth != 0 {
+		merged.MaxWidth = next.MaxWidth
+	}
+	if next.MaxHeight != 0 {
+		merged.MaxHeight = next.MaxHeight
+	}
 	merged.RTPPayloads = mergeStrings(merged.RTPPayloads, next.RTPPayloads)
 	merged.BuildTags = mergeStrings(merged.BuildTags, next.BuildTags)
 	return merged
 }
 
-func mergeBackend(existing Backend, next Backend) Backend {
+func mergeBackend(existing BackendInfo, next BackendInfo) BackendInfo {
 	merged := existing
 	if next.Name != "" {
 		merged.Name = next.Name
+	}
+	if next.Kind != "" {
+		merged.Kind = next.Kind
 	}
 	if next.Module != "" {
 		merged.Module = next.Module
@@ -226,6 +276,15 @@ func mergeStrings(existing []string, next []string) []string {
 	for _, candidate := range next {
 		found := slices.Contains(existing, candidate)
 		if !found {
+			existing = append(existing, candidate)
+		}
+	}
+	return existing
+}
+
+func mergeInts(existing []int, next []int) []int {
+	for _, candidate := range next {
+		if !slices.Contains(existing, candidate) {
 			existing = append(existing, candidate)
 		}
 	}

@@ -8,6 +8,7 @@ on:
       - 'webrtcav/v*'
       - 'playoutav/v*'
       - 'player/v*'
+      - 'libcodec/v*'
       - 'cmd/goav/v*'
   workflow_dispatch:
     inputs:
@@ -51,7 +52,7 @@ jobs:
             draft="false"
           fi
           case "$tag" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: $tag" >&2
@@ -67,6 +68,7 @@ jobs:
             webrtcav/*) module_dir="webrtcav" ;;
             playoutav/*) module_dir="playoutav" ;;
             player/*) module_dir="player" ;;
+            libcodec/*) module_dir="libcodec" ;;
             cmd/goav/*) module_dir="cmd/goav" ;;
             *) module_dir="." ;;
           esac

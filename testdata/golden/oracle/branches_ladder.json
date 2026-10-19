@@ -20,7 +20,7 @@
       {
         "name": "encode-hd",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "resize-sd",
@@ -30,7 +30,7 @@
       {
         "name": "encode-sd",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "hd.webm",
@@ -460,7 +460,9 @@
         ],
         "realtime": true,
         "requiredBy": "hd",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       },
       {
         "kind": "filter",
@@ -500,7 +502,9 @@
         ],
         "realtime": true,
         "requiredBy": "sd",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       }
     ],
     "graph": {
@@ -524,7 +528,7 @@
         {
           "name": "encode-hd",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "resize-sd",
@@ -534,7 +538,7 @@
         {
           "name": "encode-sd",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "hd.webm",

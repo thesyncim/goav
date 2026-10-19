@@ -15,12 +15,12 @@
       {
         "name": "encode-live",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "encode-archive",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "live.webm",
@@ -344,7 +344,9 @@
         ],
         "realtime": true,
         "requiredBy": "live",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       },
       {
         "kind": "encoder",
@@ -358,7 +360,9 @@
         ],
         "realtime": true,
         "requiredBy": "archive",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       }
     ],
     "graph": {
@@ -377,12 +381,12 @@
         {
           "name": "encode-live",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "encode-archive",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "live.webm",

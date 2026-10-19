@@ -424,7 +424,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 			Capabilities: codec.Capabilities{
 				BuildTags: []string{"goav_goh264"},
 			},
-			Backend: codec.Backend{
+			Backend: codec.BackendInfo{
 				Name:   "goh264",
 				Status: "planned-build-tagged",
 			},

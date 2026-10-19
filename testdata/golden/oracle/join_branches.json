@@ -19,7 +19,7 @@
       {
         "name": "encode-room",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
       },
       {
         "name": "room.webm",
@@ -278,7 +278,9 @@
         ],
         "realtime": true,
         "requiredBy": "room",
-        "status": "available"
+        "status": "available",
+        "backend": "gopus (go)",
+        "backendReason": "the only opus encoder registered"
       }
     ],
     "graph": {
@@ -301,7 +303,7 @@
         {
           "name": "encode-room",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
         },
         {
           "name": "room.webm",

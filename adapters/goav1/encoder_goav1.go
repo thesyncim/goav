@@ -171,8 +171,13 @@ func (e *Encoder) Close() error {
 		return nil
 	}
 	e.closed = true
+	if e.encoder == nil {
+		return nil
+	}
+	// The backend encoder runs worker goroutines until it is closed.
+	err := e.encoder.Close()
 	e.encoder = nil
-	return nil
+	return err
 }
 
 func (e *Encoder) resetEncoder() error {
@@ -188,6 +193,9 @@ func (e *Encoder) resetEncoder() error {
 	encoder, err := backend.NewVideoEncoder(nativeConfig)
 	if err != nil {
 		return mapGoav1EncodeError(err)
+	}
+	if e.encoder != nil {
+		e.encoder.Close()
 	}
 	e.encoder = encoder
 	return nil

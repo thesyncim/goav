@@ -112,14 +112,18 @@ func init() {
 		builtin(el)
 	}
 
-	op := func(name, summary string, fn func(goav.Stream) goav.Stream) {
-		el := define[struct{}](name, summary, "operation")
-		el.apply = func(_ *compiler, _ reflect.Value, in value) (value, error) {
-			return value{kind: kindStream, stream: fn(in.stream)}, nil
-		}
-		builtin(el)
+	type decodeArgs struct {
+		Backend string `launch:"backend" help:"the backend that decodes, e.g. videotoolbox"`
 	}
-	op("decode", "turn packets into frames", func(s goav.Stream) goav.Stream { return s.Decode() })
+	decode := define[decodeArgs]("decode", "turn packets into frames", "operation")
+	decode.apply = func(_ *compiler, args reflect.Value, in value) (value, error) {
+		var opts []codec.Option
+		if backend := argsOf[decodeArgs](args).Backend; backend != "" {
+			opts = append(opts, codec.Backend(backend))
+		}
+		return value{kind: kindStream, stream: in.stream.Decode(opts...)}, nil
+	}
+	builtin(decode)
 
 	builtin(encodeElement())
 
@@ -400,6 +404,8 @@ func encodeElement() *element {
 		KeyframeInterval int               `launch:"keyframe_interval"`
 		Profile          string            `launch:"profile"`
 		Level            string            `launch:"level"`
+		Backend          string            `launch:"backend" help:"the backend that encodes, e.g. openh264"`
+		BitDepth         int               `launch:"bit_depth"`
 		Channels         int               `launch:"channels"`
 		SampleRate       int               `launch:"sample_rate"`
 		ClockRate        uint32            `launch:"clock_rate"`
@@ -427,6 +433,12 @@ func encodeElement() *element {
 		}
 		if a.Level != "" {
 			opts = append(opts, codec.Level(a.Level))
+		}
+		if a.Backend != "" {
+			opts = append(opts, codec.Backend(a.Backend))
+		}
+		if a.BitDepth > 0 {
+			opts = append(opts, codec.BitDepth(a.BitDepth))
 		}
 		if a.Channels > 0 {
 			opts = append(opts, codec.Channels(a.Channels))

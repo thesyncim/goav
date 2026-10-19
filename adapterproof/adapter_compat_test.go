@@ -58,7 +58,7 @@ func toyCodecDescriptor() codec.Descriptor {
 		Capabilities: codec.Capabilities{
 			SampleFormats: []string{av.SampleFormatS16},
 		},
-		Backend: codec.Backend{Name: "adapterproof", Package: "adapterproof"},
+		Backend: codec.BackendInfo{Name: "adapterproof", Package: "adapterproof"},
 	}
 }
 

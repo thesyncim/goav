@@ -57,6 +57,20 @@ func Level(level string) Option {
 	return func(s *CodecSettings) { s.Level = level }
 }
 
+// Backend makes one backend serve the codec, by its name (videotoolbox,
+// openh264, goav1), instead of the runtime's preference order. A backend
+// that is not registered, or cannot meet the request, is refused with the
+// backends that can; selection never falls back on its own.
+func Backend(name string) Option {
+	return func(s *CodecSettings) { s.Backend = name }
+}
+
+// BitDepth requests the coded sample bit depth (8, 10, 12); selection keeps
+// to the backends that declare it.
+func BitDepth(bits int) Option {
+	return func(s *CodecSettings) { s.BitDepth = bits }
+}
+
 // Setting records one adapter-specific string setting. Common knobs should use
 // the typed options above; Setting is for native/custom adapters that own their
 // own validation vocabulary.

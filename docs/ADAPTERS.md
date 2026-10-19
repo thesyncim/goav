@@ -11,10 +11,11 @@ integrations live under `adapters/...` and `container/...`.
 The root module keeps third-party dependencies pinned by
 `TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
 by the built-in pure-Go AAC backend is allowed outside `github.com/thesyncim/*`
-and the standard library. `rtpav`, `webrtcav`, `playoutav`, `player`, and
-`cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
-Pion dependency tree, the player Ebitengine and oto, while playout is
-dependency-light. Importing goav alone never pulls them in. Import paths are unchanged.
+and the standard library. `rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`,
+and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
+Pion dependency tree, the player Ebitengine and oto, library codecs purego,
+while playout is dependency-light. Importing goav alone never pulls them in.
+Import paths are unchanged.
 
 To write an adapter, use `docs/ADAPTER_AUTHORING.md` for the extension
 interfaces, lifecycle rules, error and ownership contracts, and required
@@ -83,6 +84,40 @@ No OS needs cgo; `CGO_ENABLED=1` builds too. On Linux the dlopen makes the
 binary dynamically linked, so `cmd/goav` has a `goav_noplay` build tag for a
 static CLI. Without an audio device playback continues silently.
 
+### Library codecs (`libcodec`)
+
+The `libcodec` module registers codecs that live in shared libraries and the
+OS's own frameworks, bound at run time through purego, so builds keep
+`CGO_ENABLED=0`:
+`bundle.New(libcodec.VideoToolbox(), libcodec.AudioToolbox(), libcodec.OpenH264())`.
+They join the pure-Go codecs in one registry, many backends per codec. A
+request takes the backend it names (`codec.Backend("openh264")`, `encode h264
+backend=openh264`), or the most preferred one whose capabilities and settings
+fit: hardware, then shared libraries (`lib`), then pure Go, reordered per codec
+and mode with `runconfig.WithCodecPreference`. A named backend is never
+substituted. Describe names the backend on each encode node; Explain gives the
+reason, the alternatives, and the backend's knobs. Settings come in three
+tiers: the common knobs (`bitrate`, `rc`, `quality`, `qp`, `speed`, `threads`,
+`tune`, `gop`, `profile`, `level`, `realtime`), each backend's own
+(`openh264.entropy=cabac` scopes one), and a raw tier
+(`openh264-params="iMaxQp=40:iMinQp=10"`, any `SEncParamExt` field;
+VideoToolbox takes any compression property, AudioToolbox any converter
+property by code). A library loads when the runtime is built, never in
+`init`; a missing or unsupported one registers its backend as `not-installed`
+(and the like) so selection passes it over, and
+`kit.Probe(libcodec.OpenH264())` returns the typed error with the fix.
+
+| Backend | Codecs | Kind | Runs on | License of what loads | Patents |
+| --- | --- | --- | --- | --- | --- |
+| `videotoolbox` | h264, hevc encode and decode | hardware | macOS with the hardware | Apple OS framework | Apple's codec, shipped with macOS; your binary carries none |
+| `audiotoolbox` | aac (LC) encode and decode | lib | macOS | Apple OS framework | Apple's codec, shipped with macOS; your binary carries none |
+| `openh264` | h264 encode and decode | lib | macOS, Linux, Windows | BSD-2-Clause | Cisco pays the H.264 royalties for its prebuilt binaries, downloaded from Cisco by the end user; builds from source (Homebrew, distributions) are not covered |
+
+GPL encoders (x264, x265) and fdk-aac, if added, would be separate opt-in
+modules, so no binary links them unless its author chooses to. A backend from
+any other module plugs in the same way (see
+[ADAPTER_AUTHORING](ADAPTER_AUTHORING.md#add-a-codec-libcodeckit)).
+
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
 The tables below mirror `bundle.Options()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
 
@@ -106,7 +141,7 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | --- | --- | --- | --- | --- | --- | --- |
 | `aac` | audio | decode | `goaac` | profiles=aac_lc; samples=s16; realtime | - | active |
 | `av1` | video | decode | `goav1` | pixels=gray8, i420, i422, i444, yuv420p, yuv422p, yuv444p; rtp=video/av1; realtime; experimental | - | active |
-| `av1` | video | encode | `goav1-encoder` | pixels=i420, yuv420p; rtp=video/av1; realtime; experimental | - | active |
+| `av1` | video | encode | `goav1` | pixels=i420, yuv420p; rtp=video/av1; realtime; experimental | - | active |
 | `h264` | video | decode | `goh264` | pixels=yuv420p; rtp=video/h264; realtime; experimental | goav_goh264 | planned-build-tagged |
 | `opus` | audio | decode, encode | `gopus` | samples=s16; rates=8000,12000,16000,24000,48000; rtp=audio/opus; realtime | - | active |
 | `vp8` | video | decode, encode | `govpx` | pixels=i420; rtp=video/vp8; realtime; experimental | - | active |
@@ -140,8 +175,8 @@ fails the suite if the hot path starts allocating. The repo-wide
 proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 
 All adapters are intentionally narrow; richer features (SVC controls, color
-metadata, high bit depth, floating-point PCM, higher-quality scalers, H264
-parsing/demux/encode) are future slices.
+metadata, high bit depth, floating-point PCM, higher-quality scalers, pure-Go
+H.264 encode) are future slices.
 
 ## URL schemes
 
@@ -187,8 +222,8 @@ compatibility and build registries without forcing tagged code paths. Concrete
 factories replace descriptor-only registrations once each path has caller-owned
 output buffers and allocation tests. `goh264` remains decode-only in the
 default bundle for recipe encode: applications that need H.264 encoding must
-register a vetted encoder explicitly with `runconfig.WithEncoder` or a codec
-adapter.
+register an encoder explicitly: `libcodec.VideoToolbox()` or `libcodec.OpenH264()`
+(see Library codecs), `runconfig.WithEncoder`, or a codec adapter.
 
 ## Matroska and WebM notes
 

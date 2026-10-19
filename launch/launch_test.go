@@ -387,7 +387,7 @@ func TestRefusalsPointAtTheMistake(t *testing.T) {
 		{"file in.webm, file b.webm ! file out.webm", []string{"a comma separates destinations"}},
 		{"tap live ! encode vp8 ! file p.webm", []string{"a tap starts a pipeline only on a running task"}},
 		{"file 'in.webm ! video", []string{"unterminated quoted value"}},
-		{"mix(file a.webm ! audio ! decode file b.webm) ! file m.webm", []string{"decode takes no settings", "separate a join's inputs with ,"}},
+		{"mix(file a.webm ! audio ! decode file b.webm) ! file m.webm", []string{"decode: unexpected value \"file\"", "separate a join's inputs with ,"}},
 		{"mix(file a.webm ! audio, file b.webm ! audio ! file m.webm", []string{"mix( is not closed"}},
 		{"mix(file a.webm ! audio ! decode) ! file m.webm", []string{"mix needs at least two streams"}},
 		{"mix(file a.webm ! audio ! decode, file b.webm ! audio ! decode, sync=late) ! file m.webm", []string{"mix sync \"late\" is not arrival or pts"}},

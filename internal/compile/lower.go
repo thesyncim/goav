@@ -554,7 +554,10 @@ func (l *lowering) operation(index int, operation recipeir.Operation) (pipeline.
 		if owner < 0 {
 			request.Name = name
 		}
-		node = ComposeNode{Kind: ComposeEncode, Name: l.unique(l.named(owner, EncodeNodeName(request))), Detail: EncodeNodeDetail(request), Request: request}
+		backend := EncodeAdapterRequestFromRecipeIR(operation.Encode, stream)
+		backend.Realtime = s.env.Realtime || inputsLive(s.req.Inputs)
+		detail := JoinSpecDetail(EncodeNodeDetail(request), EncodeBackendDetail(s.env.Codecs, backend))
+		node = ComposeNode{Kind: ComposeEncode, Name: l.unique(l.named(owner, EncodeNodeName(request))), Detail: detail, Request: request}
 	default:
 		// Copies, taps, annotations, names, and queues plan no node.
 		return "", nil

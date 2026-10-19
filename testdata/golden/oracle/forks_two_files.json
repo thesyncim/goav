@@ -45,22 +45,22 @@
       {
         "name": "encode-a-vp8",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "encode-a-vp9",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
       },
       {
         "name": "encode-b-vp8",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "encode-b-vp9",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
       },
       {
         "name": "a-vp8.webm",
@@ -950,7 +950,9 @@
         ],
         "realtime": true,
         "requiredBy": "a-vp8",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       },
       {
         "kind": "filter",
@@ -990,7 +992,9 @@
         ],
         "realtime": true,
         "requiredBy": "a-vp9",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp9 encoder registered"
       },
       {
         "kind": "filter",
@@ -1030,7 +1034,9 @@
         ],
         "realtime": true,
         "requiredBy": "b-vp8",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       },
       {
         "kind": "filter",
@@ -1070,7 +1076,9 @@
         ],
         "realtime": true,
         "requiredBy": "b-vp9",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp9 encoder registered"
       }
     ],
     "warnings": [
@@ -1157,22 +1165,22 @@
         {
           "name": "encode-a-vp8",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "encode-a-vp9",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
         },
         {
           "name": "encode-b-vp8",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "encode-b-vp9",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
         },
         {
           "name": "a-vp8.webm",

@@ -34,7 +34,7 @@ repository page should say meanwhile.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav player; do
+   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -106,7 +106,7 @@ git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
 Tag order follows dependencies: root first, then `rtpav`, `webrtcav`,
-`playoutav`, and `player`, then `cmd/goav` (it pins `player`).
+`playoutav`, `player`, and `libcodec`, then `cmd/goav` (it pins `player`).
 
 Nested-module tags need the standard multi-module dance, because consumers
 ignore `replace` directives: in-repo the nested `go.mod` files require the

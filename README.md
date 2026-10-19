@@ -114,7 +114,7 @@ pipeline goav
   stage select-video [select, type=video]
   stage decode-video [packets -> frames, type=video]
   stage resize-video [resize, 1280x720, exact]
-  stage encode-video [frames -> packets, codec=vp9]
+  stage encode-video [frames -> packets, codec=vp9, backend=govpx (go)]
   stage out.webm [mux, protocol=file]
 ```
 
@@ -184,6 +184,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/webrtcav`](webrtcav) | WebRTC remote tracks as inputs (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
+| [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 
 The core module never pulls in Pion.
 

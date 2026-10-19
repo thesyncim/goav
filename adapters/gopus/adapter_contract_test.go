@@ -291,8 +291,8 @@ func TestDecoderInputValidationAndResetEvents(t *testing.T) {
 	if err := decoder.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := decoder.DecodeInto(ctx, &av.Packet{}, &result); !errors.Is(err, codec.ErrUnsupportedFormat) {
-		t.Fatalf("decode after close err = %v, want %v", err, codec.ErrUnsupportedFormat)
+	if err := decoder.DecodeInto(ctx, &av.Packet{}, &result); !errors.Is(err, codec.ErrClosed) {
+		t.Fatalf("decode after close err = %v, want %v", err, codec.ErrClosed)
 	}
 	if got := bytesAsInt16(nil); got != nil {
 		t.Fatalf("empty bytesAsInt16 = %v, want nil", got)

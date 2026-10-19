@@ -3,7 +3,6 @@ package goav
 import (
 	"context"
 	"errors"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -16,27 +15,23 @@ import (
 // newEncodeStageNamed opens the encoder and returns its stage with the stream
 // it emits: config.Stream plus whatever the opened encoder reports.
 func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request compile.EncodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
-	factory, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID)
+	name = firstNonEmpty(name, compile.EncodeNodeName(request))
+	// File inputs reveal their rate and geometry only once opened, so the
+	// backend is chosen here, against the real stream, before an adapter
+	// turns an unsupported config into a bare sentinel.
+	adapterRequest := compile.EncodeAdapterRequestFromPreparedStream(codec.Spec{ID: config.Parameters.ID, Type: config.Parameters.Type, Parameters: config.Parameters, Settings: config.Settings}, config.Stream)
+	adapterRequest.Realtime = config.Realtime
+	choice, err := refuse(compile.SelectCodecBackend("configure encode", name, b.runtime.codecs, adapterRequest, codec.ModeEncode))
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	name = firstNonEmpty(name, compile.EncodeNodeName(request))
-	// File inputs reveal their rate and geometry only once opened, so the
-	// descriptor check planning could not run happens here, before the
-	// adapter turns an unsupported config into a bare sentinel.
-	adapterRequest := compile.EncodeAdapterRequestFromPreparedStream(codec.Spec{ID: config.Parameters.ID, Type: config.Parameters.Type, Parameters: config.Parameters}, config.Stream)
-	if descriptors, findErr := b.runtime.codecs.Find(config.Parameters.ID, codec.ModeEncode); findErr == nil && !slices.ContainsFunc(descriptors, func(desc codec.Descriptor) bool {
-		return compile.CodecDescriptorSupports(desc, adapterRequest)
-	}) {
-		return nil, av.Stream{}, publicError(compile.EncodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors))
-	}
-	encoder, err := factory.NewEncoder(ctx, config)
+	encoder, err := choice.Encoder.NewEncoder(ctx, config)
 	if err != nil {
 		return nil, av.Stream{}, encodeOpenError(name, adapterRequest, err)
 	}
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
 		Name:              name,
-		Detail:            compile.EncodeNodeDetail(request),
+		Detail:            compile.JoinSpecDetail(compile.EncodeNodeDetail(request), compile.BackendDetail(choice.Descriptor)),
 		Encoder:           encoder,
 		Result:            encodeResultForStream(config.Stream),
 		OutputStreamID:    config.Stream.ID,

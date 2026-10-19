@@ -74,7 +74,7 @@ func customCodecDescriptor() codec.Descriptor {
 			codec.ModeDecode,
 		},
 		Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    "example",
 			Module:  "github.com/thesyncim/goav/examples/custom-codec",
 			Package: "main",
