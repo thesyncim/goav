@@ -5,10 +5,12 @@ package goav
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -88,4 +90,25 @@ func (r *Runtime) controlFunc() func(context.Context, control.Control) error {
 		return nil
 	}
 	return r.controls.control
+}
+
+// validateMediaSinkStreams refuses, with the fix, a stream a packet-only
+// media sink does not take whose codec only showed when its input opened (a
+// file the planner could not probe for streams), before the sink opens.
+func validateMediaSinkStreams(node string, destination destinationSpec, streams []av.Stream, remux bool) error {
+	facts := compileDestinationFromSpec(destination)
+	if len(facts.Accepts) == 0 || slices.ContainsFunc(facts.Accepts, func(spec shape.Spec) bool {
+		return spec.Domain == "" || spec.Domain == shape.DomainFrame
+	}) {
+		return nil
+	}
+	if remux {
+		return publicError(compile.ValidateSinkRemux("build stream", node, facts.Label, facts, streams, shape.DomainPacket))
+	}
+	for _, stream := range streams {
+		if err := publicError(compile.ValidateSinkShape("build stream", node, facts.Label, facts, shape.FromStream(stream, shape.DomainPacket))); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -179,6 +179,9 @@ func openComposeNode(ctx context.Context, service *builder, node compile.Compose
 		return openedNode{stage: stage, stream: encoded, owned: true}, nil
 	case compile.ComposeSink, compile.ComposeRemuxSink:
 		sink := dests[node.Output].sink
+		if err := validateMediaSinkStreams(node.Name, dests[node.Output], in, node.Kind == compile.ComposeRemuxSink); err != nil {
+			return openedNode{}, err
+		}
 		// A media destination learns its streams and binds the task's
 		// control path; once it opened them, goav closes it either way.
 		opened, err := openMediaSink(ctx, sink, in, service.runtime.controlFunc())

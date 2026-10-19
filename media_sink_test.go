@@ -1,9 +1,11 @@
 package goav_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -199,4 +201,37 @@ func TestMediaSinkAttachRefusesFramesWithTheEncode(t *testing.T) {
 	assertSinkRefusal(t, err, "encode to a codec the destination takes: .Encode(codec.VP8())")
 	cancel()
 	<-done
+}
+
+// TestMediaSinkTakesARemux pins a whole file copied into a media sink: it
+// opens with the file's streams, codecs and H264 extradata included, and
+// every packet names one of them.
+func TestMediaSinkTakesARemux(t *testing.T) {
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newMediaSink(shape.Packet(av.MediaVideo, av.CodecH264), shape.Packet(av.MediaAudio, av.CodecAAC))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))); err != nil {
+		t.Fatal(err)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	ids := map[av.StreamID]av.CodecID{}
+	for _, stream := range sink.streams {
+		ids[stream.ID] = stream.Codec.ID
+		if stream.Codec.ID == av.CodecH264 && len(stream.Codec.ExtraData.Bytes) == 0 {
+			t.Fatalf("h264 stream %s opened without its extradata", stream.ID)
+		}
+	}
+	if len(ids) != 2 || len(sink.packets) == 0 {
+		t.Fatalf("streams = %v, %d packets", ids, len(sink.packets))
+	}
+	for _, packet := range sink.packets {
+		if _, ok := ids[packet.StreamID]; !ok {
+			t.Fatalf("packet for %q, opened %v", packet.StreamID, ids)
+		}
+	}
 }

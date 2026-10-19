@@ -260,20 +260,34 @@ func (s *recipeState) validateRemuxSinkShapes() error {
 			if !destination.Sink {
 				continue
 			}
-			for _, stream := range streams {
-				actual := shape.FromStream(stream, domain)
-				if sinkAcceptsShape(destination.Accepts, actual) {
-					continue
-				}
-				media := cmp.Or(actual.MediaKind, CodecMedia(actual.Codec))
-				selector := map[av.MediaType]string{av.MediaAudio: ".Audio()", av.MediaVideo: ".Video()"}[media]
-				fix := "route the input's streams one by one, and goav encodes what the destination takes: input" + cmp.Or(selector, ".Video()") + ".To(destination)"
-				if domain == shape.DomainPacket {
-					fix = "route the input's streams one by one, decoding the " + string(cmp.Or(actual.Codec, "other")) + " one: input" + cmp.Or(selector, ".Audio()") + ".Decode().To(destination)"
-				}
-				return sinkRefusal(s.operation, input.Name, s.outputDestinationNames[dest], destination, actual, []string{fix})
+			if err := ValidateSinkRemux(s.operation, input.Name, s.outputDestinationNames[dest], destination, streams, domain); err != nil {
+				return err
 			}
 		}
+	}
+	return nil
+}
+
+// ValidateSinkRemux refuses streams of an input copied whole into a media
+// sink that does not take one of them, with the fix that routes the streams
+// one by one: the planner checks the streams a probe knows, the build the
+// ones the input opened with.
+func ValidateSinkRemux(operation string, node string, destinationName string, destination Destination, streams []av.Stream, domain shape.MediaDomain) error {
+	if !destination.Sink {
+		return nil
+	}
+	for _, stream := range streams {
+		actual := shape.FromStream(stream, domain)
+		if sinkAcceptsShape(destination.Accepts, actual) {
+			continue
+		}
+		media := cmp.Or(actual.MediaKind, CodecMedia(actual.Codec))
+		selector := cmp.Or(map[av.MediaType]string{av.MediaAudio: ".Audio()", av.MediaVideo: ".Video()"}[media], ".Video()")
+		fix := "route the input's streams one by one, and goav encodes what the destination takes: input" + selector + ".To(destination)"
+		if domain == shape.DomainPacket {
+			fix = "route the input's streams one by one, decoding the " + string(cmp.Or(actual.Codec, "other")) + " one: input" + selector + ".Decode().To(destination)"
+		}
+		return sinkRefusal(operation, node, destinationName, destination, actual, []string{fix})
 	}
 	return nil
 }
