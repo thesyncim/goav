@@ -20,11 +20,12 @@ import (
 // parameters; the muxed bytes pass the structural validator and ffprobe.
 func TestRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
-		fixture string
-		codecs  []av.CodecID
+		fixture       string
+		codecs        []av.CodecID
+		width, height int
 	}{
-		{"testdata/h264_aac.ts", []av.CodecID{av.CodecH264, av.CodecAAC}},
-		{"testdata/hevc_opus.ts", []av.CodecID{av.CodecHEVC, av.CodecOpus}},
+		{"testdata/h264_aac.ts", []av.CodecID{av.CodecH264, av.CodecAAC}, 64, 48},
+		{"testdata/hevc_opus.ts", []av.CodecID{av.CodecHEVC, av.CodecOpus}, 64, 64},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			data, err := os.ReadFile(tc.fixture)
@@ -39,6 +40,9 @@ func TestRoundTrip(t *testing.T) {
 				if in.streams[i].Codec.ID != codec || len(in.streams[i].Codec.ExtraData.Bytes) == 0 {
 					t.Fatalf("stream %d = %+v, want configured %s", i, in.streams[i], codec)
 				}
+			}
+			if v := in.streams[0].Codec; v.Width != tc.width || v.Height != tc.height {
+				t.Fatalf("video is %dx%d, want %dx%d", v.Width, v.Height, tc.width, tc.height)
 			}
 			muxed := muxBytes(t, MuxerOptions{}, in.streams, in.packets)
 			report := validateTS(t, muxed)

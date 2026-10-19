@@ -7,14 +7,13 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/bitio"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // NAL unit types the muxer and demuxer act on.
 const (
 	h264AUD  = 9
 	hevcAUD  = 35
-	hevcVPS  = 32
-	hevcPPS  = 34
 	hevcIRAP = 16 // BLA, IDR, and CRA are 16 through 23
 )
 
@@ -30,7 +29,7 @@ func nalType(codec av.CodecID, nal []byte) int {
 		return -1
 	}
 	if codec == av.CodecHEVC {
-		return int(nal[0]>>1) & 0x3f
+		return int(hevc.NALType(nal))
 	}
 	return int(nal[0] & 0x1f)
 }
@@ -41,7 +40,7 @@ func isAUD(codec av.CodecID, kind int) bool {
 
 func isParameterSet(codec av.CodecID, kind int) bool {
 	if codec == av.CodecHEVC {
-		return kind >= hevcVPS && kind <= hevcPPS
+		return hevc.ParameterSet(byte(kind))
 	}
 	return kind == h264.NALSPS || kind == h264.NALPPS
 }
@@ -143,38 +142,16 @@ func parameterSets(codec av.CodecID, extra []byte) ([]byte, error) {
 		}
 		return config.AppendParameterSets(nil), nil
 	default:
-		return hvcCParameterSets(extra)
-	}
-}
-
-// hvcCParameterSets reads the NAL unit arrays of an HEVC decoder
-// configuration record (ISO/IEC 14496-15 §8.3.3) as Annex B.
-func hvcCParameterSets(record []byte) ([]byte, error) {
-	if len(record) < 23 || record[0] != 1 {
-		return nil, fmt.Errorf("%w: hvcC record", ErrInvalidData)
-	}
-	var out []byte
-	pos := 23
-	for range int(record[22]) {
-		if pos+3 > len(record) {
-			return nil, fmt.Errorf("%w: hvcC record", ErrInvalidData)
+		config, err := hevc.ParseConfig(extra)
+		if err != nil {
+			return nil, err
 		}
-		count := int(binary.BigEndian.Uint16(record[pos+1:]))
-		pos += 3
-		for range count {
-			if pos+2 > len(record) {
-				return nil, fmt.Errorf("%w: hvcC record", ErrInvalidData)
-			}
-			size := int(binary.BigEndian.Uint16(record[pos:]))
-			pos += 2
-			if size == 0 || pos+size > len(record) {
-				return nil, fmt.Errorf("%w: hvcC record", ErrInvalidData)
-			}
-			out = append(append(out, h264.StartCode[:]...), record[pos:pos+size]...)
-			pos += size
+		var out []byte
+		for _, nal := range config.ParameterSets {
+			out = append(append(out, h264.StartCode[:]...), nal...)
 		}
+		return out, nil
 	}
-	return out, nil
 }
 
 // aacSampleRates is the MPEG-4 sampling frequency index table.

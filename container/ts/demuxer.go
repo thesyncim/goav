@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 const (
@@ -646,11 +647,19 @@ func (d *FormatDemuxer) videoUnit(st *demuxStream, payload []byte, pts, dts int6
 func (d *FormatDemuxer) configureVideo(st *demuxStream, au []byte) {
 	params := &st.stream.Codec
 	if params.ID == av.CodecHEVC {
-		sets, err := parameterSets(av.CodecHEVC, au)
-		if err != nil || len(sets) == 0 {
+		record, err := hevc.ConfigFromAnnexB(au)
+		if err != nil {
 			return
 		}
-		params.ExtraData.Bytes = sets
+		if config, err := hevc.ParseConfig(record); err == nil {
+			for _, nal := range config.ParameterSets {
+				if sps, err := hevc.ParseSPS(nal); hevc.NALType(nal) == hevc.NALSPS && err == nil {
+					params.Width, params.Height = sps.Width, sps.Height
+					break
+				}
+			}
+		}
+		params.ExtraData.Bytes = record
 		d.markReady(st)
 		return
 	}

@@ -62,3 +62,17 @@ func mp4PacketCounts(t *testing.T, path string) map[av.CodecID]int {
 	}
 	return counts
 }
+
+// TestTSHEVCToMP4 remuxes ffmpeg's HEVC and Opus transport stream into MP4:
+// the demuxer's hvcC and picture size are what an hvc1 sample entry needs.
+func TestTSHEVCToMP4(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out := filepath.Join(t.TempDir(), "hevc.mp4")
+	if err := bundle.Run(ctx, goav.URIInput("container/ts/testdata/hevc_opus.ts").To(goav.URI(out))); err != nil {
+		t.Fatalf("ts to mp4: %v", err)
+	}
+	if counts := mp4PacketCounts(t, out); counts[av.CodecHEVC] != 13 || counts[av.CodecOpus] != 26 {
+		t.Fatalf("hevc.mp4 has %v packets, the stream 13 HEVC and 26 Opus", counts)
+	}
+}

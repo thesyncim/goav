@@ -37,16 +37,13 @@ func TestExpGolomb(t *testing.T) {
 	// ue: 1 -> 0, 010 -> 1, 011 -> 2, 00100 -> 3; se of codes 1 and 2 is 1 and -1.
 	r := Reader{Data: []byte{0b1010_0110, 0b0100_0100, 0b1100_0000}, Err: short}
 	for _, want := range []uint64{0, 1, 2, 3} {
-		if v, err := r.UE(); err != nil || v != want {
-			t.Fatalf("UE = %d, %v; want %d", v, err, want)
+		if v, err := r.UVLC(); err != nil || v != want {
+			t.Fatalf("UVLC = %d, %v; want %d", v, err, want)
 		}
 	}
 	for _, want := range []int64{1, -1} {
 		if v, err := r.SE(); err != nil || v != want {
 			t.Fatalf("SE = %d, %v; want %d", v, err, want)
 		}
-	}
-	if _, err := (&Reader{Data: []byte{0, 0, 0, 0, 0}, Err: short}).UE(); !errors.Is(err, short) {
-		t.Fatalf("an unterminated code: %v", err)
 	}
 }

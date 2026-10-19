@@ -128,7 +128,7 @@ func (f *fieldReader) bits(n int) uint64 {
 func (f *fieldReader) flag() bool { return f.bits(1) == 1 }
 
 func (f *fieldReader) ue() uint64 {
-	v, err := f.r.UE()
+	v, err := f.r.UVLC()
 	f.keep(err)
 	return v
 }
