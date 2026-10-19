@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -161,11 +162,11 @@ type topology[P graphNode] struct {
 	// the graph is closed.
 	snap   atomic.Pointer[snapshot[P]]
 	events chan av.Event
-	// eventsMu guards the event channel close against the lock-free
-	// publishers, so a concurrent emit cannot send on a closed channel. The
-	// data plane takes it only for an observer send.
-	eventsMu     sync.Mutex
-	eventsClosed bool
+	// sending counts the observer sends in flight and carries eventsClosed,
+	// so Close never closes the channel under a send and a send after Close
+	// is skipped, with no lock: a send never blocks, so Close waits it out in
+	// moments.
+	sending atomic.Int64
 	// cold stays last: a runner's per-message counters follow it, and its
 	// size keeps them off the cache lines the data plane reads above.
 	cold coldStats
@@ -264,7 +265,7 @@ func (t *topology[P]) add(n P) (NodeRef, error) {
 	if last := len(t.reusable) - 1; last >= 0 {
 		index = t.reusable[last]
 		t.reusable = t.reusable[:last]
-		t.retired.fold(t.nodes[index].base())
+		t.retired.fold(t.nodes[index].base(), &t.cold)
 		t.nodes[index] = n
 	} else {
 		t.nodes = append(t.nodes, n)
@@ -590,12 +591,13 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 			first = cmp.Or(first, err)
 		}
 	}
-	// Close events under eventsMu so a concurrent lock-free emit cannot send
-	// on the channel after it is closed.
-	t.eventsMu.Lock()
-	t.eventsClosed = true
+	// Close events once no send is in flight, so a concurrent emit can never
+	// send on the closed channel.
+	t.sending.Add(eventsClosed)
+	for t.sending.Load() != eventsClosed {
+		runtime.Gosched()
+	}
 	close(t.events)
-	t.eventsMu.Unlock()
 	return first
 }
 
@@ -646,9 +648,8 @@ func (t *topology[P]) publishEvent(msg *Message, counters *nodeCounters) {
 // observe sends event to the observer stream without blocking; a full
 // stream counts a DropObserver against counters (nil: graph-level only).
 func (t *topology[P]) observe(event av.Event, counters *nodeCounters) {
-	t.eventsMu.Lock()
-	defer t.eventsMu.Unlock()
-	if t.eventsClosed {
+	if t.sending.Add(1)&eventsClosed != 0 {
+		t.sending.Add(-1)
 		return
 	}
 	select {
@@ -656,7 +657,11 @@ func (t *topology[P]) observe(event av.Event, counters *nodeCounters) {
 	default:
 		observeDrop(counters, DropObserver, &t.cold)
 	}
+	t.sending.Add(-1)
 }
+
+// eventsClosed marks the observer stream closed in topology.sending.
+const eventsClosed = int64(1) << 62
 
 func (n *nodeBase) close() error {
 	switch n.kind {

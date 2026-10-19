@@ -118,8 +118,9 @@ methodology changes, and migration notes.
   `Release` after `Emit`); a handler that keeps a delivery calls `Ref`; one
   that writes it calls `Ref` and `MakeWritable` first. Video decode and
   filter results no longer preallocate plane bytes.
-- Removed graph nodes are reclaimed: a buffered node gives up its queue and
-  slots once its worker is done, the next node reuses its index, and `Stats`
+- Removed graph nodes are reclaimed: a buffered node releases every payload
+  reference and gives up its index once its worker is done, its queue and
+  slot headers go when the next node reuses the index, and `Stats`
   lists the nodes `Spec` shows (removed nodes still count in the totals). 200
   attach/detach cycles on a live task keep a flat heap; 150 cycles used to
   keep 428 MB. A detached branch still reports its final counters
@@ -225,9 +226,18 @@ methodology changes, and migration notes.
   shutdown. Each runner keeps only its delivery strategy (inline calls, or
   per-node queues and workers). About 500 duplicated lines are gone. No API
   or behavior change; the allocation pins and fanout benchmarks hold.
-- Docs say what the data plane is: lock-free routing snapshots and per-node
-  atomics, with each node serialized by its own handle or queue lock, not
-  "no per-message mutex".
+- The data plane takes no lock per packet or frame. A direct node is
+  serialized by ownership instead of a mutex: the producer whose CAS takes it
+  runs Handle, and a producer finding it busy queues on a lock-free list and
+  parks; the owner hands the node on or runs that message for it. A buffered
+  node's queue is a bounded lock-free ring of its preallocated slots instead
+  of a mutex and two channels, and a blocked `Blocking` producer parks on its
+  own channel. Sheds count in atomics. Pinned by a call-graph walk and a
+  contended mutex-profile run; zero allocations are pinned under contention
+  too. Interleaved benchstat, n=8, 16-core M4 Max: DirectFanout -39 to -53%,
+  DirectFanoutParallel N=1/8 -25/-18% and N=64/512 +6%, BufferedFanout N=8
+  -26 to -32%, BranchFanout -22 to -36%, SourcePush -41 to -54%. An event
+  message still records its last-event copy in the stats under a lock.
 
 - Fix: several file inputs in one offline run write the same bytes on every
   run. A direct, non-realtime graph interleaves its file sources by time, the

@@ -47,17 +47,17 @@ func (g *bufferedRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) 
 		return ErrUnknownNode
 	}
 	node := g.nodes[index]
-	if node.kind == nodeSource || node.queue == nil {
+	if node.kind == nodeSource || !node.opened {
 		g.mu.RUnlock()
 		return ErrInvalidLink
 	}
 	// Hold a stable *bufferedNode and release g.mu before enqueuing: enqueue takes
-	// no g.mu (it serializes against queue teardown via node.queueMutex), so a
+	// no lock at all (it meets queue teardown on the ring's tail), so a
 	// blocking send cannot deadlock a concurrent topology mutation. The injected
 	// message is counted as inbound on the target by deliver's observeIn, exactly
 	// like routed traffic; there is no upstream node, so nothing counts it as out.
 	g.mu.RUnlock()
-	delivered, err := g.enqueue(ctx, node, msg)
+	delivered, err := g.enqueue(ctx, node, msg, nil)
 	if err != nil {
 		return err
 	}
