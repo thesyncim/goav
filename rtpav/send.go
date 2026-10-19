@@ -192,7 +192,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 			ssrc:       ssrc,
 			seq:        uint16(rand.N(1 << 16)),
 			offset:     rand.Uint32(),
-			history:    make([]sentPacket, s.config.history),
+			history:    newHistory(s.config.history, s.config.mtu),
 		})
 	}
 	if s.streams == nil {
@@ -294,6 +294,17 @@ func (s *sender) payloadFor(id av.CodecID) (PayloadCodec, bool) {
 		}
 	}
 	return PayloadCodec{}, false
+}
+
+// newHistory makes the NACK history: slots packets, their payload room cut
+// from one allocation, so the data path never allocates for it.
+func newHistory(slots int, mtu int) []sentPacket {
+	history := make([]sentPacket, slots)
+	arena := make([]byte, slots*mtu)
+	for i := range history {
+		history[i].buf = arena[i*mtu : i*mtu : (i+1)*mtu]
+	}
+	return history
 }
 
 // remember keeps the packet as sent for a NACK to retransmit.
