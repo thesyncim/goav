@@ -148,9 +148,9 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `component.SinkFunc`; reuse one destination value when several Outputs should
   share one mux/sink.
-- **URL schemes**: `provider.Scheme`/`ByteSource`, `runconfig.Scheme`, `bundle.Schemes`, package
-  `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`), `webrtcav.WHEP` (`WHEPOption`,
-  `WHEPToken`, `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`), `goav.Reconnect`, `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
+- **URL schemes**: `goav.URIInput`/`URI`; `provider.Scheme`/`Input`/`ByteSource`; `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`;
+  package `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`); `webrtcav.WHEP` (`WHEPOption`, `WHEPToken`,
+  `WHEPClient`, `WHEPSession`, `ErrWHEPDisconnected`); `goav.Reconnect` (`av.EventReconnect`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`

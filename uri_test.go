@@ -5,19 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/metrics"
 	"github.com/thesyncim/goav/provider"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
@@ -129,12 +134,12 @@ func TestURISchemeLastRegistrationWins(t *testing.T) {
 // values never reach Describe, Explain, errors, events, or snapshots, while
 // the scheme sees the URL verbatim and probes the container from its path.
 func TestURIRedactsCredentials(t *testing.T) {
-	custom := &testScheme{data: tinyIVF(), live: true}
+	custom := &testScheme{data: tinyIVF(), live: true, breakFirst: true}
 	rt := bundle.MustNew(runconfig.Scheme("vault", custom))
 	const raw = "vault://alice:hunter2@media.example/clips/movie.ivf?token=SECRET1&quality=hd&X-Amz-Signature=SECRET2"
 	sink := goavtest.NewCollector()
 	out := "file://" + filepath.ToSlash(filepath.Join(t.TempDir(), "out.ivf")) + "?sig=SECRET3"
-	in := goav.URIInput(raw)
+	in := goav.URIInput(raw, goav.Reconnect(1, time.Millisecond))
 	recipe := []goav.Output{in.Video().To(sink.Sink()), in.Video().To(goav.URI(out))}
 
 	spec, err := rt.Describe(recipe...)
@@ -156,11 +161,25 @@ func TestURIRedactsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	watch := task.Watch()
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := task.Snapshot()
+	scrape := httptest.NewRecorder()
+	metrics.Handler(task).ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	task.Close()
+	var events []string
+	reconnects := 0
+	for event := range watch.Events() {
+		events = append(events, fmt.Sprintf("%s %s %v %v", event.Type, event.Reason, event.Cause, event.Metadata))
+		if event.Type == av.EventReconnect {
+			reconnects++
+		}
+	}
+	if reconnects != 2 || !strings.Contains(scrape.Body.String(), "media.example") {
+		t.Fatalf("reconnect events = %d, metrics:\n%s", reconnects, scrape.Body.String())
+	}
 	if custom.seen != raw {
 		t.Fatalf("scheme saw %q, want the URL verbatim", custom.seen)
 	}
@@ -171,6 +190,8 @@ func TestURIRedactsCredentials(t *testing.T) {
 		"describe": describeText(spec),
 		"explain":  describeText(report),
 		"snapshot": describeText(snapshot),
+		"metrics":  scrape.Body.String(),
+		"events":   strings.Join(events, "\n"),
 		"refusal":  refusal.Error(),
 	} {
 		for _, secret := range []string{"SECRET1", "SECRET2", "SECRET3", "hunter2", "alice"} {
