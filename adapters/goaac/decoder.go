@@ -29,6 +29,10 @@ func NewDecoderFactory() DecoderFactory {
 }
 
 func Descriptor() codec.Descriptor {
+	status := "active"
+	if !targetSupported {
+		status = "unsupported-target"
+	}
 	return codec.Descriptor{
 		ID:       av.CodecAAC,
 		Name:     "AAC-LC",
@@ -43,7 +47,7 @@ func Descriptor() codec.Descriptor {
 			Name:    backendName,
 			Module:  "github.com/thesyncim/goaac",
 			Package: "github.com/thesyncim/goav/adapters/goaac",
-			Status:  "active",
+			Status:  status,
 		},
 	}
 }

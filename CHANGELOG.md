@@ -11,6 +11,7 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix adoption: nested modules (`rtpav`, `webrtcav`, `playoutav`, `goavtest/expect`) now require a resolvable root pseudo-version instead of `v0.0.0` (the `replace` stays for local work), and CI installs each from a clean directory. The AAC descriptor reports `unsupported-target` where the goaac backend is a stub (only darwin/arm64 and linux/arm64 decode). The README states the SIMD speedup with its scope (128x96 microbenchmarks, one machine).
 - Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
   limit instead of panicking (offset+length wrapped negative). Found by the
   fuzz smoke.

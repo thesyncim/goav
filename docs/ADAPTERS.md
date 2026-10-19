@@ -100,6 +100,18 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | `resize` | video -> video | pixels=i420, yuv420p | exact, fill, fit, passthrough | backend=resize; realtime; stateless |
 <!-- END GENERATED BUNDLE CAPABILITIES -->
 
+#### Platform matrix
+
+Descriptor `Backend.Status` reports what the compiled target can do. The table
+above is for the host that regenerated it.
+
+| Codec | Backend | darwin/arm64, linux/arm64 | Other targets |
+| --- | --- | --- | --- |
+| `aac` decode | `goaac` | `active` | `unsupported-target`: the backend is a stub and `Open` fails with `ErrNativeUnavailable` |
+
+`TestDescriptorStatusMatchesBackendAvailability` pins the descriptor to the
+backend's own availability.
+
 Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
 `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`,
