@@ -228,16 +228,18 @@ methodology changes, and migration notes.
   or behavior change; the allocation pins and fanout benchmarks hold.
 - The data plane takes no lock per packet or frame. A direct node is
   serialized by ownership instead of a mutex: the producer whose CAS takes it
-  runs Handle, and a producer finding it busy queues on a lock-free list and
-  parks; the owner hands the node on or runs that message for it. A buffered
-  node's queue is a bounded lock-free ring of its preallocated slots instead
-  of a mutex and two channels. Blocked `Blocking` producers wait first come,
-  first served on their own channels, and a released slot goes straight to
-  the one that waited longest. Sheds count in atomics. Pinned by a call-graph walk and a
-  contended mutex-profile run; zero allocations are pinned under contention
-  too. Interleaved benchstat, n=8, 16-core M4 Max: DirectFanout -39 to -53%,
-  DirectFanoutParallel N=1/8 -25/-18% and N=64/512 +6%, BufferedFanout N=8
-  -26 to -32%, BranchFanout -22 to -36%, SourcePush -41 to -54%. An event
+  runs Handle, and a producer finding it busy takes it if its lone owner
+  finishes at once, else queues on a lock-free list and parks; the owner
+  hands the node on or runs that message for it. A buffered node's queue is
+  a bounded lock-free ring of its preallocated slots instead of a mutex and
+  two channels. Blocked `Blocking` producers wait first come, first served
+  on their own channels, and a released slot goes straight to the one that
+  waited longest; with nobody waiting that costs one load. Sheds count in
+  atomics. Pinned by a call-graph walk and a contended mutex-profile run;
+  zero allocations are pinned under contention too. Interleaved benchstat,
+  n=10, 16-core M4 Max: DirectFanout -39 to -53%, DirectFanoutParallel
+  N=1/8 -26%, N=64 ~, N=512 +8%, BufferedFanout N=1/8 -26 to -77%,
+  BranchFanout -21/-30%, SourcePush -41/-45%, Mix arms=2/8 -17/+4%. An event
   message still records its last-event copy in the stats under a lock.
 
 - Fix: several file inputs in one offline run write the same bytes on every

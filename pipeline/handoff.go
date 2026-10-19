@@ -11,12 +11,14 @@ import (
 // the deliveries registered on it: the producer whose CAS takes the count
 // from 0 to 1 owns the node and runs Handle on its own goroutine; a CAS from
 // 1 back to 0 releases it, the only two atomics a lone producer pays. A
-// producer that finds the node busy registers with an increment and queues
-// a waiter record on the node's lock-free list, spins briefly on that
-// record, then parks on it. It never spins on the node itself: producers
-// that walk the same nodes in lockstep and spin to take each one stay
-// bunched up and collide at every node, while parking spreads them apart,
-// as a mutex does.
+// producer that finds the node busy watches the gate for a moment while the
+// owner is alone (count 1), and takes the node if it frees; the moment anyone
+// queues it stops, so it never overtakes a queued producer. Otherwise it
+// registers with an increment and queues a waiter record on the node's
+// lock-free list, spins briefly on that record, then parks on it. The watch
+// is short on purpose: producers that walk the same nodes in lockstep and
+// spin to take each one stay bunched up and collide at every node, while
+// parking spreads them apart, as a mutex does.
 //
 // When the owner finishes and others are queued, it hands the node to the
 // first waiter that is still spinning (one CAS, no wakeup), or serves the
@@ -32,6 +34,12 @@ import (
 // handled. Remove and Close keep their contract through the same gate: they
 // set the closing bit and wait for the count to drain, which includes every
 // queued waiter, and a delivery whose increment sees the bit sheds itself.
+
+// gateSpins is how many times a producer that found the node busy looks at
+// its gate before it queues: long enough to take a node whose lone owner is
+// finishing, without the queue or a wakeup. It looks only while the count is
+// 1, so it never takes the node ahead of a queued producer.
+const gateSpins = 64
 
 // directServeBudget is how many queued messages an owner handles for other
 // producers before it passes the node on.
@@ -142,6 +150,20 @@ func (g *directRunner) deliver(ctx context.Context, from *directEmitter, dst *di
 	// coherence trips.
 	if dst.gate.CompareAndSwap(0, 1) {
 		return g.own(ctx, dst, msg)
+	}
+	// Busy with a lone owner: watch for it to finish. Once a count above 1
+	// shows a queue (or the closing bit shows Remove), stop and register.
+	for range gateSpins {
+		v := dst.gate.Load()
+		if v == 0 {
+			if dst.gate.CompareAndSwap(0, 1) {
+				return g.own(ctx, dst, msg)
+			}
+			continue
+		}
+		if v != 1 {
+			break
+		}
 	}
 	// Busy: register, then check the tombstone. Remove sets the closing bit
 	// and then waits for the count to drain, so a delivery that registered
