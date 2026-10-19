@@ -126,10 +126,14 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 		outputAttachments: handles.outputs(result.OutputSlots),
 		inputProbes:       result.InputProbes,
 		outputFormats:     result.OutputFormats,
-		streamRules:       g.handles(rt).streamRules(result.StreamRules),
 		name:              result.Name,
 		rulesSource:       result.RulesSource,
 		rulesDomain:       result.RulesDomain,
+	}
+	if len(result.StreamRules) != 0 {
+		// Rule branches bind the handles as the recipe declared them, before
+		// the compile resolved any output format.
+		resolved.streamRules = g.handles(rt).streamRules(result.StreamRules)
 	}
 	if result.Lowered {
 		resolved.graphPlan = newGraphPlan(rt, result.Spec, result.Work, &recipeLowerer{

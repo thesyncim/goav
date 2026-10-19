@@ -33,17 +33,9 @@ func (l buildErrorLiteral) internalInvariant() bool {
 // contract pins.
 func scanBuildErrorLiterals(t *testing.T) []buildErrorLiteral {
 	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
 	fset := token.NewFileSet()
 	var literals []buildErrorLiteral
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
+	for _, name := range refusalSourceFiles(t) {
 		src, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -57,8 +49,7 @@ func scanBuildErrorLiterals(t *testing.T) []buildErrorLiteral {
 			if !ok {
 				return true
 			}
-			ident, ok := lit.Type.(*ast.Ident)
-			if !ok || ident.Name != "BuildError" {
+			if !isRefusalType(lit.Type) {
 				return true
 			}
 			fields := map[string]bool{}
@@ -71,10 +62,10 @@ func scanBuildErrorLiterals(t *testing.T) []buildErrorLiteral {
 				if !ok {
 					continue
 				}
-				fields[key.Name] = true
+				fields[refusalKey(key.Name)] = true
 			}
 			literals = append(literals, buildErrorLiteral{
-				pos:    filepath.Base(fset.Position(lit.Pos()).String()),
+				pos:    fset.Position(lit.Pos()).String(),
 				fields: fields,
 				text:   string(src[fset.Position(lit.Pos()).Offset:fset.Position(lit.End()).Offset]),
 			})
@@ -83,6 +74,15 @@ func scanBuildErrorLiterals(t *testing.T) []buildErrorLiteral {
 	}
 	if len(literals) == 0 {
 		t.Fatal("no BuildError literals found; the scanner is broken")
+	}
+	compiled := 0
+	for _, lit := range literals {
+		if strings.HasPrefix(lit.pos, filepath.Join("internal", "compile")) {
+			compiled++
+		}
+	}
+	if compiled == 0 {
+		t.Fatal("no builderr.Refusal literals found in internal/compile; the scanner is broken")
 	}
 	return literals
 }
@@ -104,17 +104,9 @@ func TestErrNoteCarriesNoKeyedDetail(t *testing.T) {
 		}
 		return true
 	}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
 	fset := token.NewFileSet()
 	var violations []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
+	for _, name := range refusalSourceFiles(t) {
 		file, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
@@ -124,7 +116,7 @@ func TestErrNoteCarriesNoKeyedDetail(t *testing.T) {
 			if !ok {
 				return true
 			}
-			if id, ok := call.Fun.(*ast.Ident); !ok || id.Name != "errNote" || len(call.Args) != 1 {
+			if !isNoteCall(call.Fun) || len(call.Args) != 1 {
 				return true
 			}
 			// The note's rendered string comes either from a string literal or a
@@ -198,4 +190,62 @@ func TestEveryBuildErrorHasPhaseFamilyCodeReason(t *testing.T) {
 		t.Fatalf("%d BuildError literals are missing required fields:\n%s",
 			len(missing), strings.Join(missing, "\n"))
 	}
+}
+
+// refusalSourceFiles are the non-test sources that raise refusals: the root
+// package and the internal compiler and refusal vocabulary.
+func refusalSourceFiles(t *testing.T) []string {
+	t.Helper()
+	var files []string
+	for _, dir := range []string{".", filepath.Join("internal", "compile"), filepath.Join("internal", "builderr")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			files = append(files, filepath.Join(dir, name))
+		}
+	}
+	return files
+}
+
+// isRefusalType reports a BuildError or builderr.Refusal composite literal.
+func isRefusalType(expr ast.Expr) bool {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name == "BuildError"
+	case *ast.SelectorExpr:
+		pkg, ok := x.X.(*ast.Ident)
+		return ok && pkg.Name == "builderr" && x.Sel.Name == "Refusal"
+	}
+	return false
+}
+
+// refusalKey names a builderr.Refusal key as the BuildError field it fills.
+func refusalKey(key string) string {
+	switch key {
+	case "Details":
+		return "fields"
+	case "Fixes":
+		return "fixes"
+	case "Cause":
+		return "cause"
+	}
+	return key
+}
+
+// isNoteCall reports a call of errNote or builderr.Note.
+func isNoteCall(fun ast.Expr) bool {
+	switch x := fun.(type) {
+	case *ast.Ident:
+		return x.Name == "errNote"
+	case *ast.SelectorExpr:
+		pkg, ok := x.X.(*ast.Ident)
+		return ok && pkg.Name == "builderr" && x.Sel.Name == "Note"
+	}
+	return false
 }
