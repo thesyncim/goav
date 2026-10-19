@@ -72,14 +72,6 @@ func bufferPolicyWithShapeBudgetsForOperations(policy pipeline.BufferPolicy, ope
 	return policy, nil
 }
 
-func bufferPolicyWithShapeBudgetsForSteps(policy pipeline.BufferPolicy, steps []attachStep) (pipeline.BufferPolicy, error) {
-	operations := make([]workOperation, 0, len(steps))
-	for i := range steps {
-		operations = append(operations, steps[i].operation)
-	}
-	return bufferPolicyWithShapeBudgetsForOperations(policy, operations)
-}
-
 func mergeBufferCopyBounds(base pipeline.BufferPolicy, next pipeline.BufferPolicy) pipeline.BufferPolicy {
 	if base.IsDirect() && !next.IsDirect() {
 		base = next

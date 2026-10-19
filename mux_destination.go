@@ -175,6 +175,9 @@ type pipelineStageFailureMarker interface {
 }
 
 func markPipelineStageFailed(stage pipeline.Stage) {
+	if named, ok := stage.(namedStage); ok {
+		stage = named.stage
+	}
 	if marker, ok := stage.(pipelineStageFailureMarker); ok {
 		marker.MarkFailed()
 	}

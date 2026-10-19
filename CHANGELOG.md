@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `task.Attach` lowers through the build's compiler: the attached Outputs
+  are branches rooted at the task's taps, tracks, or routes, planned by the
+  same lowering and opened by the same per-node opener, and the planned patch
+  is the applied one. The attach-only planner (`work_patch.go`, the attach
+  group's shared sink and mux machinery, and the per-branch step walk) is
+  gone, about 600 lines net. Behavior changes: work
+  several attached Outputs share runs once, as at build (`a+b/resample-a`);
+  shared destinations are added after the branches' own work; attached
+  sync and playout gates and custom-factory transforms are named as the build
+  names them; an attached decoder's detail names its media only; and a
+  failed attach now aborts a muxer it opened behind a renamed node.
+
 - Fix adoption: nested modules (`rtpav`, `webrtcav`, `playoutav`, `goavtest/expect`) now require a resolvable root pseudo-version instead of `v0.0.0` (the `replace` stays for local work), and CI installs each from a clean directory. The AAC descriptor reports `unsupported-target` where the goaac backend is a stub (only darwin/arm64 and linux/arm64 decode). The README states the SIMD speedup with its scope (128x96 microbenchmarks, one machine).
 - Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
   limit instead of panicking (offset+length wrapped negative). Found by the

@@ -10,32 +10,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/pipeline"
 )
-
-func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
-	return compileEncodeStageNamed(ctx, b, graph, name, upstream, request, config, buffer)
-}
-
-func compileEncodeStageNamed(ctx context.Context, service *builder, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
-	stage, stream, err := service.newEncodeStageNamed(ctx, name, request, config)
-	if err != nil {
-		return "", av.Stream{}, err
-	}
-	encodeRef, err := graph.AddStage(stage, buffer)
-	if err != nil {
-		stage.Close()
-		return "", av.Stream{}, err
-	}
-	if err := connectRefs(graph, upstream, encodeRef); err != nil {
-		return "", av.Stream{}, err
-	}
-	return encodeRef, stream, nil
-}
-
-func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
-	return b.newEncodeStageNamed(ctx, "", request, config)
-}
 
 // newEncodeStageNamed opens the encoder and returns its stage with the stream
 // it emits: config.Stream plus whatever the opened encoder reports.

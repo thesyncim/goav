@@ -608,12 +608,8 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer attachment.Close(ctx)
-	runtimeAttachment, ok := attachment.(*runtimeAttachment)
-	if !ok {
-		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
-	}
-	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "late"), []plan.OperationKind{plan.OpCopy, plan.OpSink}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("runtime copy work operations = %+v, want %+v", got, want)
+	if spec := attachment.Spec(); len(spec.Nodes) != 1 || len(spec.Edges) != 1 || spec.Edges[0].From != "select-audio" {
+		t.Fatalf("runtime packet copy:\n%s\nwant the tap routed straight to the sink", specText(spec))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -3092,13 +3088,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeAttachment, ok := attachment.(*runtimeAttachment)
-	if !ok {
-		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
-	}
-	if got, want := workPatchOperationKindsForBranch(runtimeAttachment.work.Operations, "voice"), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode, plan.OpTap, plan.OpMux}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("runtime encode work operations = %+v, want %+v", got, want)
-	}
+
 	attachmentText := specText(attachment.Spec())
 	for _, want := range []string{
 		"voice/decode-voice -> voice/resample-voice",

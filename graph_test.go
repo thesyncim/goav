@@ -18,7 +18,6 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -160,28 +159,15 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	if attachment.Name() != "screenshots" {
 		t.Fatalf("attachment name = %q", attachment.Name())
 	}
-	runtimeAttachment, ok := attachment.(*runtimeAttachment)
-	if !ok {
-		t.Fatalf("attachment = %T, want runtimeAttachment", attachment)
+	destinations := attachment.Snapshot().Destinations
+	if len(destinations) != 1 || destinations[0].Name != "out" || !reflect.DeepEqual(destinations[0].Branches, []string{"screenshots"}) {
+		t.Fatalf("attachment destinations = %+v, want out bound to screenshots", destinations)
 	}
-	work := runtimeAttachment.work
-	if work.Name != "screenshots" {
-		t.Fatalf("work patch name = %q, want screenshots", work.Name)
-	}
-	if got, want := workPatchOperationKindsForBranch(work.Operations, "screenshots"), []plan.OperationKind{plan.OpStage, plan.OpSink}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("work patch operations = %+v, want %+v", got, want)
-	}
-	if len(work.Branches) != 1 || work.Branches[0].Name != "screenshots" || len(work.Branches[0].Operations) != 2 {
-		t.Fatalf("work patch branches = %+v, want screenshots with stage and sink operation ids", work.Branches)
-	}
-	if len(work.Destinations) != 1 || work.Destinations[0].Name != "out" || !reflect.DeepEqual(work.Destinations[0].Branches, []string{"screenshots"}) {
-		t.Fatalf("work patch destinations = %+v, want out bound to screenshots", work.Destinations)
-	}
-	if len(work.Edges) != 2 ||
-		work.Edges[0].From != "source" ||
-		work.Edges[0].To != "screenshots/sample" ||
-		work.Edges[1].To != "screenshots/out" {
-		t.Fatalf("work patch edges = %+v, want source -> stage -> sink", work.Edges)
+	if edges := attachment.Spec().Edges; len(edges) != 2 ||
+		edges[0].From != "source" ||
+		edges[0].To != "screenshots/sample" ||
+		edges[1].To != "screenshots/out" {
+		t.Fatalf("attachment edges = %+v, want source -> stage -> sink", edges)
 	}
 	close(source.resume[0])
 	select {
@@ -431,16 +417,6 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
 		t.Fatalf("spec:\n%s", text)
 	}
-}
-
-func workPatchOperationKindsForBranch(operations []workOperation, branch string) []plan.OperationKind {
-	out := make([]plan.OperationKind, 0)
-	for i := range operations {
-		if operations[i].Branch == branch {
-			out = append(out, operations[i].Kind)
-		}
-	}
-	return out
 }
 
 func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
