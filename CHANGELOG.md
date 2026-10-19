@@ -17,8 +17,9 @@ methodology changes, and migration notes.
   early ones waited for), and the keys drive the task's own Pause, Seek, and
   Rate. Programs route to it as `play`; `goav play FILE` plays a file.
   `cmd/goav` is now its own module (same import path, no `replace`, so
-  `go install ...@latest` keeps working); `-tags goav_noplay` builds a CLI
-  without the window, static on Linux.
+  `go install ...@latest` keeps working). Migration: the default Linux CLI is
+  now dynamically linked (it needs glibc, and libX11/libGL to play); build it
+  with `-tags goav_noplay` for the old static binary (scratch, Alpine).
 
 - Break: `LiveTask.Describe()` is now `LiveTask.Spec()`, the same name
   `Attachment.Spec()` and the snapshots' `Spec` field use, beside `Stats` at
