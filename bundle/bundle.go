@@ -21,6 +21,7 @@ import (
 	resizeadapter "github.com/thesyncim/goav/adapters/resize"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
+	tsadapter "github.com/thesyncim/goav/container/ts"
 	webmadapter "github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -126,6 +127,7 @@ var formatOptions = []runconfig.Option{
 	runconfig.WithFormatAdapter(matroskaadapter.Register),
 	runconfig.WithFormatAdapter(webmadapter.Register),
 	runconfig.WithFormatAdapter(mp4adapter.Register),
+	runconfig.WithFormatAdapter(tsadapter.Register),
 }
 
 var codecOptions = []runconfig.Option{
