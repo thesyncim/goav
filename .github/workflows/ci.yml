@@ -64,8 +64,9 @@ jobs:
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          if ! git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD | grep -qx 'CHANGELOG.md'; then
-            echo "CHANGELOG.md must be updated, or apply the skip-changelog label for internal-only changes"
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+          if ! printf '%s\n' "$changed" | grep -Ev '^changelog\.d/README\.md$' | grep -Eqx 'CHANGELOG\.md|changelog\.d/.+\.md'; then
+            echo "add a changelog.d/<slug>.md fragment (or edit CHANGELOG.md), or apply the skip-changelog label for internal-only changes"
             exit 1
           fi
 

@@ -22,9 +22,9 @@ installed. Transport modules are nested modules; run their checks from
 and `cmd/goav` in a workspace (`go work init . ./player ./cmd/goav`). Vector
 kernels use the Go `simd` package with a scalar fallback — no assembly.
 
-Update `CHANGELOG.md` for user-visible work. Internal-only pull requests may
-use the `skip-changelog` label; CI treats the label as an explicit reviewer
-signal rather than silently accepting missing release notes.
+Add a `changelog.d/<slug>.md` fragment for user-visible work. Internal-only
+pull requests may use the `skip-changelog` label; CI treats the label as an
+explicit reviewer signal rather than silently accepting missing release notes.
 
 ## Public Surface
 

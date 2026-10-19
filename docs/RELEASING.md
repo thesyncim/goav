@@ -8,8 +8,8 @@ repository page should say meanwhile.
 
 ## Before Tagging
 
-1. Move notable `CHANGELOG.md` entries from `Unreleased` into a versioned
-   section.
+1. Run `scripts/changelog-release.sh VERSION` to fold `Unreleased` and
+   `changelog.d/` into a versioned section.
 2. Run the local gates:
 
    ```sh
