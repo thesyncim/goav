@@ -18,7 +18,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
@@ -173,7 +172,7 @@ func (s *session) runTask(kind string, task goav.LiveTask) {
 }
 
 func (s *session) drainTaskEvents(kind string, task interface {
-	Watch(...inspect.EventFilter) inspect.Subscription
+	Watch(...goav.EventFilter) goav.Subscription
 }) {
 	events := task.Watch().Events()
 	for {

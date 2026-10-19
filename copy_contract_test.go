@@ -15,7 +15,6 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func copyContractFrame(payload av.Buffer) av.Frame {
@@ -51,7 +50,7 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Li
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,

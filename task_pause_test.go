@@ -13,8 +13,6 @@ import (
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/inspect"
-	"github.com/thesyncim/goav/lifecycle"
 )
 
 // TestTaskPauseFreezesPacedFlow is the T3 acceptance for the public pause
@@ -97,7 +95,7 @@ func TestTaskPauseSnapshotAndCloseContract(t *testing.T) {
 		t.Fatalf("Pause before Run err = %v", err)
 	}
 	snap := live.Snapshot()
-	if !snap.Paused || snap.State != lifecycle.TaskBuilt {
+	if !snap.Paused || snap.State != TaskBuilt {
 		t.Fatalf("snapshot = state %q paused %v, want built and paused", snap.State, snap.Paused)
 	}
 	if err := live.Resume(ctx); err != nil {
@@ -358,7 +356,7 @@ func TestTaskReadinessEventFires(t *testing.T) {
 	}
 	defer task.Close()
 
-	ready := task.Watch(inspect.WatchTypes(av.EventTaskReady))
+	ready := task.Watch(WatchTypes(av.EventTaskReady))
 	defer ready.Close()
 
 	runErr := make(chan error, 1)

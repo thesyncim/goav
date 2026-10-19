@@ -10,11 +10,8 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/control"
-	"github.com/thesyncim/goav/inspect"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
@@ -168,15 +165,15 @@ func (t *controlCaptureTask) Tap(string) goav.Stream { return goav.Stream{} }
 
 func (t *controlCaptureTask) Track(goav.InputSpec, av.Stream) goav.Stream { return goav.Stream{} }
 
-func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error {
+func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
 	return nil
 }
 
-func (t *controlCaptureTask) Taps() []snapshot.Tap {
-	return []snapshot.Tap{{Name: videoTapName, Node: pipeline.NodeRef("video.decoded")}}
+func (t *controlCaptureTask) Taps() []goav.TapSnapshot {
+	return []goav.TapSnapshot{{Name: videoTapName, Node: pipeline.NodeRef("video.decoded")}}
 }
 
-func (t *controlCaptureTask) Snapshot() snapshot.Task { return snapshot.Task{} }
+func (t *controlCaptureTask) Snapshot() goav.TaskSnapshot { return goav.TaskSnapshot{} }
 
 func (t *controlCaptureTask) Control(_ context.Context, ctrl control.Control) error {
 	t.last = ctrl
@@ -192,7 +189,7 @@ func (t *controlCaptureTask) Resume(context.Context) error { return nil }
 
 func (t *controlCaptureTask) Events() <-chan av.Event { return nil }
 
-func (t *controlCaptureTask) Watch(...inspect.EventFilter) inspect.Subscription { return nil }
+func (t *controlCaptureTask) Watch(...goav.EventFilter) goav.Subscription { return nil }
 
 func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }
 

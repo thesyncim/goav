@@ -19,7 +19,6 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestRuntimeGraphHandleRoutes(t *testing.T) {
@@ -587,7 +586,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := builtTask.(*task)
-	task.taps = []snapshot.Tap{
+	task.taps = []TapSnapshot{
 		{
 			Name:      "audio.packets",
 			MediaKind: av.MediaAudio,
@@ -837,7 +836,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := mediaTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,
@@ -901,7 +900,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 		t.Fatal(err)
 	}
 	runtimeTask := mediaTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,
@@ -1012,7 +1011,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		t.Fatal(err)
 	}
 	runtimeTask := mediaTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
 		Domain:    shape.DomainFrame,
@@ -1150,7 +1149,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		t.Fatal(err)
 	}
 	runtimeTask := mediaTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -1271,7 +1270,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 		t.Fatal(err)
 	}
 	runtimeTask := mediaTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -1353,7 +1352,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	mediaTask := &task{
 		graph:   graph,
 		runtime: rt,
-		taps: []snapshot.Tap{{
+		taps: []TapSnapshot{{
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    shape.DomainFrame,
@@ -1428,7 +1427,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	mediaTask := &task{
 		graph:   graph,
 		runtime: rt,
-		taps: []snapshot.Tap{{
+		taps: []TapSnapshot{{
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    shape.DomainFrame,
@@ -1512,7 +1511,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	mediaTask := &task{
 		graph:   graph,
 		runtime: rt,
-		taps: []snapshot.Tap{{
+		taps: []TapSnapshot{{
 			Name:      "audio.frames",
 			MediaKind: av.MediaAudio,
 			Domain:    shape.DomainFrame,
@@ -1592,7 +1591,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 	mediaTask := builtTask.(*task)
-	mediaTask.taps = []snapshot.Tap{{
+	mediaTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -1681,7 +1680,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	}
 	defer builtTask.Close()
 	mediaTask := builtTask.(*task)
-	mediaTask.taps = []snapshot.Tap{{
+	mediaTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -1992,7 +1991,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -2074,7 +2073,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainPacket,
@@ -2181,7 +2180,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -2282,7 +2281,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -2383,7 +2382,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -2501,7 +2500,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -2627,7 +2626,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 		t.Fatal(err)
 	}
 	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
+	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
 		Domain:    shape.DomainFrame,
@@ -2712,13 +2711,13 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	}
 }
 
-func findTap(taps []snapshot.Tap, name string) (snapshot.Tap, bool) {
+func findTap(taps []TapSnapshot, name string) (TapSnapshot, bool) {
 	for i := range taps {
 		if taps[i].Name == name {
 			return taps[i], true
 		}
 	}
-	return snapshot.Tap{}, false
+	return TapSnapshot{}, false
 }
 
 var errRuntimeRollbackConnect = errors.New("runtime rollback connect failure")

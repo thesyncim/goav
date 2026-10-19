@@ -12,7 +12,6 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
@@ -87,7 +86,7 @@ func TestLiveTaskFailsFastOnDestinationError(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer task.Close()
-			events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
+			events := task.Watch(goav.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 
 			start := time.Now()
 			runDone := make(chan error, 1)

@@ -130,7 +130,8 @@ enforcement that no longer exists. The inventory:
   (`Control`), and observation (`Watch`; unfiltered `Watch()` observes every
   task event); `New`, `Runtime.Run`/`Build`/`Describe`/`Explain`, and the `bundle` runtime helpers; structured
   `BuildError` with stable families, detailed codes, `Detail[T](key)`,
-  `DetailLines()`, and `FixLines()`; the `plan`, `snapshot`, `lifecycle`,
+  `DetailLines()`, and `FixLines()`; the task views and lifecycle
+  vocabulary (`TaskSnapshot`, `TaskState`, `DrainBranch`, ...), and the `plan`,
   `shape`, `flow`, and `av` vocabulary packages. Runtime
   mutation/control/advanced observation and joined-stream breadth are governed
   pre-v1 behavior, not normal v1 promises unless the release decision
@@ -241,7 +242,7 @@ this list:
   long-run artifact path has been locally proven; fresh latency/RSS/throughput
   artifacts still need to be attached per release candidate
   (`docs/PERFORMANCE.md`). Roadmap.
-- **Additional `lifecycle.SwitchAt` boundaries** beyond `NextFrame`/
+- **Additional `goav.SwitchAt` boundaries** beyond `NextFrame`/
   `NextKeyframe`/`AtMediaTime` (`rebranch_policy.go`). Roadmap.
 
 ## Non-goals

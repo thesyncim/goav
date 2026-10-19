@@ -21,7 +21,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -455,11 +454,11 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	}
 
 	snap := task.Snapshot()
-	if snap.State != lifecycle.TaskClosed {
-		t.Fatalf("task state = %q, want %q", snap.State, lifecycle.TaskClosed)
+	if snap.State != TaskClosed {
+		t.Fatalf("task state = %q, want %q", snap.State, TaskClosed)
 	}
 	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
-	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
+	if !ok || committed.State != DestinationCommitted || committed.Open {
 		t.Fatalf("mid-window destination after run = %+v, want committed rec destination", committed)
 	}
 	if got := recorded.Load(); got != 3 {

@@ -8,10 +8,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -104,7 +102,7 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
 	task := &task{}
-	events := task.watch.subscribe(source, 4, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)}).Events()
+	events := task.watch.subscribe(source, 4, []EventFilter{WatchTypes(av.EventAttachError)}).Events()
 	task.rules = &taskStreamRules{
 		source: "demux",
 		domain: shape.DomainPacket,
@@ -283,8 +281,8 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 	if _, ok := task.attachments[attachment]; ok {
 		t.Fatal("detached stream-rule attachment still registered on task")
 	}
-	outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
-	if !ok || outcome != lifecycle.DestinationCommitted {
+	outcome, ok := attachment.detachOutcome.Load().(DestinationState)
+	if !ok || outcome != DestinationCommitted {
 		t.Fatalf("detach outcome = %v, %t; want committed", outcome, ok)
 	}
 }
@@ -303,7 +301,7 @@ func TestPublishStreamRuleErrorContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
 	task := &task{}
-	events := task.watch.subscribe(source, 2, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)}).Events()
+	events := task.watch.subscribe(source, 2, []EventFilter{WatchTypes(av.EventAttachError)}).Events()
 	cause := errors.New("attach failed")
 
 	task.publishStreamRuleError("audio", "preview", cause)

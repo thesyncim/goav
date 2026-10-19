@@ -57,7 +57,7 @@ What holds today (all `-race` clean, with tests):
   (`TestTaskPauseRefusesFreeRunning`); already-due or seek-re-anchored media
   still delivers while paused (pause holds waits, it does not gate delivery);
   rate while paused lands on resume, seeks apply at the source's next read
-  boundary, and `snapshot.Task.Paused` reports the frozen fact.
+  boundary, and `goav.TaskSnapshot.Paused` reports the frozen fact.
   Readiness is the preroll analog: `av.EventTaskReady` arrives through
   `Watch` exactly once, when every sink present at run start received its
   first media message (`TestTaskReadinessEventFires`; scope details live on
@@ -107,18 +107,18 @@ leaving.
 
 - `task.Detach(ctx, attachment)` removes the branch and reports its
   destinations as closed.
-- `task.Detach(ctx, attachment, lifecycle.DrainBranch())` drains/finalizes the branch as
+- `task.Detach(ctx, attachment, goav.DrainBranch())` drains/finalizes the branch as
   committed: every message already queued in the branch is delivered before
   it closes (`TestRuntimeBranchDrainDetachDeliversQueuedFrames`). Use this for ordinary recording or participant-leave flows where
   the output should be kept.
-- `task.Detach(ctx, attachment, lifecycle.AbortBranch())` marks the branch output as
+- `task.Detach(ctx, attachment, goav.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
 - Outputs from `input.OnStream(match)` drain their rule-created branches when a
   dynamically discovered stream disappears.
 
 ```go
-task.Watch(inspect.WatchTypes(
+task.Watch(goav.WatchTypes(
     av.EventBranchAttached,
     av.EventBranchDetached,
     av.EventDestinationCommitted,

@@ -15,11 +15,9 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 var runtimeAttachmentSeq atomic.Uint64
@@ -70,7 +68,7 @@ type Attachment interface {
 	// Stats returns branch-scoped counters; Snapshot returns the branch-owned
 	// point-in-time view (lifecycle state, stats, published taps).
 	Stats() pipeline.GraphStats
-	Snapshot() snapshot.Branch
+	Snapshot() BranchSnapshot
 	// Pause stops delivery to this branch without touching the source or its
 	// siblings; messages are skipped while paused. Resume restores delivery.
 	Pause(context.Context) error
@@ -81,13 +79,13 @@ type Attachment interface {
 	// without rebuilding the task. On attach failure this branch is left intact
 	// by default. Pass replacement Outputs (built from task.Tap or task.Track,
 	// like Attach) plus lifecycle policies:
-	// lifecycle.SwitchAt(lifecycle.NextFrame()/lifecycle.NextKeyframe()) delays
+	// SwitchAt(NextFrame()/NextKeyframe()) delays
 	// the switch to that stream boundary — the replacements shed media until the
 	// boundary and this branch detaches at it — and
-	// lifecycle.DrainOldBranch/lifecycle.AbortOldBranch select whether this
+	// DrainBranch/AbortBranch select whether this
 	// branch's destinations commit or abort on detach.
 	// Without options the switch is immediate, exactly like Detach after Attach.
-	Rebranch(context.Context, ...lifecycle.RebranchArg) (Attachment, error)
+	Rebranch(context.Context, ...RebranchArg) (Attachment, error)
 	// Close detaches this branch and any dependent branches anchored on its
 	// taps; equivalent to task.Detach.
 	Close(context.Context) error
@@ -169,13 +167,13 @@ func runtimeBranchSourceOf(in branchSourceBinding) recipeir.RuntimeBranchSource 
 	return out
 }
 
-func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.RebranchArg) (runtimeRebranchInput, error) {
+func runtimeRebranchInputFromArgs(ctx context.Context, args []RebranchArg) (runtimeRebranchInput, error) {
 	policy := rebranchPolicyFromOptions(args)
 	if len(policy.specs) == 0 {
 		return runtimeRebranchInput{}, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement Outputs built from task.Tap(name) or task.Track(input, stream)")
 	}
 	if policy.invalid != "" {
-		return runtimeRebranchInput{}, runtimeBranchInvalidError(policy.invalid, "pass lifecycle.SwitchAt(lifecycle.AtMediaTime(position)) with position >= 0")
+		return runtimeRebranchInput{}, runtimeBranchInvalidError(policy.invalid, "pass SwitchAt(AtMediaTime(position)) with position >= 0")
 	}
 	if err := ctx.Err(); err != nil {
 		return runtimeRebranchInput{}, err
@@ -409,13 +407,13 @@ func uniqueStrings(values []string) []string {
 // anchor (a branch attached to a stream the source discovered at runtime):
 // the source node is the anchor and the announced av.Stream supplies the
 // shape facts a tap would normally carry.
-func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) snapshot.Tap {
+func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) TapSnapshot {
 	domain := source.StreamDomain
 	if domain == "" {
 		domain = shape.DomainPacket
 	}
 	spec := shape.FromStream(source.Stream, domain)
-	return snapshot.Tap{
+	return TapSnapshot{
 		Node:      pipeline.NodeRef(source.From),
 		Domain:    domain,
 		MediaKind: spec.MediaKind,
@@ -436,11 +434,11 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 	t.attachments[attachment] = struct{}{}
 }
 
-func (t *task) tapsLocked() []snapshot.Tap {
+func (t *task) tapsLocked() []TapSnapshot {
 	base := t.taps
-	out := make([]snapshot.Tap, 0, len(base)+len(t.branchTaps))
+	out := make([]TapSnapshot, 0, len(base)+len(t.branchTaps))
 	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
-	appendTap := func(tap snapshot.Tap) {
+	appendTap := func(tap TapSnapshot) {
 		if tap.Name == "" {
 			return
 		}
@@ -459,7 +457,7 @@ func (t *task) tapsLocked() []snapshot.Tap {
 	return out
 }
 
-func (t *task) addAttachmentTapsLocked(taps []snapshot.Tap) {
+func (t *task) addAttachmentTapsLocked(taps []TapSnapshot) {
 	if len(taps) == 0 {
 		return
 	}
@@ -658,14 +656,14 @@ type runtimeAttachment struct {
 	anchorNodes  []string
 	nodes        []pipeline.NodeRef
 	routes       []pipeline.Route
-	taps         []snapshot.Tap
+	taps         []TapSnapshot
 	stages       []pipeline.Stage
 	destinations []compile.WorkDestination
 	stopMu       sync.Mutex
 	stopped      bool
-	// detachOutcome records the lifecycle.DestinationState a disposition detach
-	// (DrainOldBranch/AbortOldBranch) chose for this branch's destinations;
-	// snapshots report it instead of the plain lifecycle.DestinationClosed.
+	// detachOutcome records the DestinationState a disposition detach
+	// (DrainBranch/AbortBranch) chose for this branch's destinations;
+	// snapshots report it instead of the plain DestinationClosed.
 	detachOutcome atomic.Value
 	// removedStats holds the final counters of the branch's nodes, taken as
 	// detach removed them: removed nodes leave the graph's Stats.
@@ -748,9 +746,9 @@ func (a *runtimeAttachment) Stats() pipeline.GraphStats {
 	return branchStatsForNodes(withRemovedStats(a.owner.Stats(), a.removedStats.Load()), a.nodes)
 }
 
-func (a *runtimeAttachment) Snapshot() snapshot.Branch {
+func (a *runtimeAttachment) Snapshot() BranchSnapshot {
 	if a == nil {
-		return snapshot.Branch{}
+		return BranchSnapshot{}
 	}
 	stats := pipeline.GraphStats{}
 	if a.owner == nil {
@@ -762,32 +760,32 @@ func (a *runtimeAttachment) Snapshot() snapshot.Branch {
 	return a.branchSnapshotLocked(stats)
 }
 
-func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) snapshot.Branch {
+func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) BranchSnapshot {
 	if a == nil {
-		return snapshot.Branch{}
+		return BranchSnapshot{}
 	}
-	state := lifecycle.BranchAttached
-	destinationState := lifecycle.DestinationOpen
+	state := BranchAttached
+	destinationState := DestinationOpen
 	spec := pipeline.Spec{}
 	if a.owner != nil {
 		_, destinationState = a.owner.lifecycleStates()
 		spec = a.specFromGraph(a.owner.Describe())
 	}
 	if a.stopped {
-		state = lifecycle.BranchDetached
-		destinationState = lifecycle.DestinationClosed
-		if outcome, ok := a.detachOutcome.Load().(lifecycle.DestinationState); ok && outcome != "" {
+		state = BranchDetached
+		destinationState = DestinationClosed
+		if outcome, ok := a.detachOutcome.Load().(DestinationState); ok && outcome != "" {
 			destinationState = outcome
 		}
 	}
-	return snapshot.Branch{
+	return BranchSnapshot{
 		ID:           a.id,
 		Name:         a.name,
 		State:        state,
 		AnchorTaps:   append([]string(nil), a.allAnchorTaps()...),
 		AnchorNodes:  append([]string(nil), a.allAnchorNodes()...),
 		Nodes:        append([]pipeline.NodeRef(nil), a.nodes...),
-		Taps:         append([]snapshot.Tap(nil), a.taps...),
+		Taps:         append([]TapSnapshot(nil), a.taps...),
 		Destinations: destinationSnapshotsFromWork(a.destinations, destinationState),
 		Spec:         spec,
 		Stats:        branchStatsForNodes(taskStats, a.nodes),
@@ -830,7 +828,7 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 	return first
 }
 
-func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
+func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchArg) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}
@@ -890,12 +888,12 @@ func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldB
 func (a *runtimeAttachment) applyDetachDisposition(disposition oldBranchDisposition) {
 	switch disposition {
 	case oldBranchDrain:
-		a.detachOutcome.Store(lifecycle.DestinationCommitted)
+		a.detachOutcome.Store(DestinationCommitted)
 	case oldBranchAbort:
 		for _, stage := range a.stages {
 			markPipelineStageFailed(stage)
 		}
-		a.detachOutcome.Store(lifecycle.DestinationAborted)
+		a.detachOutcome.Store(DestinationAborted)
 	case oldBranchDetach:
 	}
 }
@@ -1028,7 +1026,7 @@ func runtimeBranchStreamMedia(stream av.Stream) av.MediaType {
 	return stream.Codec.Type
 }
 
-func runtimeBranchAnchorShape(anchor snapshot.Tap) shape.Spec {
+func runtimeBranchAnchorShape(anchor TapSnapshot) shape.Spec {
 	shape := anchor.Shape
 	if shape.Domain == "" {
 		shape.Domain = anchor.Domain
@@ -1102,7 +1100,7 @@ func streamPacketShapeFromRuntimeBranchStream(stream av.Stream, previous shape.S
 	return spec
 }
 
-func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after plan.OperationKind) snapshot.Tap {
+func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after plan.OperationKind) TapSnapshot {
 	domain := spec.Domain
 	if domain == "" {
 		domain = shape.DomainPacket
@@ -1114,7 +1112,7 @@ func runtimeBranchTap(name string, node pipeline.NodeRef, spec shape.Spec, after
 	if spec.MediaKind == "" {
 		spec.MediaKind = media
 	}
-	return snapshot.Tap{
+	return TapSnapshot{
 		Name:      name,
 		MediaKind: media,
 		Domain:    domain,
@@ -1172,7 +1170,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 	}
 }
 
-func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
+func runtimeBranchTapMissingError(name string, taps []TapSnapshot) error {
 	details := make([]string, 0, len(taps))
 	for i := range taps {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))

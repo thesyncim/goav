@@ -13,7 +13,6 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -24,7 +23,7 @@ const lifecycleTapName = "video.decoded"
 type branchMutator interface {
 	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
 	Tap(name string) goav.Stream
-	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+	Detach(context.Context, goav.Attachment, ...goav.DetachOption) error
 }
 
 // frameCountSink counts the decoded frames it receives.
@@ -339,7 +338,7 @@ func TestRuntimeBranchDrainDetachDeliversQueuedFrames(t *testing.T) {
 	waitFrameCount(ctx, &main.count, frames+1)
 
 	detached := make(chan error, 1)
-	go func() { detached <- task.Detach(ctx, attachment, lifecycle.DrainBranch()) }()
+	go func() { detached <- task.Detach(ctx, attachment, goav.DrainBranch()) }()
 	// Open the gate once Detach is under way. Removal waits for the drain, so
 	// the count below holds whenever the gate opens; the pause only makes the
 	// test catch a removal that sheds instead.

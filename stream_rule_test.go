@@ -13,12 +13,9 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/inspect"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // syncObjectState is a mutex-guarded transactional destination recorder: the
@@ -225,13 +222,13 @@ func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <
 }
 
 type taskSnapshotter interface {
-	Snapshot() snapshot.Task
+	Snapshot() TaskSnapshot
 }
 
 func taskHasBranch(task taskSnapshotter, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
-		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {
+		if branches[i].Name == name && branches[i].State == BranchAttached {
 			return true
 		}
 	}
@@ -273,7 +270,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
+	attachErrors := task.Watch(WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -298,7 +295,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 		if branch.Name != "record-late-audio" {
 			continue
 		}
-		if len(branch.Destinations) == 0 || branch.Destinations[0].State != lifecycle.DestinationOpen {
+		if len(branch.Destinations) == 0 || branch.Destinations[0].State != DestinationOpen {
 			t.Fatalf("attached branch destinations = %+v, want open", branch.Destinations)
 		}
 	}
@@ -497,7 +494,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
+	attachErrors := task.Watch(WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -589,7 +586,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	defer task.Close()
 	nodesBefore := len(task.Describe().Nodes)
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
+	attachErrors := task.Watch(WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 

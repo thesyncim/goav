@@ -12,7 +12,6 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -20,7 +19,7 @@ var branchSeq atomic.Uint64
 
 type branchMutator interface {
 	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
-	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+	Detach(context.Context, goav.Attachment, ...goav.DetachOption) error
 }
 
 type branch struct {

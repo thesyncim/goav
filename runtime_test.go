@@ -14,7 +14,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/graphrender"
+	"github.com/thesyncim/goav/internal/specrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -210,7 +210,7 @@ func specMermaid(spec pipeline.Spec) string {
 }
 
 func specRenderURI(spec pipeline.Spec, target string) string {
-	out, err := graphrender.RenderURI(spec, target)
+	out, err := specrender.RenderURI(spec, target)
 	if err != nil {
 		return err.Error()
 	}

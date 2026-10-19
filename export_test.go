@@ -5,7 +5,6 @@ import (
 
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -28,7 +27,7 @@ func AttachPlannedForTest(ctx context.Context, live LiveTask, outs ...Output) (p
 
 // RebranchPlannedForTest plans and attaches the replacements a Rebranch with
 // args attaches, leaving the replaced branch in place.
-func RebranchPlannedForTest(ctx context.Context, live LiveTask, args ...lifecycle.RebranchArg) (pipeline.Spec, Attachment, error) {
+func RebranchPlannedForTest(ctx context.Context, live LiveTask, args ...RebranchArg) (pipeline.Spec, Attachment, error) {
 	t := live.(*task)
 	args, err := t.rebranchArgs(args)
 	if err != nil {

@@ -6,9 +6,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestTaskWatchUsesIndependentSubscription(t *testing.T) {
@@ -34,7 +32,7 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 	defer task.Close()
 
 	attachment := &lifecycleFakeAttachment{name: "archive"}
-	input, err := runtimeDetachInputFromArgs(context.Background(), attachment, []lifecycle.DetachOption{lifecycle.AbortBranch()})
+	input, err := runtimeDetachInputFromArgs(context.Background(), attachment, []DetachOption{AbortBranch()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +43,7 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 	}
 
 	runtimeAttachment := &runtimeAttachment{name: "recording"}
-	input, err = runtimeDetachInputFromArgs(context.Background(), runtimeAttachment, []lifecycle.DetachOption{lifecycle.DrainBranch()})
+	input, err = runtimeDetachInputFromArgs(context.Background(), runtimeAttachment, []DetachOption{DrainBranch()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +143,8 @@ func (a *lifecycleFakeAttachment) Stats() pipeline.GraphStats {
 	return pipeline.GraphStats{}
 }
 
-func (a *lifecycleFakeAttachment) Snapshot() snapshot.Branch {
-	return snapshot.Branch{Name: a.name}
+func (a *lifecycleFakeAttachment) Snapshot() BranchSnapshot {
+	return BranchSnapshot{Name: a.name}
 }
 
 func (a *lifecycleFakeAttachment) Pause(context.Context) error {
@@ -157,7 +155,7 @@ func (a *lifecycleFakeAttachment) Resume(context.Context) error {
 	return nil
 }
 
-func (a *lifecycleFakeAttachment) Rebranch(context.Context, ...lifecycle.RebranchArg) (Attachment, error) {
+func (a *lifecycleFakeAttachment) Rebranch(context.Context, ...RebranchArg) (Attachment, error) {
 	return a, nil
 }
 

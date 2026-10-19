@@ -9,9 +9,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 type fakeTask struct {
@@ -29,11 +27,11 @@ func (fakeTask) Stats() pipeline.GraphStats {
 	}
 }
 
-func (fakeTask) Snapshot() snapshot.Task {
-	return snapshot.Task{
-		State:        lifecycle.TaskRunning,
-		Branches:     []snapshot.Branch{{Name: "preview", State: lifecycle.BranchAttached}},
-		Destinations: []snapshot.Destination{{Name: "out.webm", State: lifecycle.DestinationOpen}},
+func (fakeTask) Snapshot() goav.TaskSnapshot {
+	return goav.TaskSnapshot{
+		State:        goav.TaskRunning,
+		Branches:     []goav.BranchSnapshot{{Name: "preview", State: goav.BranchAttached}},
+		Destinations: []goav.DestinationSnapshot{{Name: "out.webm", State: goav.DestinationOpen}},
 	}
 }
 

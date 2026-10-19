@@ -8,10 +8,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
@@ -29,7 +27,7 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 	if got := nilAttachment.Stats(); !reflect.DeepEqual(got, pipeline.GraphStats{}) {
 		t.Fatalf("nil Stats = %#v, want empty", got)
 	}
-	if got := nilAttachment.Snapshot(); !reflect.DeepEqual(got, snapshot.Branch{}) {
+	if got := nilAttachment.Snapshot(); !reflect.DeepEqual(got, BranchSnapshot{}) {
 		t.Fatalf("nil Snapshot = %#v, want empty", got)
 	}
 	if got := nilAttachment.allAnchorTaps(); got != nil {
@@ -62,7 +60,7 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 		anchorTap:  "legacy-tap",
 		anchorNode: "legacy-node",
 		nodes:      []pipeline.NodeRef{"preview-copy", "preview-sink"},
-		taps: []snapshot.Tap{{
+		taps: []TapSnapshot{{
 			Name: "preview-packets",
 			Node: pipeline.NodeRef("preview-copy"),
 		}},
@@ -96,24 +94,24 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 	}
 
 	got := attachment.Snapshot()
-	want := snapshot.Branch{
+	want := BranchSnapshot{
 		ID:          "branch-42",
 		Name:        "preview",
-		State:       lifecycle.BranchAttached,
+		State:       BranchAttached,
 		AnchorTaps:  []string{"legacy-tap"},
 		AnchorNodes: []string{"legacy-node"},
 		Nodes:       []pipeline.NodeRef{"preview-copy", "preview-sink"},
-		Taps: []snapshot.Tap{{
+		Taps: []TapSnapshot{{
 			Name: "preview-packets",
 			Node: pipeline.NodeRef("preview-copy"),
 		}},
-		Destinations: []snapshot.Destination{{
+		Destinations: []DestinationSnapshot{{
 			Name:      "preview.ivf",
 			Operation: plan.OpMux,
 			Component: "custom-mux",
 			Format:    av.FormatIVF,
 			Branches:  []string{"preview"},
-			State:     lifecycle.DestinationOpen,
+			State:     DestinationOpen,
 			Open:      true,
 		}},
 	}
@@ -144,12 +142,12 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 	}
 
 	attachment.stopped = true
-	attachment.detachOutcome.Store(lifecycle.DestinationAborted)
+	attachment.detachOutcome.Store(DestinationAborted)
 	detached := attachment.Snapshot()
-	if detached.State != lifecycle.BranchDetached {
-		t.Fatalf("detached State = %q, want %q", detached.State, lifecycle.BranchDetached)
+	if detached.State != BranchDetached {
+		t.Fatalf("detached State = %q, want %q", detached.State, BranchDetached)
 	}
-	if len(detached.Destinations) != 1 || detached.Destinations[0].State != lifecycle.DestinationAborted || detached.Destinations[0].Open {
+	if len(detached.Destinations) != 1 || detached.Destinations[0].State != DestinationAborted || detached.Destinations[0].Open {
 		t.Fatalf("detached destination = %#v, want aborted and closed", detached.Destinations)
 	}
 	if err := attachment.setPaused(ctx, true); err == nil {
@@ -273,8 +271,8 @@ func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
 		if !attachment.stopped {
 			t.Fatal("opened boundary did not detach replaced attachment")
 		}
-		outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
-		if !ok || outcome != lifecycle.DestinationCommitted {
+		outcome, ok := attachment.detachOutcome.Load().(DestinationState)
+		if !ok || outcome != DestinationCommitted {
 			t.Fatalf("detach outcome = %v, %t; want committed", outcome, ok)
 		}
 	})
@@ -295,7 +293,7 @@ func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
 		if _, ok := task.attachments[attachment]; !ok {
 			t.Fatal("abandoned boundary removed attachment from task")
 		}
-		if outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState); ok || outcome != "" {
+		if outcome, ok := attachment.detachOutcome.Load().(DestinationState); ok || outcome != "" {
 			t.Fatalf("abandoned detach outcome = %v, %t; want none", outcome, ok)
 		}
 	})
@@ -314,8 +312,8 @@ func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
 		if !attachment.stopped {
 			t.Fatal("opened abandoned boundary did not detach replaced attachment")
 		}
-		outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
-		if !ok || outcome != lifecycle.DestinationAborted {
+		outcome, ok := attachment.detachOutcome.Load().(DestinationState)
+		if !ok || outcome != DestinationAborted {
 			t.Fatalf("detach outcome = %v, %t; want aborted", outcome, ok)
 		}
 	})

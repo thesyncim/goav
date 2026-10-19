@@ -11,6 +11,25 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Break: the `inspect`, `snapshot`, and `lifecycle` packages folded into the
+  root beside `LiveTask` and `Attachment`, so a live application imports one
+  package for the task, its views, and its policies. Renames:
+  `snapshot.Task`/`Branch`/`Destination`/`Tap` become
+  `goav.TaskSnapshot`/`BranchSnapshot`/`DestinationSnapshot`/`TapSnapshot`
+  (JSON unchanged); `lifecycle.X` becomes `goav.X` for the states
+  (`TaskState`, `TaskRunning`, `DestinationCommitted`, ...) and the policies
+  (`DetachOption`, `DrainBranch`, `AbortBranch`, `RebranchArg`, `SwitchAt`,
+  `SwitchBoundary`, `NextFrame`, `NextKeyframe`, `AtMediaTime`); and
+  `inspect.X` becomes `goav.X` for `EventFilter`, `Subscription`,
+  `WatchTypes`, and `WatchStream`. `DrainOldBranch`/`AbortOldBranch` are
+  gone: `DrainBranch()`/`AbortBranch()` are accepted by both `Detach` and
+  `Rebranch`. `RebranchArg` and `DetachOption` are now sealed, so
+  `Output.RebranchArg()`, `DetachOption.DetachDisposition()`, and the
+  `SwitchBoundary.Kind()`/`MediaTime()` accessors are no longer exported.
+  `graphrender` now imports the root to read snapshots; its renderer moved to
+  `internal/specrender` with no API change. Migration: drop the three
+  imports, rename as above, and replace `lifecycle.DrainOldBranch()` with
+  `goav.DrainBranch()` (likewise `AbortOldBranch`).
 - Break: `Stream.SyncByPTS()` is gone; PTS alignment is a join option,
   `goav.ByPTS()`, passed among a Mix's or Composite's arguments. `Mix` and
   `Composite` take `...goav.JoinArg` (a Stream, `At(stream, x, y)`, or

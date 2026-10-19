@@ -16,7 +16,6 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -30,7 +29,7 @@ const (
 
 type branchMutator interface {
 	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
-	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+	Detach(context.Context, goav.Attachment, ...goav.DetachOption) error
 }
 
 func main() {

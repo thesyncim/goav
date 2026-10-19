@@ -330,8 +330,8 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 
 // handleStreamRemoved detaches every attachment the rules created for the
 // removed stream with drain semantics: destinations commit and the branch
-// snapshot reports lifecycle.DestinationCommitted — the same typed outcome as
-// Rebranch's DrainOldBranch.
+// snapshot reports DestinationCommitted — the same typed outcome as
+// Rebranch with DrainBranch.
 func (t *task) handleStreamRemoved(ctx context.Context, event av.Event) {
 	input := t.streamRuleRemoveInput(event)
 	if input.streamID == "" {

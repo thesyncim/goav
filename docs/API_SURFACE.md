@@ -83,8 +83,23 @@ values compile into (`internal/recipeir`) is internal; the package's external
 tests reach the few internals they pin through `export_test.go`.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
-`control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
-and `runconfig`.
+`control`, `ctlserver`, `plan`, `flow`, and `runconfig`.
+
+The live-task vocabulary is root, beside the `LiveTask` and `Attachment` that
+return and take it (governed pre-v1 with runtime `Attach`/`Detach`/`Rebranch`):
+four concepts, each sealed where it is an argument.
+
+- Views: `TaskSnapshot`, `BranchSnapshot`, `DestinationSnapshot`, and
+  `TapSnapshot`, with their states `TaskState`, `BranchState`, and
+  `DestinationState` (`TaskBuilt`, `BranchAttached`, `DestinationCommitted`, ...).
+- Watch filters: `EventFilter`, `WatchTypes`, `WatchStream`, and the
+  `Subscription` that `Watch` returns.
+- Detach outcome: `DetachOption` from `DrainBranch()` or `AbortBranch()`,
+  taken by `Detach` for the detached branch and by `Rebranch` for the
+  replaced one.
+- Rebranch arguments: `RebranchArg` (replacement Outputs, a `DetachOption`, or
+  `SwitchAt(boundary)` with `NextFrame()`, `NextKeyframe()`, or
+  `AtMediaTime(d)` building the `SwitchBoundary`).
 
 ## B. Extension Points
 
@@ -287,7 +302,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Attach vs Detach vs Rebranch** (governed pre-v1, see
   [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): `task.Attach` adds ordinary Outputs (from
   `task.Tap`/`task.Track`) to a running task; `task.Detach(ctx, h)` removes that attached branch, with
-  `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
+  `goav.DrainBranch()` and `goav.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch(ctx, outputs..., options...)` takes the same
   Outputs and is attach-new-then-detach-old, with lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
@@ -328,7 +343,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Pause/Resume vs Rate** (governed pre-v1, `LiveTask` methods):
   `Pause(ctx)`/`Resume(ctx)` freeze/continue the shared task timeline that
   `control.Rate` scales; nothing-paced tasks refuse like Rate.
-  `snapshot.Task.Paused` reports the fact; `av.EventTaskReady` on `Watch` is
+  `goav.TaskSnapshot.Paused` reports the fact; `av.EventTaskReady` on `Watch` is
   the readiness (preroll) signal. Contract prose: `docs/FLOW_CONTROL.md`.
 - **recipe vs expert**: the recipe grammar (tier A) is the normal surface;
   `expert.Graph(runtime)` opens the handle-based graph layer (tier C) for
@@ -401,14 +416,15 @@ example modules. The module boundary is the dependency boundary:
 ## Compatibility
 
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
-five clusters off the root: the live control vocabulary is `control`
+four clusters off the root: the live control vocabulary is `control`
 (`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
-`SelectActive`, `Deliver`, `Must`), event subscription and structural helpers
-are `inspect` (`EventFilter`, `Subscription`, `WatchTypes`, `WatchStream`;
-render graphs with `graphrender`), the error catalog is `errcode` (renamed from
+`SelectActive`, `Deliver`, `Must`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,
 `GraphBuilder`, handles, `ErrRuntimeRequired`) bridged structurally so the
-root imports neither. New exported symbols in governed packages require a
+root imports neither. The task-domain noun packages that wave also made
+(`inspect`, `snapshot`, `lifecycle`) folded back into the root: each held one
+facet of the task the root already returns, and three imports for one concept
+was the wrong split. New exported symbols in governed packages require a
 matching tier entry in this document in the same change.

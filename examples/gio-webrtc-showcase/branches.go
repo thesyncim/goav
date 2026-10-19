@@ -16,7 +16,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -30,7 +29,7 @@ var branchSeq atomic.Uint64
 
 type branchMutator interface {
 	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
-	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+	Detach(context.Context, goav.Attachment, ...goav.DetachOption) error
 }
 
 type branch struct {
@@ -246,8 +245,8 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	}
 	next, err := r.Attachment.Rebranch(ctx,
 		replacement,
-		lifecycle.SwitchAt(lifecycle.AtMediaTime(0)),
-		lifecycle.DrainOldBranch(),
+		goav.SwitchAt(goav.AtMediaTime(0)),
+		goav.DrainBranch(),
 	)
 	if err != nil {
 		r.Spec = oldSpec

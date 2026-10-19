@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/thesyncim/goav"
+
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/inspect"
 )
 
 // maxRequestBytes bounds one HTTP request body.
@@ -46,16 +47,16 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	var filters []inspect.EventFilter
+	var filters []goav.EventFilter
 	if types := r.URL.Query().Get("types"); types != "" {
 		var ts []av.EventType
 		for _, t := range strings.Split(types, ",") {
 			ts = append(ts, av.EventType(strings.TrimSpace(t)))
 		}
-		filters = append(filters, inspect.WatchTypes(ts...))
+		filters = append(filters, goav.WatchTypes(ts...))
 	}
 	if stream := r.URL.Query().Get("stream"); stream != "" {
-		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
+		filters = append(filters, goav.WatchStream(av.StreamID(stream)))
 	}
 	sub := s.task.Watch(filters...)
 	defer sub.Close()

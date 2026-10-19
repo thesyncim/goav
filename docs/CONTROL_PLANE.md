@@ -53,9 +53,9 @@ HTTP it is refused in favor of `/events`.
 | --- | --- | --- |
 | `describe` | `[format=json\|text\|dot\|mermaid]` | the task's graph (`pipeline.Spec` as JSON, or rendered text) |
 | `explain` | | the task's plan (`plan.Report`) |
-| `snapshot` | | nodes, branches, taps, destinations (`snapshot.Task`) |
+| `snapshot` | | nodes, branches, taps, destinations (`goav.TaskSnapshot`) |
 | `stats` | | per-node counters and drops by reason (`pipeline.GraphStats`) |
-| `taps` | | the attach points (`[]snapshot.Tap`) |
+| `taps` | | the attach points (`[]goav.TapSnapshot`) |
 | `capabilities` | | protocol version, every method with its params, every element |
 | `watch` | `[types=a,b] [stream=]` | events as notifications; returns `{"subscription": "w1"}` |
 | `unwatch` | `subscription=` | stop a watch |
@@ -257,7 +257,7 @@ positionally. [`CLI.md`](CLI.md#control) has the details, and `goav run
 ## Cost
 
 Serving costs the task's data plane nothing. Calls run on connection
-goroutines, `stats` reads atomic counters, and a watch is an `inspect`
-subscription that sheds events when its client falls behind rather than block
+goroutines, `stats` reads atomic counters, and a watch is a `goav.Subscription`
+that sheds events when its client falls behind rather than block
 media. `TestServingCostsTheDataPlaneNothing` pins it: a task allocates the
 same per frame with a server, a connected client, and a watch as with none.

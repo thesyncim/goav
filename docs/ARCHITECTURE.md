@@ -170,12 +170,13 @@ transforms.
 
 What the compiler enforces today: the sibling packages (`av`, `errcode`,
 `plan`, `shape`, `flow`, `provider`, `pipeline`, `codec`, `format`, `filter`,
-`container`, `lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `playoutav`,
-`adapters`, `graphrender`) are leaves; none of them imports the root `goav`
-package. Root depends on leaves, never the reverse.
+`container`, `rtpav`, `webrtcav`, `playoutav`, `adapters`) are leaves; none of
+them imports the root `goav` package. Root depends on leaves, never the reverse.
 
-The one exception is `expert`: it sits above root because it imports `goav` to
-return the `LiveTask` its `Build` produces.
+Two packages sit above root on purpose: `expert` imports `goav` to return the
+`LiveTask` its `Build` produces, and `graphrender` imports it to read task and
+branch snapshots (its spec renderer is `internal/specrender`, a leaf, so the
+root's own tests render graphs without a cycle).
 Root reaches back only through structural seams (the `internal/expertgraph`
 hook, the branch-anchor `Route` capability), never an import.
 

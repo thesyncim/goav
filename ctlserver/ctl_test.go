@@ -24,7 +24,6 @@ import (
 	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // counter is a sink element that counts the frames an attached program
@@ -104,14 +103,14 @@ const liveProgram = `testsrc video size=32x32 live ! tap live ! encode vp8 ! as 
 func TestInspectMethods(t *testing.T) {
 	h := serve(t, liveProgram)
 	ctx := context.Background()
-	taps, err := h.client.Call[[]snapshot.Tap](ctx, "taps", nil)
+	taps, err := h.client.Call[[]goav.TapSnapshot](ctx, "taps", nil)
 	if err != nil || len(taps) != 1 || taps[0].Name != "live" {
 		t.Fatalf("taps = %+v, %v", taps, err)
 	}
 	if _, err := h.client.Call[pipeline.GraphStats](ctx, "stats", nil); err != nil {
 		t.Fatalf("stats: %v", err)
 	}
-	if _, err := h.client.Call[snapshot.Task](ctx, "snapshot", nil); err != nil {
+	if _, err := h.client.Call[goav.TaskSnapshot](ctx, "snapshot", nil); err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 	text, err := h.client.Call[string](ctx, "describe", map[string]string{"format": "text"})
@@ -268,8 +267,8 @@ func TestHTTPTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out struct {
-		ID     int            `json:"id"`
-		Result []snapshot.Tap `json:"result"`
+		ID     int                `json:"id"`
+		Result []goav.TapSnapshot `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.ID != 7 || len(out.Result) != 1 {
 		t.Fatalf("POST taps = %+v, %v", out, err)

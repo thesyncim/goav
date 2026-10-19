@@ -5,8 +5,40 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/inspect"
 )
+
+// EventFilter reports whether a watcher wants an event. Filters passed to
+// LiveTask.Watch AND together: an event is delivered when every filter
+// matches. A watch with zero filters receives every event. Any predicate
+// works; WatchTypes and WatchStream cover the common cases.
+type EventFilter func(av.Event) bool
+
+// Subscription is a disposable event subscription returned by LiveTask.Watch.
+// Events is closed when the task ends or Close unsubscribes the watcher. Close
+// is idempotent.
+type Subscription interface {
+	Events() <-chan av.Event
+	Close() error
+}
+
+// WatchTypes matches events whose Type is one of types.
+func WatchTypes(types ...av.EventType) EventFilter {
+	set := make(map[av.EventType]struct{}, len(types))
+	for i := range types {
+		set[types[i]] = struct{}{}
+	}
+	return func(event av.Event) bool {
+		_, ok := set[event.Type]
+		return ok
+	}
+}
+
+// WatchStream matches events published for the given stream.
+func WatchStream(id av.StreamID) EventFilter {
+	return func(event av.Event) bool {
+		return event.StreamID == id
+	}
+}
 
 // defaultWatchCapacity mirrors the pipeline's default event channel capacity so
 // an unconfigured task gives every watcher the same buffer depth as the graph
@@ -15,7 +47,7 @@ const defaultWatchCapacity = 256
 
 // Watch returns an independent, filtered subscription to the task's event
 // stream. See LiveTask.Watch for the delivery, overflow, and closure contract.
-func (t *task) Watch(filters ...inspect.EventFilter) inspect.Subscription {
+func (t *task) Watch(filters ...EventFilter) Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }
 
@@ -47,12 +79,12 @@ type eventWatch struct {
 
 type eventWatcher struct {
 	parent  *eventWatch
-	filters []inspect.EventFilter
+	filters []EventFilter
 	events  chan av.Event
 	once    sync.Once
 }
 
-func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []inspect.EventFilter) inspect.Subscription {
+func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []EventFilter) Subscription {
 	if capacity < 1 {
 		capacity = defaultWatchCapacity
 	}

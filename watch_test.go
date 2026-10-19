@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -84,7 +83,7 @@ func collectUntilClosed(t *testing.T, watch <-chan av.Event) []av.Event {
 func TestWatchFiltersByType(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	loss := task.Watch(inspect.WatchTypes(av.EventPacketLoss)).Events()
+	loss := task.Watch(WatchTypes(av.EventPacketLoss)).Events()
 
 	graph.events <- av.Event{Type: av.EventStats}
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "v0"}
@@ -102,7 +101,7 @@ func TestWatchFiltersByType(t *testing.T) {
 func TestWatchFiltersByStream(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	audio := task.Watch(inspect.WatchStream("a0")).Events()
+	audio := task.Watch(WatchStream("a0")).Events()
 
 	graph.events <- av.Event{Type: av.EventStats, StreamID: "v0"}
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "a0"}
@@ -126,7 +125,7 @@ func TestWatchFiltersByStream(t *testing.T) {
 func TestWatchFiltersANDTogether(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	watch := task.Watch(inspect.WatchTypes(av.EventPacketLoss), inspect.WatchStream("v0")).Events()
+	watch := task.Watch(WatchTypes(av.EventPacketLoss), WatchStream("v0")).Events()
 
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "a0"}
 	graph.events <- av.Event{Type: av.EventStats, StreamID: "v0"}
@@ -263,7 +262,7 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for range watchers {
-			channels <- task.Watch(inspect.WatchTypes(av.EventStats)).Events()
+			channels <- task.Watch(WatchTypes(av.EventStats)).Events()
 		}
 	}()
 	go func() {
@@ -316,7 +315,7 @@ func TestWatchEndToEndDeliversAndClosesOnTaskClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	watch := task.Watch(inspect.WatchTypes(av.EventStats)).Events()
+	watch := task.Watch(WatchTypes(av.EventStats)).Events()
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -332,5 +331,18 @@ func TestWatchEndToEndDeliversAndClosesOnTaskClose(t *testing.T) {
 		if got[i].Type != av.EventStats {
 			t.Fatalf("events[%d].Type = %q, want stats", i, got[i].Type)
 		}
+	}
+}
+
+func TestWatchFiltersMatchTypeAndStream(t *testing.T) {
+	stats := av.Event{Type: av.EventStats, StreamID: "audio"}
+	eos := av.Event{Type: av.EventEndOfStream, StreamID: "video"}
+	types := WatchTypes(av.EventStats, av.EventQoS)
+	if !types(stats) || types(eos) {
+		t.Fatal("WatchTypes matched the wrong events")
+	}
+	stream := WatchStream("video")
+	if stream(stats) || !stream(eos) {
+		t.Fatal("WatchStream matched the wrong events")
 	}
 }

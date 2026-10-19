@@ -11,7 +11,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/snapshot"
 )
 
 // Run builds the Outputs into one task and runs it to completion. It returns
@@ -231,8 +230,8 @@ func installTaskExplainReport(mediaTask Task, report plan.Report) {
 	runtimeTask.explainReportReady = true
 }
 
-func tapInfosFromPlan(taps []compile.WorkTap) []snapshot.Tap {
-	out := make([]snapshot.Tap, 0, len(taps))
+func tapInfosFromPlan(taps []compile.WorkTap) []TapSnapshot {
+	out := make([]TapSnapshot, 0, len(taps))
 	seen := make(map[string]struct{}, len(taps))
 	for i := range taps {
 		if taps[i].Name == "" {
@@ -242,7 +241,7 @@ func tapInfosFromPlan(taps []compile.WorkTap) []snapshot.Tap {
 			continue
 		}
 		seen[taps[i].Name] = struct{}{}
-		out = append(out, snapshot.Tap{
+		out = append(out, TapSnapshot{
 			Name:      taps[i].Name,
 			MediaKind: taps[i].MediaKind,
 			Domain:    taps[i].Domain,
