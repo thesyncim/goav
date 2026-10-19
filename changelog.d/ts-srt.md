@@ -14,4 +14,5 @@
   recovers. `goav run` grants `srt` and `udp`.
 - A byte destination whose contract declares `Realtime` (srt, udp) now plays
   a file at its media time, as a live media sink does.
-- `av.CodecHEVC` and `av.FormatTS` join the vocabulary.
+- `av.FormatTS` joins the vocabulary. A transport stream of HEVC remuxes
+  into MP4: the demuxer reads hvcC and the picture size from the stream.
