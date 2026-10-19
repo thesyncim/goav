@@ -38,7 +38,7 @@ func playRuntime(name string, win window) (*goav.Runtime, error) {
 	if name != "default" && name != "bundle" {
 		return nil, fmt.Errorf("play runs on the speaker's clock; --runtime %s has its own clock: drop --runtime, or route to file or null instead of play", name)
 	}
-	return bundle.New(runconfig.WithRealtime(true), runconfig.WithClock(win.Clock()))
+	return bundle.New(withCLISchemes(runconfig.WithRealtime(true), runconfig.WithClock(win.Clock()))...)
 }
 
 // playStats is the summary line of a program that played: the evidence the
@@ -109,11 +109,11 @@ func fileProgram(path string) (string, error) {
 func buildsOn(program string) error {
 	files := &probeFiles{}
 	defer files.close()
-	outs, err := launch.Compile(program, launch.Files(files), launch.Use(newWindow().Element()))
+	outs, err := launch.Compile(program, launch.Files(files), cliURIs, launch.Use(newWindow().Element()))
 	if err != nil {
 		return err
 	}
-	rt, err := bundle.New()
+	rt, err := bundle.New(withCLISchemes()...)
 	if err != nil {
 		return err
 	}
