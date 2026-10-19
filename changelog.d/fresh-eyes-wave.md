@@ -19,3 +19,6 @@
   refused; `gplcodec` and `goavtest/expect` tags are recognized.
 - Removed a committed 3.7 MB benchmark helper binary; `TestNoCommittedBinaries`
   refuses any tracked ELF, Mach-O, or PE file.
+- Attaching `task.Tap(name)` for a tap the task does not have is refused as
+  `runtime_branch_tap_missing` even when the branch encodes or resamples,
+  instead of a misleading packet-domain shape error.

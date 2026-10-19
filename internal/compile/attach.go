@@ -54,8 +54,10 @@ func PlanAttach(req *Request, taps map[string]shape.MediaDomain) ([][]AttachBran
 		frames, known := false, true
 		switch {
 		case anchor.Anchor.Tap != "":
+			// A tap the task does not have is refused by name when the branch
+			// resolves its anchor; its shape is not judged before that.
 			domain := taps[anchor.Anchor.Tap]
-			frames, known = domain == shape.DomainFrame, domain != ""
+			frames, known = domain != shape.DomainPacket, domain != ""
 		case anchor.Anchor.Track != nil:
 			frames = req.Inputs[anchor.Anchor.Input].Frames
 		default:
