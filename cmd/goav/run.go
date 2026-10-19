@@ -26,6 +26,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/player"
 	"github.com/thesyncim/goav/runconfig"
 )
 
@@ -195,7 +196,8 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	files := &cliFiles{}
-	options := []launch.Option{launch.Files(files)}
+	win := player.New()
+	options := []launch.Option{launch.Files(files), launch.Use(win.Element())}
 	var served *http.Server
 	if args.serve != "" {
 		// The program's hls outputs package into a server, served while the
@@ -218,6 +220,9 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	rt, err := runtimeNamed(args.runtime)
+	if win.Used() {
+		rt, err = playRuntime(args.runtime, win)
+	}
 	if err != nil {
 		printErr(stderr, err)
 		return 2
@@ -230,10 +235,16 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer task.Close()
+	// A program that plays runs in the window, on this (the main) goroutine,
+	// as windowing systems require.
+	runTask := task.Run
+	if win.Used() {
+		runTask = func(ctx context.Context) error { return win.Run(ctx, task) }
+	}
 	if args.control != "" {
-		err = runServed(ctx, task, args.control, files)
+		err = runServed(ctx, task, runTask, args.control, files)
 	} else {
-		err = task.Run(ctx)
+		err = runTask(ctx)
 	}
 	// Close finalizes the destinations: a muxer writes its index, HLS its
 	// last segment and playlist. The summary reports the finished files.
@@ -246,11 +257,15 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 	}
 	sort.Strings(files.written)
 	summary := struct {
-		Runtime string   `json:"runtime"`
-		Wrote   []string `json:"wrote"`
-		Control string   `json:"control,omitempty"`
-		Stopped bool     `json:"stopped,omitempty"`
-	}{args.runtime, files.written, args.control, errors.Is(err, context.Canceled)}
+		Runtime string     `json:"runtime"`
+		Wrote   []string   `json:"wrote"`
+		Played  *playStats `json:"played,omitempty"`
+		Control string     `json:"control,omitempty"`
+		Stopped bool       `json:"stopped,omitempty"`
+	}{Runtime: args.runtime, Wrote: files.written, Control: args.control, Stopped: errors.Is(err, context.Canceled)}
+	if win.Used() {
+		summary.Played = playStatsOf(win)
+	}
 	if err := json.NewEncoder(stdout).Encode(summary); err != nil {
 		printErr(stderr, err)
 		return 1
@@ -261,7 +276,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 // runServed runs the task while a control socket serves it; the first to
 // stop stops both. The CLI's own user is the client, so attached programs
 // use the user's files, and the summary lists what they write.
-func runServed(ctx context.Context, task goav.LiveTask, control string, files launch.FileSystem) error {
+func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Context) error, control string, files launch.FileSystem) error {
 	server, err := ctlserver.New(task, ctlserver.Files(files))
 	if err != nil {
 		return err
@@ -269,16 +284,23 @@ func runServed(ctx context.Context, task goav.LiveTask, control string, files la
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errC := make(chan error, 2)
-	go func() { errC <- task.Run(runCtx) }()
-	go func() { errC <- server.ListenAndServe(runCtx, control) }()
-	var first error
-	for range 2 {
-		err := <-errC
+	go func() {
+		errC <- server.ListenAndServe(runCtx, control)
 		cancel()
-		if err != nil && first == nil && !expectedShutdown(err) {
-			first = err
-			_ = task.Close()
-		}
+	}()
+	// The task runs on the calling goroutine (a window must), the server
+	// beside it; the first to stop stops both.
+	first := runTask(runCtx)
+	cancel()
+	if expectedShutdown(first) {
+		first = nil
+	}
+	if first != nil {
+		_ = task.Close()
+	}
+	if err := <-errC; err != nil && first == nil && !expectedShutdown(err) {
+		first = err
+		_ = task.Close()
 	}
 	return first
 }
@@ -348,7 +370,7 @@ func explainCommand(argv []string, stdout, stderr io.Writer) int {
 // compileFor compiles a program for describe or explain: files are named
 // but never opened or created.
 func compileFor(args programArgs, stderr io.Writer) ([]goav.Output, *goav.Runtime, int) {
-	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}))
+	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}), launch.Use(player.New().Element()))
 	if err != nil {
 		printErr(stderr, err)
 		return nil, nil, 2
@@ -363,7 +385,7 @@ func compileFor(args programArgs, stderr io.Writer) ([]goav.Output, *goav.Runtim
 
 func elementsCommand(stdout io.Writer) int {
 	kind := ""
-	for _, el := range launch.Elements() {
+	for _, el := range launch.Elements(launch.Use(player.New().Element())) {
 		if el.Kind != kind {
 			if kind != "" {
 				fmt.Fprintln(stdout)
