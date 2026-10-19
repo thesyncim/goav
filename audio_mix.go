@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/interleave"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -90,6 +91,9 @@ func (s *audioMixStage) DroppedMessages() uint64 { return s.sync.droppedFrames()
 func (s *audioMixStage) Admit(ctx context.Context, msg *pipeline.Message) error {
 	return s.sync.admit(ctx, msg)
 }
+
+// Admits implements interleave.Gate: whether Admit would pass msg now.
+func (s *audioMixStage) Admits(_ interleave.Token, msg any) bool { return s.sync.admits(msg) }
 
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {

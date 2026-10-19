@@ -107,6 +107,25 @@ func (s *joinSyncState) admit(ctx context.Context, msg *pipeline.Message) error 
 	return nil
 }
 
+// admits reports, without blocking, whether admit would let msg through now:
+// the order's check (interleave.Gate) before it parks an arm's source.
+func (s *joinSyncState) admits(m any) bool {
+	msg, _ := m.(*pipeline.Message)
+	if s.gates == nil || msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
+		return true
+	}
+	gate := s.gates[msg.Frame.StreamID]
+	if gate == nil || gate.depth.Load() < joinArmLeadFrames {
+		return true
+	}
+	select {
+	case <-s.released:
+		return true
+	default:
+		return false
+	}
+}
+
 // publishDepths mirrors each arm's pending depth for admit and wakes an arm
 // whose depth fell below the lead. The stages call it after every Handle.
 func (s *joinSyncState) publishDepths() {
