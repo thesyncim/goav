@@ -1,6 +1,7 @@
-package goav
+package compile
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -8,16 +9,11 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-// The branches of a recipe are derived from its DAG: each root — an input's
-// selected stream or a join's output — has one branch per distinct Stream its
-// Outputs route (Outputs that differ only by trailing As names share one).
-// A branch's operations are its path from the root, so a node several
-// branches read appears in each of them: the lowering builds it once.
 
 // streamPath is one Output's chain: the graph nodes from its root to the
 // Stream it routes, and the destination nodes it goes to.
@@ -41,8 +37,8 @@ type derivedBranch struct {
 	lone  bool
 }
 
-func (s *recipeCompileState) deriveBranches() error {
-	g := s.req
+func (s *State) deriveBranches() error {
+	g := s.Req
 	var paths []streamPath
 	for _, out := range g.Outputs {
 		if g.Graph.Nodes[out.From].Kind == recipeir.NodeInput {
@@ -52,7 +48,7 @@ func (s *recipeCompileState) deriveBranches() error {
 		paths = append(paths, streamPath{nodes: g.Graph.Path(out.From), dests: out.Dests})
 	}
 	if len(s.remux) != 0 && len(paths) != 0 {
-		return streamInvalidError("", "input.To(...) copies every stream; route single streams with input.Video().To(...) instead")
+		return StreamInvalidError("", "input.To(...) copies every stream; route single streams with input.Video().To(...) instead")
 	}
 	var roots []recipeir.NodeID
 	byRoot := map[recipeir.NodeID][]streamPath{}
@@ -60,7 +56,7 @@ func (s *recipeCompileState) deriveBranches() error {
 		root := path.nodes[0]
 		switch g.Graph.Nodes[root].Kind {
 		case recipeir.NodeAnchor:
-			return streamInvalidError(g.Graph.Nodes[root].Anchor.Tap, "a stream from task.Tap, task.Track, or task.Route attaches to that running task: task.Attach(ctx, outputs...)")
+			return StreamInvalidError(g.Graph.Nodes[root].Anchor.Tap, "a stream from task.Tap, task.Track, or task.Route attaches to that running task: task.Attach(ctx, outputs...)")
 		}
 		if _, ok := byRoot[root]; !ok {
 			roots = append(roots, root)
@@ -103,7 +99,7 @@ func (s *recipeCompileState) deriveBranches() error {
 	}
 	branches := append(forks, lone...)
 	for i := range g.Inputs {
-		s.recipe.Inputs = append(s.recipe.Inputs, g.Inputs[i].IR)
+		s.Recipe.Inputs = append(s.Recipe.Inputs, g.Inputs[i].IR)
 	}
 	if err := s.assignDestinations(branches); err != nil {
 		return err
@@ -113,18 +109,18 @@ func (s *recipeCompileState) deriveBranches() error {
 		if err != nil {
 			return err
 		}
-		s.recipe.Streams = append(s.recipe.Streams, stream)
-		s.facts = append(s.facts, facts)
+		s.Recipe.Streams = append(s.Recipe.Streams, stream)
+		s.Facts = append(s.Facts, facts)
 	}
 	s.markShared()
-	for i := range s.recipe.Streams {
+	for i := range s.Recipe.Streams {
 		if err := s.validateStreamOperations(i); err != nil {
 			return err
 		}
 	}
-	s.recipe.Graph = g.Graph
-	if s.env.Present {
-		s.recipe.Policies.Realtime = s.env.Realtime || inputsLive(g.Inputs)
+	s.Recipe.Graph = g.Graph
+	if s.Env.Present {
+		s.Recipe.Policies.Realtime = s.Env.Realtime || inputsLive(g.Inputs)
 	}
 	for _, root := range rules {
 		if err := s.deriveRule(root, byRoot[root], names); err != nil {
@@ -136,11 +132,11 @@ func (s *recipeCompileState) deriveBranches() error {
 
 // rootName names a root's lone branch: the stream kind for an input's
 // stream, the join's node name for a join.
-func (s *recipeCompileState) rootName(root recipeir.NodeID) string {
+func (s *State) rootName(root recipeir.NodeID) string {
 	if name, ok := s.joinNames[root]; ok {
 		return name
 	}
-	switch s.req.Graph.Nodes[root].Select.Type {
+	switch s.Req.Graph.Nodes[root].Select.Type {
 	case av.MediaVideo:
 		return "video"
 	case av.MediaAudio:
@@ -153,12 +149,12 @@ func (s *recipeCompileState) rootName(root recipeir.NodeID) string {
 // claimJoinNames gives every join its node name: the first join of a kind
 // takes the kind (mix), later ones a suffix (mix-2), claimed depth first from
 // each root in order, so a lone join keeps its historical name.
-func (s *recipeCompileState) claimJoinNames(roots []recipeir.NodeID) {
+func (s *State) claimJoinNames(roots []recipeir.NodeID) {
 	s.joinNames = map[recipeir.NodeID]string{}
 	used := map[string]struct{}{}
 	var claim func(id recipeir.NodeID)
 	claim = func(id recipeir.NodeID) {
-		node := s.req.Graph.Nodes[id]
+		node := s.Req.Graph.Nodes[id]
 		if node.Kind != recipeir.NodeJoin {
 			for _, parent := range node.Parents {
 				claim(parent)
@@ -181,30 +177,30 @@ func (s *recipeCompileState) claimJoinNames(roots []recipeir.NodeID) {
 
 // assignDestinations orders the recipe's destinations by first use, scanning
 // the branches in order, and checks each handle's name.
-func (s *recipeCompileState) assignDestinations(branches []derivedBranch) error {
+func (s *State) assignDestinations(branches []derivedBranch) error {
 	index := map[recipeir.NodeID]int{}
 	byName := map[string]int{}
 	add := func(node recipeir.NodeID, owner string, position int) error {
 		if _, ok := index[node]; ok {
 			return nil
 		}
-		slot := s.req.Graph.Nodes[node].Output
-		dest := s.req.Dests[slot]
+		slot := s.Req.Graph.Nodes[node].Output
+		dest := s.Req.Dests[slot]
 		if dest.Invalid != "" {
-			return destinationInvalidError("build stream", firstNonEmpty(owner, "stream"), dest.Invalid)
+			return DestinationInvalidError("build stream", cmp.Or(owner, "stream"), dest.Invalid)
 		}
-		name := firstNonEmpty(dest.Label, fmt.Sprintf("%s-%d", firstNonEmpty(owner, "output"), position+1))
-		if first, ok := byName[name]; ok && !s.outputs[first].sharesGroup(dest) {
-			return destinationNameClashError(name)
+		name := cmp.Or(dest.Label, fmt.Sprintf("%s-%d", cmp.Or(owner, "output"), position+1))
+		if first, ok := byName[name]; ok && !s.Outputs[first].sharesGroup(dest) {
+			return DestinationNameClashError(name)
 		}
-		index[node] = len(s.outputs)
-		byName[name] = len(s.outputs)
-		s.outputs = append(s.outputs, dest)
+		index[node] = len(s.Outputs)
+		byName[name] = len(s.Outputs)
+		s.Outputs = append(s.Outputs, dest)
 		s.outputSlots = append(s.outputSlots, slot)
-		s.outputDestinationNames = append(s.outputDestinationNames, name)
+		s.OutputDestinationNames = append(s.OutputDestinationNames, name)
 		ir := dest.IR
 		ir.Name = name
-		s.recipe.Destinations = append(s.recipe.Destinations, ir)
+		s.Recipe.Destinations = append(s.Recipe.Destinations, ir)
 		return nil
 	}
 	for _, branch := range branches {
@@ -229,11 +225,11 @@ func (s *recipeCompileState) assignDestinations(branches []derivedBranch) error 
 // branchStream is one branch's IR: its root, its operations from the root
 // with the packet copy a never-decoded packet stream carries, and its
 // destinations.
-func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBranch) (recipeir.Stream, branchFacts, error) {
-	g := s.req
+func (s *State) branchStream(branch derivedBranch, all []derivedBranch) (recipeir.Stream, BranchFacts, error) {
+	g := s.Req
 	root := g.Graph.Nodes[branch.root]
 	stream := recipeir.Stream{Name: branch.name, Named: branch.named, Root: branch.root, Input: -1}
-	facts := branchFacts{lone: branch.lone}
+	facts := BranchFacts{lone: branch.lone}
 	switch root.Kind {
 	case recipeir.NodeSelect:
 		stream.Input = root.Input
@@ -241,18 +237,18 @@ func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBra
 		if len(g.Inputs) > 1 {
 			stream.Selector.Input = g.Inputs[root.Input].Name
 		}
-		facts.frames = g.Inputs[root.Input].Frames
+		facts.Frames = g.Inputs[root.Input].Frames
 	case recipeir.NodeJoin:
-		facts.frames = joinOutputFrames(g, branch.root)
+		facts.Frames = joinOutputFrames(g, branch.root)
 	}
 	ops := branch.leaf.nodes[1:]
 	decodes := g.Graph.HasOp(ops, plan.OpDecode)
-	if !facts.frames && !decodes && (root.Kind == recipeir.NodeSelect || !branch.lone) {
+	if !facts.Frames && !decodes && (root.Kind == recipeir.NodeSelect || !branch.lone) {
 		key := fmt.Sprintf("copy@%d", branch.root)
 		if !s.rootCopiesOnly(branch.root, all) {
 			key = fmt.Sprintf("copy@%d/%s", branch.root, branch.name)
 		}
-		stream.Operations = append(stream.Operations, s.insertedOperation(key, branch.root, opCopy()))
+		stream.Operations = append(stream.Operations, s.insertedOperation(key, branch.root, OpCopy()))
 	}
 	for _, id := range ops {
 		operation := g.Graph.Nodes[id].Op
@@ -267,17 +263,17 @@ func (s *recipeCompileState) branchStream(branch derivedBranch, all []derivedBra
 		stream.Buffer = buffer.Buffer
 	}
 	for _, dest := range branch.leaf.dests {
-		facts.dests = append(facts.dests, s.destIndex[dest])
-		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(s.outputDestinationNames[s.destIndex[dest]]))
+		facts.Dests = append(facts.Dests, s.destIndex[dest])
+		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(s.OutputDestinationNames[s.destIndex[dest]]))
 	}
 	return stream, facts, nil
 }
 
 // rootCopiesOnly reports a packet root none of whose branches decode: its
 // branches share one packet copy.
-func (s *recipeCompileState) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) bool {
+func (s *State) rootCopiesOnly(root recipeir.NodeID, branches []derivedBranch) bool {
 	for _, branch := range branches {
-		if branch.root == root && s.req.Graph.HasOp(branch.leaf.nodes[1:], plan.OpDecode) {
+		if branch.root == root && s.Req.Graph.HasOp(branch.leaf.nodes[1:], plan.OpDecode) {
 			return false
 		}
 	}
@@ -286,27 +282,27 @@ func (s *recipeCompileState) rootCopiesOnly(root recipeir.NodeID, branches []der
 
 // insertedOperation is an operation the planner adds, on a node of its own:
 // the same key, from any branch, is the same node.
-func (s *recipeCompileState) insertedOperation(key string, parent recipeir.NodeID, operation recipeir.Operation) recipeir.Operation {
-	id, ok := s.inserted[key]
+func (s *State) insertedOperation(key string, parent recipeir.NodeID, operation recipeir.Operation) recipeir.Operation {
+	id, ok := s.Inserted[key]
 	if !ok {
-		id = recipeir.NodeID(len(s.req.Graph.Nodes))
-		s.req.Graph.Nodes = append(s.req.Graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
-		s.inserted[key] = id
+		id = recipeir.NodeID(len(s.Req.Graph.Nodes))
+		s.Req.Graph.Nodes = append(s.Req.Graph.Nodes, recipeir.Node{Kind: recipeir.NodeOp, Parents: []recipeir.NodeID{parent}, Op: operation})
+		s.Inserted[key] = id
 	}
 	operation.Node = id
 	return operation
 }
 
 // markShared marks each operation whose node serves several branches.
-func (s *recipeCompileState) markShared() {
+func (s *State) markShared() {
 	count := map[recipeir.NodeID]int{}
-	for i := range s.recipe.Streams {
-		for _, operation := range s.recipe.Streams[i].Operations {
+	for i := range s.Recipe.Streams {
+		for _, operation := range s.Recipe.Streams[i].Operations {
 			count[operation.Node]++
 		}
 	}
-	for i := range s.recipe.Streams {
-		operations := s.recipe.Streams[i].Operations
+	for i := range s.Recipe.Streams {
+		operations := s.Recipe.Streams[i].Operations
 		for j := range operations {
 			operations[j].Shared = count[operations[j].Node] > 1
 		}
@@ -376,14 +372,14 @@ func workLeaf(g recipeir.Graph, nodes []recipeir.NodeID) recipeir.NodeID {
 // joinOutputFrames reports whether a join emits frames: Mix and Composite do;
 // Select and custom joins forward their first input's domain unless the
 // custom stage declares its output.
-func joinOutputFrames(req *compileRequest, joinID recipeir.NodeID) bool {
+func joinOutputFrames(req *Request, joinID recipeir.NodeID) bool {
 	node := req.Graph.Nodes[joinID]
-	switch joinKind(node.Join.Kind) {
-	case joinMix, joinComposite:
+	switch JoinKind(node.Join.Kind) {
+	case JoinMix, JoinComposite:
 		return true
 	}
 	if node.Join.Stage != nil {
-		if profile, err := customJoinProfile(&customJoinSpec{name: node.Join.Kind, stage: node.Join.Stage}); err == nil && profile.decodeArms {
+		if profile, err := CustomJoinProfile(&CustomJoinSpec{Name: node.Join.Kind, Stage: node.Join.Stage}); err == nil && profile.DecodeArms {
 			return true
 		}
 	}
@@ -394,7 +390,7 @@ func joinOutputFrames(req *compileRequest, joinID recipeir.NodeID) bool {
 }
 
 // endsFrames reports whether a stream carries frames at its end.
-func endsFrames(req *compileRequest, id recipeir.NodeID) bool {
+func endsFrames(req *Request, id recipeir.NodeID) bool {
 	nodes := req.Graph.Path(id)
 	frames := true
 	switch root := req.Graph.Nodes[nodes[0]]; root.Kind {
@@ -430,7 +426,7 @@ func newStreamBranchNames() *streamBranchNames {
 	return &streamBranchNames{counts: map[string]int{}, explicit: map[string]bool{}}
 }
 
-func (n *streamBranchNames) next(req *compileRequest, leaf leafGroup) string {
+func (n *streamBranchNames) next(req *Request, leaf leafGroup) string {
 	name := ""
 	for i := len(leaf.nodes) - 1; i >= 0 && name == ""; i-- {
 		if op := req.Graph.Nodes[leaf.nodes[i]].Op; op.Kind == recipeir.OpName {
@@ -458,58 +454,56 @@ func (n *streamBranchNames) next(req *compileRequest, leaf leafGroup) string {
 }
 
 func streamNameDuplicateError(name string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(streamInvalidCode),
-		Code:      streamInvalidCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.StreamInvalidCode),
+		Code:      builderr.StreamInvalidCode,
 		Operation: "build recipe",
 		Node:      name,
 		Reason:    fmt.Sprintf("two forks are named %q", name),
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"give each fork its own name: .As(\"hd\") and .As(\"sd\")",
 			"route one fork to several destinations with .To(a, b) instead of naming two forks alike",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
-func streamInvalidError(node string, reason string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(streamInvalidCode),
-		Code:      streamInvalidCode,
+func StreamInvalidError(node string, reason string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.StreamInvalidCode),
+		Code:      builderr.StreamInvalidCode,
 		Operation: "build recipe",
 		Node:      node,
 		Reason:    reason,
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
 			"route every stream with .To(destination) and pass the Outputs to rt.Run(ctx, outputs...)",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
-func streamSyncByPTSError() error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(streamInvalidCode),
-		Code:      streamInvalidCode,
+func StreamSyncByPTSError() error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.StreamInvalidCode),
+		Code:      builderr.StreamInvalidCode,
 		Operation: "build recipe",
 		Reason:    "SyncByPTS aligns a Mix or Composite's inputs; call it on goav.Mix(...) or goav.Composite(...) output",
-		fixes:     buildErrorFixes([]string{"goav.Mix(a, b).SyncByPTS()", "goav.Composite(a, goav.At(b, x, y)).SyncByPTS()"}),
-		cause:     errUnsupportedBuild,
+		Fixes:     builderr.Fixes([]string{"goav.Mix(a, b).SyncByPTS()", "goav.Composite(a, goav.At(b, x, y)).SyncByPTS()"}),
+		Cause:     builderr.ErrUnsupportedBuild,
 	}
 }
-
-// --- the validator ---
 
 // validateStreamOperations is the one validator over a branch's operations:
 // it walks them from the root tracking the stream's domain and refuses an
 // operation its stream cannot feed. It also fixes each tap's domain and
 // position, which follow where the tap is.
-func (s *recipeCompileState) validateStreamOperations(index int) error {
-	stream := &s.recipe.Streams[index]
-	frames := s.facts[index].frames
+func (s *State) validateStreamOperations(index int) error {
+	stream := &s.Recipe.Streams[index]
+	frames := s.Facts[index].Frames
 	return validateBranchOperations(stream, frames, frames && stream.Input >= 0, s.nodeShared)
 }
 
@@ -570,11 +564,11 @@ func validateBranchOperations(stream *recipeir.Stream, frames bool, frameSource 
 			encoded, encode, frames = true, op.Encode, false
 		case plan.OpTransform:
 			step := string(op.Transform.Kind)
-			if err := frameStep(firstNonEmpty(step, "transform")); err != nil {
+			if err := frameStep(cmp.Or(step, "transform")); err != nil {
 				return err
 			}
 		case plan.OpStage:
-			if err := validateStageComponent(op.Stage); err != nil {
+			if err := ValidateStageComponent(op.Stage); err != nil {
 				return streamStageMissingError(node, err)
 			}
 			if stageRequiresFrameInput(op.Stage) {
@@ -591,7 +585,7 @@ func validateBranchOperations(stream *recipeir.Stream, frames bool, frameSource 
 			if op.Tap.Name == "" {
 				return tapNameEmptyError(operation, node)
 			}
-			op.Tap.MediaKind = firstNonEmptyMedia(op.Tap.MediaKind, stream.Selector.Type)
+			op.Tap.MediaKind = FirstNonEmptyMedia(op.Tap.MediaKind, stream.Selector.Type)
 			op.Tap.Domain = shape.DomainPacket
 			if frames {
 				op.Tap.Domain = shape.DomainFrame
@@ -602,7 +596,7 @@ func validateBranchOperations(stream *recipeir.Stream, frames bool, frameSource 
 			}
 			continue
 		case recipeir.OpBuffer:
-			if err := validateBranchBuffer(op.Buffer, operation, node); err != nil {
+			if err := ValidateBranchBuffer(op.Buffer, operation, node); err != nil {
 				return err
 			}
 			continue
@@ -614,10 +608,10 @@ func validateBranchOperations(stream *recipeir.Stream, frames bool, frameSource 
 	return validateStreamDestinations(*stream)
 }
 
-func (s *recipeCompileState) nodeShared(id recipeir.NodeID) bool {
+func (s *State) nodeShared(id recipeir.NodeID) bool {
 	count := 0
-	for i := range s.recipe.Streams {
-		for _, operation := range s.recipe.Streams[i].Operations {
+	for i := range s.Recipe.Streams {
+		for _, operation := range s.Recipe.Streams[i].Operations {
 			if operation.Node == id {
 				count++
 				break
@@ -641,108 +635,108 @@ func validateStreamDestinations(stream recipeir.Stream) error {
 }
 
 func tapNameEmptyError(operation string, node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(errcode.TapInvalid),
 		Code:      errcode.TapInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    "tap name is empty",
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"call .Tap(\"video.decoded\") or another stable, non-empty tap name",
 			"omit .Tap(...) when no runtime branch should attach at that point",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 func streamStageMissingError(name string, cause error) error {
 	if cause == nil {
-		cause = errNilStage
+		cause = ErrNilStage
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(stageMissingCode),
-		Code:      stageMissingCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.StageMissingCode),
+		Code:      builderr.StageMissingCode,
 		Operation: "build stream",
 		Node:      name,
 		Reason:    "custom stream stage is nil",
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"pass a non-nil stage to .Do(stage)",
 			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
 		}),
-		cause: cause,
+		Cause: cause,
 	}
 }
 
 func mixedStreamOutputError(operation string, name string, media av.MediaType) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(outputKindMixedCode),
-		Code:      outputKindMixedCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.OutputKindMixedCode),
+		Code:      builderr.OutputKindMixedCode,
 		Operation: operation,
 		Node:      name,
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
-			"call " + encodeHint(media) + " before .To(goav.Write(...)) for encoded output",
+			"call " + builderr.EncodeHint(media) + " before .To(goav.Write(...)) for encoded output",
 			"fork the decoded Stream for separate outputs: v.To(goav.Sink(...)), v.Encode(...).To(goav.Write(...))",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 func streamEncodeMissingError(operation string, name string, media av.MediaType) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(encodeMissingCode),
-		Code:      encodeMissingCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.EncodeMissingCode),
+		Code:      builderr.EncodeMissingCode,
 		Operation: operation,
 		Node:      name,
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
-		fields:    errDetails(errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(media)).String()), errDetail("actual_shape", shape.Frame(media).String())),
-		fixes: buildErrorFixes([]string{
-			"call " + encodeHint(media) + " before .To(goav.Write(...))",
+		Details:   builderr.Details(builderr.KV("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(media)).String()), builderr.KV("actual_shape", shape.Frame(media).String())),
+		Fixes: builderr.Fixes([]string{
+			"call " + builderr.EncodeHint(media) + " before .To(goav.Write(...))",
 			"send decoded frames to goav.Sink(...)",
 			"leave out .Decode() to copy the packets: input.Video().To(output)",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 func duplicateBranchDestinationError(name string, target string, firstIndex int, secondIndex int) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(destinationDuplicateCode),
-		Code:      destinationDuplicateCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.DestinationDuplicateCode),
+		Code:      builderr.DestinationDuplicateCode,
 		Operation: "build recipe",
 		Node:      name,
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),
-		fields:    errDetails(errNote(fmt.Sprintf("first destination index: %d", firstIndex)), errNote(fmt.Sprintf("second destination index: %d", secondIndex))),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.Details(builderr.Note(fmt.Sprintf("first destination index: %d", firstIndex)), builderr.Note(fmt.Sprintf("second destination index: %d", secondIndex))),
+		Fixes: builderr.Fixes([]string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
 			"reuse one destination value instead of constructing the same name twice",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 // destinationNameClashError refuses two destinations one name labels apart:
 // copies of one handle that disagree, or distinct handles that share a name.
-func destinationNameClashError(name string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(destinationDuplicateCode),
-		Code:      destinationDuplicateCode,
+func DestinationNameClashError(name string) error {
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.DestinationDuplicateCode),
+		Code:      builderr.DestinationDuplicateCode,
 		Operation: "build recipe",
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"pass the same destination value to every stream that should share one output",
 			"give separate destinations distinct names, for a sink with goav.Name(...)",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }

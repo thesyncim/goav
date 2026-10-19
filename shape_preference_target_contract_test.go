@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -28,7 +29,7 @@ func TestPreferredConversionTargetOverlaysOnlyOpenAudioFacts(t *testing.T) {
 	want := expected
 	want.Channels = 6
 
-	if got := preferredConversionTarget(av.MediaAudio, expected, preference); !reflect.DeepEqual(got, want) {
+	if got := compile.PreferredConversionTarget(av.MediaAudio, expected, preference); !reflect.DeepEqual(got, want) {
 		t.Fatalf("preferred audio target = %+v, want %+v", got, want)
 	}
 
@@ -37,7 +38,7 @@ func TestPreferredConversionTargetOverlaysOnlyOpenAudioFacts(t *testing.T) {
 	want.SampleRate = 44_100
 	want.SampleFormat = av.SampleFormatF32
 
-	if got := preferredConversionTarget(av.MediaAudio, expected, preference); !reflect.DeepEqual(got, want) {
+	if got := compile.PreferredConversionTarget(av.MediaAudio, expected, preference); !reflect.DeepEqual(got, want) {
 		t.Fatalf("preferred audio target with open rate/format = %+v, want %+v", got, want)
 	}
 }
@@ -63,7 +64,7 @@ func TestPreferredConversionTargetOverlaysOnlyOpenVideoFacts(t *testing.T) {
 	want.Height = 180
 	want.PixelFormat = av.PixelFormatI420
 
-	if got := preferredConversionTarget(av.MediaVideo, expected, preference); !reflect.DeepEqual(got, want) {
+	if got := compile.PreferredConversionTarget(av.MediaVideo, expected, preference); !reflect.DeepEqual(got, want) {
 		t.Fatalf("preferred video target = %+v, want %+v", got, want)
 	}
 
@@ -71,7 +72,7 @@ func TestPreferredConversionTargetOverlaysOnlyOpenVideoFacts(t *testing.T) {
 	want = expected
 	want.Width = 320
 
-	if got := preferredConversionTarget(av.MediaVideo, expected, preference); !reflect.DeepEqual(got, want) {
+	if got := compile.PreferredConversionTarget(av.MediaVideo, expected, preference); !reflect.DeepEqual(got, want) {
 		t.Fatalf("preferred video target with open width = %+v, want %+v", got, want)
 	}
 }
@@ -90,7 +91,7 @@ func TestPreferredConversionTargetIgnoresUnknownMedia(t *testing.T) {
 		shape.Realtime(true),
 	)
 
-	if got := preferredConversionTarget("", expected, preference); !reflect.DeepEqual(got, expected) {
+	if got := compile.PreferredConversionTarget("", expected, preference); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("unknown-media target = %+v, want unchanged %+v", got, expected)
 	}
 }

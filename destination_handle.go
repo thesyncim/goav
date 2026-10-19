@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -110,39 +109,6 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
-func duplicateBranchDecodeError(node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(branchDecodeDuplicateCode),
-		Code:      branchDecodeDuplicateCode,
-		Operation: "build branch",
-		Node:      node,
-		Reason:    "branch already decodes its input packets",
-		fixes: buildErrorFixes([]string{
-			"call .Decode() once before frame operations",
-			"remove the second .Decode() call",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func branchDecodeDomainError(node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(branchDecodeDomainMismatchCode),
-		Code:      branchDecodeDomainMismatchCode,
-		Operation: "build branches",
-		Node:      node,
-		Reason:    "branch decoding requires a packet-domain stream point",
-		fixes: buildErrorFixes([]string{
-			"omit .Decode() when the fork already starts after the stream's .Decode()",
-			"fork before .Decode() when a packet copy and a decoding fork share the stream: s := in.Video()",
-			"attach runtime decode branches from packet taps",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
 func cloneDestinationRef(ref destinationRef) destinationRef {
 	ref.dest = cloneDestinationSpec(ref.dest)
 	return ref
@@ -150,25 +116,4 @@ func cloneDestinationRef(ref destinationRef) destinationRef {
 
 func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 	return dest
-}
-
-func branchDestinationInvalidError(name string, reason string) error {
-	return destinationInvalidError("build branch", firstNonEmpty(name, "branch"), reason)
-}
-
-func destinationInvalidError(operation string, node string, reason string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(destinationInvalidCode),
-		Code:      destinationInvalidCode,
-		Operation: operation,
-		Node:      node,
-		Reason:    reason,
-		fixes: buildErrorFixes([]string{
-			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
-			"pass one destination value to every chain that should share it",
-			"use distinct destination values for independent outputs",
-		}),
-		cause: errUnsupportedBuild,
-	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 )
@@ -149,7 +150,7 @@ func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	}
 }
 
-func graphPlanOperationKindPresent(operations []workOperation, kind plan.OperationKind) bool {
+func graphPlanOperationKindPresent(operations []compile.WorkOperation, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -158,7 +159,7 @@ func graphPlanOperationKindPresent(operations []workOperation, kind plan.Operati
 	return false
 }
 
-func graphPlanOperationNodePresent(operations []workOperation, node pipeline.NodeRef) bool {
+func graphPlanOperationNodePresent(operations []compile.WorkOperation, node pipeline.NodeRef) bool {
 	for i := range operations {
 		if operations[i].Node == node {
 			return true
@@ -167,8 +168,8 @@ func graphPlanOperationNodePresent(operations []workOperation, node pipeline.Nod
 	return false
 }
 
-func graphPlanOperationTargetPresent(operations []workOperation, target string) bool {
-	id := workDestinationID(target)
+func graphPlanOperationTargetPresent(operations []compile.WorkOperation, target string) bool {
+	id := compile.WorkDestinationID(target)
 	for i := range operations {
 		if slices.Contains(operations[i].Destinations, id) {
 			return true

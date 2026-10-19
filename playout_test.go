@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -428,7 +429,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 	}
 	var budgets []plan.Decision
 	for _, decision := range report.Decisions {
-		if decision.Code == diagnosticPathLatencyBudget {
+		if decision.Code == compile.DiagnosticPathLatencyBudget {
 			budgets = append(budgets, decision)
 		}
 	}
@@ -458,7 +459,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, decision := range ungated.Decisions {
-		if decision.Code == diagnosticPathLatencyBudget {
+		if decision.Code == compile.DiagnosticPathLatencyBudget {
 			t.Fatalf("ungated path reported a latency budget: %+v", decision)
 		}
 	}

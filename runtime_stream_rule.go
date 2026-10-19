@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -305,7 +306,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 			},
 			Operations: spec.operations,
 		}
-		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime.compileEnv(), planned, initial)
+		solved, _, err := refuse2(compile.SolveRecipeIROperationShapes("attach runtime branch", t.runtime.compileEnv(), planned, initial))
 		if err != nil {
 			return nil, err
 		}
@@ -415,5 +416,5 @@ func streamRuleBranchNames(rule streamRule) string {
 	return names
 }
 
-var errStreamRuleStreamID = streamRuleInvalidError("", "discovered stream has no id",
-	"set Stream.ID (or Event.StreamID) on av.EventStreamAdded announces")
+var errStreamRuleStreamID = publicError(compile.StreamRuleInvalidError("", "discovered stream has no id",
+	"set Stream.ID (or Event.StreamID) on av.EventStreamAdded announces"))

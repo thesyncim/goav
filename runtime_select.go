@@ -2,9 +2,9 @@ package goav
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -74,12 +74,12 @@ func (s *streamSelectStage) matchesEvent(event *av.Event) bool {
 	}
 	next := selectStreamWithCodecChangedEvent(s.stream, event)
 	if event.StreamID == "" || event.StreamID == s.stream.ID {
-		if streamMatchesSelector(next, s.selector) {
+		if compile.StreamMatchesSelector(next, s.selector) {
 			s.stream = next
 		}
 		return true
 	}
-	if !streamMatchesSelector(next, s.selector) {
+	if !compile.StreamMatchesSelector(next, s.selector) {
 		return false
 	}
 	s.stream = next
@@ -117,23 +117,4 @@ func selectStreamWithCodecChangedEvent(stream av.Stream, event *av.Event) av.Str
 		next.Epoch = event.Epoch
 	}
 	return next
-}
-
-func selectNodeName(selector av.StreamSelector) string {
-	if selector.Name != "" {
-		return "select-" + selector.Name
-	}
-	if selector.ID != "" {
-		return "select-" + string(selector.ID)
-	}
-	if selector.Codec != "" {
-		return "select-" + string(selector.Codec)
-	}
-	if selector.Type != "" {
-		return "select-" + string(selector.Type)
-	}
-	if selectorHasIndex(selector) {
-		return "select-" + strconv.Itoa(selector.Index)
-	}
-	return "select"
 }

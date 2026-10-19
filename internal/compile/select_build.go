@@ -1,4 +1,4 @@
-package goav
+package compile
 
 import (
 	"github.com/thesyncim/goav/av"
@@ -8,7 +8,7 @@ import (
 // selectBufferCapacity sizes the non-lossy queues on the Select graph. It is small
 // — a passthrough switch holds no real backlog — but large enough that an injected
 // SelectActive control rides alongside live arm traffic without forcing a stall.
-const selectBufferCapacity = 32
+const SelectBufferCapacity = 32
 
 // selectJoinProfile is Select's entry in the join table: media-agnostic
 // passthrough arms (the zero media selector picks each arm's single stream, so a
@@ -20,14 +20,14 @@ var selectJoinProfile = joinProfile{
 	// runtime buffer would build a direct graph with no injector, so default it
 	// to a non-lossy buffered policy. An explicitly configured buffer is
 	// honoured as-is.
-	graphBuffer: &pipeline.BufferPolicy{Capacity: selectBufferCapacity, Drop: pipeline.DropBlock},
+	graphBuffer: &pipeline.BufferPolicy{Capacity: SelectBufferCapacity, Drop: pipeline.DropBlock},
 	// The switched output is the first arm's stream forwarded as-is under the
 	// selector's output id (its planned node name) — Select is passthrough, so
 	// the arm's codec and format facts describe the joined stream. A nested
 	// join arm contributes its joined stream the same way.
-	joinedStream: func(p *joinPlan) av.Stream {
-		stream := p.arms[0].joinStream()
-		stream.ID = av.StreamID(p.name)
+	joinedStream: func(p *JoinPlan) av.Stream {
+		stream := p.Arms[0].joinStream()
+		stream.ID = av.StreamID(p.Name)
 		return stream
 	},
 	sinkOnlyReason: "select to a non-Sink destination is not supported yet",

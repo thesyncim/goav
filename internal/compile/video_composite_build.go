@@ -1,4 +1,4 @@
-package goav
+package compile
 
 import (
 	"github.com/thesyncim/goav/av"
@@ -19,35 +19,35 @@ type compositeRegion struct {
 var compositeJoinProfile = joinProfile{
 	placesArms: true,
 	media:      av.MediaVideo,
-	decodeArms: true,
+	DecodeArms: true,
 	graphBuffer: &pipeline.BufferPolicy{
-		Capacity: realtimeRecipeBufferCapacity,
+		Capacity: RealtimeRecipeBufferCapacity,
 		Drop:     pipeline.DropBlock,
 	},
 	graphBufferRealtimeOnly: true,
 	// Each arm places its frame on the canvas at its declared Region — a chain
 	// arm's .Region(x, y) or a nested composite's — defaulting to the top-left
 	// corner {0,0}.
-	planArm: func(p *joinPlan, arm joinArmSnapshot, _ av.Stream) (*joinArmStagePlan, error) {
-		layout := compositeLayout{}
+	planArm: func(p *JoinPlan, arm joinArmSnapshot, _ av.Stream) (*joinArmStagePlan, error) {
+		layout := CompositeLayout{}
 		if arm.region != nil {
-			layout = compositeLayout{X: arm.region.x, Y: arm.region.y}
+			layout = CompositeLayout{X: arm.region.x, Y: arm.region.y}
 		}
-		p.layouts = append(p.layouts, layout)
+		p.Layouts = append(p.Layouts, layout)
 		return nil, nil
 	},
 	// The canvas takes each arm at its own size; an arm whose format is known
 	// only once it opens converts to I420 at run time.
-	conformTarget: func(*joinPlan, av.Stream) shape.Spec {
+	ConformTarget: func(*JoinPlan, av.Stream) shape.Spec {
 		return shape.Frame(av.MediaVideo, shape.Video(0, 0, av.PixelFormatI420))
 	},
 	// The output id is the join's planned node name (composite, or composite-2
 	// when nested); the geometry facts are the full Region bounding box over
 	// all arms, not the first arm's tile.
-	joinedStream: func(p *joinPlan) av.Stream {
+	joinedStream: func(p *JoinPlan) av.Stream {
 		spec := compositeJoinedOutputShape(p)
 		return av.Stream{
-			ID:   av.StreamID(p.name),
+			ID:   av.StreamID(p.Name),
 			Type: av.MediaVideo,
 			Codec: av.CodecParameters{
 				Type:        av.MediaVideo,
@@ -64,17 +64,17 @@ var compositeJoinProfile = joinProfile{
 	},
 }
 
-func compositeJoinedOutputShape(p *joinPlan) shape.Spec {
-	if p == nil || len(p.arms) == 0 {
+func compositeJoinedOutputShape(p *JoinPlan) shape.Spec {
+	if p == nil || len(p.Arms) == 0 {
 		return shape.Frame(av.MediaVideo)
 	}
-	spec := shape.Frame(av.MediaVideo, shape.Stream(av.StreamID(p.name)))
+	spec := shape.Frame(av.MediaVideo, shape.Stream(av.StreamID(p.Name)))
 	canvasW, canvasH := 0, 0
 	missingGeometry := false
 	missingPixelFormat := false
 	unsupportedPixelFormat := ""
-	for i := range p.arms {
-		arm := compositeArmFrameShape(p.arms[i])
+	for i := range p.Arms {
+		arm := compositeArmFrameShape(p.Arms[i])
 		if arm.Width <= 0 || arm.Height <= 0 {
 			missingGeometry = true
 		} else {
@@ -107,16 +107,16 @@ func compositeJoinedOutputShape(p *joinPlan) shape.Spec {
 	return spec
 }
 
-func compositeArmFrameShape(arm joinArmPlan) shape.Spec {
+func compositeArmFrameShape(arm JoinArmPlan) shape.Spec {
 	if arm.sub != nil && !arm.late {
-		return shape.FromStream(arm.sub.joined, arm.sub.joinedDomain)
+		return shape.FromStream(arm.sub.Joined, arm.sub.joinedDomain)
 	}
 	return shape.FromStream(arm.joinStream(), shape.DomainFrame)
 }
 
-func compositeArmLayout(p *joinPlan, index int) compositeLayout {
-	if p == nil || index < 0 || index >= len(p.layouts) {
-		return compositeLayout{}
+func compositeArmLayout(p *JoinPlan, index int) CompositeLayout {
+	if p == nil || index < 0 || index >= len(p.Layouts) {
+		return CompositeLayout{}
 	}
-	return p.layouts[index]
+	return p.Layouts[index]
 }

@@ -1,34 +1,27 @@
-package goav
+package compile
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
-// The shape solver is the upgrade of the validate-only shape walk: it
-// propagates the media shape across a chain's canonical operation list and,
-// where an operation pins format facts the current media does not satisfy,
-// consults the chain's .Auto(...) policy. An allowed conversion is planned as a
-// REAL plan.OpTransform operation — selected from the runtime's filter registry by
-// capability delta — inserted into the operation list, and recorded as a plan
-// diagnostic. Anything not allowed fails before any resource opens, with the
-// exact policy (or missing registration) to add.
-
 // shapeConversionPlan is one planned automatic conversion: the synthesized
 // transform operation, the registry adapter that performs it, the conversion
 // classes it needed, and the human delta for errors and diagnostics.
 type shapeConversionPlan struct {
 	operation recipeir.Operation
-	transform recipeir.Transform
-	factory   string
+	Transform recipeir.Transform
+	Factory   string
 	needed    shape.Policy
 	detail    string
 }
@@ -36,19 +29,19 @@ type shapeConversionPlan struct {
 // solveRecipeIROperationShapes walks one stream chain's operations with the shape
 // solver. It returns the solved operation list (nil when nothing was inserted)
 // and one diagnostic per insertion.
-func solveRecipeIROperationShapes(operation string, env compileEnv, stream recipeir.Stream, initial shape.Spec) ([]recipeir.Operation, []plan.Diagnostic, error) {
+func SolveRecipeIROperationShapes(operation string, env Env, stream recipeir.Stream, initial shape.Spec) ([]recipeir.Operation, []plan.Diagnostic, error) {
 	if !env.Present {
 		// No bundled runtime (expert or test states): keep the validate-only walk.
-		return nil, nil, validateRecipeIROperationShapes(operation, stream, stream.Operations, initial)
+		return nil, nil, ValidateRecipeIROperationShapes(operation, stream, stream.Operations, initial)
 	}
-	current := normalizeTapShape(initial)
+	current := NormalizeTapShape(initial)
 	if current.MediaKind == "" {
 		current.MediaKind = stream.Selector.Type
 	}
 	if current.Codec == "" {
 		current.Codec = stream.Selector.Codec
 	}
-	node := firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
+	node := cmp.Or(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
 	policy, policyActive := recipeIRChainAutoPolicy(stream.Operations)
 	preference, preferenceActive := recipeIRChainPreference(stream.Operations)
 	solved := make([]recipeir.Operation, 0, len(stream.Operations)+1)
@@ -60,20 +53,20 @@ func solveRecipeIROperationShapes(operation string, env compileEnv, stream recip
 		// .Require(...) assertion falls through to the contract check below.
 		if next.Kind == plan.OpTap {
 			solved = append(solved, next)
-			current = recipeIROperationOutputShape(current, next)
+			current = RecipeIROperationOutputShape(current, next)
 			continue
 		}
 		if next.Kind == plan.OpShape && next.Require == nil {
-			if err := validateShapeAnnotationDomain(operation, node, i, current, next.Shape); err != nil {
+			if err := ValidateShapeAnnotationDomain(operation, node, i, current, next.Shape); err != nil {
 				return nil, nil, err
 			}
 			solved = append(solved, next)
-			current = recipeIROperationOutputShape(current, next)
+			current = RecipeIROperationOutputShape(current, next)
 			continue
 		}
-		expected := recipeIROperationInputShapes(next)
+		expected := RecipeIROperationInputShapes(next)
 		if len(expected) != 0 && !expected.Accepts(current) {
-			target, fixable := shapeConversionTargetFromSet(current, expected)
+			target, fixable := ShapeConversionTargetFromSet(current, expected)
 			if !fixable {
 				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
@@ -93,7 +86,7 @@ func solveRecipeIROperationShapes(operation string, env compileEnv, stream recip
 			if !policy.Covers(conversion.needed) {
 				return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, target)
 			}
-			after := recipeIROperationOutputShape(current, conversion.operation)
+			after := RecipeIROperationOutputShape(current, conversion.operation)
 			if !expected.Accepts(after) {
 				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
@@ -108,7 +101,7 @@ func solveRecipeIROperationShapes(operation string, env compileEnv, stream recip
 		}
 		if policyActive {
 			desired := recipeIROperationSoftInputShape(next)
-			if !mediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
+			if !MediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
 				conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, desired, env.Realtime, policy, preference, preferenceActive, node)
 				if err != nil {
 					return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, desired, err)
@@ -123,12 +116,12 @@ func solveRecipeIROperationShapes(operation string, env compileEnv, stream recip
 					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, desired))
 					diagnostics = append(diagnostics, prefDiags...)
 					inserted = true
-					current = recipeIROperationOutputShape(current, conversion.operation)
+					current = RecipeIROperationOutputShape(current, conversion.operation)
 				}
 			}
 		}
 		solved = append(solved, next)
-		current = recipeIROperationOutputShape(current, next)
+		current = RecipeIROperationOutputShape(current, next)
 	}
 	if !inserted {
 		return nil, nil, nil
@@ -173,7 +166,7 @@ func recipeIROperationSoftInputShape(operation recipeir.Operation) shape.Spec {
 		return shape.Spec{}
 	}
 	parameters := operation.Encode.Parameters
-	media := firstNonEmptyMedia(operation.Encode.Type, parameters.Type, codecMedia(operation.Encode.ID))
+	media := FirstNonEmptyMedia(operation.Encode.Type, parameters.Type, CodecMedia(operation.Encode.ID))
 	switch media {
 	case av.MediaAudio:
 		return shape.Spec{
@@ -201,7 +194,7 @@ func recipeIROperationSoftInputShape(operation recipeir.Operation) shape.Spec {
 // codec, and stream identity — only sample-rate/channel, width/height, or
 // pixel/sample format facts differ, and the conversion target must be fully
 // resolvable into explicit transform params.
-func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape.Spec, bool) {
+func ShapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape.Spec, bool) {
 	for i := range expected {
 		candidate := expected[i]
 		if candidate.Domain != "" && candidate.Domain != current.Domain {
@@ -225,8 +218,8 @@ func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape
 		if shape.Conversions(current, candidate).Empty() {
 			continue
 		}
-		media := firstNonEmptyMedia(candidate.MediaKind, current.MediaKind)
-		if _, ok := synthesizeConversionTransform(media, current, candidate); !ok {
+		media := FirstNonEmptyMedia(candidate.MediaKind, current.MediaKind)
+		if _, ok := SynthesizeConversionTransform(media, current, candidate); !ok {
 			continue
 		}
 		return candidate, true
@@ -240,7 +233,7 @@ func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape
 // completable format conversion (the caller falls back to the plain shape
 // mismatch error); adapter selection failures (none or several candidates)
 // return an error.
-func planShapeConversion(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
+func PlanShapeConversion(env Env, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
 	conversion, planned, _, err := planShapeConversionFor(env, actual, expected, realtime, shape.Spec{})
 	return conversion, planned, err
 }
@@ -249,19 +242,19 @@ func planShapeConversion(env compileEnv, actual shape.Spec, expected shape.Spec,
 // the pref spec tie-breaks otherwise-ambiguous adapter selection. resolved
 // reports whether the preference decided the choice. A zero pref is exactly
 // the plain plan.
-func planShapeConversionFor(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, bool, error) {
+func planShapeConversionFor(env Env, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, bool, error) {
 	needed := shape.Conversions(actual, expected)
 	if needed.Empty() {
 		return shapeConversionPlan{}, false, false, nil
 	}
-	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
-	transform, ok := synthesizeConversionTransform(media, actual, expected)
+	media := FirstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
+	transform, ok := SynthesizeConversionTransform(media, actual, expected)
 	if !ok {
 		return shapeConversionPlan{}, false, false, nil
 	}
 	descriptor, candidates, resolved, err := selectShapeConversionAdapter(env, media, transform, realtime, pref)
 	if err != nil {
-		return shapeConversionPlan{}, false, false, &shapeAdapterSelectionError{media: media, needed: needed, candidates: candidates, cause: err}
+		return shapeConversionPlan{}, false, false, &ShapeAdapterSelectionError{Media: media, Needed: needed, Candidates: candidates, Cause: err}
 	}
 	operation := recipeir.Operation{
 		Kind:      plan.OpTransform,
@@ -270,8 +263,8 @@ func planShapeConversionFor(env compileEnv, actual shape.Spec, expected shape.Sp
 	}
 	return shapeConversionPlan{
 		operation: operation,
-		transform: transform,
-		factory:   descriptor.Name,
+		Transform: transform,
+		Factory:   descriptor.Name,
 		needed:    needed,
 		detail:    shapeConversionDetailText(descriptor.Name, actual, transform),
 	}, true, resolved, nil
@@ -284,8 +277,8 @@ func planShapeConversionFor(env compileEnv, actual shape.Spec, expected shape.Sp
 // adapter can perform, or that has no open choice to influence is dropped (a
 // diagnostic records the drop when the plain plan proceeds). Without an
 // active preference the call is exactly planShapeConversion.
-func planShapeConversionPreferred(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
-	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
+func planShapeConversionPreferred(env Env, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
+	media := FirstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
 	custom, customPlanned, err := planCustomShapeConversion(env, actual, expected, realtime, pref)
 	if err != nil {
 		return shapeConversionPlan{}, false, nil, err
@@ -294,18 +287,18 @@ func planShapeConversionPreferred(env compileEnv, actual shape.Spec, expected sh
 	if customPlanned && (policy.Covers(custom.needed) || !policy.Covers(baseNeeded)) {
 		return custom, true, nil, nil
 	}
-	if !prefActive || mediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
-		conversion, planned, err := planShapeConversion(env, actual, expected, realtime)
+	if !prefActive || MediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
+		conversion, planned, err := PlanShapeConversion(env, actual, expected, realtime)
 		return conversion, planned, nil, err
 	}
-	basePlan, basePlanned, baseErr := planShapeConversion(env, actual, expected, realtime)
-	effective := preferredConversionTarget(media, expected, pref)
+	basePlan, basePlanned, baseErr := PlanShapeConversion(env, actual, expected, realtime)
+	effective := PreferredConversionTarget(media, expected, pref)
 	targetBias := effective != expected
 	conversion, planned, resolved, err := planShapeConversionFor(env, actual, effective, realtime, pref)
 	reason := ""
 	switch {
 	case err != nil:
-		reason = preferenceDropReason(err)
+		reason = PreferenceDropReason(err)
 	case !planned:
 		reason = "the preferred conversion cannot be planned"
 	case !policy.Covers(conversion.needed):
@@ -325,7 +318,7 @@ func planShapeConversionPreferred(env compileEnv, actual shape.Spec, expected sh
 	return basePlan, basePlanned, []plan.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
 }
 
-func planCustomShapeConversion(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, error) {
+func planCustomShapeConversion(env Env, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, error) {
 	if !env.Present || len(env.ShapeDeltas) == 0 {
 		return shapeConversionPlan{}, false, nil
 	}
@@ -349,11 +342,11 @@ func planCustomShapeConversion(env compileEnv, actual shape.Spec, expected shape
 		if planned.Needed.Empty() {
 			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d returned an empty policy", i)
 		}
-		component := firstNonEmpty(planned.Component, planned.Stage.Name())
+		component := cmp.Or(planned.Component, planned.Stage.Name())
 		if component == "" {
 			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d returned an unnamed stage", i)
 		}
-		detail := firstNonEmpty(planned.Detail, component)
+		detail := cmp.Or(planned.Detail, component)
 		return shapeConversionPlan{
 			operation: recipeir.Operation{
 				Kind:      plan.OpStage,
@@ -361,7 +354,7 @@ func planCustomShapeConversion(env compileEnv, actual shape.Spec, expected shape
 				Detail:    detail,
 				Stage:     planned.Stage,
 			},
-			factory: component,
+			Factory: component,
 			needed:  planned.Needed,
 			detail:  detail,
 		}, true, nil
@@ -374,7 +367,7 @@ func planCustomShapeConversion(env compileEnv, actual shape.Spec, expected shape
 // conversion's media. Pinned expected facts always win, and identity facts
 // (domain, media, codec, stream, container, realtime) are never taken from a
 // preference.
-func preferredConversionTarget(media av.MediaType, expected shape.Spec, pref shape.Spec) shape.Spec {
+func PreferredConversionTarget(media av.MediaType, expected shape.Spec, pref shape.Spec) shape.Spec {
 	out := expected
 	switch media {
 	case av.MediaAudio:
@@ -402,15 +395,15 @@ func preferredConversionTarget(media av.MediaType, expected shape.Spec, pref sha
 }
 
 // preferenceDropReason renders why a preferred plan could not be honored.
-func preferenceDropReason(err error) string {
-	selection, ok := err.(*shapeAdapterSelectionError)
+func PreferenceDropReason(err error) string {
+	selection, ok := err.(*ShapeAdapterSelectionError)
 	if !ok {
 		return "the preferred conversion cannot be planned"
 	}
-	switch selection.cause {
-	case errShapeAdapterAmbiguous:
-		return "several registered adapters still match under the preference: " + strings.Join(selection.candidates, ", ")
-	case errShapeAdapterMissing:
+	switch selection.Cause {
+	case ErrShapeAdapterAmbiguous:
+		return "several registered adapters still match under the preference: " + strings.Join(selection.Candidates, ", ")
+	case ErrShapeAdapterMissing:
 		return "no registered adapter can perform the preferred conversion"
 	default:
 		return selection.Error()
@@ -420,13 +413,13 @@ func preferenceDropReason(err error) string {
 // synthesizeConversionTransform builds the explicit transform config from the
 // expected shape, falling back to the actual shape for facts the expectation
 // leaves open. Targets that cannot be fully resolved are not completable.
-func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (recipeir.Transform, bool) {
+func SynthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (recipeir.Transform, bool) {
 	switch media {
 	case av.MediaAudio:
 		config := filter.ResampleConfig{
-			SampleRate:   firstPositiveInt(expected.SampleRate, actual.SampleRate),
-			Channels:     firstPositiveInt(expected.Channels, actual.Channels),
-			SampleFormat: firstNonEmpty(expected.SampleFormat, actual.SampleFormat),
+			SampleRate:   FirstPositiveInt(expected.SampleRate, actual.SampleRate),
+			Channels:     FirstPositiveInt(expected.Channels, actual.Channels),
+			SampleFormat: cmp.Or(expected.SampleFormat, actual.SampleFormat),
 		}
 		if config.SampleRate <= 0 || config.Channels <= 0 {
 			return recipeir.Transform{}, false
@@ -434,9 +427,9 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 		return recipeir.Transform{Kind: recipeir.TransformResample, Resample: config}, true
 	case av.MediaVideo:
 		config := filter.ResizeConfig{
-			Width:       firstPositiveInt(expected.Width, actual.Width),
-			Height:      firstPositiveInt(expected.Height, actual.Height),
-			PixelFormat: firstNonEmpty(expected.PixelFormat, actual.PixelFormat),
+			Width:       FirstPositiveInt(expected.Width, actual.Width),
+			Height:      FirstPositiveInt(expected.Height, actual.Height),
+			PixelFormat: cmp.Or(expected.PixelFormat, actual.PixelFormat),
 			Mode:        filter.ResizeExact,
 		}
 		if config.Width <= 0 || config.Height <= 0 {
@@ -448,20 +441,22 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 	}
 }
 
-var errShapeAdapterMissing = fmt.Errorf("goav: no conversion adapter")
-var errShapeAdapterAmbiguous = fmt.Errorf("goav: ambiguous conversion adapters")
+var ErrShapeAdapterMissing = fmt.Errorf("goav: no conversion adapter")
+
+var ErrShapeAdapterAmbiguous = fmt.Errorf("goav: ambiguous conversion adapters")
 
 // shapeAdapterSelectionError carries adapter-selection context up to the walk,
 // which renders the chain-aware BuildError.
-type shapeAdapterSelectionError struct {
-	media      av.MediaType
-	needed     shape.Policy
-	candidates []string
-	cause      error
+type ShapeAdapterSelectionError struct {
+	Media      av.MediaType
+	Needed     shape.Policy
+	Candidates []string
+	Cause      error
 }
 
-func (e *shapeAdapterSelectionError) Error() string { return e.cause.Error() }
-func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
+func (e *ShapeAdapterSelectionError) Error() string { return e.Cause.Error() }
+
+func (e *ShapeAdapterSelectionError) Unwrap() error { return e.Cause }
 
 // selectShapeConversionAdapter picks the registered filter whose declared
 // capabilities cover the synthesized conversion: matching media in and out,
@@ -470,7 +465,7 @@ func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
 // candidates remain, a non-zero pref narrows them to the adapters whose
 // declared capabilities cover the preference; resolved reports whether that
 // tie-break decided the choice. Exactly one candidate must remain.
-func selectShapeConversionAdapter(env compileEnv, media av.MediaType, transform recipeir.Transform, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
+func selectShapeConversionAdapter(env Env, media av.MediaType, transform recipeir.Transform, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
 	descriptors := env.Filters.Descriptors()
 	matched := make([]filter.Descriptor, 0, len(descriptors))
 	for i := range descriptors {
@@ -505,7 +500,7 @@ func selectShapeConversionAdapter(env compileEnv, media av.MediaType, transform 
 	}
 	switch len(matched) {
 	case 0:
-		return filter.Descriptor{}, nil, false, errShapeAdapterMissing
+		return filter.Descriptor{}, nil, false, ErrShapeAdapterMissing
 	case 1:
 		return matched[0], []string{matched[0].Name}, resolved, nil
 	default:
@@ -513,7 +508,7 @@ func selectShapeConversionAdapter(env compileEnv, media av.MediaType, transform 
 		for i := range matched {
 			names = append(names, matched[i].Name)
 		}
-		return filter.Descriptor{}, names, false, errShapeAdapterAmbiguous
+		return filter.Descriptor{}, names, false, ErrShapeAdapterAmbiguous
 	}
 }
 
@@ -546,57 +541,55 @@ func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType,
 	return narrowed
 }
 
-// --- errors and diagnostics ---
-
 // recipeIRShapeSolverAdapterError renders adapter-selection failures with the chain
 // context: which operation needed the conversion, the source and expected
 // shapes, and the registration (or disambiguation) that fixes it.
 func recipeIRShapeSolverAdapterError(operation string, node string, index int, step recipeir.Operation, actual shape.Spec, expected shape.Spec, err error) error {
-	selection, ok := err.(*shapeAdapterSelectionError)
+	selection, ok := err.(*ShapeAdapterSelectionError)
 	if !ok {
 		return err
 	}
 	details := []string{
 		fmt.Sprintf("operation_index=%d", index),
 		"operation=" + string(step.Kind),
-		"source=" + humanizeShape(actual),
+		"source=" + HumanizeShape(actual),
 		"actual_shape=" + actual.String(),
 		"expected_shape=" + expected.String(),
-		"conversion=" + selection.needed.String(),
-		"media=" + string(selection.media),
+		"conversion=" + selection.Needed.String(),
+		"media=" + string(selection.Media),
 	}
-	if selection.cause == errShapeAdapterAmbiguous {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(shapeAdapterAmbiguousCode),
-			Code:      shapeAdapterAmbiguousCode,
+	if selection.Cause == ErrShapeAdapterAmbiguous {
+		return &builderr.Refusal{
+			Phase:     builderr.PhaseBuild,
+			Family:    errcode.FamilyForCode(builderr.ShapeAdapterAmbiguousCode),
+			Code:      builderr.ShapeAdapterAmbiguousCode,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
-				selection.needed.String(), recipeIROperationLabel(step), strings.Join(selection.candidates, ", ")),
-			fields: errDetailLines(append(details, "candidates="+strings.Join(selection.candidates, ","))),
-			fixes: buildErrorFixes([]string{
-				"keep one " + string(selection.media) + " conversion filter registered per runtime",
+				selection.Needed.String(), RecipeIROperationLabel(step), strings.Join(selection.Candidates, ", ")),
+			Details: builderr.DetailLines(append(details, "candidates="+strings.Join(selection.Candidates, ","))),
+			Fixes: builderr.Fixes([]string{
+				"keep one " + string(selection.Media) + " conversion filter registered per runtime",
 				"build the runtime with only the intended conversion filter via goav.New(runconfig.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			}),
-			cause: errUnsupportedBuild,
+			Cause: builderr.ErrUnsupportedBuild,
 		}
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(shapeAdapterMissingCode),
-		Code:      shapeAdapterMissingCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.ShapeAdapterMissingCode),
+		Code:      builderr.ShapeAdapterMissingCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
-			selection.needed.String(), recipeIROperationLabel(step)),
-		fields: errDetailLines(details),
-		fixes: buildErrorFixes([]string{
-			"register a " + string(selection.media) + " conversion filter with runconfig.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
+			selection.Needed.String(), RecipeIROperationLabel(step)),
+		Details: builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
+			"register a " + string(selection.Media) + " conversion filter with runconfig.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), or goav.New(bundle.Filters(), ...) for the bundled resample and resize adapters",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
@@ -605,20 +598,20 @@ func recipeIRShapeSolverAdapterError(operation string, node string, index int, s
 // carries the source shape, the expected shape, and the exact policy to add.
 func recipeIRShapeConversionRefusedError(operation string, node string, index int, step recipeir.Operation, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(shapeConversionRefusedCode),
-		Code:      shapeConversionRefusedCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.ShapeConversionRefusedCode),
+		Code:      builderr.ShapeConversionRefusedCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
-			recipeIROperationLabel(step), conversion.detail, allowed.String()),
-		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", expected.String()), errDetail("needed", conversion.needed.String()), errDetail("allowed", allowed.String())),
-		fixes: buildErrorFixes(append(
+			RecipeIROperationLabel(step), conversion.detail, allowed.String()),
+		Details: builderr.Details(builderr.KV("operation_index", fmt.Sprintf("%d", index)), builderr.KV("operation", string(step.Kind)), builderr.KV("source", HumanizeShape(actual)), builderr.KV("actual_shape", actual.String()), builderr.KV("expected_shape", expected.String()), builderr.KV("needed", conversion.needed.String()), builderr.KV("allowed", allowed.String())),
+		Fixes: builderr.Fixes(append(
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
-			recipeIRExplicitConversionSuggestion(conversion.transform, step)...,
+			RecipeIRExplicitConversionSuggestion(conversion.Transform, step)...,
 		)),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
@@ -626,24 +619,24 @@ func recipeIRShapeConversionRefusedError(operation string, node string, index in
 // exact fix when a conversion could solve it: the .Auto(...) policy to add and
 // the explicit operation to write instead.
 func appendRecipeIRAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec, step recipeir.Operation) error {
-	buildErr, ok := err.(*BuildError)
+	buildErr, ok := err.(*builderr.Refusal)
 	if !ok || buildErr == nil {
 		return err
 	}
 	needed := shape.Conversions(actual, expected)
-	buildErr.fixes = append(buildErr.fixes,
-		buildErrorFix{Message: fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(needed.Constructors(), ", "))})
-	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
-	if transform, ok := synthesizeConversionTransform(media, actual, expected); ok {
-		buildErr.fixes = append(buildErr.fixes, buildErrorFixes(recipeIRExplicitConversionSuggestion(transform, step))...)
+	buildErr.Fixes = append(buildErr.Fixes,
+		builderr.Fix{Message: fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(needed.Constructors(), ", "))})
+	media := FirstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
+	if transform, ok := SynthesizeConversionTransform(media, actual, expected); ok {
+		buildErr.Fixes = append(buildErr.Fixes, builderr.Fixes(RecipeIRExplicitConversionSuggestion(transform, step))...)
 	}
 	return buildErr
 }
 
-func recipeIRExplicitConversionSuggestion(transform recipeir.Transform, step recipeir.Operation) []string {
+func RecipeIRExplicitConversionSuggestion(transform recipeir.Transform, step recipeir.Operation) []string {
 	target := ""
 	if step.Kind != "" {
-		target = " before " + recipeIROperationLabel(step)
+		target = " before " + RecipeIROperationLabel(step)
 	}
 	switch {
 	case transform.Kind == recipeir.TransformResample:
@@ -672,7 +665,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion s
 		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), conversion.detail),
 		Details: []string{
 			"preference=" + pref.String(),
-			"adapter=" + conversion.factory,
+			"adapter=" + conversion.Factory,
 		},
 	}
 }
@@ -692,12 +685,12 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
 func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step recipeir.Operation, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
 	return plan.Diagnostic{
-		Code:    diagnosticShapeConversionInserted,
+		Code:    DiagnosticShapeConversionInserted,
 		Node:    node,
-		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, recipeIROperationLabel(step), shapePolicyLabel(conversion.needed)),
+		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, RecipeIROperationLabel(step), shapePolicyLabel(conversion.needed)),
 		Details: []string{
-			"adapter=" + conversion.factory,
-			"source=" + humanizeShape(actual),
+			"adapter=" + conversion.Factory,
+			"source=" + HumanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + expected.String(),
 		},
@@ -719,18 +712,18 @@ func shapePolicyLabel(policy shape.Policy) string {
 
 // recipeIROperationLabel names an operation for solver errors and diagnostics:
 // "encode-opus", "decode-vp8", "stage-visualizer", "resample".
-func recipeIROperationLabel(operation recipeir.Operation) string {
+func RecipeIROperationLabel(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpEncode:
-		return "encode-" + firstNonEmpty(string(operation.Encode.ID), operation.Component, "encoder")
+		return "encode-" + cmp.Or(string(operation.Encode.ID), operation.Component, "encoder")
 	case plan.OpDecode:
-		return "decode-" + firstNonEmpty(string(operation.Decode.ID), operation.Component, "decoder")
+		return "decode-" + cmp.Or(string(operation.Decode.ID), operation.Component, "decoder")
 	case plan.OpStage:
-		return "stage-" + firstNonEmpty(operation.Component, "custom")
+		return "stage-" + cmp.Or(operation.Component, "custom")
 	case plan.OpTransform:
-		return firstNonEmpty(recipeIROperationComponent(operation), "transform")
+		return cmp.Or(recipeIROperationComponent(operation), "transform")
 	default:
-		return firstNonEmpty(operation.Component, string(operation.Kind), "operation")
+		return cmp.Or(operation.Component, string(operation.Kind), "operation")
 	}
 }
 
@@ -745,25 +738,25 @@ func shapeConversionDetailText(factory string, actual shape.Spec, transform reci
 			parts = append(parts, formatSampleRate(actual.SampleRate)+"→"+formatSampleRate(config.SampleRate))
 		}
 		if config.Channels != 0 && config.Channels != actual.Channels {
-			parts = append(parts, formatChannels(actual.Channels)+"→"+formatChannels(config.Channels))
+			parts = append(parts, FormatChannels(actual.Channels)+"→"+FormatChannels(config.Channels))
 		}
 		if config.SampleFormat != "" && config.SampleFormat != actual.SampleFormat {
-			parts = append(parts, formatMediaFormat(actual.SampleFormat)+"→"+config.SampleFormat)
+			parts = append(parts, FormatMediaFormat(actual.SampleFormat)+"→"+config.SampleFormat)
 		}
 	case transform.Kind == recipeir.TransformResize:
 		config := transform.Resize
 		if (config.Width != 0 && config.Width != actual.Width) || (config.Height != 0 && config.Height != actual.Height) {
-			parts = append(parts, formatFrameSize(actual.Width, actual.Height)+"→"+formatFrameSize(config.Width, config.Height))
+			parts = append(parts, FormatFrameSize(actual.Width, actual.Height)+"→"+FormatFrameSize(config.Width, config.Height))
 		}
 		if config.PixelFormat != "" && config.PixelFormat != actual.PixelFormat {
-			parts = append(parts, formatMediaFormat(actual.PixelFormat)+"→"+config.PixelFormat)
+			parts = append(parts, FormatMediaFormat(actual.PixelFormat)+"→"+config.PixelFormat)
 		}
 	}
 	return strings.Join(parts, " ")
 }
 
 // humanizeShape renders a Spec for error prose: "frame audio 44.1kHz 2ch s16".
-func humanizeShape(spec shape.Spec) string {
+func HumanizeShape(spec shape.Spec) string {
 	parts := make([]string, 0, 6)
 	if spec.Domain != "" {
 		parts = append(parts, string(spec.Domain))
@@ -775,13 +768,13 @@ func humanizeShape(spec shape.Spec) string {
 		parts = append(parts, formatSampleRate(spec.SampleRate))
 	}
 	if spec.Channels != 0 {
-		parts = append(parts, formatChannels(spec.Channels))
+		parts = append(parts, FormatChannels(spec.Channels))
 	}
 	if spec.SampleFormat != "" {
 		parts = append(parts, spec.SampleFormat)
 	}
 	if spec.Width != 0 || spec.Height != 0 {
-		parts = append(parts, formatFrameSize(spec.Width, spec.Height))
+		parts = append(parts, FormatFrameSize(spec.Width, spec.Height))
 	}
 	if spec.PixelFormat != "" {
 		parts = append(parts, spec.PixelFormat)
@@ -803,28 +796,28 @@ func formatSampleRate(rate int) string {
 	return strings.TrimRight(text, ".") + "kHz"
 }
 
-func formatChannels(channels int) string {
+func FormatChannels(channels int) string {
 	if channels <= 0 {
 		return "unknown channels"
 	}
 	return fmt.Sprintf("%dch", channels)
 }
 
-func formatFrameSize(width int, height int) string {
+func FormatFrameSize(width int, height int) string {
 	if width <= 0 && height <= 0 {
 		return "unknown size"
 	}
 	return fmt.Sprintf("%dx%d", width, height)
 }
 
-func formatMediaFormat(format string) string {
+func FormatMediaFormat(format string) string {
 	if format == "" {
 		return "unknown format"
 	}
 	return format
 }
 
-func firstPositiveInt(values ...int) int {
+func FirstPositiveInt(values ...int) int {
 	for i := range values {
 		if values[i] > 0 {
 			return values[i]

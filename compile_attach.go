@@ -5,6 +5,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -33,17 +34,16 @@ func (attachBranch) RebranchArg() {}
 func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 	branches, err := t.attachBranches(outs)
 	if err != nil {
-		return nil, publicError(err)
+		return nil, err
 	}
-	attachment, err := t.attach(ctx, branches...)
-	return attachment, publicError(err)
+	return t.attach(ctx, branches...)
 }
 
 // attachBranches lowers Outputs rooted at the task's taps, tracks, and routes
 // onto attach branches. A tap an earlier Output of the group declares is
 // known by the domain at its position.
 func (t *task) attachBranches(outs []Output) ([]attachBranch, error) {
-	invalid := streamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)")
+	invalid := publicError(compile.StreamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)"))
 	if len(outs) == 0 {
 		return nil, runtimeBranchInvalidError("no runtime branches to attach", "attach Outputs: task.Attach(ctx, task.Tap(name).To(destination))")
 	}
@@ -61,7 +61,7 @@ func (t *task) attachBranches(outs []Output) ([]attachBranch, error) {
 		taps[tap.Name] = tap.Domain
 	}
 	handles := g.handles(t.runtime)
-	planned, err := planAttach(g.compileRequest(handles), taps)
+	planned, err := refuse(compile.PlanAttach(g.compileRequest(handles), taps))
 	if err != nil {
 		return nil, err
 	}
@@ -95,16 +95,16 @@ func (g *recipeGraph) anchorSource(anchor recipeir.NodeID, taps map[string]shape
 
 // attachBranch binds a planned branch to the task: its anchor and its
 // destination handles.
-func (h *compileHandles) attachBranch(plan attachBranchPlan, source branchSourceBinding) attachBranch {
+func (h *compileHandles) attachBranch(plan compile.AttachBranchPlan, source branchSourceBinding) attachBranch {
 	branch := attachBranch{
-		name:       plan.name,
-		media:      plan.media,
+		name:       plan.Name,
+		media:      plan.Media,
 		source:     source,
-		operations: plan.operations,
-		buffer:     plan.buffer,
+		operations: plan.Operations,
+		buffer:     plan.Buffer,
 	}
-	for _, dest := range plan.dests {
-		branch.dests = append(branch.dests, newDirectDestinationRef(dest.name, h.dests[dest.slot]))
+	for _, dest := range plan.Dests {
+		branch.dests = append(branch.dests, newDirectDestinationRef(dest.Name, h.dests[dest.Slot]))
 	}
 	return branch
 }
@@ -148,11 +148,11 @@ type streamRule struct {
 }
 
 // streamRules binds the planned rules to the recipe's destination handles.
-func (h *compileHandles) streamRules(plans []streamRulePlan) []streamRule {
+func (h *compileHandles) streamRules(plans []compile.StreamRulePlan) []streamRule {
 	var rules []streamRule
 	for _, plan := range plans {
-		rule := streamRule{match: plan.match}
-		for _, branch := range plan.branches {
+		rule := streamRule{match: plan.Match}
+		for _, branch := range plan.Branches {
 			rule.branches = append(rule.branches, h.attachBranch(branch, branchSourceBinding{}))
 		}
 		rules = append(rules, rule)

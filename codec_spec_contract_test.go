@@ -5,19 +5,20 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func TestBytesEqualPreservesNilDistinction(t *testing.T) {
-	if !bytesEqual(nil, nil) {
+	if !compile.BytesEqual(nil, nil) {
 		t.Fatal("nil byte slices should compare equal")
 	}
-	if bytesEqual(nil, []byte{}) {
+	if compile.BytesEqual(nil, []byte{}) {
 		t.Fatal("nil and empty byte slices should remain distinct")
 	}
-	if !bytesEqual([]byte{1, 2, 3}, []byte{1, 2, 3}) {
+	if !compile.BytesEqual([]byte{1, 2, 3}, []byte{1, 2, 3}) {
 		t.Fatal("equal byte slices did not compare equal")
 	}
-	if bytesEqual([]byte{1, 2, 3}, []byte{1, 2, 4}) {
+	if compile.BytesEqual([]byte{1, 2, 3}, []byte{1, 2, 4}) {
 		t.Fatal("different byte slices compared equal")
 	}
 }
@@ -32,7 +33,7 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 	base.Parameters.Attributes = av.Metadata{"base": "keep"}
 	base.Parameters.ExtraData = av.Buffer{Bytes: []byte{0x01}}
 
-	if got := mergeDecodeCodecSpec(base, codec.Spec{}); !codecSpecEqual(got, base) {
+	if got := mergeDecodeCodecSpec(base, codec.Spec{}); !compile.CodecSpecEqual(got, base) {
 		t.Fatalf("zero override = %#v, want base %#v", got, base)
 	}
 
@@ -76,7 +77,7 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 	if merged.ID != override.ID || merged.Type != override.Type {
 		t.Fatalf("merged codec identity = %s/%s, want %s/%s", merged.ID, merged.Type, override.ID, override.Type)
 	}
-	if !codecParametersEqual(merged.Parameters, override.Parameters) {
+	if !compile.CodecParametersEqual(merged.Parameters, override.Parameters) {
 		t.Fatalf("merged parameters = %#v, want %#v", merged.Parameters, override.Parameters)
 	}
 	if merged.Settings.Bitrate != override.Settings.Bitrate ||

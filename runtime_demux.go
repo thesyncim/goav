@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -87,20 +88,13 @@ func demuxPacketBufferSize(streams []av.Stream) int {
 	size := 64 * 1024
 	for i := range streams {
 		if streams[i].Type == av.MediaAudio || streams[i].Codec.Type == av.MediaAudio {
-			size = maxInt(size, 4096)
+			size = compile.MaxInt(size, 4096)
 		}
 		if streams[i].Type == av.MediaVideo || streams[i].Codec.Type == av.MediaVideo {
-			size = maxInt(size, 4<<20)
+			size = compile.MaxInt(size, 4<<20)
 		}
 	}
 	return size
-}
-
-func maxInt(a int, b int) int {
-	if b > a {
-		return b
-	}
-	return a
 }
 
 // qualifyStreamID is a demuxed stream's id in a run with several inputs: the

@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func TestCodecAndTapNamingContracts(t *testing.T) {
@@ -21,7 +22,7 @@ func TestCodecAndTapNamingContracts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := codecIntentName(tt.spec); got != tt.want {
+			if got := compile.CodecIntentName(tt.spec); got != tt.want {
 				t.Fatalf("codec intent name = %q, want %q", got, tt.want)
 			}
 		})
@@ -39,69 +40,69 @@ func TestCodecAndTapNamingContracts(t *testing.T) {
 }
 
 func TestRuntimeNodeNamingContracts(t *testing.T) {
-	if got := encodeNodeName(encodeRequest{name: "preview"}); got != "encode-preview" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Name: "preview"}); got != "encode-preview" {
 		t.Fatalf("named encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{selector: av.StreamSelector{Name: "camera"}}); got != "encode-camera" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Selector: av.StreamSelector{Name: "camera"}}); got != "encode-camera" {
 		t.Fatalf("selector-name encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{selector: av.StreamSelector{ID: "v0"}}); got != "encode-v0" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Selector: av.StreamSelector{ID: "v0"}}); got != "encode-v0" {
 		t.Fatalf("selector-id encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{selector: av.StreamSelector{Codec: av.CodecVP8}}); got != "encode-vp8" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Selector: av.StreamSelector{Codec: av.CodecVP8}}); got != "encode-vp8" {
 		t.Fatalf("selector-codec encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{selector: av.StreamSelector{Type: av.MediaVideo}}); got != "encode-video" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Selector: av.StreamSelector{Type: av.MediaVideo}}); got != "encode-video" {
 		t.Fatalf("selector-type encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{selector: av.StreamSelector{UseIndex: true, Index: 2}}); got != "encode-2" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Selector: av.StreamSelector{UseIndex: true, Index: 2}}); got != "encode-2" {
 		t.Fatalf("selector-index encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{config: codec.EncodeConfig{Parameters: av.CodecParameters{ID: av.CodecVP9}}}); got != "encode-vp9" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Config: codec.EncodeConfig{Parameters: av.CodecParameters{ID: av.CodecVP9}}}); got != "encode-vp9" {
 		t.Fatalf("parameter-codec encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{config: codec.EncodeConfig{Stream: av.Stream{Codec: av.CodecParameters{ID: av.CodecOpus}}}}); got != "encode-opus" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{Config: codec.EncodeConfig{Stream: av.Stream{Codec: av.CodecParameters{ID: av.CodecOpus}}}}); got != "encode-opus" {
 		t.Fatalf("stream-codec encode node = %q", got)
 	}
-	if got := encodeNodeName(encodeRequest{}); got != "encode" {
+	if got := compile.EncodeNodeName(compile.EncodeRequest{}); got != "encode" {
 		t.Fatalf("fallback encode node = %q", got)
 	}
 
-	if got := decodeNodeName(av.StreamSelector{Name: "camera"}); got != "decode-camera" {
+	if got := compile.DecodeNodeName(av.StreamSelector{Name: "camera"}); got != "decode-camera" {
 		t.Fatalf("selector-name decode node = %q", got)
 	}
-	if got := decodeNodeName(av.StreamSelector{ID: "v0"}); got != "decode-v0" {
+	if got := compile.DecodeNodeName(av.StreamSelector{ID: "v0"}); got != "decode-v0" {
 		t.Fatalf("selector-id decode node = %q", got)
 	}
-	if got := decodeNodeName(av.StreamSelector{Codec: av.CodecH264}); got != "decode-h264" {
+	if got := compile.DecodeNodeName(av.StreamSelector{Codec: av.CodecH264}); got != "decode-h264" {
 		t.Fatalf("selector-codec decode node = %q", got)
 	}
-	if got := decodeNodeName(av.StreamSelector{Type: av.MediaAudio}); got != "decode-audio" {
+	if got := compile.DecodeNodeName(av.StreamSelector{Type: av.MediaAudio}); got != "decode-audio" {
 		t.Fatalf("selector-type decode node = %q", got)
 	}
-	if got := decodeNodeName(av.StreamSelector{UseIndex: true, Index: 1}); got != "decode-1" {
+	if got := compile.DecodeNodeName(av.StreamSelector{UseIndex: true, Index: 1}); got != "decode-1" {
 		t.Fatalf("selector-index decode node = %q", got)
 	}
-	if got := decodeNodeName(av.StreamSelector{}); got != "decode" {
+	if got := compile.DecodeNodeName(av.StreamSelector{}); got != "decode" {
 		t.Fatalf("fallback decode node = %q", got)
 	}
 
-	if got := selectNodeName(av.StreamSelector{Name: "camera"}); got != "select-camera" {
+	if got := compile.SelectNodeName(av.StreamSelector{Name: "camera"}); got != "select-camera" {
 		t.Fatalf("selector-name select node = %q", got)
 	}
-	if got := selectNodeName(av.StreamSelector{ID: "v0"}); got != "select-v0" {
+	if got := compile.SelectNodeName(av.StreamSelector{ID: "v0"}); got != "select-v0" {
 		t.Fatalf("selector-id select node = %q", got)
 	}
-	if got := selectNodeName(av.StreamSelector{Codec: av.CodecVP8}); got != "select-vp8" {
+	if got := compile.SelectNodeName(av.StreamSelector{Codec: av.CodecVP8}); got != "select-vp8" {
 		t.Fatalf("selector-codec select node = %q", got)
 	}
-	if got := selectNodeName(av.StreamSelector{Type: av.MediaVideo}); got != "select-video" {
+	if got := compile.SelectNodeName(av.StreamSelector{Type: av.MediaVideo}); got != "select-video" {
 		t.Fatalf("selector-type select node = %q", got)
 	}
-	if got := selectNodeName(av.StreamSelector{UseIndex: true, Index: 3}); got != "select-3" {
+	if got := compile.SelectNodeName(av.StreamSelector{UseIndex: true, Index: 3}); got != "select-3" {
 		t.Fatalf("selector-index select node = %q", got)
 	}
-	if got := selectNodeName(av.StreamSelector{}); got != "select" {
+	if got := compile.SelectNodeName(av.StreamSelector{}); got != "select" {
 		t.Fatalf("fallback select node = %q", got)
 	}
 }

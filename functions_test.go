@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -59,7 +60,7 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if packetStage.Name() != "packets" {
 		t.Fatalf("PacketFunc invalid name = %q, want packets", packetStage.Name())
 	}
-	if err := validateStageComponent(packetStage); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, errNilStage) {
+	if err := publicError(compile.ValidateStageComponent(packetStage)); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, compile.ErrNilStage) {
 		t.Fatalf("PacketFunc invalid validation err = %v, want ErrNilStageCallback only", err)
 	}
 
@@ -67,7 +68,7 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if frameStage == nil {
 		t.Fatal("FrameFunc with nil callback should return a named invalid stage")
 	}
-	if err := validateStageComponent(frameStage); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, errNilStage) {
+	if err := publicError(compile.ValidateStageComponent(frameStage)); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, compile.ErrNilStage) {
 		t.Fatalf("FrameFunc invalid validation err = %v, want ErrNilStageCallback only", err)
 	}
 
@@ -75,7 +76,7 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if eventStage == nil {
 		t.Fatal("EventFunc with nil callback should return a named invalid stage")
 	}
-	if err := validateStageComponent(eventStage); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, errNilStage) {
+	if err := publicError(compile.ValidateStageComponent(eventStage)); !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, compile.ErrNilStage) {
 		t.Fatalf("EventFunc invalid validation err = %v, want ErrNilStageCallback only", err)
 	}
 
@@ -86,7 +87,7 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if sink.Name() != "sink" {
 		t.Fatalf("SinkFunc invalid name = %q, want sink", sink.Name())
 	}
-	if err := validateSinkComponent(sink); !errors.Is(err, component.ErrNilSinkCallback) || errors.Is(err, errNilSink) {
+	if err := validateSinkComponent(sink); !errors.Is(err, component.ErrNilSinkCallback) || errors.Is(err, compile.ErrNilSink) {
 		t.Fatalf("SinkFunc invalid validation err = %v, want ErrNilSinkCallback only", err)
 	}
 }

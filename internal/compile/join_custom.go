@@ -1,59 +1,53 @@
-// Custom joins: goav.Join lowers a caller-supplied convergence stage through
-// the SAME joinSpec/joinProfile machinery as Mix/Composite/Select — the
-// built-ins are profiles over this seam, not privileged citizens. Everything
-// the per-kind profile table carries is derived here from the stage's
-// declared shape.Contract (arm domain, media kind, arm format solving, joined
-// output) or from the join's name (node name, output stream id, error-code
-// family), so a third party ships a Crossfade(arms...) without touching core.
-
-package goav
+package compile
 
 import (
+	"cmp"
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
 
 // customJoinSpec carries the caller-supplied convergence stage behind a
 // joinSpec; customJoinProfile derives the per-kind profile from it.
-type customJoinSpec struct {
-	name  string
-	stage pipeline.Stage
+type CustomJoinSpec struct {
+	Name  string
+	Stage pipeline.Stage
 }
 
 // customJoinProfile derives a caller-supplied join's profile — everything the
 // built-in table carries, from the stage's declared shape.Contract and the
 // join's validated name. It is the closure proof in code: no per-kind switch
 // consults anything a third party cannot provide.
-func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
+func CustomJoinProfile(custom *CustomJoinSpec) (joinProfile, error) {
 	if custom == nil {
 		return joinProfile{}, customJoinStageError("join", "custom join carries no stage")
 	}
-	name := custom.name
+	name := custom.Name
 	if err := validateCustomJoinName(name); err != nil {
 		return joinProfile{}, err
 	}
-	if custom.stage == nil {
+	if custom.Stage == nil {
 		return joinProfile{}, customJoinStageError(name, "custom join stage is nil")
 	}
-	if stageName := custom.stage.Name(); stageName != name {
+	if stageName := custom.Stage.Name(); stageName != name {
 		return joinProfile{}, customJoinStageError(name,
 			"custom join stage reports Name() "+strconv.Quote(stageName)+", want the join name "+strconv.Quote(name))
 	}
-	contract, _ := custom.stage.(shape.Contract)
+	contract, _ := custom.Stage.(shape.Contract)
 	var inputs shape.Set
 	if contract != nil {
 		inputs = contract.InputShapes()
 	}
-	decodeArms := customJoinDecodesArms(inputs)
+	decodeArms := CustomJoinDecodesArms(inputs)
 	profile := joinProfile{
-		media:      customJoinMedia(inputs),
-		decodeArms: decodeArms,
-		joinedStream: func(p *joinPlan) av.Stream {
-			return customJoinedStream(p, contract, decodeArms)
+		media:      CustomJoinMedia(inputs),
+		DecodeArms: decodeArms,
+		joinedStream: func(p *JoinPlan) av.Stream {
+			return CustomJoinedStream(p, contract, decodeArms)
 		},
 		sinkOnlyReason: name + " to a non-Sink destination is not supported (a custom join carries no .Encode)",
 		sinkOnlySuggestions: []string{
@@ -61,9 +55,9 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 			"encode the joined stream in its own fork when it must reach muxed destinations: goav.Join(...).Buffer(flow.Blocking(8)).Encode(codec...).To(...)",
 		},
 	}
-	if expected, ok := customJoinArmExpected(inputs); ok {
-		profile.armExpected = func(*joinPlan, av.Stream) shape.Spec { return expected }
-		profile.conformTarget = func(*joinPlan, av.Stream) shape.Spec { return expected }
+	if expected, ok := CustomJoinArmExpected(inputs); ok {
+		profile.armExpected = func(*JoinPlan, av.Stream) shape.Spec { return expected }
+		profile.ConformTarget = func(*JoinPlan, av.Stream) shape.Spec { return expected }
 		profile.armPolicy = shape.AllowResample().Union(shape.AllowResize()).Union(shape.AllowConvert())
 	}
 	return profile, nil
@@ -74,31 +68,31 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 // table entry).
 func validateCustomJoinName(name string) error {
 	if !joinNameSnakeSafe(name) {
-		return &BuildError{
-			Phase:     phaseBuild,
+		return &builderr.Refusal{
+			Phase:     builderr.PhaseBuild,
 			Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 			Code:      errcode.JoinNameInvalid,
 			Operation: "build join",
-			Node:      firstNonEmpty(name, "join"),
+			Node:      cmp.Or(name, "join"),
 			Reason:    "custom join name " + strconv.Quote(name) + " is not snake-safe ([a-z][a-z0-9_]*)",
-			fixes: buildErrorFixes([]string{
+			Fixes: builderr.Fixes([]string{
 				"name the join with lowercase letters, digits, and underscores: goav.Join(\"crossfade\", stage, streams...)",
 			}),
-			cause: errUnsupportedBuild,
+			Cause: builderr.ErrUnsupportedBuild,
 		}
 	}
-	if _, reserved := joinProfiles[joinKind(name)]; reserved {
-		return &BuildError{
-			Phase:     phaseBuild,
+	if _, reserved := joinProfiles[JoinKind(name)]; reserved {
+		return &builderr.Refusal{
+			Phase:     builderr.PhaseBuild,
 			Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 			Code:      errcode.JoinNameInvalid,
 			Operation: "build join",
 			Node:      name,
 			Reason:    "custom join name " + strconv.Quote(name) + " is reserved by the built-in join of that kind",
-			fixes: buildErrorFixes([]string{
+			Fixes: builderr.Fixes([]string{
 				"pick a distinct name: the name is the join's node name, output stream id, and error-code family",
 			}),
-			cause: errUnsupportedBuild,
+			Cause: builderr.ErrUnsupportedBuild,
 		}
 	}
 	return nil
@@ -109,36 +103,36 @@ func validateCustomJoinName(name string) error {
 // auto-renamed (the caller built it with its output id), so the collision is
 // rejected instead of silently suffixed.
 func customJoinNameCollisionError(name string, claimed string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 		Code:      errcode.JoinNameInvalid,
 		Operation: "build " + name,
 		Node:      claimed,
 		Reason:    "custom join name " + strconv.Quote(name) + " collides with another join node in the same join tree",
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"give each goav.Join its own name (the name is the node name and the joined stream id)",
 			"construct a distinct stage instance per join — a stage carries run state",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 // customJoinStageError is the malformed-stage refusal (nil stage, name
 // mismatch).
 func customJoinStageError(name string, reason string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(errcode.JoinStageInvalid),
 		Code:      errcode.JoinStageInvalid,
-		Operation: "build " + firstNonEmpty(name, "join"),
-		Node:      firstNonEmpty(name, "join"),
+		Operation: "build " + cmp.Or(name, "join"),
+		Node:      cmp.Or(name, "join"),
 		Reason:    reason,
-		fixes: buildErrorFixes([]string{
+		Fixes: builderr.Fixes([]string{
 			"pass a pipeline.Stage whose Name() equals the join name: goav.Join(\"crossfade\", stage, streams...)",
 			"see the Join doc for the convergence-stage contract (audio mix is the reference implementation)",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
@@ -165,7 +159,7 @@ func joinNameSnakeSafe(name string) bool {
 // contract: a contract accepting only frame-domain media requires decoded arms
 // (Mix-shaped); a packet or unconstrained contract — or none — passes arms
 // through as-is (Select-shaped).
-func customJoinDecodesArms(inputs shape.Set) bool {
+func CustomJoinDecodesArms(inputs shape.Set) bool {
 	if len(inputs) == 0 {
 		return false
 	}
@@ -180,7 +174,7 @@ func customJoinDecodesArms(inputs shape.Set) bool {
 // customJoinMedia derives the per-arm stream selector from the input
 // contract: one media kind shared by every input shape selects it; mixed or
 // absent kinds keep the join media-agnostic (each arm's single stream).
-func customJoinMedia(inputs shape.Set) av.MediaType {
+func CustomJoinMedia(inputs shape.Set) av.MediaType {
 	var media av.MediaType
 	for i := range inputs {
 		kind := inputs[i].MediaKind
@@ -202,7 +196,7 @@ func customJoinMedia(inputs shape.Set) av.MediaType {
 // enforces: exactly one frame-domain input shape carrying format facts. The
 // expected spec keeps only the convertible facts, so the solver plans the
 // same per-arm conversions Mix plans for mismatched arms.
-func customJoinArmExpected(inputs shape.Set) (shape.Spec, bool) {
+func CustomJoinArmExpected(inputs shape.Set) (shape.Spec, bool) {
 	if len(inputs) != 1 || inputs[0].Domain != shape.DomainFrame {
 		return shape.Spec{}, false
 	}
@@ -226,8 +220,8 @@ func customJoinArmExpected(inputs shape.Set) (shape.Spec, bool) {
 // facts under the join's name — frame joins rebuild from declared facts like
 // Mix/Composite, passthrough joins forward the arm stream like Select — with
 // the stage contract's declared output facts overlaid when present.
-func customJoinedStream(p *joinPlan, contract shape.Contract, decodeArms bool) av.Stream {
-	stream, base := p.customJoinBaseStream(decodeArms)
+func CustomJoinedStream(p *JoinPlan, contract shape.Contract, decodeArms bool) av.Stream {
+	stream, base := p.CustomJoinBaseStream(decodeArms)
 	if contract == nil {
 		return stream
 	}
@@ -235,33 +229,33 @@ func customJoinedStream(p *joinPlan, contract shape.Contract, decodeArms bool) a
 	if len(outputs) == 0 {
 		return stream
 	}
-	return applyShapeToStream(stream, outputs[0])
+	return ApplyShapeToStream(stream, outputs[0])
 }
 
 // customJoinBaseStream resolves the fallback joined stream and the input spec
 // the stage contract's OutputShapes is consulted with.
-func (p *joinPlan) customJoinBaseStream(decodeArms bool) (av.Stream, shape.Spec) {
+func (p *JoinPlan) CustomJoinBaseStream(decodeArms bool) (av.Stream, shape.Spec) {
 	if decodeArms {
 		base := p.firstArmSourceShape()
-		return streamFromJoinShape(p.name, base), base
+		return streamFromJoinShape(p.Name, base), base
 	}
-	stream := p.arms[0].joinStream()
-	stream.ID = av.StreamID(p.name)
-	return stream, shape.FromStream(stream, p.arms[0].domain)
+	stream := p.Arms[0].joinStream()
+	stream.ID = av.StreamID(p.Name)
+	return stream, shape.FromStream(stream, p.Arms[0].Domain)
 }
 
 // customJoinedOutputDomain reports the output domain a custom join's stage
 // contract declares ("" without one): the joined-domain derivation honors it
 // over the decode-arms default.
-func (p *joinPlan) customJoinedOutputDomain() shape.MediaDomain {
-	if p.tree.custom == nil || len(p.arms) == 0 {
+func (p *JoinPlan) CustomJoinedOutputDomain() shape.MediaDomain {
+	if p.Tree.Custom == nil || len(p.Arms) == 0 {
 		return ""
 	}
-	contract, ok := p.tree.custom.stage.(shape.Contract)
+	contract, ok := p.Tree.Custom.Stage.(shape.Contract)
 	if !ok {
 		return ""
 	}
-	_, base := p.customJoinBaseStream(p.profile.decodeArms)
+	_, base := p.CustomJoinBaseStream(p.Profile.DecodeArms)
 	outputs := contract.OutputShapes(base)
 	if len(outputs) == 0 {
 		return ""
@@ -284,7 +278,7 @@ func streamFromJoinShape(name string, spec shape.Spec) av.Stream {
 			SampleRate:   spec.SampleRate,
 			Channels:     spec.Channels,
 			SampleFormat: spec.SampleFormat,
-			ClockRate:    uint32(maxInt(spec.SampleRate, 0)),
+			ClockRate:    uint32(MaxInt(spec.SampleRate, 0)),
 		},
 	}
 }
@@ -292,7 +286,7 @@ func streamFromJoinShape(name string, spec shape.Spec) av.Stream {
 // applyShapeToStream overlays the non-empty facts of a contract-declared
 // output spec onto the joined stream, leaving undeclared facts at their
 // first-arm fallback.
-func applyShapeToStream(stream av.Stream, spec shape.Spec) av.Stream {
+func ApplyShapeToStream(stream av.Stream, spec shape.Spec) av.Stream {
 	if spec.MediaKind != "" {
 		stream.Type = spec.MediaKind
 		stream.Codec.Type = spec.MediaKind

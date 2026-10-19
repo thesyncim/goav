@@ -1,17 +1,17 @@
-package goav
+package compile
 
 const (
-	diagnosticShapeConversionInserted = "shape_conversion_inserted"
+	DiagnosticShapeConversionInserted = "shape_conversion_inserted"
 	diagnosticShapePreferenceApplied  = "shape_preference_applied"
 	diagnosticShapePreferenceIgnored  = "shape_preference_ignored"
-	diagnosticDecodeCodecDeferred     = "decode_codec_deferred"
-	diagnosticExplainPreflightError   = "explain_preflight_error"
+	DiagnosticDecodeCodecDeferred     = "decode_codec_deferred"
+	DiagnosticExplainPreflightError   = "explain_preflight_error"
 	diagnosticPacketCopy              = "packet_copy"
 	diagnosticFrameSource             = "frame_source"
 	diagnosticEventSource             = "event_source"
 	diagnosticDecodeRequired          = "decode_required"
 	diagnosticEncodeRequired          = "encode_required"
-	diagnosticStreamRule              = "stream_rule"
-	diagnosticPathLatencyBudget       = "path_latency_budget"
-	diagnosticBufferedExecution       = "buffered_execution"
+	DiagnosticStreamRule              = "stream_rule"
+	DiagnosticPathLatencyBudget       = "path_latency_budget"
+	DiagnosticBufferedExecution       = "buffered_execution"
 )

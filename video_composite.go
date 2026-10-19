@@ -5,15 +5,9 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
-
-// compositeLayout places one input's top-left corner on the output canvas. One
-// layout entry pairs with each input arm, so the compositor knows where to copy
-// that arm's frame.
-type compositeLayout struct {
-	X, Y int
-}
 
 // videoCompositeStage overlays N synchronized video inputs into one output frame
 // — the video dual of audioMixStage. Each input arm is identified by its frame
@@ -32,7 +26,7 @@ type compositeLayout struct {
 type videoCompositeStage struct {
 	name   string
 	out    av.StreamID
-	layout []compositeLayout
+	layout []compile.CompositeLayout
 	// sizes remembers each arm's most recent frame dimensions, so absent arms
 	// (gap or ended) still reserve their canvas region.
 	sizes   map[av.StreamID]compositeArmSize
@@ -49,22 +43,22 @@ type compositeArmSize struct {
 	w, h int
 }
 
-func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode) *videoCompositeStage {
+func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode) *videoCompositeStage {
 	return newVideoCompositeStageWithPrealloc(name, inputs, out, layout, mode, 1)
 }
 
-func newVideoCompositeStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode, preallocDepth int) *videoCompositeStage {
+func newVideoCompositeStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int) *videoCompositeStage {
 	return newVideoCompositeStageWithPreallocAndPools(name, inputs, out, layout, mode, preallocDepth, nil)
 }
 
-func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode, preallocDepth int, pools *mediaPools) *videoCompositeStage {
+func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int, pools *mediaPools) *videoCompositeStage {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
 	stage := &videoCompositeStage{
 		name:   name,
 		out:    out,
-		layout: append([]compositeLayout(nil), layout...),
+		layout: append([]compile.CompositeLayout(nil), layout...),
 		sizes:  make(map[av.StreamID]compositeArmSize, len(inputs)),
 		sync:   newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
 		free:   make(map[av.StreamID][]*av.Frame, len(inputs)),
@@ -90,7 +84,7 @@ func (s *videoCompositeStage) Name() string { return s.name }
 // DescribeNode reports the same detail the join planner records on the planned
 // node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
 func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
-	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
 }
 
 // DroppedMessages implements pipeline.DropReporter: frames the join discarded
@@ -222,7 +216,7 @@ func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitte
 	}
 }
 
-func compositeI420FramesInto(frames []*av.Frame, layout []compositeLayout, floorW, floorH int, out av.StreamID, dst *av.Frame, video *av.VideoFrame) (*av.Frame, error) {
+func compositeI420FramesInto(frames []*av.Frame, layout []compile.CompositeLayout, floorW, floorH int, out av.StreamID, dst *av.Frame, video *av.VideoFrame) (*av.Frame, error) {
 	base := firstCompositeFrame(frames)
 	if base == nil {
 		return nil, fmt.Errorf("goav: video composite has no participating frames")

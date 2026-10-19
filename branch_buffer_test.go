@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -45,7 +46,7 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateBranchBuffer(tt.buffer, "build branch", "preview"); err != nil {
+			if err := publicError(compile.ValidateBranchBuffer(tt.buffer, "build branch", "preview")); err != nil {
 				t.Fatal(err)
 			}
 			if got := tt.buffer.PipelinePolicy(); got != tt.want {
@@ -67,7 +68,7 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateBranchBuffer(tt.buffer, "build branch", "preview")
+			err := publicError(compile.ValidateBranchBuffer(tt.buffer, "build branch", "preview"))
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
 				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)

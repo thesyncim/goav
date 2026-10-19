@@ -1,4 +1,4 @@
-package goav
+package compile
 
 import (
 	"github.com/thesyncim/goav/codec"
@@ -8,11 +8,11 @@ import (
 // mediaShapeFromCodecSpec is the shape.Spec view of a codec spec. It stays in
 // goav (not the shape package) because it crosses codec.Spec and the codecMedia/
 // firstNonEmptyMedia helpers that live in the goav root.
-func mediaShapeFromCodecSpec(spec codec.Spec, domain shape.MediaDomain) shape.Spec {
+func MediaShapeFromCodecSpec(spec codec.Spec, domain shape.MediaDomain) shape.Spec {
 	out := shape.FromCodecParameters(spec.Parameters)
 	out.Domain = domain
 	if out.MediaKind == "" {
-		out.MediaKind = firstNonEmptyMedia(spec.Type, codecMedia(spec.ID))
+		out.MediaKind = FirstNonEmptyMedia(spec.Type, CodecMedia(spec.ID))
 	}
 	if out.Codec == "" {
 		out.Codec = spec.ID
@@ -27,7 +27,7 @@ func codecSpecInputShapes(spec codec.Spec) shape.Set {
 	if spec.Copy {
 		return shape.Set{shape.New(shape.Domain(shape.DomainPacket))}
 	}
-	media := firstNonEmptyMedia(spec.Type, spec.Parameters.Type, codecMedia(spec.ID))
+	media := FirstNonEmptyMedia(spec.Type, spec.Parameters.Type, CodecMedia(spec.ID))
 	if spec.ID == "" && !spec.Auto && media == "" {
 		return nil
 	}
@@ -41,6 +41,6 @@ func codecSpecOutputShapes(spec codec.Spec, input shape.Spec) shape.Set {
 	}
 	out := input
 	out.Domain = shape.DomainPacket
-	out = shape.Merge(out, mediaShapeFromCodecSpec(spec, shape.DomainPacket))
+	out = shape.Merge(out, MediaShapeFromCodecSpec(spec, shape.DomainPacket))
 	return shape.Set{out}
 }

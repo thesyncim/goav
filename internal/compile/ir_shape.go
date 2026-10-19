@@ -1,51 +1,53 @@
-package goav
+package compile
 
 import (
+	"cmp"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
-func validateRecipeIROperationShapes(operation string, stream recipeir.Stream, operations []recipeir.Operation, initial shape.Spec) error {
-	shape := normalizeTapShape(initial)
+func ValidateRecipeIROperationShapes(operation string, stream recipeir.Stream, operations []recipeir.Operation, initial shape.Spec) error {
+	shape := NormalizeTapShape(initial)
 	if shape.MediaKind == "" {
 		shape.MediaKind = stream.Selector.Type
 	}
 	if shape.Codec == "" {
 		shape.Codec = stream.Selector.Codec
 	}
-	node := firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
+	node := cmp.Or(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
 	for i := range operations {
 		next := operations[i]
 		if next.Kind == plan.OpTap {
-			shape = recipeIROperationOutputShape(shape, next)
+			shape = RecipeIROperationOutputShape(shape, next)
 			continue
 		}
 		if next.Kind == plan.OpShape && next.Require == nil {
-			if err := validateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
+			if err := ValidateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
 				return err
 			}
-			shape = recipeIROperationOutputShape(shape, next)
+			shape = RecipeIROperationOutputShape(shape, next)
 			continue
 		}
-		expected := recipeIROperationInputShapes(next)
+		expected := RecipeIROperationInputShapes(next)
 		if len(expected) != 0 && !expected.Accepts(shape) {
 			return recipeIROperationShapeFailureError(operation, node, i, next, expected, shape)
 		}
-		shape = recipeIROperationOutputShape(shape, next)
+		shape = RecipeIROperationOutputShape(shape, next)
 	}
 	return nil
 }
 
-func recipeIROperationInputShapes(operation recipeir.Operation) shape.Set {
+func RecipeIROperationInputShapes(operation recipeir.Operation) shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:
-		codecID := firstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
-		media := firstNonEmptyMedia(operation.Decode.Type, operation.Decode.Parameters.Type, codecMedia(codecID))
+		codecID := FirstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
+		media := FirstNonEmptyMedia(operation.Decode.Type, operation.Decode.Parameters.Type, CodecMedia(codecID))
 		return shape.Set{shape.Packet(media, codecID)}
 	case plan.OpShape:
 		if operation.Require != nil {
@@ -66,15 +68,15 @@ func recipeIROperationInputShapes(operation recipeir.Operation) shape.Set {
 	}
 }
 
-func recipeIROperationOutputShape(input shape.Spec, operation recipeir.Operation) shape.Spec {
-	out := recipeIROperationOutputShapes(input, operation)
+func RecipeIROperationOutputShape(input shape.Spec, operation recipeir.Operation) shape.Spec {
+	out := RecipeIROperationOutputShapes(input, operation)
 	if len(out) == 0 {
 		return input
 	}
 	return out[0]
 }
 
-func recipeIROperationOutputShapes(input shape.Spec, operation recipeir.Operation) shape.Set {
+func RecipeIROperationOutputShapes(input shape.Spec, operation recipeir.Operation) shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:
 		input.Domain = shape.DomainFrame
@@ -134,11 +136,11 @@ func recipeIRTransformOutputShapes(transform recipeir.Transform, input shape.Spe
 func recipeIROperationComponent(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpDecode:
-		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
+		return cmp.Or(string(operation.Decode.ID), operation.Component, "decode")
 	case plan.OpTransform:
-		return firstNonEmpty(recipeIRTransformFactoryName(operation.Transform), "transform")
+		return cmp.Or(RecipeIRTransformFactoryName(operation.Transform), "transform")
 	case plan.OpEncode:
-		return firstNonEmpty(string(operation.Encode.ID), operation.Component, "encode")
+		return cmp.Or(string(operation.Encode.ID), operation.Component, "encode")
 	case plan.OpCopy:
 		return "packet-copy"
 	default:
@@ -146,8 +148,8 @@ func recipeIROperationComponent(operation recipeir.Operation) string {
 	}
 }
 
-func recipeIRTransformEmpty(transform recipeir.Transform) bool {
-	return transform.Kind == "" || recipeIRTransformFactoryName(transform) == ""
+func RecipeIRTransformEmpty(transform recipeir.Transform) bool {
+	return transform.Kind == "" || RecipeIRTransformFactoryName(transform) == ""
 }
 
 func recipeIROperationShapeFailureError(operation string, node string, index int, step recipeir.Operation, expected shape.Set, actual shape.Spec) error {
@@ -162,35 +164,35 @@ func recipeIRShapeRequirementUnmetError(operation string, node string, index int
 	if step.Require != nil {
 		required = *step.Require
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(shapeRequirementUnmetCode),
-		Code:      shapeRequirementUnmetCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.ShapeRequirementUnmetCode),
+		Code:      builderr.ShapeRequirementUnmetCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
-			humanizeShape(actual), humanizeShape(required)),
-		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
-		fixes: buildErrorFixes([]string{
+			HumanizeShape(actual), HumanizeShape(required)),
+		Details: builderr.Details(builderr.KV("operation_index", fmt.Sprintf("%d", index)), builderr.KV("operation", "require"), builderr.KV("source", HumanizeShape(actual)), builderr.KV("actual_shape", actual.String()), builderr.KV("expected_shape", shapeSetString(expected))),
+		Fixes: builderr.Fixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
 func recipeIROperationShapeMismatchError(operation string, node string, index int, step recipeir.Operation, expected shape.Set, actual shape.Spec) error {
-	component := firstNonEmpty(step.Component, recipeIROperationComponent(step), string(step.Kind), "operation")
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
-		Code:      operationShapeMismatchCode,
+	component := cmp.Or(step.Component, recipeIROperationComponent(step), string(step.Kind), "operation")
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.OperationShapeMismatchCode),
+		Code:      builderr.OperationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		fields:    errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
-		fixes:     buildErrorFixes(recipeIROperationShapeMismatchSuggestions(step)),
-		cause:     errUnsupportedBuild,
+		Details:   builderr.Details(builderr.KV("operation_index", fmt.Sprintf("%d", index)), builderr.KV("operation", string(step.Kind)), builderr.KV("expected_shape", shapeSetString(expected)), builderr.KV("actual_shape", actual.String())),
+		Fixes:     builderr.Fixes(recipeIROperationShapeMismatchSuggestions(step)),
+		Cause:     builderr.ErrUnsupportedBuild,
 	}
 }
 

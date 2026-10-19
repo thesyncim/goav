@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -65,7 +66,7 @@ func TestRuntimeAttachmentNilAndOwnerlessSnapshotAccessors(t *testing.T) {
 			Name: "preview-packets",
 			Node: pipeline.NodeRef("preview-copy"),
 		}},
-		destinations: []workDestination{{
+		destinations: []compile.WorkDestination{{
 			Name:      "preview.ivf",
 			Operation: plan.OpMux,
 			Component: "custom-mux",

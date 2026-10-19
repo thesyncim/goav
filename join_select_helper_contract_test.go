@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -24,11 +25,11 @@ func TestJoinStagePreallocDepthContracts(t *testing.T) {
 
 func TestJoinArmTransformStreamContracts(t *testing.T) {
 	video := videoVP8TranscodeTestStream()
-	if got := joinArmTransformStream(video, av.MediaVideo); got.ID != video.ID || got.Codec.ID != video.Codec.ID {
+	if got := compile.JoinArmTransformStream(video, av.MediaVideo); got.ID != video.ID || got.Codec.ID != video.Codec.ID {
 		t.Fatalf("video transform stream = %+v, want original stream", got)
 	}
 
-	audio := joinArmTransformStream(av.Stream{
+	audio := compile.JoinArmTransformStream(av.Stream{
 		ID:   "voice",
 		Type: av.MediaAudio,
 		Codec: av.CodecParameters{
@@ -40,7 +41,7 @@ func TestJoinArmTransformStreamContracts(t *testing.T) {
 		t.Fatalf("audio transform stream = %+v, want normalized audio stream", audio)
 	}
 
-	preserved := joinArmTransformStream(av.Stream{
+	preserved := compile.JoinArmTransformStream(av.Stream{
 		ID:   "stereo",
 		Type: av.MediaAudio,
 		Codec: av.CodecParameters{

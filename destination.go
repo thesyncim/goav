@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -126,7 +127,7 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 		name: name,
 	}
 	if writer == nil {
-		spec.err = errNilWriter
+		spec.err = compile.ErrNilWriter
 	}
 	return spec
 }
@@ -161,7 +162,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 		name = sink.Name()
 	}
 	if sink == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilSink}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: compile.ErrNilSink}
 	}
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
@@ -175,7 +176,7 @@ func Custom(name string, dest provider.Destination, opts ...DestinationOption) D
 
 func customDestination(name string, dest provider.Destination) destinationSpec {
 	if dest == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), name: name, err: errNilDestinationProvider}
+		return destinationSpec{id: destinationSpecSeq.Add(1), name: name, err: compile.ErrNilDestinationProvider}
 	}
 	contract := dest.Contract()
 	spec := destinationSpec{
@@ -221,7 +222,7 @@ func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Dest
 	}
 	if open == nil {
 		spec.custom = nil
-		spec.err = errNilWriter
+		spec.err = compile.ErrNilWriter
 	}
 	return destinationHandle(applyDestinationOptions(spec, opts))
 }
@@ -244,14 +245,14 @@ func (d writerDestination) Contract() provider.Contract {
 
 func (d writerDestination) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
 	if d.open == nil {
-		return nil, errNilWriter
+		return nil, compile.ErrNilWriter
 	}
 	writer, err := d.open(ctx, info)
 	if err != nil {
 		return nil, err
 	}
 	if writer == nil {
-		return nil, errNilWriter
+		return nil, compile.ErrNilWriter
 	}
 	return writer, nil
 }
@@ -337,10 +338,10 @@ func MIME(mimeType string) MediaOption {
 func Metadata(metadata av.Metadata) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
-			spec.input.Metadata = cloneMetadata(metadata)
+			spec.input.Metadata = compile.CloneMetadata(metadata)
 		},
 		destination: func(spec *destinationSpec) {
-			spec.output.Metadata = cloneMetadata(metadata)
+			spec.output.Metadata = compile.CloneMetadata(metadata)
 		},
 	}
 }
@@ -433,13 +434,13 @@ func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider
 		}
 		return nopDestinationWriter{Writer: s.output.Writer}, nil
 	}
-	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer")
+	return nil, publicError(compile.DestinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer"))
 }
 
 func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
-		if errors.Is(s.err, errNilWriter) && s.output.Protocol == av.ProtocolFile {
+		if errors.Is(s.err, compile.ErrNilWriter) && s.output.Protocol == av.ProtocolFile {
 			return &BuildError{
 				Phase:     phaseBuild,
 				Family:    errcode.FamilyForCode(outputWriterMissingCode),
@@ -458,13 +459,13 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			"pass a non-nil sink to goav.Sink(...)",
 			"use goav.Write(...) or goav.URI(...) for muxed output",
 		}
-		if errors.Is(s.err, errNilWriter) {
+		if errors.Is(s.err, compile.ErrNilWriter) {
 			suggestions = []string{
 				"pass a non-nil writer callback to goav.Writer(...)",
 				"use goav.Write(...) or goav.URI(...) for muxed output",
 			}
 		}
-		if errors.Is(s.err, errNilDestinationProvider) {
+		if errors.Is(s.err, compile.ErrNilDestinationProvider) {
 			suggestions = []string{
 				"pass a non-nil provider.Destination to goav.Custom(name, destination)",
 				"use goav.Write(...), goav.Writer(...), goav.URI(...), or goav.Sink(...) for built-in destinations",
@@ -616,7 +617,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
 		return destinationNames[index]
 	}
-	return muxNodeName(output, index)
+	return compile.MuxNodeName(output, index)
 }
 
 func duplicateOutputError(operation string, name string) error {

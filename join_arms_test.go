@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -188,7 +189,7 @@ func TestArmRestampStageContracts(t *testing.T) {
 	}
 
 	// A bound file arm passes only its stream and stream-less events.
-	bound := newArmRestampStage("mix-select-a.webm", bindArmNodeDetail(av.StreamSelector{Type: av.MediaAudio}), "2", "a.webm")
+	bound := newArmRestampStage("mix-select-a.webm", compile.BindArmNodeDetail(av.StreamSelector{Type: av.MediaAudio}), "2", "a.webm")
 	filtered := &tapArmStageTestEmitter{}
 	for _, msg := range []*pipeline.Message{
 		{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "1"}},

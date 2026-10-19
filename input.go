@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -131,7 +132,7 @@ func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 		name: name,
 	}
 	if reader == nil {
-		spec.err = errNilReader
+		spec.err = compile.ErrNilReader
 	}
 	return applyInputOptions(inputSpecHandle(spec), opts)
 }
@@ -148,7 +149,7 @@ func (s InputSpec) validate() error {
 			"check the input constructor arguments",
 			"pass a non-nil provider to goav.Input(provider)",
 		}
-		if errors.Is(s.err, errNilReader) {
+		if errors.Is(s.err, compile.ErrNilReader) {
 			fixes = []string{
 				"pass a non-nil io.Reader to goav.FileInput(name, reader)",
 				"use goav.Input(provider) for realtime receive through a source provider",
@@ -205,10 +206,10 @@ func (s InputSpec) validateCustomSource() error {
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
 				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
 			}),
-			cause: errNilSource,
+			cause: compile.ErrNilSource,
 		}
 	}
-	spec := normalizeCustomSourceShape(node, s.source.shape)
+	spec := compile.NormalizeCustomSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
 			Phase:     phaseBuild,
@@ -290,7 +291,7 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
 		MIMEType: s.input.MIMEType,
-		Codec:    cloneCodecSpec(s.codec),
+		Codec:    compile.CloneCodecSpec(s.codec),
 		Realtime: s.input.Realtime || (s.source != nil && s.source.shape.Realtime),
 	}
 	switch {
@@ -305,20 +306,6 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		out.SourceShape = sourceShape
 	}
 	return out
-}
-
-// recipeIRInputSourceShape is the stream shape a provider or custom source
-// declares, normalized.
-func recipeIRInputSourceShape(input recipeir.Input) (shape.Spec, bool) {
-	switch input.Kind {
-	case recipeir.InputKindCustomSource, recipeir.InputKindProvider:
-	default:
-		return shape.Spec{}, false
-	}
-	if input.SourceShape.Domain == "" {
-		return shape.Spec{}, false
-	}
-	return normalizeCustomSourceShape(input.Name, input.SourceShape), true
 }
 
 func (s InputSpec) inputName(fallback string) string {

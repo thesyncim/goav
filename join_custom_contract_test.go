@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -110,7 +111,7 @@ func TestCustomJoinForksRejectAnInvalidName(t *testing.T) {
 	).As("monitor").To(branchBuilderTestSink("monitor")))
 	assertBuildErrorCode(t, err, errcode.JoinNameInvalid)
 
-	if _, err := customJoinProfile(nil); err == nil {
+	if _, err := refuse(compile.CustomJoinProfile(nil)); err == nil {
 		t.Fatal("customJoinProfile(nil) = nil, want join stage error")
 	} else {
 		assertBuildErrorCode(t, err, errcode.JoinStageInvalid)

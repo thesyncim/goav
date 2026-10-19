@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func TestBuildErrorFamilyForCodePinned(t *testing.T) {
@@ -26,7 +27,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{runtimeBranchInvalidCode, errcode.FamilyRuntimeBranch},
 		{errcode.StreamRuleInvalid, errcode.FamilyStreamRule},
 		{compilerPassFailedCode, errcode.FamilyCompiler},
-		{errcode.Code(diagnosticShapeConversionInserted), errcode.Family("diagnostic")},
+		{errcode.Code(compile.DiagnosticShapeConversionInserted), errcode.Family("diagnostic")},
 		{errcode.Code("crossfade_inputs"), errcode.FamilyJoin},
 		{errcode.Code("example_vendor_failure"), errcode.FamilyExternal},
 	}

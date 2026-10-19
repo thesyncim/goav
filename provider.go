@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
@@ -31,7 +32,7 @@ type (
 //	err := rt.Run(ctx, in.Audio().To(out))
 func Input(src provider.Source, opts ...InputOption) InputSpec {
 	if src == nil {
-		return inputSpecHandle(InputSpec{err: errNilSource})
+		return inputSpecHandle(InputSpec{err: compile.ErrNilSource})
 	}
 	spec := src.SourceShape()
 	return applyInputOptions(inputSpecHandle(InputSpec{
@@ -85,7 +86,7 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // structural (a type assertion), so providers stay free of goav internals.
 func openProviderSource(ctx context.Context, src provider.Source, name string, clock av.Clock) (graphSourceBuild, error) {
 	if src == nil {
-		return graphSourceBuild{}, errNilSource
+		return graphSourceBuild{}, compile.ErrNilSource
 	}
 	source, streams, err := src.OpenSource(ctx)
 	if err != nil {
@@ -153,7 +154,7 @@ func maxDecodeBounds(a codec.DecodeBounds, b codec.DecodeBounds) codec.DecodeBou
 // already matching are passed through untouched (preserving every optional
 // capability they implement).
 func resolvedProviderSource(source pipeline.Source, name string, detail string) pipeline.Source {
-	if source.Name() == name && describedNodeDetail(source) == detail {
+	if source.Name() == name && compile.DescribedNodeDetail(source) == detail {
 		return source
 	}
 	renamed := renamedSource{source: source, name: name, detail: detail}

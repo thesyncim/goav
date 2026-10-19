@@ -188,3 +188,13 @@ func convertRefusal(err error) (error, bool) {
 	}
 	return err, false
 }
+
+// refuse and refuse2 convert the error of a compile call that also returns
+// values, as publicError does.
+func refuse[T any](v T, err error) (T, error) {
+	return v, publicError(err)
+}
+
+func refuse2[T, U any](v T, u U, err error) (T, U, error) {
+	return v, u, publicError(err)
+}

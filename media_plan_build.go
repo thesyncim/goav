@@ -4,9 +4,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/shape"
 )
 
 func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
@@ -85,17 +83,4 @@ func runtimeWithClock(rt *Runtime, clock av.Clock) *Runtime {
 	clone := *rt
 	clone.clock = clock
 	return &clone
-}
-
-// mediaShapeFromMediaTransform is the frame shape a lowered transform
-// produces.
-func mediaShapeFromMediaTransform(transform mediaTransform) shape.Spec {
-	switch {
-	case transform.video != nil:
-		return mediaShapeFromRecipeIRTransform(recipeir.Transform{Kind: recipeir.TransformResize, Resize: *transform.video})
-	case transform.audio != nil:
-		return mediaShapeFromRecipeIRTransform(recipeir.Transform{Kind: recipeir.TransformResample, Resample: *transform.audio})
-	default:
-		return shape.Spec{}
-	}
 }

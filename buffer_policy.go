@@ -1,15 +1,16 @@
 package goav
 
-import "github.com/thesyncim/goav/pipeline"
-
-const realtimeRecipeBufferCapacity = 32
+import (
+	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/pipeline"
+)
 
 func realtimeRecipeBufferPolicy(runtimeBuffer pipeline.BufferPolicy) pipeline.BufferPolicy {
 	if !runtimeBuffer.IsDirect() {
 		return runtimeBuffer
 	}
 	return pipeline.BufferPolicy{
-		Capacity: realtimeRecipeBufferCapacity,
+		Capacity: compile.RealtimeRecipeBufferCapacity,
 		Drop:     pipeline.DropBlock,
 	}
 }

@@ -1,8 +1,7 @@
-// Build-time validation that the runtime has decode and encode adapters for the planned recipe.
-
-package goav
+package compile
 
 import (
+	"cmp"
 	"errors"
 	"slices"
 	"strconv"
@@ -13,10 +12,11 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
 )
 
-func validateRecipeIRDecodeAdapters(operation string, env compileEnv, inputs []recipeir.Input, streams []recipeir.Stream) error {
+func validateRecipeIRDecodeAdapters(operation string, env Env, inputs []recipeir.Input, streams []recipeir.Stream) error {
 	if !env.Present {
 		return nil
 	}
@@ -30,16 +30,16 @@ func validateRecipeIRDecodeAdapters(operation string, env compileEnv, inputs []r
 			continue
 		}
 		if _, err := env.Codecs.DecoderFactory(request.Codec); err != nil {
-			return recipeDecodeAdapterError(operation, stream, request.Codec, env.Codecs, err)
+			return RecipeDecodeAdapterError(operation, stream, request.Codec, env.Codecs, err)
 		}
-		if err := validateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
+		if err := ValidateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateKnownRecipeIRDecodeAdapters(operation string, env compileEnv, probes []format.ProbeResult, streams []recipeir.Stream) error {
+func validateKnownRecipeIRDecodeAdapters(operation string, env Env, probes []format.ProbeResult, streams []recipeir.Stream) error {
 	if !env.Present {
 		return nil
 	}
@@ -53,10 +53,10 @@ func validateKnownRecipeIRDecodeAdapters(operation string, env compileEnv, probe
 			continue
 		}
 		if _, err := env.Codecs.DecoderFactory(selected.Codec.ID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, env.Codecs, err)
+			return RecipeDecodeAdapterError(operation, stream, selected.Codec.ID, env.Codecs, err)
 		}
-		request := decodeAdapterRequestFromStream(selected, stream)
-		if err := validateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
+		request := DecodeAdapterRequestFromStream(selected, stream)
+		if err := ValidateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}
@@ -64,15 +64,15 @@ func validateKnownRecipeIRDecodeAdapters(operation string, env compileEnv, probe
 }
 
 func validateLiveRecipeStreamSelection(inputs []recipeir.Input, stream recipeir.Stream) error {
-	streams := liveInputStreams(inputs)
+	streams := LiveInputStreams(inputs)
 	if len(streams) == 0 {
 		return nil
 	}
-	_, err := selectDecodeStream(streams, recipeIRStreamSelector(stream))
+	_, err := SelectDecodeStream(streams, recipeIRStreamSelector(stream))
 	return err
 }
 
-func liveInputStreams(inputs []recipeir.Input) []av.Stream {
+func LiveInputStreams(inputs []recipeir.Input) []av.Stream {
 	streams := make([]av.Stream, 0, len(inputs))
 	for i := range inputs {
 		stream, ok := liveInputStream(inputs[i], i)
@@ -116,7 +116,7 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream recipeir.Stream)
 		if len(probes[i].Streams) == 0 {
 			continue
 		}
-		selected, err := selectDecodeStream(probes[i].Streams, selector)
+		selected, err := SelectDecodeStream(probes[i].Streams, selector)
 		if err != nil || selected.Codec.ID == "" {
 			continue
 		}
@@ -128,31 +128,31 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream recipeir.Stream)
 	return candidates[0], true
 }
 
-func liveDecodeAdapterRequest(inputs []recipeir.Input, stream recipeir.Stream) (codecAdapterRequest, bool) {
+func liveDecodeAdapterRequest(inputs []recipeir.Input, stream recipeir.Stream) (CodecAdapterRequest, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
-		return codecAdapterRequest{}, false
+		return CodecAdapterRequest{}, false
 	}
-	return decodeAdapterRequestFromStream(selected, stream), true
+	return DecodeAdapterRequestFromStream(selected, stream), true
 }
 
 func liveDecodeStream(inputs []recipeir.Input, stream recipeir.Stream) (av.Stream, bool) {
-	streams := liveInputStreams(inputs)
+	streams := LiveInputStreams(inputs)
 	if len(streams) == 0 {
 		return av.Stream{}, false
 	}
-	selected, err := selectDecodeStream(streams, recipeIRStreamSelector(stream))
+	selected, err := SelectDecodeStream(streams, recipeIRStreamSelector(stream))
 	if err != nil || selected.Codec.ID == "" {
 		return av.Stream{}, false
 	}
 	return selected, true
 }
 
-func recipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
-	code := decodeAdapterMissingCode
+func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+	code := builderr.DecodeAdapterMissingCode
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = decodeAdapterUnavailableCode
+		code = builderr.DecodeAdapterUnavailableCode
 		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
@@ -169,24 +169,24 @@ func recipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID 
 			}
 		}
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      recipeIRStreamName(stream),
 		Reason:    reason,
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
 			tagFix,
 			"register a codec adapter that provides a " + string(codecID) + " decoder",
 			"use input.To(output) for packet-preserving receive when decoding is not needed",
 		}),
-		cause: cause,
+		Cause: cause,
 	}
 }
 
-func validateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func ValidateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request CodecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -195,23 +195,23 @@ func validateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, 
 		return nil
 	}
 	for i := range descriptors {
-		if codecDescriptorSupports(descriptors[i], request) {
+		if CodecDescriptorSupports(descriptors[i], request) {
 			return nil
 		}
 	}
 	return decodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func decodeAdapterRequestFromStream(stream av.Stream, planned recipeir.Stream) codecAdapterRequest {
-	return codecAdapterRequest{
+func DecodeAdapterRequestFromStream(stream av.Stream, planned recipeir.Stream) CodecAdapterRequest {
+	return CodecAdapterRequest{
 		Codec:        stream.Codec.ID,
-		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, planned.Selector.Type, codecMedia(stream.Codec.ID)),
+		Media:        FirstNonEmptyMedia(stream.Codec.Type, stream.Type, planned.Selector.Type, CodecMedia(stream.Codec.ID)),
 		SampleFormat: stream.Codec.SampleFormat,
 		PixelFormat:  stream.Codec.PixelFormat,
 	}
 }
 
-func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request CodecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -223,33 +223,33 @@ func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, re
 	if request.Media != "" {
 		details = append(details, "requested_media="+string(request.Media))
 	}
-	if media := descriptorSupportedMedia(descriptors); len(media) != 0 {
+	if media := DescriptorSupportedMedia(descriptors); len(media) != 0 {
 		details = append(details, "supported_media="+joinMediaTypes(media))
 	}
-	if sampleFormats := descriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
+	if sampleFormats := DescriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
 		details = append(details, "supported_sample_formats="+strings.Join(sampleFormats, ","))
 	}
-	if pixelFormats := descriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
+	if pixelFormats := DescriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(decodeAdapterIncompatibleCode),
-		Code:      decodeAdapterIncompatibleCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.DecodeAdapterIncompatibleCode),
+		Code:      builderr.DecodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      recipeIRStreamName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
 			"choose a decoder adapter that supports this " + label,
 			"fix the input stream metadata if it describes the wrong media or frame format",
 			"fix the codec descriptor if the implementation already supports this config",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
-func validateRecipeIREncodeAdapters(operation string, env compileEnv, streams []recipeir.Stream) error {
+func validateRecipeIREncodeAdapters(operation string, env Env, streams []recipeir.Stream) error {
 	if !env.Present {
 		return nil
 	}
@@ -263,14 +263,14 @@ func validateRecipeIREncodeAdapters(operation string, env compileEnv, streams []
 			return recipeEncodeAdapterError(operation, stream, env.Codecs, err)
 		}
 		request := encodeAdapterRequestFromRecipeIRStream(stream)
-		if err := validateEncodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
+		if err := ValidateEncodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-type codecAdapterRequest struct {
+type CodecAdapterRequest struct {
 	Codec        av.CodecID
 	Media        av.MediaType
 	SampleFormat string
@@ -279,26 +279,26 @@ type codecAdapterRequest struct {
 	Channels     int
 }
 
-func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) codecAdapterRequest {
+func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) CodecAdapterRequest {
 	encode := recipeIRStreamEncodeSpec(stream)
-	return codecAdapterRequest{
+	return CodecAdapterRequest{
 		Codec:        encode.ID,
-		Media:        firstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Selector.Type, codecMedia(encode.ID)),
-		SampleFormat: firstNonEmpty(encode.Parameters.SampleFormat, recipeIRStreamSampleFormat(stream)),
-		PixelFormat:  firstNonEmpty(encode.Parameters.PixelFormat, recipeIRStreamPixelFormat(stream)),
-		SampleRate:   firstPositiveInt(encode.Parameters.SampleRate, recipeIRStreamResample(stream).SampleRate),
-		Channels:     firstPositiveInt(encode.Parameters.Channels, recipeIRStreamResample(stream).Channels),
+		Media:        FirstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Selector.Type, CodecMedia(encode.ID)),
+		SampleFormat: cmp.Or(encode.Parameters.SampleFormat, recipeIRStreamSampleFormat(stream)),
+		PixelFormat:  cmp.Or(encode.Parameters.PixelFormat, recipeIRStreamPixelFormat(stream)),
+		SampleRate:   FirstPositiveInt(encode.Parameters.SampleRate, recipeIRStreamResample(stream).SampleRate),
+		Channels:     FirstPositiveInt(encode.Parameters.Channels, recipeIRStreamResample(stream).Channels),
 	}
 }
 
-func encodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) codecAdapterRequest {
-	return codecAdapterRequest{
+func EncodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) CodecAdapterRequest {
+	return CodecAdapterRequest{
 		Codec:        spec.ID,
-		Media:        firstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, codecMedia(spec.ID)),
-		SampleFormat: firstNonEmpty(spec.Parameters.SampleFormat, stream.Codec.SampleFormat),
-		PixelFormat:  firstNonEmpty(spec.Parameters.PixelFormat, stream.Codec.PixelFormat),
-		SampleRate:   firstPositiveInt(spec.Parameters.SampleRate, stream.Codec.SampleRate),
-		Channels:     firstPositiveInt(spec.Parameters.Channels, stream.Codec.Channels),
+		Media:        FirstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, CodecMedia(spec.ID)),
+		SampleFormat: cmp.Or(spec.Parameters.SampleFormat, stream.Codec.SampleFormat),
+		PixelFormat:  cmp.Or(spec.Parameters.PixelFormat, stream.Codec.PixelFormat),
+		SampleRate:   FirstPositiveInt(spec.Parameters.SampleRate, stream.Codec.SampleRate),
+		Channels:     FirstPositiveInt(spec.Parameters.Channels, stream.Codec.Channels),
 	}
 }
 
@@ -334,7 +334,7 @@ func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
 	return ""
 }
 
-func validateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func ValidateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request CodecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -343,14 +343,14 @@ func validateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, 
 		return nil
 	}
 	for i := range descriptors {
-		if codecDescriptorSupports(descriptors[i], request) {
+		if CodecDescriptorSupports(descriptors[i], request) {
 			return nil
 		}
 	}
 	return encodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest) bool {
+func CodecDescriptorSupports(desc codec.Descriptor, request CodecAdapterRequest) bool {
 	if request.Media != "" && desc.Type != "" && desc.Type != request.Media {
 		return false
 	}
@@ -366,14 +366,14 @@ func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest)
 	return true
 }
 
-func encodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request codecAdapterRequest, descriptors []codec.Descriptor) error {
-	return encodeAdapterIncompatibleErrorAt(operation, recipeIRStreamName(stream), request, descriptors)
+func encodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request CodecAdapterRequest, descriptors []codec.Descriptor) error {
+	return EncodeAdapterIncompatibleErrorAt(operation, recipeIRStreamName(stream), request, descriptors)
 }
 
 // encodeAdapterIncompatibleErrorAt is the encoder-descriptor refusal for one
 // node: planning reports it from shape facts, and encoder open reports it
 // from the real stream when facts arrive only with the opened input.
-func encodeAdapterIncompatibleErrorAt(operation string, node string, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+func EncodeAdapterIncompatibleErrorAt(operation string, node string, request CodecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -385,44 +385,44 @@ func encodeAdapterIncompatibleErrorAt(operation string, node string, request cod
 	if request.Media != "" {
 		details = append(details, "requested_media="+string(request.Media))
 	}
-	if media := descriptorSupportedMedia(descriptors); len(media) != 0 {
+	if media := DescriptorSupportedMedia(descriptors); len(media) != 0 {
 		details = append(details, "supported_media="+joinMediaTypes(media))
 	}
-	if sampleFormats := descriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
+	if sampleFormats := DescriptorSupportedSampleFormats(descriptors); len(sampleFormats) != 0 {
 		details = append(details, "supported_sample_formats="+strings.Join(sampleFormats, ","))
 	}
-	if pixelFormats := descriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
+	if pixelFormats := DescriptorSupportedPixelFormats(descriptors); len(pixelFormats) != 0 {
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(encodeAdapterIncompatibleCode),
-		Code:      encodeAdapterIncompatibleCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.EncodeAdapterIncompatibleCode),
+		Code:      builderr.EncodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
 			resampleFixHint(field, request, descriptors),
 			"choose an encoder adapter that supports this " + label,
 			"change the operation spec chain so the encoder receives one of the supported formats",
 			"fix the codec descriptor if the implementation already supports this config",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }
 
-func codecAdapterIncompatibilityField(request codecAdapterRequest, descriptors []codec.Descriptor) (string, string, string) {
-	mediaCompatible := codecDescriptorsMediaCompatible(descriptors, request.Media)
+func codecAdapterIncompatibilityField(request CodecAdapterRequest, descriptors []codec.Descriptor) (string, string, string) {
+	mediaCompatible := CodecDescriptorsMediaCompatible(descriptors, request.Media)
 	if request.Media != "" && !mediaCompatible {
-		return "media", string(request.Media), joinMediaTypes(descriptorSupportedMedia(descriptors))
+		return "media", string(request.Media), joinMediaTypes(DescriptorSupportedMedia(descriptors))
 	}
-	mediaDescriptors := descriptorsMatchingMedia(descriptors, request.Media)
-	if request.SampleFormat != "" && !codecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
-		return "sample_format", request.SampleFormat, strings.Join(descriptorSupportedSampleFormats(mediaDescriptors), ",")
+	mediaDescriptors := DescriptorsMatchingMedia(descriptors, request.Media)
+	if request.SampleFormat != "" && !CodecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
+		return "sample_format", request.SampleFormat, strings.Join(DescriptorSupportedSampleFormats(mediaDescriptors), ",")
 	}
-	if request.PixelFormat != "" && !codecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
-		return "pixel_format", request.PixelFormat, strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
+	if request.PixelFormat != "" && !CodecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
+		return "pixel_format", request.PixelFormat, strings.Join(DescriptorSupportedPixelFormats(mediaDescriptors), ",")
 	}
 	if rates := descriptorSupportedSampleRates(mediaDescriptors); request.SampleRate > 0 && len(rates) != 0 && !slices.Contains(rates, request.SampleRate) {
 		return "sample_rate", strconv.Itoa(request.SampleRate), joinInts(rates)
@@ -430,7 +430,7 @@ func codecAdapterIncompatibilityField(request codecAdapterRequest, descriptors [
 	return "codec", string(request.Codec), string(request.Codec)
 }
 
-func codecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
+func CodecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.MediaType) bool {
 	if media == "" {
 		return true
 	}
@@ -442,7 +442,7 @@ func codecDescriptorsMediaCompatible(descriptors []codec.Descriptor, media av.Me
 	return false
 }
 
-func descriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType) []codec.Descriptor {
+func DescriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType) []codec.Descriptor {
 	if media == "" {
 		return descriptors
 	}
@@ -455,7 +455,7 @@ func descriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType
 	return out
 }
 
-func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
+func CodecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
 	if sampleFormat == "" {
 		return true
 	}
@@ -468,7 +468,7 @@ func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, samp
 	return false
 }
 
-func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
+func CodecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
 	if pixelFormat == "" {
 		return true
 	}
@@ -481,11 +481,11 @@ func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixel
 	return false
 }
 
-func descriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
+func DescriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
 	out := make([]av.MediaType, 0, len(descriptors))
 	for i := range descriptors {
 		media := descriptors[i].Type
-		if media == "" || mediaAllowed(out, media) {
+		if media == "" || MediaAllowed(out, media) {
 			continue
 		}
 		out = append(out, media)
@@ -493,23 +493,23 @@ func descriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
 	return out
 }
 
-func descriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
+func DescriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
-		out = mergeStringList(out, descriptors[i].Capabilities.SampleFormats)
+		out = MergeStringList(out, descriptors[i].Capabilities.SampleFormats)
 	}
 	return out
 }
 
-func descriptorSupportedPixelFormats(descriptors []codec.Descriptor) []string {
+func DescriptorSupportedPixelFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
-		out = mergeStringList(out, descriptors[i].Capabilities.PixelFormats)
+		out = MergeStringList(out, descriptors[i].Capabilities.PixelFormats)
 	}
 	return out
 }
 
-func mergeStringList(existing []string, next []string) []string {
+func MergeStringList(existing []string, next []string) []string {
 	for i := range next {
 		if next[i] == "" || stringAllowed(existing, next[i]) {
 			continue
@@ -520,14 +520,14 @@ func mergeStringList(existing []string, next []string) []string {
 }
 
 func recipeEncodeAdapterError(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, cause error) error {
-	return recipeEncodeAdapterCodecError(operation, stream, operationsEncodeSpec(stream.Operations).ID, registry, cause)
+	return RecipeEncodeAdapterCodecError(operation, stream, OperationsEncodeSpec(stream.Operations).ID, registry, cause)
 }
 
-func recipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
-	code := encodeAdapterMissingCode
+func RecipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+	code := builderr.EncodeAdapterMissingCode
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = encodeAdapterUnavailableCode
+		code = builderr.EncodeAdapterUnavailableCode
 		reason = string(codecID) + " encoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
@@ -537,20 +537,20 @@ func recipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, cod
 			details = append(details, codecDescriptorDetails(descriptors)...)
 		}
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      recipeIRStreamName(stream),
 		Reason:    reason,
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
 			"register a " + string(codecID) + " encoder with goav.New(runconfig.WithEncoder(...)) or a codec adapter that provides one",
 			"use .Decode().To(goav.Sink(...)) to receive decoded frames without encoding",
 			"leave out .Decode() for packet-preserving output when re-encoding is not needed: input.Video().To(output)",
 		}),
-		cause: cause,
+		Cause: cause,
 	}
 }
 
@@ -573,7 +573,7 @@ func codecDescriptorDetails(descriptors []codec.Descriptor) []string {
 // resampleFixHint names the exact conversion for a sample-rate refusal: the
 // supported rate closest above the requested one (else the highest), at the
 // stream's channel count. Other fields get no hint (an empty fix is dropped).
-func resampleFixHint(field string, request codecAdapterRequest, descriptors []codec.Descriptor) string {
+func resampleFixHint(field string, request CodecAdapterRequest, descriptors []codec.Descriptor) string {
 	rates := descriptorSupportedSampleRates(descriptors)
 	if field != "sample_rate" || len(rates) == 0 {
 		return ""

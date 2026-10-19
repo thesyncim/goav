@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -43,48 +44,48 @@ func TestCustomJoinShapeContractHelpers(t *testing.T) {
 	audioFrame := shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))
 	videoFrame := shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatI420))
 
-	if customJoinDecodesArms(nil) {
+	if compile.CustomJoinDecodesArms(nil) {
 		t.Fatal("empty input contract decoded arms")
 	}
-	if customJoinDecodesArms(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}) {
+	if compile.CustomJoinDecodesArms(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}) {
 		t.Fatal("packet input contract decoded arms")
 	}
-	if customJoinDecodesArms(shape.Set{audioFrame, shape.Packet(av.MediaAudio, av.CodecOpus)}) {
+	if compile.CustomJoinDecodesArms(shape.Set{audioFrame, shape.Packet(av.MediaAudio, av.CodecOpus)}) {
 		t.Fatal("mixed-domain input contract decoded arms")
 	}
-	if !customJoinDecodesArms(shape.Set{audioFrame, videoFrame}) {
+	if !compile.CustomJoinDecodesArms(shape.Set{audioFrame, videoFrame}) {
 		t.Fatal("all frame-domain input contract did not require decoded arms")
 	}
 
-	if got := customJoinMedia(shape.Set{audioFrame, shape.Frame(av.MediaAudio)}); got != av.MediaAudio {
+	if got := compile.CustomJoinMedia(shape.Set{audioFrame, shape.Frame(av.MediaAudio)}); got != av.MediaAudio {
 		t.Fatalf("customJoinMedia uniform audio = %s, want audio", got)
 	}
-	if got := customJoinMedia(shape.Set{shape.Frame("")}); got != "" {
+	if got := compile.CustomJoinMedia(shape.Set{shape.Frame("")}); got != "" {
 		t.Fatalf("customJoinMedia missing media = %s, want empty", got)
 	}
-	if got := customJoinMedia(shape.Set{audioFrame, videoFrame}); got != "" {
+	if got := compile.CustomJoinMedia(shape.Set{audioFrame, videoFrame}); got != "" {
 		t.Fatalf("customJoinMedia mixed media = %s, want empty", got)
 	}
 }
 
 func TestCustomJoinArmExpectedContracts(t *testing.T) {
-	if got, ok := customJoinArmExpected(nil); ok || got != (shape.Spec{}) {
+	if got, ok := compile.CustomJoinArmExpected(nil); ok || got != (shape.Spec{}) {
 		t.Fatalf("empty expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := customJoinArmExpected(shape.Set{
+	if got, ok := compile.CustomJoinArmExpected(shape.Set{
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")),
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")),
 	}); ok || got != (shape.Spec{}) {
 		t.Fatalf("multi-shape expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := customJoinArmExpected(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}); ok || got != (shape.Spec{}) {
+	if got, ok := compile.CustomJoinArmExpected(shape.Set{shape.Packet(av.MediaAudio, av.CodecOpus)}); ok || got != (shape.Spec{}) {
 		t.Fatalf("packet expected = %+v %v, want none", got, ok)
 	}
-	if got, ok := customJoinArmExpected(shape.Set{shape.Frame(av.MediaAudio)}); ok || got != (shape.Spec{}) {
+	if got, ok := compile.CustomJoinArmExpected(shape.Set{shape.Frame(av.MediaAudio)}); ok || got != (shape.Spec{}) {
 		t.Fatalf("formatless frame expected = %+v %v, want none", got, ok)
 	}
 
-	audioExpected, ok := customJoinArmExpected(shape.Set{
+	audioExpected, ok := compile.CustomJoinArmExpected(shape.Set{
 		shape.Frame(
 			av.MediaAudio,
 			shape.Audio(48_000, codec.Stereo, av.SampleFormatF32),
@@ -103,7 +104,7 @@ func TestCustomJoinArmExpectedContracts(t *testing.T) {
 		t.Fatalf("audio expected = %+v %v, want %+v true", audioExpected, ok, wantAudio)
 	}
 
-	videoExpected, ok := customJoinArmExpected(shape.Set{
+	videoExpected, ok := compile.CustomJoinArmExpected(shape.Set{
 		shape.Frame(
 			av.MediaVideo,
 			shape.Video(1280, 720, av.PixelFormatI420),
@@ -127,11 +128,11 @@ func TestCustomJoinBaseStreamContracts(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(context.Context, SourcePush) error { return nil },
 	)
-	framePlan := &joinPlan{
-		name: "funnel",
-		arms: []joinArmPlan{{sourceShape: compileInputFromSpec(frameInput, "").Shape}},
+	framePlan := &compile.JoinPlan{
+		Name: "funnel",
+		Arms: []compile.JoinArmPlan{{SourceShape: compileInputFromSpec(frameInput, "").Shape}},
 	}
-	stream, base := framePlan.customJoinBaseStream(true)
+	stream, base := framePlan.CustomJoinBaseStream(true)
 	if stream.ID != "funnel" ||
 		stream.Type != av.MediaAudio ||
 		stream.Codec.Type != av.MediaAudio ||
@@ -156,14 +157,14 @@ func TestCustomJoinBaseStreamContracts(t *testing.T) {
 			Channels:   codec.Stereo,
 		},
 	}
-	packetPlan := &joinPlan{
-		name: "switcher",
-		arms: []joinArmPlan{{
-			stream: packetArm,
-			domain: shape.DomainPacket,
+	packetPlan := &compile.JoinPlan{
+		Name: "switcher",
+		Arms: []compile.JoinArmPlan{{
+			Stream: packetArm,
+			Domain: shape.DomainPacket,
 		}},
 	}
-	stream, base = packetPlan.customJoinBaseStream(false)
+	stream, base = packetPlan.CustomJoinBaseStream(false)
 	if stream.ID != "switcher" ||
 		stream.Codec.ID != av.CodecOpus ||
 		stream.TimeBase != packetArm.TimeBase ||
@@ -178,17 +179,17 @@ func TestCustomJoinBaseStreamContracts(t *testing.T) {
 }
 
 func TestCustomJoinedStreamAndDomainContracts(t *testing.T) {
-	plan := &joinPlan{
-		name: "funnel",
-		arms: []joinArmPlan{{
-			sourceShape: compileInputFromSpec(Source("voice",
+	plan := &compile.JoinPlan{
+		Name: "funnel",
+		Arms: []compile.JoinArmPlan{{
+			SourceShape: compileInputFromSpec(Source("voice",
 				shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 				func(context.Context, SourcePush) error { return nil },
 			), "").Shape,
 		}},
 	}
 
-	withoutContract := customJoinedStream(plan, nil, true)
+	withoutContract := compile.CustomJoinedStream(plan, nil, true)
 	if withoutContract.ID != "funnel" || withoutContract.Codec.SampleFormat != av.SampleFormatS16 {
 		t.Fatalf("customJoinedStream without contract = %+v", withoutContract)
 	}
@@ -199,7 +200,7 @@ func TestCustomJoinedStreamAndDomainContracts(t *testing.T) {
 			shape.Frame(av.MediaAudio, shape.Audio(24_000, codec.Mono, av.SampleFormatF32), shape.Codec(av.CodecOpus)),
 		},
 	}
-	withContract := customJoinedStream(plan, stage, true)
+	withContract := compile.CustomJoinedStream(plan, stage, true)
 	if withContract.ID != "funnel" ||
 		withContract.Type != av.MediaAudio ||
 		withContract.Codec.ID != av.CodecOpus ||
@@ -210,35 +211,35 @@ func TestCustomJoinedStreamAndDomainContracts(t *testing.T) {
 		t.Fatalf("customJoinedStream with contract = %+v", withContract)
 	}
 
-	emptyOutput := customJoinedStream(plan, customJoinContractStage{name: "funnel"}, true)
+	emptyOutput := compile.CustomJoinedStream(plan, customJoinContractStage{name: "funnel"}, true)
 	if !reflect.DeepEqual(emptyOutput, withoutContract) {
 		t.Fatalf("customJoinedStream empty output = %+v, want fallback %+v", emptyOutput, withoutContract)
 	}
 
-	if got := (&joinPlan{tree: &joinTreeSnapshot{}}).customJoinedOutputDomain(); got != "" {
+	if got := (&compile.JoinPlan{Tree: &compile.JoinTreeSnapshot{}}).CustomJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain non-custom plan = %s, want empty", got)
 	}
-	if got := (&joinPlan{tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "empty", stage: stage}}}).customJoinedOutputDomain(); got != "" {
+	if got := (&compile.JoinPlan{Tree: &compile.JoinTreeSnapshot{Custom: &compile.CustomJoinSpec{Name: "empty", Stage: stage}}}).CustomJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain without arms = %s, want empty", got)
 	}
-	if got := (&joinPlan{
-		name: "bare",
-		tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "bare", stage: customJoinBareStage{name: "bare"}}},
-		arms: plan.arms,
-	}).customJoinedOutputDomain(); got != "" {
+	if got := (&compile.JoinPlan{
+		Name: "bare",
+		Tree: &compile.JoinTreeSnapshot{Custom: &compile.CustomJoinSpec{Name: "bare", Stage: customJoinBareStage{name: "bare"}}},
+		Arms: plan.Arms,
+	}).CustomJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain bare stage = %s, want empty", got)
 	}
-	if got := (&joinPlan{
-		name: "empty",
-		tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "empty", stage: customJoinContractStage{name: "empty"}}},
-		arms: plan.arms,
-	}).customJoinedOutputDomain(); got != "" {
+	if got := (&compile.JoinPlan{
+		Name: "empty",
+		Tree: &compile.JoinTreeSnapshot{Custom: &compile.CustomJoinSpec{Name: "empty", Stage: customJoinContractStage{name: "empty"}}},
+		Arms: plan.Arms,
+	}).CustomJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain empty outputs = %s, want empty", got)
 	}
 
-	plan.tree = &joinTreeSnapshot{custom: &customJoinSpec{name: "funnel", stage: stage}}
-	plan.profile.decodeArms = true
-	if got := plan.customJoinedOutputDomain(); got != shape.DomainFrame {
+	plan.Tree = &compile.JoinTreeSnapshot{Custom: &compile.CustomJoinSpec{Name: "funnel", Stage: stage}}
+	plan.Profile.DecodeArms = true
+	if got := plan.CustomJoinedOutputDomain(); got != shape.DomainFrame {
 		t.Fatalf("customJoinedOutputDomain = %s, want frame", got)
 	}
 }
@@ -256,7 +257,7 @@ func TestApplyShapeToStreamContracts(t *testing.T) {
 			SampleFormat: av.SampleFormatS16,
 		},
 	}
-	if got := applyShapeToStream(stream, shape.Spec{}); !reflect.DeepEqual(got, stream) {
+	if got := compile.ApplyShapeToStream(stream, shape.Spec{}); !reflect.DeepEqual(got, stream) {
 		t.Fatalf("empty overlay = %+v, want unchanged %+v", got, stream)
 	}
 
@@ -270,7 +271,7 @@ func TestApplyShapeToStreamContracts(t *testing.T) {
 		Channels:     codec.Mono,
 		SampleFormat: av.SampleFormatF32,
 	}
-	got := applyShapeToStream(stream, overlay)
+	got := compile.ApplyShapeToStream(stream, overlay)
 	if got.ID != "joined" ||
 		got.Type != av.MediaVideo ||
 		got.Codec.Type != av.MediaVideo ||

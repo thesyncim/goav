@@ -7,22 +7,23 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func TestMetadataEqualContracts(t *testing.T) {
-	if !metadataEqual(nil, nil) {
+	if !compile.MetadataEqual(nil, nil) {
 		t.Fatal("nil metadata should equal nil metadata")
 	}
-	if metadataEqual(nil, av.Metadata{}) {
+	if compile.MetadataEqual(nil, av.Metadata{}) {
 		t.Fatal("nil metadata should not equal an empty non-nil map")
 	}
-	if !metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main"}) {
+	if !compile.MetadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main"}) {
 		t.Fatal("equal metadata did not compare equal")
 	}
-	if metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "high"}) {
+	if compile.MetadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "high"}) {
 		t.Fatal("different values compared equal")
 	}
-	if metadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main", "level": "3.1"}) {
+	if compile.MetadataEqual(av.Metadata{"profile": "main"}, av.Metadata{"profile": "main", "level": "3.1"}) {
 		t.Fatal("different lengths compared equal")
 	}
 }

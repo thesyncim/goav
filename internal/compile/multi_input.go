@@ -1,12 +1,14 @@
-package goav
+package compile
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/shape"
 )
@@ -15,11 +17,11 @@ import (
 // carry. It is the unit of multi-input stream selection: a stream chain selects
 // across the union of all sets, and goav.InputName(...) narrows the search to
 // one set.
-type inputStreamSet struct {
-	name    string
-	domain  shape.MediaDomain
-	streams []av.Stream
-	known   bool
+type InputStreamSet struct {
+	Name    string
+	Domain  shape.MediaDomain
+	Streams []av.Stream
+	Known   bool
 }
 
 // jobInputStreamSets builds one inputStreamSet per job input from what the
@@ -27,26 +29,26 @@ type inputStreamSet struct {
 // (realtime) input codec intent. Inputs whose streams cannot be known yet (for
 // example a file destination before probing) stay known=false so selection
 // validation skips them instead of guessing.
-func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
-	sets := make([]inputStreamSet, 0, len(inputs))
+func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []InputStreamSet {
+	sets := make([]InputStreamSet, 0, len(inputs))
 	for i := range inputs {
-		set := inputStreamSet{
-			name:   recipeIRInputName(inputs[i], i),
-			domain: shape.DomainPacket,
+		set := InputStreamSet{
+			Name:   recipeIRInputName(inputs[i], i),
+			Domain: shape.DomainPacket,
 		}
 		switch {
 		case inputs[i].SourceShape.Domain != "":
 			spec, _ := recipeIRInputSourceShape(inputs[i])
-			set.domain = spec.Domain
-			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputs[i], spec)}
-			set.known = true
+			set.Domain = spec.Domain
+			set.Streams = []av.Stream{recipeIRInputDeclaredStream(inputs[i], spec)}
+			set.Known = true
 		case i < len(probes) && len(probes[i].Streams) != 0:
-			set.streams = append([]av.Stream(nil), probes[i].Streams...)
-			set.known = true
+			set.Streams = append([]av.Stream(nil), probes[i].Streams...)
+			set.Known = true
 		case inputs[i].Realtime && inputs[i].Codec.ID != "":
 			if stream, ok := liveInputStream(inputs[i], i); ok {
-				set.streams = []av.Stream{stream}
-				set.known = true
+				set.Streams = []av.Stream{stream}
+				set.Known = true
 			}
 		}
 		sets = append(sets, set)
@@ -55,7 +57,7 @@ func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []
 }
 
 func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Stream {
-	shape := normalizeCustomSourceShape(input.Name, spec)
+	shape := NormalizeCustomSourceShape(input.Name, spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,
@@ -71,20 +73,20 @@ func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Strea
 		},
 		Name: string(shape.StreamID),
 	}
-	fillStreamCodecParameters(&stream, input.Codec)
+	FillStreamCodecParameters(&stream, input.Codec)
 	return stream
 }
 
 func recipeIRInputName(input recipeir.Input, index int) string {
-	return firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", index))
+	return cmp.Or(input.Name, input.URI, fmt.Sprintf("input-%d", index))
 }
 
 // inputBoundStream is one selection candidate with its input attribution.
 type inputBoundStream struct {
-	inputIndex int
-	inputName  string
-	domain     shape.MediaDomain
-	stream     av.Stream
+	InputIndex int
+	InputName  string
+	Domain     shape.MediaDomain
+	Stream     av.Stream
 }
 
 // selectStreamAcrossInputSets selects exactly one stream across all inputs:
@@ -94,12 +96,12 @@ type inputBoundStream struct {
 // definitively failed (unknown input name, no match, or several matches — the
 // ambiguity error lists every candidate with its input and suggests
 // goav.InputName/goav.StreamID narrowing).
-func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelector, inputName string) (inputBoundStream, bool, error) {
+func SelectStreamAcrossInputSets(sets []InputStreamSet, selector av.StreamSelector, inputName string) (inputBoundStream, bool, error) {
 	candidates := sets
 	if inputName != "" {
 		index := -1
 		for i := range sets {
-			if sets[i].name == inputName {
+			if sets[i].Name == inputName {
 				index = i
 				break
 			}
@@ -113,58 +115,58 @@ func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelect
 	matches := make([]inputBoundStream, 0, 2)
 	for i := range candidates {
 		set := candidates[i]
-		if !set.known {
+		if !set.Known {
 			unknown = true
 			continue
 		}
-		for k := range set.streams {
-			if !streamMatchesSelector(set.streams[k], selector) {
+		for k := range set.Streams {
+			if !StreamMatchesSelector(set.Streams[k], selector) {
 				continue
 			}
 			matches = append(matches, inputBoundStream{
-				inputIndex: inputSetIndex(sets, set.name),
-				inputName:  set.name,
-				domain:     set.domain,
-				stream:     set.streams[k],
+				InputIndex: inputSetIndex(sets, set.Name),
+				InputName:  set.Name,
+				Domain:     set.Domain,
+				Stream:     set.Streams[k],
 			})
 		}
 	}
 	switch {
 	case len(matches) == 1:
 		selected := matches[0]
-		if selected.domain != shape.DomainFrame && selected.stream.Codec.ID == "" {
+		if selected.Domain != shape.DomainFrame && selected.Stream.Codec.ID == "" {
 			// Mirror selectDecodeStream's codec requirement for packet media.
-			_, err := selectDecodeStream([]av.Stream{selected.stream}, selector)
+			_, err := SelectDecodeStream([]av.Stream{selected.Stream}, selector)
 			return inputBoundStream{}, false, err
 		}
 		return selected, true, nil
 	case len(matches) > 1:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(streamAmbiguousCode, selector, inputName, matches)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(builderr.StreamAmbiguousCode, selector, inputName, matches)
 	case unknown:
 		return inputBoundStream{}, false, nil
 	default:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(streamMissingCode, selector, inputName, allInputBoundStreams(sets))
+		return inputBoundStream{}, false, multiInputStreamSelectionError(builderr.StreamMissingCode, selector, inputName, AllInputBoundStreams(sets))
 	}
 }
 
-func inputSetIndex(sets []inputStreamSet, name string) int {
+func inputSetIndex(sets []InputStreamSet, name string) int {
 	for i := range sets {
-		if sets[i].name == name {
+		if sets[i].Name == name {
 			return i
 		}
 	}
 	return 0
 }
 
-func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
+func AllInputBoundStreams(sets []InputStreamSet) []inputBoundStream {
 	out := make([]inputBoundStream, 0, len(sets))
 	for i := range sets {
-		for k := range sets[i].streams {
+		for k := range sets[i].Streams {
 			out = append(out, inputBoundStream{
-				inputIndex: i,
-				inputName:  sets[i].name,
-				domain:     sets[i].domain,
-				stream:     sets[i].streams[k],
+				InputIndex: i,
+				InputName:  sets[i].Name,
+				Domain:     sets[i].Domain,
+				Stream:     sets[i].Streams[k],
 			})
 		}
 	}
@@ -172,27 +174,27 @@ func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
 }
 
 func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream) error {
-	reason := "no stream across the inputs matches " + readableSelector(selector)
-	if code == streamAmbiguousCode {
-		reason = "multiple streams across the inputs match " + readableSelector(selector)
+	reason := "no stream across the inputs matches " + ReadableSelector(selector)
+	if code == builderr.StreamAmbiguousCode {
+		reason = "multiple streams across the inputs match " + ReadableSelector(selector)
 	}
 	if inputName != "" {
 		reason = reason + " on input " + strconv.Quote(inputName)
 	}
 	details := make([]string, 0, len(candidates))
 	for i := range candidates {
-		details = append(details, "input="+candidates[i].inputName+" "+streamDiagnostic(candidates[i].stream, i))
+		details = append(details, "input="+candidates[i].InputName+" "+StreamDiagnostic(candidates[i].Stream, i))
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    reason,
-		fields:    errDetailLines(details),
-		fixes:     buildErrorFixes(multiInputSelectionSuggestions(selector, candidates)),
-		cause:     errUnsupportedBuild,
+		Details:   builderr.DetailLines(details),
+		Fixes:     builderr.Fixes(multiInputSelectionSuggestions(selector, candidates)),
+		Cause:     builderr.ErrUnsupportedBuild,
 	}
 }
 
@@ -201,7 +203,7 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 	suggestions := make([]string, 0, 3)
 	seen := make(map[string]struct{}, len(candidates))
 	for i := range candidates {
-		name := candidates[i].inputName
+		name := candidates[i].InputName
 		if name == "" {
 			continue
 		}
@@ -219,11 +221,11 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 		}
 	}
 	for i := range candidates {
-		if candidates[i].stream.ID != "" {
+		if candidates[i].Stream.ID != "" {
 			if recipeCall {
-				suggestions = append(suggestions, call+"(goav.StreamID("+strconv.Quote(string(candidates[i].stream.ID))+"))")
+				suggestions = append(suggestions, call+"(goav.StreamID("+strconv.Quote(string(candidates[i].Stream.ID))+"))")
 			} else {
-				suggestions = append(suggestions, "select stream id "+strconv.Quote(string(candidates[i].stream.ID)))
+				suggestions = append(suggestions, "select stream id "+strconv.Quote(string(candidates[i].Stream.ID)))
 			}
 			break
 		}
@@ -234,23 +236,23 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 	return suggestions
 }
 
-func unknownInputNameError(selector av.StreamSelector, inputName string, sets []inputStreamSet) error {
+func unknownInputNameError(selector av.StreamSelector, inputName string, sets []InputStreamSet) error {
 	details := make([]string, 0, len(sets))
 	for i := range sets {
-		details = append(details, "input="+sets[i].name)
+		details = append(details, "input="+sets[i].Name)
 	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(inputUnknownCode),
-		Code:      inputUnknownCode,
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(builderr.InputUnknownCode),
+		Code:      builderr.InputUnknownCode,
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    "no job input is named " + strconv.Quote(inputName),
-		fields:    errDetailLines(details),
-		fixes: buildErrorFixes([]string{
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
 			"select from one of the listed inputs directly: input.Audio() or input.Video()",
 			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
 		}),
-		cause: errUnsupportedBuild,
+		Cause: builderr.ErrUnsupportedBuild,
 	}
 }

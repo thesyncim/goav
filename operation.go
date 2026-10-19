@@ -2,8 +2,8 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -15,15 +15,11 @@ import (
 // shape conversion) through the same constructors.
 
 func opDecode(spec codec.Spec) recipeir.Operation {
-	return recipeir.Operation{Kind: plan.OpDecode, Decode: cloneCodecSpec(spec)}
-}
-
-func opCopy() recipeir.Operation {
-	return recipeir.Operation{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: codec.Copy()}
+	return recipeir.Operation{Kind: plan.OpDecode, Decode: compile.CloneCodecSpec(spec)}
 }
 
 func opEncode(spec codec.Spec) recipeir.Operation {
-	return recipeir.Operation{Kind: plan.OpEncode, Component: string(spec.ID), Encode: cloneCodecSpec(spec)}
+	return recipeir.Operation{Kind: plan.OpEncode, Component: string(spec.ID), Encode: compile.CloneCodecSpec(spec)}
 }
 
 func opStage(stage pipeline.Stage) recipeir.Operation {
@@ -72,37 +68,7 @@ func opPrefer(spec shape.Spec) recipeir.Operation {
 // opTransform is a resize or resample: the transform and the filter factory
 // that performs it.
 func opTransform(transform recipeir.Transform) recipeir.Operation {
-	return recipeir.Operation{Kind: plan.OpTransform, Component: recipeIRTransformFactoryName(transform), Transform: transform}
-}
-
-// operationsAutoPolicy unions a stream's .Auto(...) policies; the second
-// result reports whether any is present — an empty .Auto() activates solving
-// while allowing nothing, so refusals name the exact policy to add.
-func operationsAutoPolicy(operations []recipeir.Operation) (shape.Policy, bool) {
-	var policy shape.Policy
-	active := false
-	for i := range operations {
-		if operations[i].Auto == nil {
-			continue
-		}
-		active = true
-		policy = policy.Union(*operations[i].Auto)
-	}
-	return policy, active
-}
-
-func operationsHaveDecode(operations []recipeir.Operation) bool {
-	return recipeIROperationsContainKind(operations, plan.OpDecode)
-}
-
-// operationsEncodeSpec is a stream's encoder (or packet copy).
-func operationsEncodeSpec(operations []recipeir.Operation) codec.Spec {
-	for i := range operations {
-		if operations[i].Kind == plan.OpEncode || operations[i].Kind == plan.OpCopy {
-			return operations[i].Encode
-		}
-	}
-	return codec.Spec{}
+	return recipeir.Operation{Kind: plan.OpTransform, Component: compile.RecipeIRTransformFactoryName(transform), Transform: transform}
 }
 
 func recipeIROperationTapIsTerminalPacket(operation recipeir.Operation) bool {
@@ -111,17 +77,6 @@ func recipeIROperationTapIsTerminalPacket(operation recipeir.Operation) bool {
 	}
 	return operation.Tap.Domain == shape.DomainPacket &&
 		(operation.Tap.After == plan.OpEncode || operation.Tap.After == plan.OpCopy)
-}
-
-func recipeIRTransformFactoryName(transform recipeir.Transform) string {
-	switch transform.Kind {
-	case recipeir.TransformResize:
-		return filter.FactoryResize
-	case recipeir.TransformResample:
-		return filter.FactoryResample
-	default:
-		return ""
-	}
 }
 
 // cloneOperations copies operations for a branch planned more than once —

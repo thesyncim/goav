@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 )
@@ -277,7 +278,7 @@ func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
 	commitErr := errors.New("commit failed")
 	transaction := &destinationTransaction{name: "commit-error.ivf", requireSuccess: true}
 	transaction.Fail()
-	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []workDestination{{Name: "commit-error.ivf"}}, transaction)
+	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []compile.WorkDestination{{Name: "commit-error.ivf"}}, transaction)
 	defer task.Close()
 
 	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()

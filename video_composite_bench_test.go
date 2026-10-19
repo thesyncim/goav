@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 )
 
 func BenchmarkCopyPlaneKernel(b *testing.B) {
@@ -51,7 +52,7 @@ func BenchmarkCompositeI420BlitKernel(b *testing.B) {
 			}}
 			video := &av.VideoFrame{}
 			frames := []*av.Frame{frameA, frameB}
-			layout := []compositeLayout{{X: 0, Y: 0}, {X: width, Y: 0}}
+			layout := []compile.CompositeLayout{{X: 0, Y: 0}, {X: width, Y: 0}}
 			b.ReportAllocs()
 			b.SetBytes(int64(width * height * 3))
 			for i := 0; i < b.N; i++ {

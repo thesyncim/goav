@@ -13,6 +13,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -328,28 +329,28 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *Runtime, dest destinat
 	return result.Format, nil
 }
 
-func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt *Runtime) (muxCompatibilityIssue, bool) {
-	output := workDestination{
+func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, branches []string, streams []av.Stream, rt *Runtime) (compile.MuxCompatibilityIssue, bool) {
+	output := compile.WorkDestination{
 		Name:      destinationName,
 		Operation: plan.OpMux,
 		Format:    formatID,
 		Branches:  append([]string(nil), branches...),
 	}
-	plannedStreams := make([]plannedMuxStream, 0, len(streams))
+	plannedStreams := make([]compile.PlannedMuxStream, 0, len(streams))
 	for i := range streams {
 		branch := "branch"
 		if i < len(branches) && branches[i] != "" {
 			branch = branches[i]
 		}
 		stream := streams[i]
-		plannedStreams = append(plannedStreams, plannedMuxStream{
+		plannedStreams = append(plannedStreams, compile.PlannedMuxStream{
 			Branch:   branch,
 			Codec:    stream.Codec.ID,
-			Media:    firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
-			TimeBase: muxStreamTimeBase(stream),
+			Media:    compile.FirstNonEmptyMedia(stream.Type, stream.Codec.Type, compile.CodecMedia(stream.Codec.ID)),
+			TimeBase: compile.MuxStreamTimeBase(stream),
 		})
 	}
-	return checkKnownMuxCompatibility(output, plannedStreams, rt.compileEnv())
+	return compile.CheckKnownMuxCompatibility(output, plannedStreams, rt.compileEnv())
 }
 
 func runtimeAttachmentName(specs []attachBranch) string {
@@ -659,7 +660,7 @@ type runtimeAttachment struct {
 	routes       []pipeline.Route
 	taps         []snapshot.Tap
 	stages       []pipeline.Stage
-	destinations []workDestination
+	destinations []compile.WorkDestination
 	stopMu       sync.Mutex
 	stopped      bool
 	// detachOutcome records the lifecycle.DestinationState a disposition detach
@@ -830,11 +831,6 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 }
 
 func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
-	next, err := a.rebranch(ctx, options...)
-	return next, publicError(err)
-}
-
-func (a *runtimeAttachment) rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}
@@ -1455,26 +1451,21 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 // against the live anchor shape with the same shape algebra the build path
 // uses, and rejects mux destinations whose final shape is not packet-domain.
 func validateAttachBranchShapeContract(stream recipeir.Stream, operations []recipeir.Operation, destinations []attachDestination, initial shape.Spec) error {
-	if err := validateRecipeIROperationShapes("attach runtime branch", stream, operations, initial); err != nil {
+	if err := publicError(compile.ValidateRecipeIROperationShapes("attach runtime branch", stream, operations, initial)); err != nil {
 		return err
 	}
-	final := normalizeTapShape(initial)
+	final := compile.NormalizeTapShape(initial)
 	for _, operation := range operations {
-		final = recipeIROperationOutputShape(final, operation)
+		final = compile.RecipeIROperationOutputShape(final, operation)
 	}
 	for i, destination := range destinations {
 		if destination.recipe.Kind != recipeir.DestinationKindByteStream || final.Domain == shape.DomainPacket {
 			continue
 		}
 		destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", stream.Name, destinationName, compileDestinationFromSpec(destination.dest), final)
+		return publicError(compile.DestinationShapeMismatchError("attach runtime branch", stream.Name, destinationName, compileDestinationFromSpec(destination.dest), final))
 	}
 	return nil
-}
-
-// runtimeBranchNodeName names an attached node under its branch.
-func runtimeBranchNodeName(branchName string, localName string) string {
-	return branchName + "/" + localName
 }
 
 func (d runtimeBranchGroupDestinations) sharesSink(key string) bool {

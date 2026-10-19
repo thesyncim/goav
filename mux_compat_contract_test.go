@@ -8,36 +8,37 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/plan"
 )
 
 func TestDescriptorMuxReasonContracts(t *testing.T) {
 	formatID := av.FormatID("xpack")
-	if got := descriptorMuxReason(formatID, format.Descriptor{Metadata: av.Metadata{"summary": "custom mux accepts one opus audio stream"}}); got != "custom mux accepts one opus audio stream" {
+	if got := compile.DescriptorMuxReason(formatID, format.Descriptor{Metadata: av.Metadata{"summary": "custom mux accepts one opus audio stream"}}); got != "custom mux accepts one opus audio stream" {
 		t.Fatalf("metadata reason = %q", got)
 	}
-	if got := descriptorMuxReason(formatID, format.Descriptor{MinStreams: 1, MaxStreams: 1}); got != "xpack destinations support 1 stream(s)" {
+	if got := compile.DescriptorMuxReason(formatID, format.Descriptor{MinStreams: 1, MaxStreams: 1}); got != "xpack destinations support 1 stream(s)" {
 		t.Fatalf("single stream reason = %q", got)
 	}
-	if got := descriptorMuxReason(formatID, format.Descriptor{MaxStreams: 2, Media: []av.MediaType{av.MediaAudio}, Codecs: []av.CodecID{av.CodecOpus, "", av.CodecFLAC}}); got != "xpack destinations support up to 2 stream(s), media=audio, codecs=opus,flac" {
+	if got := compile.DescriptorMuxReason(formatID, format.Descriptor{MaxStreams: 2, Media: []av.MediaType{av.MediaAudio}, Codecs: []av.CodecID{av.CodecOpus, "", av.CodecFLAC}}); got != "xpack destinations support up to 2 stream(s), media=audio, codecs=opus,flac" {
 		t.Fatalf("capability reason = %q", got)
 	}
-	if got := descriptorMuxReason(formatID, format.Descriptor{}); got != "xpack destination rejected the planned mux group" {
+	if got := compile.DescriptorMuxReason(formatID, format.Descriptor{}); got != "xpack destination rejected the planned mux group" {
 		t.Fatalf("fallback reason = %q", got)
 	}
 }
 
 func TestDescriptorMuxCompatibilityContracts(t *testing.T) {
-	output := workDestination{Name: "archive.xpack", Format: av.FormatID("xpack")}
-	streams := []plannedMuxStream{
+	output := compile.WorkDestination{Name: "archive.xpack", Format: av.FormatID("xpack")}
+	streams := []compile.PlannedMuxStream{
 		{Branch: "voice", Media: av.MediaAudio, Codec: av.CodecOpus},
 		{Branch: "screen", Media: av.MediaVideo, Codec: av.CodecVP8},
 	}
 
-	if issue, ok := checkDescriptorMuxCompatibility(output, streams, format.Descriptor{}); ok {
+	if issue, ok := compile.CheckDescriptorMuxCompatibility(output, streams, format.Descriptor{}); ok {
 		t.Fatalf("unrestricted descriptor issue = %+v, want none", issue)
 	}
-	issue, ok := checkDescriptorMuxCompatibility(output, streams, format.Descriptor{MaxStreams: 1})
+	issue, ok := compile.CheckDescriptorMuxCompatibility(output, streams, format.Descriptor{MaxStreams: 1})
 	if !ok {
 		t.Fatal("MaxStreams descriptor did not reject the mux group")
 	}
@@ -58,29 +59,29 @@ func TestDescriptorMuxCompatibilityContracts(t *testing.T) {
 		t.Fatalf("details = %#v, want %#v", issue.Details, wantDetails)
 	}
 
-	issue, ok = checkDescriptorMuxCompatibility(output, streams[:1], format.Descriptor{Media: []av.MediaType{av.MediaVideo}})
+	issue, ok = compile.CheckDescriptorMuxCompatibility(output, streams[:1], format.Descriptor{Media: []av.MediaType{av.MediaVideo}})
 	if !ok || !strings.Contains(issue.Reason, "media=video") {
 		t.Fatalf("media issue = %+v, want video-only rejection", issue)
 	}
-	issue, ok = checkDescriptorMuxCompatibility(output, streams[:1], format.Descriptor{Codecs: []av.CodecID{av.CodecFLAC}})
+	issue, ok = compile.CheckDescriptorMuxCompatibility(output, streams[:1], format.Descriptor{Codecs: []av.CodecID{av.CodecFLAC}})
 	if !ok || !strings.Contains(issue.Reason, "codecs=flac") {
 		t.Fatalf("codec issue = %+v, want flac-only rejection", issue)
 	}
 }
 
 func TestMuxTimebaseCompatibilityContracts(t *testing.T) {
-	output := workDestination{Name: "archive.mkv", Format: av.FormatMatroska}
+	output := compile.WorkDestination{Name: "archive.mkv", Format: av.FormatMatroska}
 
-	if issue, ok := checkMuxTimebaseCompatibility(output, []plannedMuxStream{{Branch: "audio"}}); ok {
+	if issue, ok := compile.CheckMuxTimebaseCompatibility(output, []compile.PlannedMuxStream{{Branch: "audio"}}); ok {
 		t.Fatalf("unknown timebase issue = %+v, want deferred", issue)
 	}
-	valid := []plannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1, Den: 48000}}}
-	if issue, ok := checkMuxTimebaseCompatibility(output, valid); ok {
+	valid := []compile.PlannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1, Den: 48000}}}
+	if issue, ok := compile.CheckMuxTimebaseCompatibility(output, valid); ok {
 		t.Fatalf("valid timebase issue = %+v, want none", issue)
 	}
 
-	invalid := []plannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1}}}
-	issue, ok := checkMuxTimebaseCompatibility(output, invalid)
+	invalid := []compile.PlannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1}}}
+	issue, ok := compile.CheckMuxTimebaseCompatibility(output, invalid)
 	if !ok {
 		t.Fatal("invalid timebase did not reject the mux group")
 	}
@@ -99,36 +100,36 @@ func TestMuxTimebaseCompatibilityContracts(t *testing.T) {
 
 func TestMuxStreamTimeBaseContracts(t *testing.T) {
 	explicit := av.TimeBase{Num: 1001, Den: 30000}
-	if got := muxStreamTimeBase(av.Stream{TimeBase: explicit, Codec: av.CodecParameters{ClockRate: 90000}}); got != explicit {
+	if got := compile.MuxStreamTimeBase(av.Stream{TimeBase: explicit, Codec: av.CodecParameters{ClockRate: 90000}}); got != explicit {
 		t.Fatalf("explicit timebase = %+v, want %+v", got, explicit)
 	}
-	if got := muxStreamTimeBase(av.Stream{Codec: av.CodecParameters{ClockRate: 90000}}); got != av.RTPTimeBase(90000) {
+	if got := compile.MuxStreamTimeBase(av.Stream{Codec: av.CodecParameters{ClockRate: 90000}}); got != av.RTPTimeBase(90000) {
 		t.Fatalf("clock-rate timebase = %+v, want RTP 90k", got)
 	}
-	if got := muxStreamTimeBase(av.Stream{Codec: av.CodecParameters{SampleRate: 48000}}); got != (av.TimeBase{Num: 1, Den: 48000}) {
+	if got := compile.MuxStreamTimeBase(av.Stream{Codec: av.CodecParameters{SampleRate: 48000}}); got != (av.TimeBase{Num: 1, Den: 48000}) {
 		t.Fatalf("sample-rate timebase = %+v, want 1/48000", got)
 	}
 	invalid := av.TimeBase{Num: 1}
-	if got := muxStreamTimeBase(av.Stream{TimeBase: invalid}); got != invalid {
+	if got := compile.MuxStreamTimeBase(av.Stream{TimeBase: invalid}); got != invalid {
 		t.Fatalf("invalid explicit timebase = %+v, want preserved %+v", got, invalid)
 	}
 }
 
 func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
-	operation := workOperation{
+	operation := compile.WorkOperation{
 		ID:     "web/000/encode",
 		Kind:   plan.OpEncode,
 		Codec:  codec.VP9(),
 		Branch: "web",
 	}
-	streams := muxOutputStreams(
-		workDestination{Name: "preview.ivf", Branches: []string{"web"}},
-		map[string]workBranch{"web": {
+	streams := compile.MuxOutputStreams(
+		compile.WorkDestination{Name: "preview.ivf", Branches: []string{"web"}},
+		map[string]compile.WorkBranch{"web": {
 			Name:       "web",
 			Stream:     plan.StreamSelect{Type: av.MediaVideo},
 			Operations: []string{operation.ID},
 		}},
-		map[string]workOperation{operation.ID: operation},
+		map[string]compile.WorkOperation{operation.ID: operation},
 		nil,
 		nil,
 	)
@@ -138,9 +139,9 @@ func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
 }
 
 func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
-	streams := muxOutputStreams(
-		workDestination{Name: "archive.webm", Branches: []string{"audio"}},
-		map[string]workBranch{"audio": {
+	streams := compile.MuxOutputStreams(
+		compile.WorkDestination{Name: "archive.webm", Branches: []string{"audio"}},
+		map[string]compile.WorkBranch{"audio": {
 			Name:  "audio",
 			Input: "mic",
 			Stream: plan.StreamSelect{
@@ -148,7 +149,7 @@ func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
 			},
 		}},
 		nil,
-		[]workInput{{
+		[]compile.WorkInput{{
 			Name:      "mic",
 			Realtime:  true,
 			Codec:     av.CodecOpus,
@@ -165,22 +166,22 @@ func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
 }
 
 func TestSingleVideoMuxCompatibilityContracts(t *testing.T) {
-	output := workDestination{Name: "archive.ivf", Format: av.FormatIVF}
+	output := compile.WorkDestination{Name: "archive.ivf", Format: av.FormatIVF}
 	codecs := map[av.CodecID]bool{av.CodecVP8: true, av.CodecVP9: true, av.CodecAV1: true}
 
-	if issue, ok := checkSingleVideoMuxCompatibility(output, nil, codecs, "single video only"); !ok || issue.Code != destinationMuxIncompatibleCode {
+	if issue, ok := compile.CheckSingleVideoMuxCompatibility(output, nil, codecs, "single video only"); !ok || issue.Code != destinationMuxIncompatibleCode {
 		t.Fatalf("empty streams issue = %+v ok=%v", issue, ok)
 	}
-	if issue, ok := checkSingleVideoMuxCompatibility(output, []plannedMuxStream{{Branch: "unknown"}}, codecs, "single video only"); ok {
+	if issue, ok := compile.CheckSingleVideoMuxCompatibility(output, []compile.PlannedMuxStream{{Branch: "unknown"}}, codecs, "single video only"); ok {
 		t.Fatalf("unknown stream issue = %+v, want deferred", issue)
 	}
-	if issue, ok := checkSingleVideoMuxCompatibility(output, []plannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus}}, codecs, "single video only"); !ok || !strings.Contains(issue.Details[2], "media=audio") {
+	if issue, ok := compile.CheckSingleVideoMuxCompatibility(output, []compile.PlannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus}}, codecs, "single video only"); !ok || !strings.Contains(issue.Details[2], "media=audio") {
 		t.Fatalf("audio issue = %+v ok=%v", issue, ok)
 	}
-	if issue, ok := checkSingleVideoMuxCompatibility(output, []plannedMuxStream{{Branch: "video", Media: av.MediaVideo, Codec: av.CodecH264}}, codecs, "single video only"); !ok || !strings.Contains(issue.Details[2], "codec=h264") {
+	if issue, ok := compile.CheckSingleVideoMuxCompatibility(output, []compile.PlannedMuxStream{{Branch: "video", Media: av.MediaVideo, Codec: av.CodecH264}}, codecs, "single video only"); !ok || !strings.Contains(issue.Details[2], "codec=h264") {
 		t.Fatalf("codec issue = %+v ok=%v", issue, ok)
 	}
-	if issue, ok := checkSingleVideoMuxCompatibility(output, []plannedMuxStream{{Branch: "video", Media: av.MediaVideo, Codec: av.CodecVP8}}, codecs, "single video only"); ok {
+	if issue, ok := compile.CheckSingleVideoMuxCompatibility(output, []compile.PlannedMuxStream{{Branch: "video", Media: av.MediaVideo, Codec: av.CodecVP8}}, codecs, "single video only"); ok {
 		t.Fatalf("compatible issue = %+v, want none", issue)
 	}
 }

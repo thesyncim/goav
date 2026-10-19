@@ -5,6 +5,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -46,7 +47,7 @@ type graphOutput struct {
 // a Stream (and a zero Stream or input) surface here, before any planning.
 func compileGraph(outs []Output) (*recipeGraph, error) {
 	if len(outs) == 0 {
-		return nil, streamInvalidError("", "a recipe needs at least one Output: route a stream with stream.To(destination)")
+		return nil, publicError(compile.StreamInvalidError("", "a recipe needs at least one Output: route a stream with stream.To(destination)"))
 	}
 	g := &recipeGraph{
 		byNode:  map[*streamNode]recipeir.NodeID{},
@@ -56,7 +57,7 @@ func compileGraph(outs []Output) (*recipeGraph, error) {
 	for i := range outs {
 		out := outs[i]
 		if len(out.dests) == 0 {
-			return nil, streamInvalidError("", "an Output needs a destination: stream.To(goav.Write(name, writer)) or .To(goav.Sink(sink))")
+			return nil, publicError(compile.StreamInvalidError("", "an Output needs a destination: stream.To(goav.Write(name, writer)) or .To(goav.Sink(sink))"))
 		}
 		var from recipeir.NodeID
 		if out.remux != nil {
@@ -112,7 +113,7 @@ func (g *recipeGraph) destination(dest Destination) recipeir.NodeID {
 	if id, ok := g.byDest[key]; ok && key != 0 {
 		if first := g.dests[g.node(id).Output]; destinationConfigKey(first.spec) != destinationConfigKey(dest.spec) && g.err == nil {
 			// Copies of one handle (Destination.With) must agree: they are one output.
-			g.err = destinationNameClashError(first.spec.label("destination"))
+			g.err = publicError(compile.DestinationNameClashError(first.spec.label("destination")))
 		}
 		return id
 	}
@@ -128,7 +129,7 @@ func (g *recipeGraph) destination(dest Destination) recipeir.NodeID {
 // stream interns one Stream node and, first, everything it reads.
 func (g *recipeGraph) stream(n *streamNode) (recipeir.NodeID, error) {
 	if n == nil {
-		return 0, streamInvalidError("", "the stream is the zero Stream: start from an input (input.Video(), input.Audio()) or a join (goav.Mix(...))")
+		return 0, publicError(compile.StreamInvalidError("", "the stream is the zero Stream: start from an input (input.Video(), input.Audio()) or a join (goav.Mix(...))"))
 	}
 	if id, ok := g.byNode[n]; ok {
 		return id, nil
@@ -138,7 +139,7 @@ func (g *recipeGraph) stream(n *streamNode) (recipeir.NodeID, error) {
 	}
 	if n.root == nil {
 		if n.parent == nil {
-			return 0, streamInvalidError("", "the stream has no input")
+			return 0, publicError(compile.StreamInvalidError("", "the stream has no input"))
 		}
 		parent, err := g.stream(n.parent)
 		if err != nil {
@@ -186,7 +187,7 @@ func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 		}
 		return g.add(recipeir.Node{Kind: recipeir.NodeAnchor, Anchor: anchor}, root), nil
 	case root.input.id == nil:
-		return 0, streamInvalidError("", "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source")
+		return 0, publicError(compile.StreamInvalidError("", "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source"))
 	case root.rule != nil:
 		input := g.input(root.input)
 		g.matches = append(g.matches, *root.rule)
@@ -199,7 +200,7 @@ func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 			Kind:    recipeir.NodeSelect,
 			Parents: []recipeir.NodeID{input},
 			Input:   g.node(input).Input,
-			Select:  streamSelectFromAV(config.selector),
+			Select:  compile.StreamSelectFromAV(config.selector),
 		}, root), nil
 	}
 }
@@ -290,14 +291,14 @@ func (g *recipeGraph) handles(rt *Runtime) *compileHandles {
 
 // compileRequest projects the DAG and the facts of its handles: the one
 // thing the compiler reads.
-func (g *recipeGraph) compileRequest(h *compileHandles) *compileRequest {
-	req := &compileRequest{
+func (g *recipeGraph) compileRequest(h *compileHandles) *compile.Request {
+	req := &compile.Request{
 		Graph:   recipeir.Graph{Nodes: append([]recipeir.Node(nil), g.graph.Nodes...), Rules: g.graph.Rules},
 		Matches: g.matches,
 		Host:    h,
 	}
 	for _, out := range g.outputs {
-		req.Outputs = append(req.Outputs, compileOutput{From: out.from, Dests: out.dests})
+		req.Outputs = append(req.Outputs, compile.Output{From: out.from, Dests: out.dests})
 	}
 	sourceNames := graphSourceNodeNames(g.inputs)
 	for i, input := range g.inputs {
@@ -316,9 +317,9 @@ func (g *recipeGraph) compileRequest(h *compileHandles) *compileRequest {
 }
 
 // compileInputFromSpec is what the compiler knows of one input.
-func compileInputFromSpec(input InputSpec, sourceNode string) compileInput {
+func compileInputFromSpec(input InputSpec, sourceNode string) compile.Input {
 	declared, ok := declaredSourceShape(input)
-	return compileInput{
+	return compile.Input{
 		IR:           recipeIRInputFromSpec(input),
 		Name:         input.inputName(input.graphSourceNodeName()),
 		SourceNode:   sourceNode,
@@ -333,8 +334,8 @@ func compileInputFromSpec(input InputSpec, sourceNode string) compileInput {
 }
 
 // compileDestinationFromSpec is what the compiler knows of one destination.
-func compileDestinationFromSpec(spec destinationSpec) compileDestination {
-	facts := compileDestination{
+func compileDestinationFromSpec(spec destinationSpec) compile.Destination {
+	facts := compile.Destination{
 		Label:          spec.label(""),
 		Group:          destinationIdentityFromFacts(branchDestinationFactsFromSpec("", spec)),
 		IR:             recipeIRDestinationFromSpec("", spec),
@@ -346,7 +347,7 @@ func compileDestinationFromSpec(spec destinationSpec) compileDestination {
 	}
 	if spec.sink != nil {
 		facts.SinkName = spec.sink.Name()
-		facts.SinkDetail = describedNodeDetail(spec.sink)
+		facts.SinkDetail = compile.DescribedNodeDetail(spec.sink)
 	}
 	return facts
 }

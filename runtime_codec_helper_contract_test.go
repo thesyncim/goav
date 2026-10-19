@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -26,9 +27,9 @@ func TestPrepareEncodeConfigCarriesCustomSettingsAndStreamOverrides(t *testing.T
 	input.Codec.Attributes = av.Metadata{"preserve": "input"}
 
 	overrideMetadata := av.Metadata{"role": "voice"}
-	request := encodeRequest{
-		selector: testSelectAudio(),
-		config: codec.EncodeConfig{
+	request := compile.EncodeRequest{
+		Selector: testSelectAudio(),
+		Config: codec.EncodeConfig{
 			Stream: av.Stream{
 				ID:       "encoded-audio",
 				Index:    7,
@@ -83,10 +84,10 @@ func TestPrepareEncodeConfigCarriesCustomSettingsAndStreamOverrides(t *testing.T
 func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 	factory := &encodeTestEncoderFactory{}
 	rt := mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
-	request := encodeRequest{
-		name:     "voice",
-		selector: testSelectAudio(),
-		config:   pcmEncodeConfig(),
+	request := compile.EncodeRequest{
+		Name:     "voice",
+		Selector: testSelectAudio(),
+		Config:   pcmEncodeConfig(),
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{
@@ -120,18 +121,18 @@ func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 	config := pcmEncodeConfig()
 	rt := mustNew()
-	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); err == nil {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", compile.EncodeRequest{Selector: testSelectAudio(), Config: config}, config); err == nil {
 		t.Fatal("unregistered encoder error = nil, want lookup error")
 	}
 
 	factoryErr := errors.New("encoder factory failed")
 	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, errorEncodeFactory{err: factoryErr})))
-	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, factoryErr) {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", compile.EncodeRequest{Selector: testSelectAudio(), Config: config}, config); !errors.Is(err, factoryErr) {
 		t.Fatalf("factory error = %v, want %v", err, factoryErr)
 	}
 
 	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, nilEncodeFactory{})))
-	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, codec.ErrNilEncoder) {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", compile.EncodeRequest{Selector: testSelectAudio(), Config: config}, config); !errors.Is(err, codec.ErrNilEncoder) {
 		t.Fatalf("nil encoder error = %v, want codec.ErrNilEncoder", err)
 	}
 }
@@ -139,7 +140,7 @@ func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 // encodeContractNode opens an encode node through the lowering's opener and
 // installs it behind upstream.
 func encodeContractNode(rt *Runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, config codec.EncodeConfig) (pipeline.NodeRef, error) {
-	node := composeNode{kind: composeEncode, name: name, request: encodeRequest{selector: testSelectAudio(), config: config}}
+	node := compile.ComposeNode{Kind: compile.ComposeEncode, Name: name, Request: compile.EncodeRequest{Selector: testSelectAudio(), Config: config}}
 	opened, err := openComposeNode(context.Background(), &builder{runtime: rt}, node, []av.Stream{config.Stream}, nil, false, codec.DecodeBounds{})
 	if err != nil {
 		return "", err

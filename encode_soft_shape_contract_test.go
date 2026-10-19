@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -22,7 +23,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 	}
 	for _, tt := range zeroCases {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := explicitEncodeSoftInputShape(tt.encode); got != (shape.Spec{}) {
+			if got := compile.ExplicitEncodeSoftInputShape(tt.encode); got != (shape.Spec{}) {
 				t.Fatalf("explicitEncodeSoftInputShape() = %+v, want zero", got)
 			}
 		})
@@ -37,7 +38,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		Channels:     codec.Mono,
 		SampleFormat: av.SampleFormatF32,
 	}
-	if got := explicitEncodeSoftInputShape(audio); !reflect.DeepEqual(got, wantAudio) {
+	if got := compile.ExplicitEncodeSoftInputShape(audio); !reflect.DeepEqual(got, wantAudio) {
 		t.Fatalf("audio soft input shape = %+v, want %+v", got, wantAudio)
 	}
 
@@ -47,7 +48,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		MediaKind:  av.MediaAudio,
 		SampleRate: 32_000,
 	}
-	if got := explicitEncodeSoftInputShape(customAudio); !reflect.DeepEqual(got, wantCustomAudio) {
+	if got := compile.ExplicitEncodeSoftInputShape(customAudio); !reflect.DeepEqual(got, wantCustomAudio) {
 		t.Fatalf("custom audio soft input shape = %+v, want %+v", got, wantCustomAudio)
 	}
 
@@ -62,7 +63,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		Height:      720,
 		PixelFormat: av.PixelFormatI420,
 	}
-	if got := explicitEncodeSoftInputShape(video); !reflect.DeepEqual(got, wantVideo) {
+	if got := compile.ExplicitEncodeSoftInputShape(video); !reflect.DeepEqual(got, wantVideo) {
 		t.Fatalf("video soft input shape = %+v, want %+v", got, wantVideo)
 	}
 
@@ -73,7 +74,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		MediaKind:   av.MediaVideo,
 		PixelFormat: av.PixelFormatGray8,
 	}
-	if got := explicitEncodeSoftInputShape(customVideo); !reflect.DeepEqual(got, wantCustomVideo) {
+	if got := compile.ExplicitEncodeSoftInputShape(customVideo); !reflect.DeepEqual(got, wantCustomVideo) {
 		t.Fatalf("custom video soft input shape = %+v, want %+v", got, wantCustomVideo)
 	}
 }

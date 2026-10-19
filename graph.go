@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -91,7 +92,7 @@ type graphBuilder struct {
 
 func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 	if source == nil {
-		g.setErr(errNilSource)
+		g.setErr(compile.ErrNilSource)
 		return graphNode{name: name}
 	}
 	node := namedSource{name: firstNonEmpty(name, source.Name()), source: source}
@@ -100,7 +101,7 @@ func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 }
 
 func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
-	if err := validateStageComponent(stage); err != nil {
+	if err := publicError(compile.ValidateStageComponent(stage)); err != nil {
 		g.setErr(err)
 		return graphNode{name: name}
 	}

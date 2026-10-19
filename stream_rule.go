@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -24,7 +24,7 @@ func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
 		}
 		match := firstNonEmpty(rules[i].MatchDescription, "none")
 		out = append(out, plan.Decision{
-			Code:   diagnosticStreamRule,
+			Code:   compile.DiagnosticStreamRule,
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
 				match, strings.Join(names, ", "), strings.Join(destinations, ", ")),
@@ -41,19 +41,4 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 		return spec.Domain
 	}
 	return shape.DomainPacket
-}
-
-func streamRuleInvalidError(node string, reason string, suggestion string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(errcode.StreamRuleInvalid),
-		Code:      errcode.StreamRuleInvalid,
-		Operation: "build stream rule",
-		Node:      firstNonEmpty(node, "rule"),
-		Reason:    reason,
-		fixes: buildErrorFixes([]string{
-			suggestion,
-		}),
-		cause: errUnsupportedBuild,
-	}
 }

@@ -13,29 +13,12 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/snapshot"
-)
-
-// Internal build-refusal causes. Public build-shape matching lives on
-// BuildError.Family and BuildError.Code; these only keep package-internal
-// errors.Is checks and low-level unwrap chains stable.
-var (
-	// errNilSource reports a nil source handed to a builder or constructor.
-	errNilSource = errors.New("goav: nil source")
-	// errNilReader reports a nil reader handed to FileInput.
-	errNilReader = errors.New("goav: nil input reader")
-	// errNilStage reports a nil stage handed to a builder or .Do(...).
-	errNilStage = errors.New("goav: nil stage")
-	// errNilSink reports a nil sink handed to a builder or goav.Sink(...).
-	errNilSink = errors.New("goav: nil sink")
-	// errNilWriter reports a nil writer handed to a byte destination.
-	errNilWriter = errors.New("goav: nil writer")
-	// errNilDestinationProvider reports a nil provider.Destination handed to Custom.
-	errNilDestinationProvider = errors.New("goav: nil destination provider")
 )
 
 // Runtime flow-control sentinels, surfaced on the front door so source.Func,
@@ -155,17 +138,6 @@ func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
 	})
 }
 
-type encodeRequest struct {
-	name     string
-	selector av.StreamSelector
-	config   codec.EncodeConfig
-}
-
-type decodeRequest struct {
-	selector av.StreamSelector
-	config   codec.Spec
-}
-
 // taskClock returns the clock the build hands to paced sources — on recipe
 // builds the task's shared timeline, which the runtime clone carries as its
 // clock.
@@ -235,7 +207,7 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
-			return errNilSource
+			return compile.ErrNilSource
 		}
 		ref, err := graph.AddSource(b.sources[i], b.runtime.buffer)
 		if err != nil {
@@ -244,7 +216,7 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
-		if err := validateStageComponent(b.stages[i]); err != nil {
+		if err := publicError(compile.ValidateStageComponent(b.stages[i])); err != nil {
 			return err
 		}
 		ref, err := graph.AddStage(b.stages[i], b.runtime.buffer)
@@ -358,7 +330,7 @@ type task struct {
 	// only for tasks assembled outside the build paths (unit-test graphs).
 	timeline         *timeline
 	destinations     []*destinationTransaction
-	rootDestinations []workDestination
+	rootDestinations []compile.WorkDestination
 	// encoders are the encode stages the build opened; stream-addressed
 	// encoder controls go to the one that produces the stream.
 	encoders           []*codec.EncoderStage
@@ -389,12 +361,12 @@ func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinatio
 	return newTaskWithRootDestinations(graph, runtime, nil, destinations...)
 }
 
-func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []workDestination, destinations ...*destinationTransaction) *task {
+func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []compile.WorkDestination, destinations ...*destinationTransaction) *task {
 	return &task{
 		graph:            graph,
 		runtime:          runtime,
 		destinations:     destinations,
-		rootDestinations: cloneWorkDestinations(rootDestinations),
+		rootDestinations: compile.CloneWorkDestinations(rootDestinations),
 	}
 }
 
@@ -484,7 +456,7 @@ func clonePlanReport(in plan.Report) plan.Report {
 	out.Decisions = append([]plan.Decision(nil), in.Decisions...)
 	out.Missing = append([]plan.Requirement(nil), in.Missing...)
 	out.RequiredAdapters = clonePlanAdapterRequirements(in.RequiredAdapters)
-	out.Warnings = clonePlanDiagnostics(in.Warnings)
+	out.Warnings = compile.ClonePlanDiagnostics(in.Warnings)
 	out.Graph = clonePipelineSpec(in.Graph)
 	return out
 }
@@ -504,7 +476,7 @@ func clonePlanStreams(streams []plan.Stream) []plan.Stream {
 		out[i] = streams[i]
 		out[i].Operations = append([]plan.Operation(nil), streams[i].Operations...)
 		out[i].Destinations = append([]string(nil), streams[i].Destinations...)
-		out[i].Encode.Settings.Custom = cloneMetadata(streams[i].Encode.Settings.Custom)
+		out[i].Encode.Settings.Custom = compile.CloneMetadata(streams[i].Encode.Settings.Custom)
 	}
 	return out
 }
@@ -537,7 +509,7 @@ func clonePlanAdapterRequirements(requirements []plan.AdapterRequirement) []plan
 		out[i].PixelFormats = append([]string(nil), requirements[i].PixelFormats...)
 		out[i].SampleFormats = append([]string(nil), requirements[i].SampleFormats...)
 		out[i].ResizeModes = append([]filter.ResizeMode(nil), requirements[i].ResizeModes...)
-		out[i].Metadata = cloneMetadata(requirements[i].Metadata)
+		out[i].Metadata = compile.CloneMetadata(requirements[i].Metadata)
 	}
 	return out
 }
@@ -885,11 +857,11 @@ func (t *destinationTransaction) Failed() bool {
 }
 
 // compileEnv is the view of the runtime the compiler reads.
-func (r *Runtime) compileEnv() compileEnv {
+func (r *Runtime) compileEnv() compile.Env {
 	if r == nil {
-		return compileEnv{}
+		return compile.Env{}
 	}
-	return compileEnv{
+	return compile.Env{
 		Present:     true,
 		Codecs:      r.codecs,
 		Filters:     r.filters,

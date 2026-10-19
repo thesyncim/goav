@@ -1,4 +1,4 @@
-package goav
+package compile
 
 import (
 	"strconv"
@@ -18,7 +18,7 @@ import (
 // declared policy — Explain never measures. Contributions the root cannot see
 // (a transport provider's internal jitter buffer, e.g. rtpav's) are absent by
 // construction: no provider seam declares latency today.
-func planPathLatencyDecision(env compileEnv, branchName string, operations []recipeir.Operation) (planDecision, bool) {
+func planPathLatencyDecision(env Env, branchName string, operations []recipeir.Operation) (PlanDecision, bool) {
 	var syncTolerance, playoutOffset time.Duration
 	gated := false
 	for i := range operations {
@@ -30,7 +30,7 @@ func planPathLatencyDecision(env compileEnv, branchName string, operations []rec
 		}
 	}
 	if !gated {
-		return planDecision{}, false
+		return PlanDecision{}, false
 	}
 	total := syncTolerance + playoutOffset
 	terms := make([]string, 0, 3)
@@ -57,8 +57,8 @@ func planPathLatencyDecision(env compileEnv, branchName string, operations []rec
 	if len(facts) > 0 {
 		message += "; " + strings.Join(facts, "; ")
 	}
-	return planDecision{
-		Code:    diagnosticPathLatencyBudget,
+	return PlanDecision{
+		Code:    DiagnosticPathLatencyBudget,
 		Branch:  branchName,
 		Message: message,
 	}, true
