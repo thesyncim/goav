@@ -259,3 +259,32 @@ jobs:
           esac
           git verify-tag "${GITHUB_REF_NAME}"
           test -s CHANGELOG.md
+
+  # A nested module must be installable by a consumer with no checkout: no
+  # workspace, no replace. The importer lives outside the repo and fetches the
+  # module at this exact commit, so an unresolvable root pin fails here.
+  consumer-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+      - name: Install each nested module from a clean directory
+        env:
+          GOWORK: 'off'
+          GOPROXY: direct
+          GONOSUMDB: github.com/thesyncim
+          GOFLAGS: -mod=mod
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          for mod in rtpav webrtcav playoutav goavtest/expect; do
+            dir="$(mktemp -d)"
+            cd "$dir"
+            go mod init x
+            go get "github.com/thesyncim/goav/${mod}@${SHA}"
+            printf 'package main\n\nimport _ "github.com/thesyncim/goav/%s"\n\nfunc main() {}\n' "$mod" > main.go
+            go build ./...
+            cd - >/dev/null
+          done

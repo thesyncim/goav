@@ -22,9 +22,6 @@ func TestDescriptorAndRegister(t *testing.T) {
 	if !desc.Supports(codec.ModeDecode) || desc.Supports(codec.ModeEncode) {
 		t.Fatalf("descriptor modes = %v", desc.Modes)
 	}
-	if desc.Backend.Status != "active" {
-		t.Fatalf("status = %q", desc.Backend.Status)
-	}
 
 	registry := codec.NewRegistry()
 	Register(registry)
@@ -421,4 +418,19 @@ func decodeFirstPCM(t *testing.T, decoder codec.Decoder, payloads [][]byte) []by
 	}
 	t.Fatal("decoder produced no PCM")
 	return nil
+}
+
+// TestDescriptorStatusMatchesBackendAvailability pins that the descriptor
+// reports what the compiled goaac backend can actually do on this target.
+func TestDescriptorStatusMatchesBackendAvailability(t *testing.T) {
+	want := "active"
+	if _, err := aaclib.NewDecoder(aaclib.Config{SampleRate: 48000, Channels: 2}); errors.Is(err, aaclib.ErrNativeUnavailable) {
+		want = "unsupported-target"
+	}
+	if got := Descriptor().Backend.Status; got != want {
+		t.Fatalf("descriptor status = %q, backend availability implies %q", got, want)
+	}
+	if (want == "active") != targetSupported {
+		t.Fatalf("targetSupported = %v but backend probe says %q", targetSupported, want)
+	}
 }
