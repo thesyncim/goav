@@ -29,9 +29,9 @@ What holds today (all `-race` clean, with tests):
   (`TestBuildTimeBranchBufferIsHonored`). On an offline run a declared buffer
   promotes the graph to buffered, so the fork runs on its own worker instead
   of inside its upstream's call (`TestBranchBufferPromotesOfflineGraph`).
-  With several files the buffered graph keeps their time order by letting
-  each packet's work finish before the next packet enters, which trades
-  pipelining across packets for the same bytes on every run.
+  Where several files meet at one node (a shared mux), the buffered graph
+  keeps their time order by letting each packet's work finish before the
+  next enters, trading pipelining across packets for the same bytes.
 - Encode ladders run their rungs in parallel by default: when one source fans
   out to two or more encoding branches, with only built-in operations and
   goav-owned outputs (Write/File) each fed by one branch, each branch runs on

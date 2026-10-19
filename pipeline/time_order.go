@@ -82,7 +82,10 @@ type timeTurnKey struct{}
 //     more than one producer (a nested join): a source the stage holds back
 //     is parked mid-delivery owning its arm's nodes, and no sibling may need
 //     one of them;
-//   - a buffered graph, whose turn moves only once the graph settled.
+//   - a buffered graph with a node fed by more than one producer (a shared
+//     mux), whose turn moves only once the graph settled. With none, as in a
+//     promoted ladder, every output reads one chain of FIFO queues and is in
+//     order already, so its workers keep pipelining across packets.
 func timeOrderedSources[P graphNode, S any](realtime, buffered bool, topo *snapshot[P], sources []S, source func(S) Source) []bool {
 	if realtime || topo == nil {
 		return nil
@@ -107,8 +110,11 @@ func timeOrderedSources[P graphNode, S any](realtime, buffered bool, topo *snaps
 	if (buffered || converging) && !every {
 		return nil
 	}
-	if converging && (buffered || !gatedConvergence(topo)) {
+	if converging && (buffered || !gatedConvergence(topo, producersOf(topo))) {
 		return nil
+	}
+	if buffered && !merges(producersOf(topo)) {
+		return nil // each node has one producer chain, already in order
 	}
 	ordered := make([]bool, len(sources))
 	for i := range sources {
@@ -117,9 +123,9 @@ func timeOrderedSources[P graphNode, S any](realtime, buffered bool, topo *snaps
 	return ordered
 }
 
-// gatedConvergence reports whether every converging stage of topo is an
-// interleave.Gate fed only through nodes with at most one producer each.
-func gatedConvergence[P graphNode](topo *snapshot[P]) bool {
+// producersOf lists, for each node of topo, the distinct active nodes that
+// route into it.
+func producersOf[P graphNode](topo *snapshot[P]) [][]int {
 	producers := make([][]int, len(topo.nodes))
 	for from := range topo.nodes {
 		if !topo.nodes[from].active {
@@ -133,6 +139,23 @@ func gatedConvergence[P graphNode](topo *snapshot[P]) bool {
 			}
 		}
 	}
+	return producers
+}
+
+// merges reports whether some node has more than one producer, the only
+// place a buffered graph's concurrent workers can reorder messages.
+func merges(producers [][]int) bool {
+	for _, from := range producers {
+		if len(from) > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// gatedConvergence reports whether every converging stage of topo is an
+// interleave.Gate fed only through nodes with at most one producer each.
+func gatedConvergence[P graphNode](topo *snapshot[P], producers [][]int) bool {
 	for i := range topo.nodes {
 		node := topo.nodes[i].node.base()
 		if !topo.nodes[i].active || node.admit == nil {

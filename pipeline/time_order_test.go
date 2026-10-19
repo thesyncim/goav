@@ -436,3 +436,45 @@ func TestTimeOrderCoversOnlyGatedJoins(t *testing.T) {
 		})
 	}
 }
+
+// TestBufferedTimeOrderOnlyWhereChainsMerge pins that a buffered graph whose
+// sources never meet (a promoted ladder: each output reads one chain) keeps
+// pipelining freely, and one whose sources meet at a node is ordered.
+func TestBufferedTimeOrderOnlyWhereChainsMerge(t *testing.T) {
+	policy := BufferPolicy{Capacity: 4, Drop: DropBlock}
+	for _, shared := range []bool{false, true} {
+		graph, err := NewGraph(GraphConfig{Name: "order", Buffer: policy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sources []Source
+		for _, name := range []string{"a", "b"} {
+			source := &timedSource{name: name, ordered: true}
+			sources = append(sources, source)
+			sink := "sink-" + name
+			if shared {
+				sink = "sink"
+			}
+			if _, err := graph.AddSink(&namedSink{name: sink}, policy); err != nil && !errors.Is(err, ErrNodeExists) {
+				t.Fatal(err)
+			}
+			if _, err := graph.AddSource(source, policy); err != nil {
+				t.Fatal(err)
+			}
+			if err := graph.Connect(Route{From: name, To: []string{sink}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		g := graph.(*bufferedRunner)
+		ordered := timeOrderedSources(false, true, g.snap.Load(), sources, func(s Source) Source { return s })
+		if got := ordered != nil; got != shared {
+			t.Fatalf("shared sink %v: ordered = %v, want %v", shared, ordered, shared)
+		}
+	}
+}
+
+type namedSink struct{ name string }
+
+func (s *namedSink) Name() string                           { return s.name }
+func (s *namedSink) Close() error                           { return nil }
+func (s *namedSink) Handle(context.Context, *Message) error { return nil }
