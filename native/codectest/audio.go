@@ -145,10 +145,22 @@ func audioMux(t *testing.T, b backend, decoders []backend) {
 	if len(demuxed) != len(out.packets) || stream.Codec.SampleRate != sampleRate || stream.Codec.Channels != channels {
 		t.Fatalf("%s: demuxed %d of %d packets at %d Hz x%d", b.name(), len(demuxed), len(out.packets), stream.Codec.SampleRate, stream.Codec.Channels)
 	}
+	// An MP4 presents nothing before zero: the demuxer lifts a track that
+	// starts with codec priming by that much, the same for every packet.
+	lift := demuxed[0].PTS.Value - out.packets[0].PTS.Value
+	for i := range demuxed {
+		if got := demuxed[i].PTS.Value - out.packets[i].PTS.Value; got != lift {
+			t.Fatalf("%s: demuxed packet %d moved %d samples, packet 0 moved %d", b.name(), i, got, lift)
+		}
+	}
 	want := sourceTimeline()
 	for _, d := range decoders {
 		t.Run("decode/"+d.desc.Backend.Name, func(t *testing.T) {
-			checkAudio(t, d, want, decodeAll(t, d, stream, demuxed), minSNR)
+			frames := decodeAll(t, d, stream, demuxed)
+			for _, frame := range frames {
+				frame.PTS.Value -= lift
+			}
+			checkAudio(t, d, want, frames, minSNR)
 		})
 	}
 }

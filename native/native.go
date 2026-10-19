@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/thesyncim/goav/native/internal/audiotoolbox"
 	"github.com/thesyncim/goav/native/internal/openh264"
 	"github.com/thesyncim/goav/native/kit"
 	"github.com/thesyncim/goav/runconfig"
@@ -62,4 +63,11 @@ func resolve(explicit string, system []string) string {
 // selection passes it over.
 func OpenH264(opts ...Option) runconfig.Option {
 	return kit.Register(openh264.Codec(resolve(apply(opts).library, openh264.SystemPaths())))
+}
+
+// AudioToolbox registers Apple's AAC-LC encoder and decoder
+// (aac/audiotoolbox, native) on macOS; elsewhere it registers as
+// unsupported-platform and selection passes it over.
+func AudioToolbox(opts ...Option) runconfig.Option {
+	return kit.Register(audiotoolbox.Codec(resolve(apply(opts).library, []string{audiotoolbox.Path})))
 }
