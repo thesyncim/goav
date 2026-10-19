@@ -253,24 +253,17 @@ func (e *encoder) Update(knob string, values codec.KnobValues) error {
 
 func (e *encoder) Encode(pic *kit.Picture, emit func(*kit.Packet) error) error {
 	f := e.f
+	if e.session == 0 {
+		return codec.ErrClosed
+	}
 	buffer, err := e.pixelBuffer(pic.Width, pic.Height)
 	if err != nil {
 		return err
 	}
-	f.cv.lock(buffer, 0)
-	for i := range 3 {
-		rows := f.cv.planeHeight(buffer, i)
-		stride := f.cv.planeStride(buffer, i)
-		width := (pic.Width + 1) / 2
-		if i == 0 {
-			width = pic.Width
-		}
-		dst := unsafe.Slice((*byte)(f.cv.planeBase(buffer, i)), stride*rows)
-		for row := range rows {
-			copy(dst[row*stride:row*stride+width], pic.Planes[i][row*pic.Strides[i]:])
-		}
+	if err := e.fill(buffer, pic); err != nil {
+		f.cf.release(buffer)
+		return err
 	}
-	f.cv.unlock(buffer, 0)
 	properties := uintptr(0)
 	if pic.Keyframe {
 		properties = e.keyframe
@@ -391,7 +384,7 @@ func (e *encoder) Close() error {
 	f.vt.complete(e.session, cmTime{})
 	f.vt.compressionEnd(e.session)
 	f.cf.release(e.session)
-	e.session = 0
+	e.session, e.pool = 0, 0
 	e.mu.Lock()
 	e.closed = true
 	queue := e.queue
@@ -409,14 +402,12 @@ func (e *encoder) Close() error {
 	return nil
 }
 
-// pixelBuffer takes a buffer from the session's pool. VideoToolbox can leave
-// the pool unset (while the hardware is busy, say), so a missing pool is
-// asked for again and, failing that, the buffer is made directly.
+// pixelBuffer takes a buffer from the session's pool, or makes one directly
+// when VideoToolbox has none to give.
 func (e *encoder) pixelBuffer(width, height int) (uintptr, error) {
 	f := e.f
-	if e.pool == 0 {
-		e.pool = f.vt.pool(e.session)
-	}
+	// The session can replace its pool, so it is asked for each frame.
+	e.pool = f.vt.pool(e.session)
 	var buffer uintptr
 	if e.pool != 0 {
 		if s := f.cv.poolCreate(0, e.pool, &buffer); s != 0 {
@@ -431,4 +422,43 @@ func (e *encoder) pixelBuffer(width, height int) (uintptr, error) {
 		return 0, kit.Fail(Name, "encode", "CVPixelBufferCreate", int64(s))
 	}
 	return buffer, nil
+}
+
+const (
+	pixelNV12Video = 0x34323076 // '420v'
+	pixelNV12Full  = 0x34323066 // '420f'
+)
+
+// fill copies an I420 picture into a pixel buffer: planar y420 as is, or the
+// semi-planar 420v/420f VideoToolbox can switch its pool to mid-session,
+// interleaving the chroma.
+func (e *encoder) fill(buffer uintptr, pic *kit.Picture) error {
+	f := e.f
+	format, planes := f.cv.pixelFormat(buffer), f.cv.planeCount(buffer)
+	semi := format == pixelNV12Video || format == pixelNV12Full
+	if !(format == pixelI420 && planes == 3) && !(semi && planes == 2) || f.cv.width(buffer) < pic.Width || f.cv.height(buffer) < pic.Height {
+		return &kit.Error{Backend: Name, Op: "encode", Reason: "the session's pixel buffers are " + fourCCString(format) + ", not y420 or 420v at the frame's size"}
+	}
+	f.cv.lock(buffer, 0)
+	defer f.cv.unlock(buffer, 0)
+	cw := (pic.Width + 1) / 2
+	for i := range planes {
+		rows, stride := f.cv.planeHeight(buffer, i), f.cv.planeStride(buffer, i)
+		dst := unsafe.Slice((*byte)(f.cv.planeBase(buffer, i)), stride*rows)
+		for row := range rows {
+			line := dst[row*stride : (row+1)*stride]
+			switch {
+			case i == 0:
+				copy(line[:pic.Width], pic.Planes[0][row*pic.Strides[0]:])
+			case semi:
+				u, v := pic.Planes[1][row*pic.Strides[1]:], pic.Planes[2][row*pic.Strides[2]:]
+				for x := range cw {
+					line[2*x], line[2*x+1] = u[x], v[x]
+				}
+			default:
+				copy(line[:cw], pic.Planes[i][row*pic.Strides[i]:])
+			}
+		}
+	}
+	return nil
 }

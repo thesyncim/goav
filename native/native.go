@@ -69,8 +69,8 @@ func OpenH264(opts ...Option) runconfig.Option {
 // AudioToolbox registers Apple's AAC-LC encoder and decoder
 // (aac/audiotoolbox, native) on macOS; elsewhere it registers as
 // unsupported-platform and selection passes it over.
-func AudioToolbox(opts ...Option) runconfig.Option {
-	return kit.Register(audiotoolbox.Codec(resolve(apply(opts).library, []string{audiotoolbox.Path})))
+func AudioToolbox() runconfig.Option {
+	return kit.Register(audiotoolbox.Codec(audiotoolbox.Path))
 }
 
 // VideoToolbox registers the hardware H.264 and HEVC encoders and decoders
@@ -78,6 +78,6 @@ func AudioToolbox(opts ...Option) runconfig.Option {
 // for its hardware when the runtime is built; a Mac without it, or another
 // OS, registers it unavailable and selection passes it over. HEVC is codec
 // id kit.CodecHEVC ("hevc").
-func VideoToolbox(opts ...Option) runconfig.Option {
+func VideoToolbox() runconfig.Option {
 	return kit.Register(videotoolbox.Codecs()...)
 }
