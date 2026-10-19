@@ -60,3 +60,25 @@ func TestInputDetectedWithoutDemuxerIsNamed(t *testing.T) {
 		t.Fatalf("refusal does not name the detected format:\n%v", err)
 	}
 }
+
+// TestUnreadableInputIsRefusedWithItsName pins that an input its demuxer
+// cannot open is refused as input_invalid naming the input, the detected
+// format, and what is wrong, instead of the parser's bare error.
+func TestUnreadableInputIsRefusedWithItsName(t *testing.T) {
+	webm := opusWebM(t)
+	for _, tc := range []struct {
+		name   string
+		data   []byte
+		reason string
+	}{
+		{"empty.webm", nil, "the input is empty"},
+		{"cut.webm", webm[:40], "it is truncated or still being written"},
+		{"noise.webm", append([]byte{0x1a, 0x45, 0xdf, 0xa3}, bytes.Repeat([]byte{0x99, 0x13}, 300)...), "is not a valid matroska stream"},
+	} {
+		err := offlineRuntime().Run(context.Background(), goav.FileInput(tc.name, bytes.NewReader(tc.data)).Audio().Decode().To(goavtest.NewCollector().Sink()))
+		requireBuildError(t, err, errcode.Code("input_invalid"), "open input", tc.name)
+		if !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: refusal does not say %q:\n%v", tc.name, tc.reason, err)
+		}
+	}
+}

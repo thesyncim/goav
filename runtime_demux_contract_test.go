@@ -174,8 +174,9 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 			WithDemuxer(customFormat, &demuxContractFactory{demuxer: demuxer}),
 		)
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input, "", "", nil)
-		if err != openErr {
-			t.Fatalf("open error = %v, want original", err)
+		var refusal *BuildError
+		if !errors.Is(err, openErr) || !errors.As(err, &refusal) || refusal.Code != inputInvalidCode {
+			t.Fatalf("open error = %v, want an input_invalid refusal wrapping the original", err)
 		}
 		if !demuxer.closed {
 			t.Fatal("demuxer was not closed after open failure")

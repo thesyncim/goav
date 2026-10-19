@@ -60,7 +60,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 		Metadata: input.Metadata,
 	}); err != nil {
 		demuxer.Close()
-		return demuxBuild{}, err
+		return demuxBuild{}, inputUnreadableError(ctx, input, inputProbe.Format, len(header) == 0 && pinned == "", err)
 	}
 
 	streams := demuxer.Streams()

@@ -275,7 +275,10 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 			if errors.Is(err, io.EOF) {
 				return s.emitEndOfStream(ctx, emitter)
 			}
-			return err
+			if ctx.Err() != nil {
+				return err
+			}
+			return fmt.Errorf("format: %s: read: %w", s.name, err)
 		}
 		if err := s.emitEvents(ctx, emitter, s.result.Events); err != nil {
 			return err

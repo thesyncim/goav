@@ -41,3 +41,7 @@
   like planned ones, so a whole two-stream file into IVF is refused as
   `destination_mux_incompatible` naming the stream to route, instead of
   silently losing the audio.
+- An input its demuxer cannot open is refused as `input_invalid` (phase
+  `open`) naming the input, the detected format, and what is wrong (empty,
+  truncated, not that format) instead of a bare `EOF` or `matroska: invalid
+  data`; a read failure mid-run names its source node.
