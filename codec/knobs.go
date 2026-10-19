@@ -169,6 +169,49 @@ func (v KnobValues) Int(name string) int {
 	return n
 }
 
+// Int32, Uint32, and Uint16 return an int or bool knob's value parsed at
+// that size, for C fields of that type: a knob read this way declares a
+// range inside the type, which planning enforces with a refusal naming it,
+// so the value fits; one that cannot reads as 0. Backends never narrow Int
+// by hand.
+func (v KnobValues) Int32(name string) int32 {
+	n, err := strconv.ParseInt(v.number(name), 10, 32)
+	if err != nil {
+		return 0
+	}
+	return int32(n)
+}
+
+// Uint32 is Int32 for unsigned 32-bit fields.
+func (v KnobValues) Uint32(name string) uint32 {
+	n, err := strconv.ParseUint(v.number(name), 10, 32)
+	if err != nil {
+		return 0
+	}
+	return uint32(n)
+}
+
+// Uint16 is Int32 for unsigned 16-bit fields.
+func (v KnobValues) Uint16(name string) uint16 {
+	n, err := strconv.ParseUint(v.number(name), 10, 16)
+	if err != nil {
+		return 0
+	}
+	return uint16(n)
+}
+
+// number is a knob's value as digits: bools read as 1 and 0.
+func (v KnobValues) number(name string) string {
+	switch value := v.values[name]; value {
+	case "true":
+		return "1"
+	case "false", "":
+		return "0"
+	default:
+		return value
+	}
+}
+
 // Float returns a float knob's value, 0 when empty.
 func (v KnobValues) Float(name string) float64 {
 	f, _ := strconv.ParseFloat(v.values[name], 64)

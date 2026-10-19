@@ -68,15 +68,15 @@ func (e *encoder) configure(knobs codec.KnobValues) error {
 	if err := e.set(propertyRateControl, mode, "rc"); err != nil {
 		return err
 	}
-	if err := e.set(propertyQuality, uint32(127-knobs.Int("speed")*127/10), "speed"); err != nil {
+	if err := e.set(propertyQuality, 127-knobs.Uint32("speed")*127/10, "speed"); err != nil {
 		return err
 	}
 	if mode == 3 {
-		if err := e.set(propertyVBRQuality, uint32(knobs.Int("quality")*127/100), "quality"); err != nil {
+		if err := e.set(propertyVBRQuality, knobs.Uint32("quality")*127/100, "quality"); err != nil {
 			return err
 		}
-	} else if bitrate := knobs.Int("bitrate"); bitrate > 0 {
-		if err := e.set(propertyBitrate, uint32(bitrate), "bitrate"); err != nil {
+	} else if bitrate := knobs.Uint32("bitrate"); bitrate > 0 {
+		if err := e.set(propertyBitrate, bitrate, "bitrate"); err != nil {
 			return err
 		}
 	}
@@ -105,7 +105,7 @@ func (e *encoder) Update(knob string, values codec.KnobValues) error {
 	if knob != "bitrate" {
 		return &kit.Error{Backend: Name, Op: "control", Name: knob, Reason: "cannot change while running"}
 	}
-	return e.set(propertyBitrate, uint32(values.Int(knob)), knob)
+	return e.set(propertyBitrate, values.Uint32(knob), knob)
 }
 
 func (e *encoder) Encode(s *kit.Samples, emit func(*kit.Packet) error) error {

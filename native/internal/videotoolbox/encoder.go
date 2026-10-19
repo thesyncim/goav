@@ -174,8 +174,8 @@ func (e *encoder) configure(config kit.VideoConfig) error {
 			return err
 		}
 	}
-	if gop := knobs.Int("gop"); gop > 0 {
-		if err := e.set("gop", f.vt.keyMaxKeyFrameInterval, f.int32Number(int32(gop)), true); err != nil {
+	if gop := knobs.Int32("gop"); gop > 0 {
+		if err := e.set("gop", f.vt.keyMaxKeyFrameInterval, f.int32Number(gop), true); err != nil {
 			return err
 		}
 	}

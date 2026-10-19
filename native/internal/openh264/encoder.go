@@ -83,7 +83,7 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	p.PicWidth, p.PicHeight = int32(config.Width), int32(config.Height)
 	p.MaxFrameRate = fps
 	p.TemporalLayerNum, p.SpatialLayerNum = 1, 1
-	bitrate := int32(knobs.Int("bitrate"))
+	bitrate := knobs.Int32("bitrate")
 	p.TargetBitrate = bitrate
 	rc := knobs.String("rc")
 	if rc == "" {
@@ -93,12 +93,12 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 		}
 	}
 	p.RCMode = rcModes[rc]
-	p.MaxBitrate = int32(knobs.Int("max_bitrate"))
-	p.IntraPeriod = uint32(knobs.Int("gop"))
+	p.MaxBitrate = knobs.Int32("max_bitrate")
+	p.IntraPeriod = knobs.Uint32("gop")
 	p.SpsPpsIDStrategy = constantID
 	p.PrefixNalAddingCtrl = false
 	p.EnableFrameSkip = knobs.Bool("frame_skip")
-	p.MultipleThreadIdc = uint16(knobs.Int("threads"))
+	p.MultipleThreadIdc = knobs.Uint16("threads")
 	p.ComplexityMode = complexity(knobs.Int("speed"))
 	profile := knobs.String("profile")
 	p.EntropyCodingMode = 0
@@ -106,13 +106,13 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 		p.EntropyCodingMode = 1
 	}
 	if knobs.IsSet("refs") {
-		p.NumRefFrame = int32(knobs.Int("refs"))
+		p.NumRefFrame = knobs.Int32("refs")
 	}
 	if knobs.IsSet("qp_min") {
-		p.MinQp = int32(knobs.Int("qp_min"))
+		p.MinQp = knobs.Int32("qp_min")
 	}
 	if knobs.IsSet("qp_max") {
-		p.MaxQp = int32(knobs.Int("qp_max"))
+		p.MaxQp = knobs.Int32("qp_max")
 	}
 	for name, field := range map[string]*bool{
 		"denoise": &p.EnableDenoise, "scene_detect": &p.EnableSceneChange,
@@ -128,14 +128,14 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	layer.FrameRate = fps
 	layer.SpatialBitrate = bitrate
 	layer.MaxSpatialBitrate = p.MaxBitrate
-	layer.DLayerQp = int32(knobs.Int("qp"))
+	layer.DLayerQp = knobs.Int32("qp")
 	layer.ProfileIdc = profiles[profile]
 	if level := knobs.String("level"); level != "" {
 		layer.LevelIdc = levelIdc(level)
 	}
 	layer.Slices.SliceMode = sliceSingle
-	if n := knobs.Int("slices"); n > 1 {
-		layer.Slices.SliceMode, layer.Slices.SliceNum = sliceFixedNum, uint32(n)
+	if n := knobs.Uint32("slices"); n > 1 {
+		layer.Slices.SliceMode, layer.Slices.SliceNum = sliceFixedNum, n
 	}
 	if err := rawParams.Apply(p, knobs.Raw()); err != nil {
 		return err
@@ -229,7 +229,7 @@ func (e *encoder) Flush(func(*kit.Packet) error) error { return nil }
 
 // Update applies a bitrate change while running.
 func (e *encoder) Update(knob string, values codec.KnobValues) error {
-	option, value := int32(optionBitrate), int32(values.Int(knob))
+	option, value := int32(optionBitrate), values.Int32(knob)
 	switch knob {
 	case "bitrate":
 	case "max_bitrate":

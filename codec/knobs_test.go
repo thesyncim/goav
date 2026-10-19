@@ -97,3 +97,13 @@ func TestResolveKnobsWithoutSchemaPassesSettings(t *testing.T) {
 		t.Fatalf("schemaless = %+v, %v", values, err)
 	}
 }
+
+func TestSizedAccessorsParseAtTheirSize(t *testing.T) {
+	v := KnobValues{values: map[string]string{"n": "70000", "big": "5000000000", "on": "true", "neg": "-3"}}
+	if v.Int32("n") != 70000 || v.Uint32("n") != 70000 || v.Uint16("n") != 0 {
+		t.Fatalf("70000 = %d, %d, %d; uint16 cannot hold it", v.Int32("n"), v.Uint32("n"), v.Uint16("n"))
+	}
+	if v.Int32("big") != 0 || v.Uint32("big") != 0 || v.Int32("on") != 1 || v.Uint16("on") != 1 || v.Uint32("neg") != 0 || v.Int32("neg") != -3 {
+		t.Fatal("sized accessors read out-of-range values as something other than 0")
+	}
+}

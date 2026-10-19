@@ -36,7 +36,7 @@ func fooCodec(path string) kit.Codec {
 		Knobs:     []codec.Knob{codec.KnobBitrate},
 		Libraries: []kit.Library{{Name: "libfoo", Path: path, Fix: "install libfoo", Symbols: sym}},
 		NewVideoEncoder: func(config kit.VideoConfig) (kit.VideoEncoder, error) {
-			foo := sym.open(int32(config.Width), int32(config.Height), int32(config.Knobs.Int("bitrate")))
+			foo := sym.open(int32(config.Width), int32(config.Height), config.Knobs.Int32("bitrate"))
 			if foo == 0 {
 				return nil, &kit.Error{Backend: "foo", Op: "open", Reason: "foo_open failed"}
 			}

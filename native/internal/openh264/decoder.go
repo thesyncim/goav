@@ -47,7 +47,7 @@ func newDecoder(l *library, config kit.VideoConfig) (kit.VideoDecoder, error) {
 		d.Close()
 		return nil, kit.Fail(Name, "open", "Initialize", int64(status))
 	}
-	if threads := int32(knobs.Int("threads")); threads > 0 {
+	if threads := knobs.Int32("threads"); threads > 0 {
 		d.vt.SetOption(d.handle, decoderOptionThreads, unsafe.Pointer(&threads))
 	}
 	return d, nil
