@@ -1,6 +1,7 @@
 package flv
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/aac"
+	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
@@ -183,59 +185,52 @@ func newMuxTrack(stream av.Stream, media av.MediaType, index int) (muxTrack, err
 // writeMetadata writes onMetaData: the codecs, the geometry the streams
 // declare, and per-track maps for tracks after the first of their media.
 func (m *Muxer) writeMetadata() error {
-	body := appendAMFString(nil, "onMetaData")
-	body = append(body, amfECMAArray, 0, 0, 0, 0)
-	body = appendAMFName(body, "duration")
-	durationAt := len(body) + 1
-	body = appendAMFNumber(body, 0)
-	body = appendAMFName(body, "filesize")
-	sizeAt := len(body) + 1
-	body = appendAMFNumber(body, 0)
-	var videoMap, audioMap []byte
+	meta := amf0.ECMAArray{{Name: "duration", Value: 0.0}, {Name: "filesize", Value: 0.0}}
+	var videoMap, audioMap amf0.Object
 	for i := range m.tracks {
 		t := &m.tracks[i]
-		var props []byte
 		codec := t.stream.Codec
+		var props amf0.Object
 		if t.media == av.MediaVideo {
-			props = appendNumberProperty(props, "videocodecid", float64(metadataCodecID(t)))
+			props = append(props, amf0.Property{Name: "videocodecid", Value: metadataCodecID(t)})
 			if codec.Width > 0 && codec.Height > 0 {
-				props = appendNumberProperty(props, "width", float64(codec.Width))
-				props = appendNumberProperty(props, "height", float64(codec.Height))
+				props = append(props, amf0.Property{Name: "width", Value: codec.Width}, amf0.Property{Name: "height", Value: codec.Height})
 			}
 		} else {
-			props = appendNumberProperty(props, "audiocodecid", float64(metadataCodecID(t)))
+			props = append(props, amf0.Property{Name: "audiocodecid", Value: metadataCodecID(t)})
 			if codec.SampleRate > 0 {
-				props = appendNumberProperty(props, "audiosamplerate", float64(codec.SampleRate))
+				props = append(props, amf0.Property{Name: "audiosamplerate", Value: codec.SampleRate})
 			}
-			props = appendNumberProperty(props, "audiosamplesize", 16)
+			props = append(props, amf0.Property{Name: "audiosamplesize", Value: 16})
 			if codec.Channels > 0 {
-				props = appendAMFName(props, "stereo")
-				props = append(props, amfBoolean, b2u(codec.Channels > 1))
+				props = append(props, amf0.Property{Name: "stereo", Value: codec.Channels > 1})
 			}
 		}
 		switch {
 		case t.track == 0:
-			body = append(body, props...)
+			meta = append(meta, props...)
 		case t.media == av.MediaVideo:
-			videoMap = appendTrackEntry(videoMap, t.track, props)
+			videoMap = append(videoMap, amf0.Property{Name: strconv.Itoa(int(t.track)), Value: props})
 		default:
-			audioMap = appendTrackEntry(audioMap, t.track, props)
+			audioMap = append(audioMap, amf0.Property{Name: strconv.Itoa(int(t.track)), Value: props})
 		}
 	}
-	for _, track := range []struct {
-		name    string
-		entries []byte
-	}{{"videoTrackIdInfoMap", videoMap}, {"audioTrackIdInfoMap", audioMap}} {
-		if track.entries != nil {
-			body = appendAMFName(body, track.name)
-			body = append(body, amfObject)
-			body = appendAMFEnd(append(body, track.entries...))
-		}
+	if videoMap != nil {
+		meta = append(meta, amf0.Property{Name: "videoTrackIdInfoMap", Value: videoMap})
 	}
-	body = appendAMFName(body, "encoder")
-	body = appendAMFEnd(appendAMFString(body, "goav"))
+	if audioMap != nil {
+		meta = append(meta, amf0.Property{Name: "audioTrackIdInfoMap", Value: audioMap})
+	}
+	meta = append(meta, amf0.Property{Name: "encoder", Value: "goav"})
+	body, err := amf0.Append(nil, "onMetaData", meta)
+	if err != nil {
+		return err
+	}
+	// The numbers Close patches follow their names' length and bytes and
+	// the number marker.
 	tagStart := m.written + tagHeaderSize
-	m.durationAt, m.sizeAt = tagStart+int64(durationAt), tagStart+int64(sizeAt)
+	m.durationAt = tagStart + int64(bytes.Index(body, []byte("\x00\x08duration"))+11)
+	m.sizeAt = tagStart + int64(bytes.Index(body, []byte("\x00\x08filesize"))+11)
 	m.buf = appendTagHeader(m.buf[:0], tagScript, len(body), 0)
 	m.buf = binary.BigEndian.AppendUint32(append(m.buf, body...), uint32(tagHeaderSize+len(body)))
 	return m.flush()
@@ -252,23 +247,6 @@ func metadataCodecID(t *muxTrack) uint32 {
 	default:
 		return uint32(codecFourCC[t.codec])
 	}
-}
-
-func appendNumberProperty(dst []byte, name string, v float64) []byte {
-	return appendAMFNumber(appendAMFName(dst, name), v)
-}
-
-func appendTrackEntry(dst []byte, track uint8, props []byte) []byte {
-	dst = appendAMFName(dst, strconv.Itoa(int(track)))
-	dst = append(dst, amfObject)
-	return appendAMFEnd(append(dst, props...))
-}
-
-func b2u(b bool) byte {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // Write writes one packet as one tag, after its stream's sequence start.

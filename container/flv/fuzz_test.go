@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/amf0"
 )
 
 // FuzzDemux feeds the demuxer arbitrary bytes: it must never panic or
@@ -18,7 +19,7 @@ func FuzzDemux(f *testing.F) {
 	f.Add(rawFile(flagVideo|flagAudio,
 		rawTag(tagVideo, 0, []byte{0x90 | packetModEx, 0xff, 0, 0}),
 		rawTag(tagAudio, 0, []byte{0x90 | audioMultitrack, manyTracksManyCodecs<<4 | packetCodedFrames, 'O', 'p', 'u', 's', 0, 0, 0, 9}),
-		rawTag(tagScript, 0, []byte{amfString, 0, 10, 'o', 'n', 'M', 'e', 't', 'a', 'D', 'a', 't', 'a', amfStrictArray, 0xff, 0xff, 0xff, 0xff}),
+		rawTag(tagScript, 0, []byte{2, 0, 10, 'o', 'n', 'M', 'e', 't', 'a', 'D', 'a', 't', 'a', 0x0a, 0xff, 0xff, 0xff, 0xff}),
 	))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		got, err := demux(data)
@@ -40,9 +41,7 @@ func FuzzDemux(f *testing.F) {
 
 // FuzzScript feeds AMF0 decoding arbitrary script tag bodies.
 func FuzzScript(f *testing.F) {
-	meta := appendAMFString(nil, "onMetaData")
-	meta = append(meta, amfECMAArray, 0, 0, 0, 1)
-	meta = appendAMFEnd(appendNumberProperty(meta, "width", 1280))
+	meta, _ := amf0.Append(nil, "onMetaData", amf0.ECMAArray{{Name: "width", Value: 1280}, {Name: "videoTrackIdInfoMap", Value: amf0.Object{{Name: "1", Value: amf0.Object{}}}}})
 	f.Add(meta)
 	f.Fuzz(func(t *testing.T, body []byte) {
 		(&Demuxer{}).script(body)

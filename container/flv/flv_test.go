@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
@@ -311,8 +312,8 @@ func TestMuxPatchesDurationOnSeekableOutput(t *testing.T) {
 	if err := d.Open(context.Background(), format.Input{Reader: bytes.NewReader(data)}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	duration, _ := number(d.hints, "duration")
-	size, _ := number(d.hints, "filesize")
+	duration, _ := d.hints.Number("duration")
+	size, _ := d.hints.Number("filesize")
 	if duration < 1 || duration > 1.3 || int(size) != len(data) {
 		t.Fatalf("duration %v s, filesize %v of %d bytes", duration, size, len(data))
 	}
@@ -497,15 +498,17 @@ func TestDemuxCodecChange(t *testing.T) {
 func TestDemuxMetadataExpectsTracks(t *testing.T) {
 	src := demuxBytes(t, fixture(t, "h264_aac"))
 	avcC := src.streams[0].Codec.ExtraData.Bytes
-	meta := appendAMFString(nil, "onMetaData")
-	meta = append(meta, amfECMAArray, 0, 0, 0, 0)
-	meta = appendNumberProperty(meta, "videocodecid", 7)
-	meta = appendNumberProperty(meta, "width", 1280)
-	meta = appendNumberProperty(meta, "height", 720)
-	meta = appendAMFName(meta, "videoTrackIdInfoMap")
-	meta = append(meta, amfObject)
-	meta = appendTrackEntry(meta, 1, appendNumberProperty(appendNumberProperty(nil, "width", 640), "height", 360))
-	meta = appendAMFEnd(appendAMFEnd(meta))
+	meta, err := amf0.Append(nil, "@setDataFrame", "onMetaData", amf0.ECMAArray{
+		{Name: "videocodecid", Value: 7},
+		{Name: "width", Value: 1280},
+		{Name: "height", Value: 720},
+		{Name: "videoTrackIdInfoMap", Value: amf0.Object{
+			{Name: "1", Value: amf0.Object{{Name: "width", Value: 640}, {Name: "height", Value: 360}}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	frame := []byte{0, 0, 0, 2, 0x09, 0xf0}
 	data := rawFile(flagVideo,
 		rawTag(tagScript, 0, meta),

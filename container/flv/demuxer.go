@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/aac"
+	"github.com/thesyncim/goav/internal/amf0"
 	"github.com/thesyncim/goav/internal/h264"
 	"github.com/thesyncim/goav/internal/hevc"
 )
@@ -58,7 +59,7 @@ type Demuxer struct {
 	tags         int
 	// expect is the tracks onMetaData or the header flags promise.
 	expect []trackKey
-	hints  []property
+	hints  amf0.Object
 	opened bool
 	// ready is set once Open has announced its streams: a track that
 	// appears later is announced by an event.
@@ -301,28 +302,26 @@ func (d *Demuxer) unwrap(ts uint32) int64 {
 
 // script reads onMetaData: the media it promises, and stream hints.
 func (d *Demuxer) script(body []byte) {
-	r := reader{b: body}
-	name, _ := decodeAMF(&r, 0).(string)
-	if name == "@setDataFrame" {
-		name, _ = decodeAMF(&r, 0).(string)
+	values, _ := amf0.Decode(body) // what decodes before any damage
+	if len(values) > 0 && values[0] == "@setDataFrame" {
+		values = values[1:]
 	}
-	if name != "onMetaData" || d.hints != nil {
+	if len(values) < 2 || values[0] != "onMetaData" || d.hints != nil {
 		return
 	}
-	props, _ := decodeAMF(&r, 0).([]property)
-	if props == nil {
+	props, ok := values[1].(amf0.Object)
+	if !ok {
 		return
 	}
 	d.hints = props
 	var expect []trackKey
 	for _, media := range []av.MediaType{av.MediaVideo, av.MediaAudio} {
-		if _, ok := lookup(props, string(media)+"codecid"); ok {
+		if _, ok := props.Get(string(media) + "codecid"); ok {
 			expect = append(expect, trackKey{media: media})
 		}
-		maps, _ := lookup(props, string(media)+"TrackIdInfoMap")
-		entries, _ := maps.([]property)
+		entries, _ := props.Object(string(media) + "TrackIdInfoMap")
 		for _, entry := range entries {
-			if id, err := strconv.ParseUint(entry.name, 10, 8); err == nil {
+			if id, err := strconv.ParseUint(entry.Name, 10, 8); err == nil {
 				expect = append(expect, trackKey{media: media, id: uint8(id)})
 			}
 		}
@@ -397,27 +396,25 @@ func (d *Demuxer) track(it item) (t *demuxTrack, added bool) {
 func (d *Demuxer) applyHints(t *demuxTrack) {
 	props := d.hints
 	if t.id != 0 {
-		maps, _ := lookup(d.hints, string(t.media)+"TrackIdInfoMap")
-		entries, _ := maps.([]property)
-		entry, _ := lookup(entries, strconv.Itoa(int(t.id)))
-		props, _ = entry.([]property)
+		entries, _ := d.hints.Object(string(t.media) + "TrackIdInfoMap")
+		props, _ = entries.Object(strconv.Itoa(int(t.id)))
 	}
 	codec := &t.stream.Codec
 	if t.media == av.MediaVideo {
-		if w, ok := number(props, "width"); ok && w > 0 && w < 1<<16 {
+		if w, ok := props.Number("width"); ok && w > 0 && w < 1<<16 {
 			codec.Width = int(w)
 		}
-		if h, ok := number(props, "height"); ok && h > 0 && h < 1<<16 {
+		if h, ok := props.Number("height"); ok && h > 0 && h < 1<<16 {
 			codec.Height = int(h)
 		}
 		return
 	}
-	if rate, ok := number(props, "audiosamplerate"); ok && rate > 0 && rate < 1<<20 {
+	if rate, ok := props.Number("audiosamplerate"); ok && rate > 0 && rate < 1<<20 {
 		codec.SampleRate = int(rate)
 	}
-	if channels, ok := number(props, "channels"); ok && channels > 0 && channels < 256 {
+	if channels, ok := props.Number("channels"); ok && channels > 0 && channels < 256 {
 		codec.Channels = int(channels)
-	} else if stereo, ok := lookup(props, "stereo"); ok {
+	} else if stereo, ok := props.Get("stereo"); ok {
 		codec.Channels = 1
 		if stereo == true {
 			codec.Channels = 2
