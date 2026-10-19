@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	urix "github.com/thesyncim/goav/internal/uri"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 )
 
@@ -101,7 +102,7 @@ func (g *recipeGraph) bindSchemes(rt *Runtime) {
 		}
 	}
 	for i := range g.dests {
-		if spec := g.dests[i].spec; spec.uri != nil && spec.custom == nil && spec.err == nil {
+		if spec := g.dests[i].spec; spec.uri != nil && spec.custom == nil && spec.sink == nil && spec.err == nil {
 			g.dests[i].spec = rt.bindURIDestination(spec)
 		}
 	}
@@ -123,7 +124,12 @@ func (r *Runtime) bindURIInput(spec InputSpec) InputSpec {
 		spec.err = schemeUnsupportedError(inputSchemeUnsupportedCode, "resolve input", node, ref.scheme, err, r.schemeNames())
 		return spec
 	}
-	in, err := scheme.Input(cloneURL(ref.raw))
+	var in provider.Input
+	if inputs, ok := scheme.(provider.InputScheme); ok {
+		in, err = inputs.Input(cloneURL(ref.raw))
+	} else {
+		err = fmt.Errorf("the %s scheme opens no inputs: %w", ref.scheme, errors.ErrUnsupported)
+	}
 	if err == nil && in == nil {
 		err = errNilSource
 	}
@@ -151,9 +157,28 @@ func (r *Runtime) bindURIDestination(spec destinationSpec) destinationSpec {
 		spec.err = schemeUnsupportedError(outputSchemeUnsupportedCode, "resolve destination", node, ref.scheme, err, r.schemeNames())
 		return spec
 	}
-	dest, err := scheme.Destination(cloneURL(ref.raw))
-	if err == nil && dest == nil {
+	var out provider.Output
+	if destinations, ok := scheme.(provider.DestinationScheme); ok {
+		out, err = destinations.Destination(cloneURL(ref.raw))
+	} else {
+		err = fmt.Errorf("the %s scheme writes no destinations: %w", ref.scheme, errors.ErrUnsupported)
+	}
+	if err == nil && out == nil {
 		err = errNilDestinationProvider
+	}
+	var dest provider.Destination
+	if err == nil {
+		switch out := out.(type) {
+		case provider.Destination:
+			dest = out
+		case pipeline.Sink:
+			// A media destination: the sink takes the stream under its own
+			// node name, as goav.Sink does; the label keeps the redacted URL.
+			spec.sink, spec.output = out, format.Output{}
+			return spec
+		default:
+			err = errors.New("its destination is neither a provider.Destination nor a pipeline.Sink")
+		}
 	}
 	if err != nil {
 		spec.err = schemeUnsupportedError(outputSchemeUnsupportedCode, "resolve destination", node, ref.scheme, err, r.schemeNames())

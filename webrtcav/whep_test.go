@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -17,9 +16,12 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/goavtest"
 	runconfig "github.com/thesyncim/goav/runconfig"
+	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // loopbackAPI keeps ICE on 127.0.0.1, so the test needs no network.
@@ -198,11 +200,13 @@ func TestWHEPPlaysAServerSession(t *testing.T) {
 	}
 }
 
-// TestWHEPRefusals pins the scheme's refusals: no destination, and a server
-// that rejects the offer, reported without the URL's secrets.
+// TestWHEPRefusals pins the scheme's refusals: no destination (an input
+// scheme), and a server that rejects the offer, reported without the URL's
+// secrets.
 func TestWHEPRefusals(t *testing.T) {
-	u, _ := url.Parse("whep://media.example/live")
-	if _, err := WHEP().Destination(u); !errors.Is(err, errors.ErrUnsupported) {
+	player := bundle.MustNew(runconfig.Scheme("whep", WHEP()))
+	source := goav.Source("cam", shape.Packet(av.MediaVideo, av.CodecVP8), func(context.Context, source.Push) error { return nil })
+	if _, err := player.Describe(source.To(goav.URI("whep://media.example/live"))); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("destination err = %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

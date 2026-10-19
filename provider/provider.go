@@ -3,10 +3,11 @@
 // ByteSource are the inputs goav.Input adapts into a recipe input,
 // Destination (with Contract, Info, Writer, TransactionalWriter, and
 // OpenFunc) is the seam goav.Custom and goav.Writer wrap behind destination
-// handles, and Scheme binds URLs to both, for goav.URIInput and goav.URI.
-// Implementations live outside goav — rtpav.Receive and webrtcav.Track are
-// Sources, webrtcav.WHEP is a Scheme; an S3 uploader returning a
-// TransactionalWriter is a Destination.
+// handles, and InputScheme and DestinationScheme bind URLs to them, for
+// goav.URIInput and goav.URI. Implementations live outside goav —
+// rtpav.Receive and webrtcav.Track are Sources, webrtcav.WHEP is an
+// InputScheme; an S3 uploader returning a TransactionalWriter is a
+// Destination.
 package provider
 
 import (
@@ -71,20 +72,34 @@ type ByteSource interface {
 	OpenBytes(ctx context.Context) (io.ReadCloser, error)
 }
 
-// Scheme binds URLs of one scheme (file, https, whep, ...) to inputs and
-// destinations: goav.URIInput and goav.URI resolve through the schemes a
-// runtime registers with runconfig.Scheme. Binding is pure — it validates
-// the URL and performs no I/O, because Describe and Explain bind too; the
-// bound Input or Destination connects when the run opens it. A scheme that
-// serves one direction refuses the other with an error that wraps
-// errors.ErrUnsupported and names the fix.
+// Scheme is the provider of one URL scheme (file, https, whep, ...) that
+// runconfig.Scheme registers for goav.URIInput and goav.URI: an InputScheme,
+// a DestinationScheme, or both, so a scheme implements only the directions
+// it serves; goav refuses the other with errors.ErrUnsupported. Binding is
+// pure — it validates the URL and performs no I/O, because Describe and
+// Explain bind too; the bound value connects when the run opens it.
 //
 // The *url.URL carries the caller's credentials verbatim (userinfo, token
 // query parameters): keep it inside the bound value, and name things by the
 // redacted form goav reports (the input's node name, Info.Name).
-type Scheme interface {
+type Scheme any
+
+// InputScheme binds URLs to inputs, for goav.URIInput.
+type InputScheme interface {
 	Input(u *url.URL) (Input, error)
-	Destination(u *url.URL) (Destination, error)
+}
+
+// DestinationScheme binds URLs to destinations, for goav.URI.
+type DestinationScheme interface {
+	Destination(u *url.URL) (Output, error)
+}
+
+// Output is what a DestinationScheme binds a URL to: a Destination, which
+// takes the muxed bytes of a container (a file, an upload, FLV over RTMP),
+// or a pipeline.Sink, which takes the media itself (RTP out, WHIP) under its
+// own node name. goav refuses an Output that is neither.
+type Output interface {
+	Name() string
 }
 
 // Destination opens a custom destination behind a goav-owned Destination

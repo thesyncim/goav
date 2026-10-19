@@ -70,9 +70,9 @@ func WHEPSession(config SessionConfig) WHEPOption {
 // found after the offer go out by PATCH when the server accepts trickle.
 // The input is live, one stream per track (one track per codec), and its
 // Close DELETEs the session's resource. A dropped peer connection fails the
-// input with ErrWHEPDisconnected. WHEP plays media in only: a destination
-// refuses with errors.ErrUnsupported.
-func WHEP(options ...WHEPOption) provider.Scheme {
+// input with ErrWHEPDisconnected. WHEP is an input scheme: it plays media in
+// (publishing needs a WHIP client).
+func WHEP(options ...WHEPOption) provider.InputScheme {
 	config := whepConfig{gather: 2 * time.Second, tracks: 10 * time.Second}
 	for _, option := range options {
 		if option != nil {
@@ -97,10 +97,6 @@ func (s whepScheme) Input(u *url.URL) (provider.Input, error) {
 		endpoint.Scheme = "http"
 	}
 	return &whepInput{config: s.config, endpoint: &endpoint}, nil
-}
-
-func (whepScheme) Destination(*url.URL) (provider.Destination, error) {
-	return nil, fmt.Errorf("whep plays media in only (publishing needs a WHIP client): %w", errors.ErrUnsupported)
 }
 
 type whepInput struct {

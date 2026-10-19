@@ -30,10 +30,16 @@ import (
 // File is the file scheme: file:///abs/path.mp4, a relative file:path.mp4,
 // or a bare path given to goav.URIInput or goav.URI. Inputs open
 // random-access (MP4 with its index at the end seeks); destinations create
-// the file and its parent directories when the run opens them.
+// the file and its parent directories when the run opens them. It is an
+// InputScheme and a DestinationScheme.
 func File() provider.Scheme { return fileScheme{} }
 
 type fileScheme struct{}
+
+var (
+	_ provider.InputScheme       = fileScheme{}
+	_ provider.DestinationScheme = fileScheme{}
+)
 
 func (fileScheme) Input(u *url.URL) (provider.Input, error) {
 	path, err := filePath(u)
@@ -43,7 +49,7 @@ func (fileScheme) Input(u *url.URL) (provider.Input, error) {
 	return fileInput(path), nil
 }
 
-func (fileScheme) Destination(u *url.URL) (provider.Destination, error) {
+func (fileScheme) Destination(u *url.URL) (provider.Output, error) {
 	path, err := filePath(u)
 	if err != nil {
 		return nil, err

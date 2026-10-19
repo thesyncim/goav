@@ -59,8 +59,8 @@ func Header(key, value string) HTTPOption {
 // and reading again from the start for longer ones.
 //
 // A read that waits 30s for data fails, and the run's context ends reads.
-// HTTP does not write: a destination refuses with errors.ErrUnsupported.
-func HTTP(options ...HTTPOption) provider.Scheme {
+// HTTP is an input scheme: it does not write.
+func HTTP(options ...HTTPOption) provider.InputScheme {
 	config := httpConfig{headers: http.Header{}}
 	for _, option := range options {
 		if option != nil {
@@ -124,10 +124,6 @@ func (s httpScheme) Input(u *url.URL) (provider.Input, error) {
 		return nil, errors.New("http URL has no host")
 	}
 	return httpInput{scheme: s, url: u}, nil
-}
-
-func (httpScheme) Destination(*url.URL) (provider.Destination, error) {
-	return nil, fmt.Errorf("http output is not supported (upload with goav.Writer and your own client): %w", errors.ErrUnsupported)
 }
 
 type httpInput struct {
