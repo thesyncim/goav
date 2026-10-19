@@ -124,7 +124,7 @@ func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 	input := Source("gen",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
-			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 			if _, err := push.Packet(&packet); err != nil {
 				return err
 			}

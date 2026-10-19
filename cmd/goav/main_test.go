@@ -178,7 +178,7 @@ func assertDecodableAV1Matroska(t *testing.T, data []byte) {
 		frames += decodeAV1TestPacket(t, decoder, av.Packet{
 			StreamID: "fixture",
 			Type:     av.MediaVideo,
-			Payload:  av.Buffer{Bytes: packet.Data, Ownership: av.BufferBorrowed},
+			Payload:  av.Buffer{Bytes: packet.Data},
 			PTS:      av.Timestamp{Value: packet.TimeNS, Base: stream.TimeBase},
 			Duration: av.Duration{Value: packet.DurationNS, Base: stream.TimeBase},
 			Keyframe: packet.Keyframe,
@@ -230,7 +230,7 @@ func assertDecodableAV1IVF(t *testing.T, data []byte) {
 		packet := av.Packet{
 			StreamID: "fixture",
 			Type:     av.MediaVideo,
-			Payload:  av.Buffer{Bytes: data[offset : offset+size], Ownership: av.BufferBorrowed},
+			Payload:  av.Buffer{Bytes: data[offset : offset+size]},
 			PTS:      av.Timestamp{Value: pts, Base: timebase},
 			Duration: av.Duration{Value: 1, Base: timebase},
 			Keyframe: frames == 0,

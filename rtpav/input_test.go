@@ -106,7 +106,7 @@ type collectEmitter struct {
 func (e *collectEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
 	switch msg.Kind {
 	case pipeline.MessagePacket:
-		e.packets = append(e.packets, *msg.Packet)
+		e.packets = append(e.packets, *msg.Packet.Ref())
 	case pipeline.MessageEvent:
 		e.events = append(e.events, *msg.Event)
 	}

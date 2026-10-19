@@ -59,8 +59,8 @@ func TestFilterDownsamplesAndDownmixesS16(t *testing.T) {
 	if result.Frames[0].Duration != av.SamplesDuration(2, 24000) {
 		t.Fatalf("duration = %+v", result.Frames[0].Duration)
 	}
-	if result.Frames[0].Planes[0].Buffer.Ownership != av.BufferOwned {
-		t.Fatalf("ownership = %s", result.Frames[0].Planes[0].Buffer.Ownership)
+	if result.Frames[0].Planes[0].Buffer.Owner != nil {
+		t.Fatalf("output %+v is pooled, want filter scratch", result.Frames[0].Planes[0].Buffer)
 	}
 }
 
@@ -282,7 +282,7 @@ func audioFrame(streamID av.StreamID, sampleRate int, channels int, samples []in
 			Samples:      len(samples) / channels,
 		},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: data, Ownership: av.BufferOwned},
+			Buffer: av.Buffer{Bytes: data},
 			Stride: channels * 2,
 		}},
 	}

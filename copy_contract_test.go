@@ -1,17 +1,13 @@
 package goav
 
-// These tests pin the public buffer copy-mode ownership contract end to end
-// (north-star §8 / acceptance #22): a buffered branch binds every queued
-// message into its own preallocated slots, so under flow.CopyIfMutable (the
-// default) a branch that mutates its delivered frame bytes can corrupt neither
-// a sibling branch nor the producer; flow.CopyAlways defensively copies even
-// av.BufferImmutable payloads; and flow.CopyNever is safe-only — it shares by
-// reference and refuses mutable payloads instead of silently sharing them.
+// These tests pin the public payload contract end to end (north-star §8 /
+// acceptance #22): buffered branches share the producer's payload by
+// reference, never a copy per branch, and a branch that writes its delivery
+// takes its own reference and makes it writable, so it can corrupt neither a
+// sibling branch nor the producer.
 
 import (
 	"context"
-	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,21 +18,21 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-func copyContractFrame(ownership av.BufferOwnership, data []byte) av.Frame {
+func copyContractFrame(payload av.Buffer) av.Frame {
 	return av.Frame{
 		StreamID: "video",
 		Type:     av.MediaVideo,
 		Video:    &av.VideoFrame{Width: 1280, Height: 720, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: data, Ownership: ownership},
-			Stride: len(data),
+			Buffer: payload,
+			Stride: len(payload.Bytes),
 		}},
 	}
 }
 
 // newCopyContractTask builds the running-task harness the contract tests
 // attach branches to: a waiting frame source feeding a base sink on a buffered
-// graph whose default policy can copy mutable frames, with a frame tap on the
+// graph, with a frame tap on the
 // source node for the branches to hang from.
 func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (LiveTask, *runtimeBranchWaitingSource) {
 	t.Helper()
@@ -47,7 +43,7 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Li
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := expertGraph(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
+	graph := expertGraph(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -73,7 +69,8 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Li
 }
 
 // copyContractMutatingSink overwrites every plane byte of the frame it is
-// delivered, then signals so a sibling can assert its own view afterwards.
+// delivered, the legal way (its own reference, made writable), then signals
+// so a sibling can assert its own view afterwards.
 type copyContractMutatingSink struct {
 	name    string
 	mutated chan struct{}
@@ -87,12 +84,15 @@ func (s *copyContractMutatingSink) Handle(_ context.Context, msg *pipeline.Messa
 	if msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
 		return nil
 	}
-	for i := range msg.Frame.Planes {
-		data := msg.Frame.Planes[i].Buffer.Bytes
+	own := msg.Frame.Ref()
+	own.MakeWritable()
+	for i := range own.Planes {
+		data := own.Planes[i].Buffer.Bytes
 		for j := range data {
 			data[j] = 0xEE
 		}
 	}
+	own.Release()
 	close(s.mutated)
 	return nil
 }
@@ -174,16 +174,18 @@ func equalByteValues(a []byte, b []byte) bool {
 }
 
 // TestCopyContractMutableFanoutBranchCannotCorruptSibling is acceptance #22
-// through the public grammar: one mutable (av.BufferOwned) frame fans out to
-// two buffered branches under the default flow.CopyIfMutable; the "mutate"
-// branch overwrites its delivered plane bytes, and the "observe" branch —
-// which reads only after the mutation happened — still sees the original
-// bytes, as does the producer's backing array.
+// through the public grammar: one pooled frame fans out to two buffered
+// branches by reference; the "mutate" branch writes its delivery the legal
+// way (its own reference, MakeWritable, which copies because the frame is
+// shared), and the "observe" branch, which reads only after the mutation
+// happened, still sees the original bytes, as does the producer.
 func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	original := []byte{1, 2, 3, 4}
-	frame := copyContractFrame(av.BufferOwned, append([]byte(nil), original...))
+	payload := av.NewBuffer(len(original))
+	copy(payload.Bytes, original)
+	frame := copyContractFrame(payload)
 	contractTask, source := newCopyContractTask(t, ctx, &frame)
 	defer contractTask.Close()
 
@@ -199,17 +201,13 @@ func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-		Buffer(flow.Blocking(2, flow.BufferCopyBounds(0, 64))).
-		As("mutate").
-		To(Sink(mutator))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-		Buffer(flow.Blocking(2, flow.BufferCopyBounds(0, 64))).
-		As("observe").
-		To(Sink(observer))); err != nil {
-		t.Fatal(err)
+	for name, sink := range map[string]pipeline.Sink{"mutate": mutator, "observe": observer} {
+		if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
+			Buffer(flow.Blocking(2)).
+			As(name).
+			To(Sink(sink))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	close(source.resume)
 	if err := <-runErr; err != nil {
@@ -219,78 +217,27 @@ func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
 		t.Fatalf("sibling branch bytes = %v, want original %v after mutate branch wrote 0xEE", observer.bytes, original)
 	}
 	if !equalByteValues(frame.Planes[0].Buffer.Bytes, original) {
-		t.Fatalf("producer backing = %v, want untouched original %v", frame.Planes[0].Buffer.Bytes, original)
+		t.Fatalf("producer bytes = %v, want untouched original %v", frame.Planes[0].Buffer.Bytes, original)
 	}
 }
 
-// TestCopyContractCopyAlwaysCopiesImmutableFrames proves the CopyAlways half
-// of the contract end to end: a frame declared av.BufferImmutable is shared by
-// reference under the default CopyIfMutable but defensively copied into
-// branch-owned backing under flow.CopyAlways.
-func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	original := []byte{9, 8, 7, 6}
-	frame := copyContractFrame(av.BufferImmutable, original)
-	contractTask, source := newCopyContractTask(t, ctx, &frame)
-	defer contractTask.Close()
-
-	defensive := &copyContractAliasSink{name: "defensive", original: original}
-	shared := &copyContractAliasSink{name: "shared", original: original}
-
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- contractTask.Run(ctx)
-	}()
-	select {
-	case <-source.ready:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-		Buffer(flow.Blocking(2,
-			flow.BufferCopyMode(flow.CopyAlways),
-			flow.BufferCopyBounds(0, 64),
-		)).
-		As("defensive").
-		To(Sink(defensive))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-		Buffer(flow.Blocking(2)).
-		As("shared").
-		To(Sink(shared))); err != nil {
-		t.Fatal(err)
-	}
-	close(source.resume)
-	if err := <-runErr; err != nil {
-		t.Fatal(err)
-	}
-	if !defensive.seen || defensive.aliased {
-		t.Fatalf("CopyAlways branch seen=%v aliased=%v, want a defensive copy of the immutable frame", defensive.seen, defensive.aliased)
-	}
-	if !equalByteValues(defensive.bytes, original) {
-		t.Fatalf("CopyAlways branch bytes = %v, want %v", defensive.bytes, original)
-	}
-	if !shared.seen || !shared.aliased {
-		t.Fatalf("CopyIfMutable branch seen=%v aliased=%v, want the immutable frame shared by reference", shared.seen, shared.aliased)
-	}
-}
-
-// TestCopyContractCopyNeverIsSafeOnly pins both halves of the CopyNever
-// contract: a mutable payload meeting a CopyNever branch is refused with a
-// goav-structured error that still wraps pipeline.ErrBufferedMessageUnsafe
-// (never silently shared), while an immutable payload flows by reference
-// without any copy.
-func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
-	t.Run("mutable payload is refused", func(t *testing.T) {
+// TestCopyContractBranchesShareOnePayload is the "no copy per edge" half
+// through the public grammar: two buffered branches read the producer's very
+// bytes, ordinary or pooled.
+func TestCopyContractBranchesShareOnePayload(t *testing.T) {
+	for _, pooled := range []bool{false, true} {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		frame := copyContractFrame(av.BufferOwned, []byte{1, 2, 3, 4})
+		original := []byte{9, 8, 7, 6}
+		payload := av.Buffer{Bytes: original}
+		if pooled {
+			payload = av.NewBuffer(len(original))
+			copy(payload.Bytes, original)
+		}
+		frame := copyContractFrame(payload)
 		contractTask, source := newCopyContractTask(t, ctx, &frame)
-		defer contractTask.Close()
 
-		readonly := &copyContractAliasSink{name: "readonly", original: frame.Planes[0].Buffer.Bytes}
+		left := &copyContractAliasSink{name: "left", original: payload.Bytes}
+		right := &copyContractAliasSink{name: "right", original: payload.Bytes}
 		runErr := make(chan error, 1)
 		go func() {
 			runErr <- contractTask.Run(ctx)
@@ -300,124 +247,31 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
-		if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-			Buffer(flow.Latest(flow.BufferCopyMode(flow.CopyNever))).
-			As("readonly").
-			To(Sink(readonly))); err != nil {
-			t.Fatal(err)
-		}
-		close(source.resume)
-		err := <-runErr
-		var buildErr *BuildError
-		if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadUnsafeCode || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
-			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
-		}
-		if buildErr.Phase != phaseRun {
-			t.Fatalf("run err phase = %q, want %q", buildErr.Phase, phaseRun)
-		}
-		if got, ok := buildErr.Detail[string]("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
-			t.Fatalf("cause detail = %#v, %v; want pipeline.ErrBufferedMessageUnsafe, true", got, ok)
-		}
-		if got, ok := buildErr.Detail[string]("copy_never_branches"); !ok || got != "readonly" {
-			t.Fatalf("copy_never_branches detail = %#v, %v; want readonly, true", got, ok)
-		}
-		for _, want := range []string{
-			"copy_never_branches=readonly",
-			"flow.BufferCopyBounds(packetBytes, frameBytes)",
-			"flow.CopyNever",
-			"av.BufferImmutable",
+		for _, attach := range []struct {
+			name   string
+			buffer flow.BranchBuffer
+			sink   pipeline.Sink
+		}{
+			{"left", flow.Blocking(2), left},
+			{"right", flow.DropOldest(2), right},
 		} {
-			if !strings.Contains(err.Error(), want) {
-				t.Fatalf("run err = %v, want %q", err, want)
+			if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
+				Buffer(attach.buffer).
+				As(attach.name).
+				To(Sink(attach.sink))); err != nil {
+				t.Fatal(err)
 			}
-		}
-		if readonly.seen {
-			t.Fatal("CopyNever branch received a mutable payload it should have refused")
-		}
-	})
-
-	t.Run("immutable payload shares by reference", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		original := []byte{4, 3, 2, 1}
-		frame := copyContractFrame(av.BufferImmutable, original)
-		contractTask, source := newCopyContractTask(t, ctx, &frame)
-		defer contractTask.Close()
-
-		readonly := &copyContractAliasSink{name: "readonly", original: original}
-		runErr := make(chan error, 1)
-		go func() {
-			runErr <- contractTask.Run(ctx)
-		}()
-		select {
-		case <-source.ready:
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		}
-		if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-			Buffer(flow.Latest(flow.BufferCopyMode(flow.CopyNever))).
-			As("readonly").
-			To(Sink(readonly))); err != nil {
-			t.Fatal(err)
 		}
 		close(source.resume)
 		if err := <-runErr; err != nil {
 			t.Fatal(err)
 		}
-		if !readonly.seen || !readonly.aliased {
-			t.Fatalf("CopyNever branch seen=%v aliased=%v, want the immutable frame shared by reference", readonly.seen, readonly.aliased)
+		for _, sink := range []*copyContractAliasSink{left, right} {
+			if !sink.seen || !sink.aliased || !equalByteValues(sink.bytes, original) {
+				t.Fatalf("pooled=%v branch %s seen=%v aliased=%v bytes=%v, want the producer's bytes by reference", pooled, sink.name, sink.seen, sink.aliased, sink.bytes)
+			}
 		}
-		if !equalByteValues(readonly.bytes, original) {
-			t.Fatalf("CopyNever branch bytes = %v, want %v", readonly.bytes, original)
-		}
-	})
-}
-
-func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	frame := copyContractFrame(av.BufferOwned, []byte{1, 2, 3, 4})
-	contractTask, source := newCopyContractTask(t, ctx, &frame)
-	defer contractTask.Close()
-
-	readonly := &copyContractAliasSink{name: "tiny", original: frame.Planes[0].Buffer.Bytes}
-	runErr := make(chan error, 1)
-	go func() {
-		runErr <- contractTask.Run(ctx)
-	}()
-	select {
-	case <-source.ready:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	if _, err := contractTask.Attach(ctx, contractTask.Tap("video.frames").
-		Buffer(flow.Latest(flow.BufferCopyBounds(0, 1))).
-		As("tiny").
-		To(Sink(readonly))); err != nil {
-		t.Fatal(err)
-	}
-	close(source.resume)
-	err := <-runErr
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadTooLargeCode || !errors.Is(err, pipeline.ErrMessageTooLarge) {
-		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
-	}
-	if buildErr.Phase != phaseRun {
-		t.Fatalf("run err phase = %q, want %q", buildErr.Phase, phaseRun)
-	}
-	if got, ok := buildErr.Detail[string]("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
-		t.Fatalf("cause detail = %#v, %v; want pipeline.ErrMessageTooLarge, true", got, ok)
-	}
-	for _, want := range []string{
-		"pipeline.ErrMessageTooLarge",
-		"flow.BufferCopyBounds(packetBytes, frameBytes)",
-		"CopyFrameBytes",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("run err = %v, want %q", err, want)
-		}
-	}
-	if readonly.seen {
-		t.Fatal("branch received a payload larger than its copy bounds")
+		_ = contractTask.Close()
+		cancel()
 	}
 }

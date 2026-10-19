@@ -27,8 +27,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 		func(_ context.Context, push SourcePush) error {
 			packet := av.Packet{
 				Payload: av.Buffer{
-					Bytes:     []byte{1},
-					Ownership: av.BufferImmutable,
+					Bytes: []byte{1},
 				},
 			}
 			if _, err := push.Packet(&packet); err != nil {
@@ -46,7 +45,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 			case pipeline.MessagePacket:
 				packets++
 				if msg.Packet != nil {
-					got = *msg.Packet
+					got = *msg.Packet.Ref()
 				}
 			case pipeline.MessageEvent:
 				events++
@@ -94,7 +93,7 @@ func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 	input := Source("gen",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
-			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 			if _, err := push.Packet(&packet); err != nil {
 				return err
 			}
@@ -147,7 +146,7 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 			case pipeline.MessageFrame:
 				frames++
 				if msg.Frame != nil {
-					got = *msg.Frame
+					got = *msg.Frame.Ref()
 				}
 			case pipeline.MessageEvent:
 				events++
@@ -2841,7 +2840,7 @@ func TestAttachAfterSiblingDetachRefusalNamesFix(t *testing.T) {
 			SampleFormat: av.SampleFormatS16,
 			Samples:      1,
 		},
-		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}, Ownership: av.BufferImmutable}}},
+		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}}}},
 	}
 	source := &runtimeTestSource{
 		name:    "source",

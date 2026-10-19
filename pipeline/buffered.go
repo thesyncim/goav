@@ -10,8 +10,6 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
-const bufferedMaxFramePlanes = 8
-
 // bufferedRunner is the queued delivery strategy over the shared topology:
 // an emit binds the message into a slot of each target's bounded queue, and
 // one serial worker per node drains it into Handle.
@@ -79,19 +77,16 @@ func (e *bufferedEmitter) EmitDelivery(ctx context.Context, msg *Message) (Deliv
 	return e.graph.emitDelivery(ctx, e.from, e.self, msg)
 }
 
+// bufferedMessage is one queue slot: a header copy of the queued message that
+// holds its own references to the payload (bind).
 type bufferedMessage struct {
-	message       Message
-	packet        av.Packet
-	frame         av.Frame
-	event         av.Event
-	audio         av.AudioFrame
-	video         av.VideoFrame
-	planes        [bufferedMaxFramePlanes]av.Plane
-	packetBacking []byte
-	frameBacking  []byte
-	packetShare   bufferedSharedPacket
-	sharedPacket  *bufferedSharedPacket
-	packetOwner   bool
+	message Message
+	packet  av.Packet
+	frame   av.Frame
+	event   av.Event
+	audio   av.AudioFrame
+	video   av.VideoFrame
+	planes  []av.Plane
 	// enqueuedAt stamps when the message entered the queue, set only when the
 	// node's MaxLatency is non-zero, so the worker can shed stale messages.
 	enqueuedAt time.Time
@@ -99,17 +94,6 @@ type bufferedMessage struct {
 	// recorded when the slot is queued and subtracted from queuedBytes on release.
 	// Nonzero only when MaxBytes > 0, so releaseSlot's subtract is a no-op by default.
 	bytes int64
-}
-
-type bufferedSharedPacket struct {
-	refs  atomic.Int64
-	owner *bufferedNode
-	slot  *bufferedMessage
-	bytes []byte
-}
-
-type bufferedFanoutBind struct {
-	packet *bufferedSharedPacket
 }
 
 func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
@@ -404,8 +388,9 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 	node.queue = make(chan *bufferedMessage, node.policy.Capacity)
 	node.free = make(chan *bufferedMessage, slotCount)
 	node.slots = make([]bufferedMessage, slotCount)
+	planes := make([]av.Plane, slotCount*slotPlanes)
 	for i := range node.slots {
-		node.slots[i].init(node.policy)
+		node.slots[i].planes = planes[i*slotPlanes : i*slotPlanes : (i+1)*slotPlanes]
 		node.free <- &node.slots[i]
 	}
 	node.drop = newDropController(node.policy)
@@ -468,13 +453,8 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, self *buffe
 	// A real fanout (more than one matching target) isolates a failing target so
 	// it cannot abort siblings or the source; a simple one-target chain keeps the
 	// strict behavior (e.g. DropNever propagates ErrBackpressure to tear down).
+	// Every target queues the same payload by reference.
 	fanout := countTargets(snap, fromNode, msg) > 1
-	var fanoutBind bufferedFanoutBind
-	var fanoutBindPtr *bufferedFanoutBind
-	if fanout {
-		fanoutBindPtr = &fanoutBind
-		defer fanoutBind.release()
-	}
 
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
@@ -487,7 +467,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, self *buffe
 				continue
 			}
 			target := snap.nodes[to].node
-			delivered, err := g.enqueue(ctx, target, msg, fanoutBindPtr)
+			delivered, err := g.enqueue(ctx, target, msg)
 			if err != nil {
 				// Independent fanout backpressure: a full target on a real fanout
 				// drops for itself and keeps delivering to its siblings, so one slow
@@ -536,13 +516,10 @@ func countTargets(snap *snapshot[*bufferedNode], fromNode *snapshotNode[*buffere
 // (false, nil) is a deliberate shed (paused branch, torn-down queue, byte
 // budget, dropping policy) — counted where applicable, silent to the producer
 // on the plain Emit path, surfaced through Delivery on the EmitDelivery path.
-func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) (bool, error) {
+func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) (bool, error) {
 	if node.paused.Load() {
 		// Branch paused: skip this node without touching the source or siblings.
 		return false, nil
-	}
-	if err := validateBufferedMessage(msg, node.policy); err != nil {
-		return false, err
 	}
 	if node.admit != nil {
 		// Admission runs on the producer's goroutine before it takes the queue
@@ -569,12 +546,12 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
 	case bufferAdmit:
-		if err := g.enqueueBound(ctx, node, msg, fanout); err != nil {
+		if err := g.enqueueBound(ctx, node, msg); err != nil {
 			return false, err
 		}
 		return true, nil
 	case bufferBlock:
-		return g.enqueueBlocking(ctx, node, msg, fanout)
+		return g.enqueueBlocking(ctx, node, msg)
 	case bufferDropIncoming:
 		observeDrop(node.counters, node.policy.Drop, &g.cold)
 		return false, nil
@@ -586,7 +563,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 			observeDrop(node.counters, node.policy.Drop, &g.cold)
 		default:
 		}
-		if err := g.enqueueBound(ctx, node, msg, fanout); err != nil {
+		if err := g.enqueueBound(ctx, node, msg); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -612,7 +589,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 // The wait polls nothing and allocates nothing: it parks on node.space (see
 // bufferedNode) or ctx. A producer leaving the wait passes the signal on, so
 // several parked producers never lose a wakeup to the one-token channel.
-func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) (bool, error) {
+func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message) (bool, error) {
 	for {
 		if node.queueClosed {
 			// Queue torn down (Remove/Close): shed.
@@ -622,7 +599,7 @@ func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode
 		if len(node.queue) < cap(node.queue) {
 			select {
 			case slot := <-node.free:
-				if err := slot.bindFanout(msg, node.policy, node, fanout); err != nil {
+				if err := slot.bind(msg, node.policy); err != nil {
 					node.releaseSlot(slot)
 					return false, err
 				}
@@ -662,12 +639,12 @@ func (n *bufferedNode) signalSpace() {
 	}
 }
 
-func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) error {
+func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message) error {
 	slot, err := node.acquireSlot()
 	if err != nil {
 		return err
 	}
-	if err := slot.bindFanout(msg, node.policy, node, fanout); err != nil {
+	if err := slot.bind(msg, node.policy); err != nil {
 		node.releaseSlot(slot)
 		return err
 	}
@@ -838,6 +815,8 @@ func (n *bufferedNode) acquireSlot() (*bufferedMessage, error) {
 	}
 }
 
+// releaseSlot drops the references a slot holds and returns it to the free
+// list.
 func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	if slot == nil {
 		return
@@ -846,63 +825,26 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 		n.queuedBytes.Add(-slot.bytes)
 		slot.bytes = 0
 	}
-	shared := slot.sharedPacket
-	if shared != nil {
-		if slot.packetOwner {
-			releaseSharedPacketRef(shared)
-			return
-		}
-		slot.Reset()
-		n.free <- slot
-		n.signalSpace()
-		releaseSharedPacketRef(shared)
-		return
-	}
-	slot.Reset()
+	slot.release()
 	n.free <- slot
 	n.signalSpace()
 }
 
-// slotReserveBytes is the largest copy budget a slot reserves up front. Small
-// budgets (RTP, audio packets and frames) are reserved at init so a cold queue
-// fills without allocating; larger ones (video frames and packets, whose
-// worst-case budgets run to megabytes per slot) grow to fit the payloads the
-// slot actually carries, so the budget is a limit rather than a per-slot
-// allocation.
-const slotReserveBytes = 64 << 10
+// slotPlanes is the plane capacity each slot reserves up front, enough for
+// planar video and audio; a frame with more planes grows its slot once.
+const slotPlanes = 4
 
-func (m *bufferedMessage) init(policy BufferPolicy) {
-	if policy.CopyPacketBytes <= slotReserveBytes {
-		m.packetBacking = growBacking(m.packetBacking, policy.CopyPacketBytes, policy.CopyPacketBytes)
-	}
-	if policy.CopyFrameBytes <= slotReserveBytes {
-		m.frameBacking = growBacking(m.frameBacking, policy.CopyFrameBytes, policy.CopyFrameBytes)
-	}
-	m.Reset()
-}
-
-// growBacking returns backing with room for n bytes, n <= budget. A slot
-// that outgrows its backing doubles it (capped at the budget), so payloads
-// of varying size settle after a few messages and the steady state copies
-// without allocating.
-func growBacking(backing []byte, n int, budget int) []byte {
-	if cap(backing) >= n {
-		return backing[:cap(backing)]
-	}
-	return make([]byte, min(max(n, 2*cap(backing)), budget))
-}
-
+// bind queues src by reference: the slot copies the message header (packet,
+// frame with its planes and Video or Audio header, or event) and takes a
+// reference to every payload buffer, so the node reads the same bytes as
+// every sibling branch and the producer may release its own reference as
+// soon as Emit returns. Nothing is copied but the header.
 func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
-	return m.bindFanout(src, policy, nil, nil)
-}
-
-func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) error {
-	m.Reset()
-	if policy.MaxLatency > 0 {
-		m.enqueuedAt = time.Now()
-	}
 	if src == nil {
 		return ErrNilMessage
+	}
+	if policy.MaxLatency > 0 {
+		m.enqueuedAt = time.Now()
 	}
 	m.message.Kind = src.Kind
 	switch src.Kind {
@@ -911,47 +853,12 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 			return nil
 		}
 		m.packet = *src.Packet
-		if !bufferSafe(src.Packet.Payload, policy) {
-			if policy.CopyPacketBytes <= 0 {
-				return ErrBufferedMessageUnsafe
-			}
-			if len(src.Packet.Payload.Bytes) > policy.CopyPacketBytes {
-				return ErrMessageTooLarge
-			}
-			if m.bindSharedBorrowedPacket(src.Packet.Payload, policy, owner, fanout) {
-				m.message.Packet = &m.packet
-				return nil
-			}
-			m.packetBacking = growBacking(m.packetBacking, len(src.Packet.Payload.Bytes), policy.CopyPacketBytes)
-			m.packet.Payload.Bytes = m.packetBacking[:len(src.Packet.Payload.Bytes)]
-			copy(m.packet.Payload.Bytes, src.Packet.Payload.Bytes)
-			m.packet.Payload.Ownership = av.BufferBorrowed
-			m.packet.Payload.Owner = nil
-		}
+		m.packet.Payload.Retain()
 		m.message.Packet = &m.packet
 	case MessageFrame:
 		if src.Frame == nil {
 			return nil
 		}
-		if len(src.Frame.Planes) > len(m.planes) {
-			return ErrMessageTooLarge
-		}
-		needed := 0
-		for i := range src.Frame.Planes {
-			if !bufferSafe(src.Frame.Planes[i].Buffer, policy) {
-				needed += len(src.Frame.Planes[i].Buffer.Bytes)
-			}
-		}
-		if needed > 0 {
-			if policy.CopyFrameBytes <= 0 {
-				return ErrBufferedMessageUnsafe
-			}
-			if needed > policy.CopyFrameBytes {
-				return ErrMessageTooLarge
-			}
-			m.frameBacking = growBacking(m.frameBacking, needed, policy.CopyFrameBytes)
-		}
-		frameBacking := m.frameBacking
 		m.frame = *src.Frame
 		if src.Frame.Audio != nil {
 			m.audio = *src.Frame.Audio
@@ -961,20 +868,11 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 			m.video = *src.Frame.Video
 			m.frame.Video = &m.video
 		}
-		offset := 0
-		for i := range src.Frame.Planes {
-			plane := src.Frame.Planes[i]
-			if !bufferSafe(plane.Buffer, policy) {
-				dst := frameBacking[offset : offset+len(plane.Buffer.Bytes)]
-				copy(dst, plane.Buffer.Bytes)
-				plane.Buffer.Bytes = dst
-				plane.Buffer.Ownership = av.BufferBorrowed
-				plane.Buffer.Owner = nil
-				offset += len(dst)
-			}
-			m.planes[i] = plane
+		m.planes = append(m.planes[:0], src.Frame.Planes...)
+		for i := range m.planes {
+			m.planes[i].Buffer.Retain()
 		}
-		m.frame.Planes = m.planes[:len(src.Frame.Planes)]
+		m.frame.Planes = m.planes
 		m.message.Frame = &m.frame
 	case MessageEvent:
 		if src.Event == nil {
@@ -982,159 +880,19 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 		}
 		m.event = *src.Event
 		m.message.Event = &m.event
-	default:
-		return nil
 	}
 	return nil
 }
 
-func (m *bufferedMessage) bindSharedBorrowedPacket(buffer av.Buffer, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) bool {
-	if !canShareBorrowedPacket(buffer, policy, owner, fanout) {
-		return false
-	}
-	if fanout.packet == nil {
-		m.packetBacking = growBacking(m.packetBacking, len(buffer.Bytes), policy.CopyPacketBytes)
-		m.packet.Payload.Bytes = m.packetBacking[:len(buffer.Bytes)]
-		copy(m.packet.Payload.Bytes, buffer.Bytes)
-		m.packet.Payload.Ownership = av.BufferBorrowed
-		m.packet.Payload.Owner = nil
-		m.packetShare.refs.Store(2) // one queued slot ref plus the producer-loop hold.
-		m.packetShare.owner = owner
-		m.packetShare.slot = m
-		m.packetShare.bytes = m.packet.Payload.Bytes
-		m.sharedPacket = &m.packetShare
-		m.packetOwner = true
-		fanout.packet = &m.packetShare
-		return true
-	}
-	fanout.packet.refs.Add(1)
-	m.packet.Payload.Bytes = fanout.packet.bytes
-	m.packet.Payload.Ownership = av.BufferBorrowed
-	m.packet.Payload.Owner = nil
-	m.sharedPacket = fanout.packet
-	return true
-}
-
-func (m *bufferedMessage) Reset() {
-	m.message.Reset()
-	frameBacking := m.frameBacking
-	m.packet.Reset()
-	m.frame.Reset()
-	m.event.Reset()
-	m.audio = av.AudioFrame{}
-	m.video = av.VideoFrame{}
+// release drops the payload references the slot holds and clears it for the
+// next message, keeping its plane capacity.
+func (m *bufferedMessage) release() {
+	m.packet.Payload.Release()
 	for i := range m.planes {
-		m.planes[i].Reset()
+		m.planes[i].Buffer.Release()
 	}
-	m.packet.Payload.Bytes = m.packetBacking[:0]
-	m.frameBacking = frameBacking[:0]
-	m.packetShare.reset()
-	m.sharedPacket = nil
-	m.packetOwner = false
-	m.enqueuedAt = time.Time{}
-	m.bytes = 0
-}
-
-func (s *bufferedSharedPacket) reset() {
-	s.refs.Store(0)
-	s.owner = nil
-	s.slot = nil
-	s.bytes = nil
-}
-
-func (f *bufferedFanoutBind) release() {
-	if f == nil || f.packet == nil {
-		return
-	}
-	releaseSharedPacketRef(f.packet)
-	f.packet = nil
-}
-
-func releaseSharedPacketRef(shared *bufferedSharedPacket) {
-	if shared == nil {
-		return
-	}
-	if shared.refs.Add(-1) != 0 {
-		return
-	}
-	owner := shared.owner
-	slot := shared.slot
-	if owner == nil || slot == nil {
-		return
-	}
-	slot.Reset()
-	owner.free <- slot
-	owner.signalSpace()
-}
-
-func canShareBorrowedPacket(buffer av.Buffer, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) bool {
-	return fanout != nil &&
-		owner != nil &&
-		!policy.CopyAlways &&
-		buffer.Ownership == av.BufferBorrowed &&
-		len(buffer.Bytes) > 0 &&
-		policy.CopyPacketBytes > 0 &&
-		len(buffer.Bytes) <= policy.CopyPacketBytes
-}
-
-// bufferSafe reports whether a payload may be queued by reference without a
-// graph-owned copy: empty payloads always, and av.BufferImmutable payloads
-// unless the policy demands defensive copies of everything (CopyAlways).
-// Everything else is mutable from the graph's point of view and must be copied
-// into the target node's slot backing — or refused — before queueing, so a
-// consumer that mutates its delivered bytes can never reach bytes the producer
-// or a sibling branch still sees.
-func bufferSafe(buffer av.Buffer, policy BufferPolicy) bool {
-	if len(buffer.Bytes) == 0 {
-		return true
-	}
-	if policy.CopyAlways {
-		return false
-	}
-	return buffer.Ownership == av.BufferImmutable
-}
-
-func validateBufferedMessage(msg *Message, policy BufferPolicy) error {
-	if msg == nil {
-		return ErrNilMessage
-	}
-	switch msg.Kind {
-	case MessagePacket:
-		if msg.Packet == nil {
-			return nil
-		}
-		if bufferSafe(msg.Packet.Payload, policy) {
-			return nil
-		}
-		if policy.CopyPacketBytes <= 0 {
-			return ErrBufferedMessageUnsafe
-		}
-		if len(msg.Packet.Payload.Bytes) > policy.CopyPacketBytes {
-			return ErrMessageTooLarge
-		}
-	case MessageFrame:
-		if msg.Frame == nil {
-			return nil
-		}
-		if len(msg.Frame.Planes) > bufferedMaxFramePlanes {
-			return ErrMessageTooLarge
-		}
-		needed := 0
-		for i := range msg.Frame.Planes {
-			buffer := msg.Frame.Planes[i].Buffer
-			if bufferSafe(buffer, policy) {
-				continue
-			}
-			if policy.CopyFrameBytes <= 0 {
-				return ErrBufferedMessageUnsafe
-			}
-			needed += len(buffer.Bytes)
-			if needed > policy.CopyFrameBytes {
-				return ErrMessageTooLarge
-			}
-		}
-	}
-	return nil
+	planes := m.planes[:0]
+	*m = bufferedMessage{planes: planes}
 }
 
 // inflight counts queued, not-yet-handled messages. It replaces a WaitGroup

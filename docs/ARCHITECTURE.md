@@ -244,13 +244,14 @@ more messages. The default executor is a synchronous direct-call graph with no
 goroutines or channels per packet; fanout shares message and payload
 references. With a buffered policy, the factory builds a bounded buffered graph
 instead: per-node queues with a single serial worker each, the shared drop
-controller for backpressure/drop behavior, shared immutable media buffers, a
-refcounted graph-owned copy for borrowed packet fanout, and per-slot copy
-backing for mutable payloads under explicit byte bounds. A bound is a limit,
-not an allocation: bounds up to 64 KiB are reserved when the queue opens, and
-larger (video) ones grow to fit the payloads each slot carries, then copy
-without allocating (`TestBufferedSlotBackingGrowsToFit`). Borrowed media
-without a copy bound fails early.
+controller for backpressure/drop behavior. A queue slot is a header copy that
+holds references to the payload: published bytes are immutable and shared by
+reference (`av.Buffer`, pooled by `av.NewBuffer`), so every branch reads the
+producer's bytes and none is copied per edge (`TestFanoutSharesOnePayload`).
+Codec, filter, and demux stages publish their adapters' output once into
+pooled buffers (`internal/payload`), so a sink may keep a frame with `Ref`
+(`TestRetainedFramesStayStableAcrossPushes`). A removed node gives up its
+queue and its index (`TestRemovedNodesAreReclaimed`).
 Both executors are delivery strategies over one shared topology
 (`pipeline/topology.go`: nodes, routes, the routing snapshot, spec, stats,
 readiness, observer events, the run's error contract, and shutdown).

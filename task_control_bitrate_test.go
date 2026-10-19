@@ -249,9 +249,9 @@ func controlVideoSource(id av.StreamID, live bool) InputSpec {
 				Type:     av.MediaVideo,
 				Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 				Planes: []av.Plane{
-					{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferImmutable}, Stride: width},
-					{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
-					{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: yPlane}, Stride: width},
+					{Buffer: av.Buffer{Bytes: uPlane}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: vPlane}, Stride: chromaW},
 				},
 			}
 			for {

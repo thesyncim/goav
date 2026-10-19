@@ -38,15 +38,9 @@ func TestBranchBufferConstructorsLowerToPipelinePolicy(t *testing.T) {
 			want:   pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropOldest},
 		},
 		{
-			name:   "copy bounds and delay",
-			buffer: flow.Blocking(2, flow.BufferCopyBounds(64, 1024), flow.BufferMaxDelay(25*time.Millisecond)),
-			want: pipeline.BufferPolicy{
-				Capacity:        2,
-				Drop:            pipeline.DropBlock,
-				MaxLatency:      25 * time.Millisecond,
-				CopyPacketBytes: 64,
-				CopyFrameBytes:  1024,
-			},
+			name:   "delay",
+			buffer: flow.Blocking(2, flow.BufferMaxDelay(25*time.Millisecond)),
+			want:   pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropBlock, MaxLatency: 25 * time.Millisecond},
 		},
 	}
 	for _, tt := range tests {
@@ -68,8 +62,7 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 		code   errcode.Code
 	}{
 		{name: "zero capacity", buffer: flow.DropOldest(0), code: "branch_buffer_invalid"},
-		{name: "negative copy bounds", buffer: flow.Blocking(1, flow.BufferCopyBounds(-1, 0)), code: "branch_buffer_invalid"},
-		{name: "copy never with bounds", buffer: flow.Blocking(1, flow.BufferCopyMode(flow.CopyNever), flow.BufferCopyBounds(1, 0)), code: "branch_buffer_invalid"},
+		{name: "negative byte limit", buffer: flow.Blocking(1, flow.BufferMaxBytes(-1)), code: "branch_buffer_invalid"},
 		{name: "unbounded unsupported", buffer: flow.Unbounded(), code: "branch_buffer_unsupported"},
 	}
 	for _, tt := range tests {

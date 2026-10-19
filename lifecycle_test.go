@@ -22,7 +22,7 @@ func lifecycleTestSource(fn SourceFunc) InputSpec {
 }
 
 func lifecycleTestPush(push SourcePush) error {
-	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 	if _, err := push.Packet(&packet); err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
 	ctx := context.Background()
 	sourceErr := errors.New("source failed")
 	task, err := mustNew().Build(ctx, lifecycleTestSource(func(_ context.Context, push SourcePush) error {
-		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 		if _, err := push.Packet(&packet); err != nil {
 			return err
 		}
@@ -334,7 +334,7 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 	ctx := context.Background()
 	sourceErr := errors.New("source failed")
 	task, err := mustNew().Build(ctx, lifecycleTestSource(func(_ context.Context, push SourcePush) error {
-		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 		if _, err := push.Packet(&packet); err != nil {
 			return err
 		}

@@ -194,9 +194,9 @@ func (s testSource) videoFrame(n int) *av.Frame {
 		Duration: av.Duration{Value: 1, Base: base},
 		Video:    &av.VideoFrame{Width: s.width, Height: s.height, PixelFormat: av.PixelFormatI420},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: luma, Ownership: av.BufferImmutable}, Stride: s.width},
-			{Buffer: av.Buffer{Bytes: chroma[:chromaW*chromaH], Ownership: av.BufferImmutable}, Stride: chromaW},
-			{Buffer: av.Buffer{Bytes: chroma[chromaW*chromaH:], Ownership: av.BufferImmutable}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: luma}, Stride: s.width},
+			{Buffer: av.Buffer{Bytes: chroma[:chromaW*chromaH]}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: chroma[chromaW*chromaH:]}, Stride: chromaW},
 		},
 	}
 }
@@ -230,7 +230,7 @@ func (s testSource) audioFrame(n int) *av.Frame {
 		PTS:      av.Timestamp{Value: int64(start), Base: base},
 		Duration: av.Duration{Value: int64(samples), Base: base},
 		Audio:    &av.AudioFrame{SampleRate: s.rate, Channels: s.channels, SampleFormat: av.SampleFormatS16, Samples: samples},
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 	}
 }
 

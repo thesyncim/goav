@@ -73,8 +73,7 @@ func codecSettingsEqual(a, b codec.CodecSettings) bool {
 }
 
 func bufferEqual(a, b av.Buffer) bool {
-	return a.Ownership == b.Ownership &&
-		a.Owner == nil &&
+	return a.Owner == nil &&
 		b.Owner == nil &&
 		bytesEqual(a.Bytes, b.Bytes)
 }

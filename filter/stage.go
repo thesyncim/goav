@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/payload"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -29,7 +30,11 @@ type Stage struct {
 	filter  FrameFilter
 	result  Result
 	message pipeline.Message
-	closed  bool
+	// frame is the header each filtered frame is published under, holding
+	// its own plane references (internal/payload); planes is its storage.
+	frame  av.Frame
+	planes []av.Plane
+	closed bool
 }
 
 var _ pipeline.Stage = (*Stage)(nil)
@@ -127,6 +132,8 @@ func (s *Stage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter 
 }
 
 func (s *Stage) emitResult(ctx context.Context, emitter pipeline.Emitter) error {
+	// Frames left unpublished by a failed emit release their references.
+	defer payload.DropFrames(s.result.Frames)
 	for i := range s.result.Events {
 		s.message.Kind = pipeline.MessageEvent
 		s.message.Packet = nil
@@ -137,11 +144,15 @@ func (s *Stage) emitResult(ctx context.Context, emitter pipeline.Emitter) error 
 		}
 	}
 	for i := range s.result.Frames {
+		s.planes = payload.TakeFrame(&s.frame, s.planes, &s.result.Frames[i])
 		s.message.Kind = pipeline.MessageFrame
 		s.message.Packet = nil
-		s.message.Frame = &s.result.Frames[i]
+		s.message.Frame = &s.frame
 		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		err := emitter.Emit(ctx, &s.message)
+		// Downstream holds its own references now.
+		s.frame.Release()
+		if err != nil {
 			return err
 		}
 	}

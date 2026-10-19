@@ -152,7 +152,7 @@ func s16Frame(stream av.StreamID, sampleRate int, channels int, samples []int16,
 			Samples:      perChannel,
 		},
 		Planes: []av.Plane{{
-			Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+			Buffer: av.Buffer{Bytes: payload},
 			Stride: channels * 2,
 		}},
 	}

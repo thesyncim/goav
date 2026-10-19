@@ -75,11 +75,11 @@ message path simple.
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
   method is fatal to the task; flow control is the graph's job, not the
   adapter's: never sleep, retry, or drop inside an adapter.
-- **Buffer ownership** (`av.BufferOwnership`): mark output payloads precisely.
-  `BufferBorrowed` = valid until your next call (copied before queueing);
-  `BufferOwned` = receiver's to mutate (copied per branch on fanout);
-  `BufferImmutable` = shareable by reference forever, never written again by
-  anyone. This is the only zero-copy fanout class; it is trusted, not checked.
+- **Payloads** (`av.Buffer`): bytes you return in a result may be your scratch,
+  valid until your next call; the stage copies those once into pooled memory
+  before publishing. Bytes from `av.NewBuffer` hand their one reference to the
+  stage with no copy (the govpx decoder and resize filter do this). Keep input
+  bytes past a call only with `Ref`/`Retain`, and never write them.
 - **Close**: called exactly once by the owning stage/source (at task close or
   failed-build cleanup), but implement it idempotently anyway.
 
@@ -175,8 +175,8 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
    `out.Packet` (already reset), set `PacketReady=true` (<=1 packet per call),
    add bounded events via `AddEvent` (`ErrResultFull` past capacity). Return
    `io.EOF` for the clean end of media (the source emits EOS); any other error
-   fails the task. Borrowed payloads stay valid until your next `ReadInto`
-   unless you document longer.
+   fails the task. Payload bytes need only stay valid until your next
+   `ReadInto`: the source copies them once into a pooled buffer.
 3. Seeking is a capability: also implement `format.Seeker` and the source
    becomes controllable (`Seek` runs between reads, never racing `ReadInto`).
    Without it, time controls are refused loudly.
@@ -388,7 +388,7 @@ routing handle branches share.
 2. Factory returns ready instances (codec/filter open themselves; container
    `Open` is called by core).
 3. Hot paths: caller-owned results, capacity sentinels, honest
-   `av.BufferOwnership`, zero allocations, no locks, no flow control.
+   payload lifetimes, zero allocations, no locks, no flow control.
 4. Register through `With*` value options; export `Register(registry)` for
    bundles.
 5. Ship three test kinds: a round-trip correctness test; a

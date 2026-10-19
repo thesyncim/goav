@@ -659,7 +659,6 @@ type runtimeAttachment struct {
 	routes       []pipeline.Route
 	taps         []snapshot.Tap
 	stages       []pipeline.Stage
-	copyNever    []string
 	destinations []workDestination
 	stopMu       sync.Mutex
 	stopped      bool

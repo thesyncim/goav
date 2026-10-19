@@ -83,7 +83,7 @@ func (s *timelinePacedProviderSource) emitPaced(ctx context.Context, emitter pip
 		msg := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 			StreamID: s.id,
 			Type:     s.media,
-			Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+			Payload:  av.Buffer{Bytes: []byte{1}},
 			PTS:      av.Timestamp{Value: int64(i) * int64(s.interval), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
 		}}
 		if err := emitter.Emit(ctx, msg); err != nil {

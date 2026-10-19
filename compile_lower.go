@@ -792,10 +792,7 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 	qualifiers := map[int]string{}
 	sourceInputs := map[pipeline.NodeRef]int{}
 	var bounds []decodeBoundsProvider
-	buffers, err := r.branchBuffers(gp.work)
-	if err != nil {
-		return err
-	}
+	buffers := r.branchBuffers()
 	bufferOf := func(node composeNode) pipeline.BufferPolicy {
 		if node.owner >= 0 {
 			if buffer, ok := buffers[node.owner]; ok && !buffer.IsDirect() {
@@ -804,7 +801,7 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 		}
 		return rt.buffer
 	}
-	in := composeLowering{realtime: realtime, work: gp.work, admission: !realtime}
+	in := composeLowering{realtime: realtime, admission: !realtime}
 	for _, node := range r.graph.nodes {
 		ref := pipeline.NodeRef(node.name)
 		switch node.kind {
@@ -961,28 +958,22 @@ func (r *recipeLowerer) selectStream(node composeNode, streams []av.Stream, qual
 	return qualifyStream(selected, qualifier), nil
 }
 
-// branchBuffers sizes each branch's declared queue from the shapes the work
-// plan records for it.
-func (r *recipeLowerer) branchBuffers(work workPlan) (map[int]pipeline.BufferPolicy, error) {
-	operations := graphPlanOperationsByBranch(work.Operations)
+// branchBuffers lowers each branch's declared queue to the node policy its
+// exclusively owned nodes run behind; an undeclared buffer stays direct and
+// inherits the graph's policy.
+func (r *recipeLowerer) branchBuffers() map[int]pipeline.BufferPolicy {
 	out := map[int]pipeline.BufferPolicy{}
 	for i, stream := range r.state.recipe.Streams {
-		buffer, err := branchComposeBufferPolicy(stream.Buffer, operations[stream.Name])
-		if err != nil {
-			return nil, err
-		}
-		out[i] = buffer
+		out[i] = stream.Buffer.PipelinePolicy()
 	}
-	return out, nil
+	return out
 }
 
 // composeLowering is what building join nodes needs beyond the plan.
 type composeLowering struct {
 	realtime bool
-	// admission enables per-arm backpressure on join stages; work sizes a
-	// pinned join queue.
+	// admission enables per-arm backpressure on join stages.
 	admission     bool
-	work          workPlan
 	sourceStreams map[int][]av.Stream
 	qualifiers    map[int]string
 }
@@ -1033,22 +1024,8 @@ func (r *recipeLowerer) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) 
 	for i := range s.recipe.Streams {
 		declared = declared || !s.recipe.Streams[i].Buffer.PipelinePolicy().IsDirect()
 	}
-	promoted := false
 	if buffer.IsDirect() && (declared || r.runsParallel()) {
 		buffer = pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}
-		promoted = true
-	}
-	if !buffer.IsDirect() {
-		budgeted, err := bufferPolicyWithShapeBudgets(buffer, gp.work)
-		if err != nil {
-			if promoted && !declared {
-				// Parallelism is an optimization: stay direct.
-				budgeted = rt.buffer
-			} else {
-				return pipeline.GraphConfig{}, err
-			}
-		}
-		buffer = budgeted
 	}
 	return pipeline.GraphConfig{
 		Name:             firstNonEmpty(gp.name, "goav"),

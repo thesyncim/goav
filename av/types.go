@@ -1,9 +1,6 @@
 package av
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 // MediaType is the kind of media a stream, packet, or frame carries.
 type MediaType string
@@ -279,72 +276,6 @@ func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
 	return value, true
 }
 
-// BufferOwnership declares who may write a Buffer's bytes and how long they
-// stay valid. The pipeline's buffered execution reads this declaration to
-// decide whether a payload may be shared by reference across branches: only
-// BufferImmutable is shareable; everything else counts as mutable and is
-// copied into branch-owned backing (or refused) before queueing, so a consumer
-// that mutates its delivered bytes can never corrupt a sibling branch.
-type BufferOwnership string
-
-const (
-	// BufferBorrowed bytes still belong to the producer and are valid only
-	// until the producer's next Read, Decode, Encode, Filter, or Depacketize
-	// call unless the producer documents a longer lifetime. Consumers must not
-	// mutate or retain the bytes past that window; buffered execution copies
-	// borrowed payloads before queueing them, and buffered packet fanout may
-	// share one graph-owned copy across read-only subscribers.
-	BufferBorrowed BufferOwnership = "borrowed"
-	// BufferOwned bytes belong to the receiver, which may mutate them and may
-	// return them to Owner when done. Because an owned payload has exactly one
-	// writer, buffered execution copies it per branch before fanning it out.
-	BufferOwned BufferOwnership = "owned"
-	// BufferImmutable bytes may be shared by reference indefinitely and must
-	// never be written by anyone — producer included — once published. This is
-	// the only ownership buffered execution forwards without copying (unless
-	// the branch demands defensive copies via flow.CopyAlways). The
-	// declaration is trusted, not checked: a producer that marks bytes
-	// immutable and then writes them breaks every consumer sharing the
-	// backing array.
-	BufferImmutable BufferOwnership = "immutable"
-)
-
-// BufferOwner receives a Buffer back when the pipeline is done with it, the
-// recycling seam for pooled payloads.
-type BufferOwner interface {
-	ReleaseBuffer(*Buffer)
-}
-
-// Buffer is one byte payload plus the ownership declaration consumers and the
-// pipeline copy machinery rely on. See BufferOwnership for who may mutate the
-// bytes and when the pipeline copies them.
-type Buffer struct {
-	Bytes     []byte
-	Ownership BufferOwnership
-	Owner     BufferOwner
-}
-
-// MarshalJSON writes the bytes, base64-encoded like a []byte; ownership is
-// a runtime fact and stays out of the JSON.
-func (b Buffer) MarshalJSON() ([]byte, error) { return json.Marshal(b.Bytes) }
-
-// UnmarshalJSON reads bytes MarshalJSON wrote into a buffer the caller owns.
-func (b *Buffer) UnmarshalJSON(data []byte) error {
-	var bytes []byte
-	if err := json.Unmarshal(data, &bytes); err != nil {
-		return err
-	}
-	*b = Buffer{Bytes: bytes, Ownership: BufferOwned}
-	return nil
-}
-
-// Reset clears the buffer for reuse, keeping the backing array.
-func (b *Buffer) Reset() {
-	b.Bytes = b.Bytes[:0]
-	b.Ownership = ""
-	b.Owner = nil
-}
-
 // CodecParameters are the codec-level facts a stream declares: identity,
 // timing, audio/video geometry, formats, and codec-specific extradata.
 // Decoders are configured from these; the planner reads them as shape facts.
@@ -407,8 +338,9 @@ type AudioGeometry struct {
 }
 
 // Packet is one encoded media unit: the payload bytes plus the stream,
-// timing, keyframe, and integrity facts routing and muxing read. The Payload
-// Buffer's ownership declaration governs who may mutate the bytes.
+// timing, keyframe, and integrity facts routing and muxing read. The payload
+// is immutable once published and shared by reference (see Buffer); keep a
+// packet past the call that lent it with Ref.
 type Packet struct {
 	StreamID StreamID
 	// Type is the typed media kind so drop/route decisions stay on the hot path
@@ -427,7 +359,8 @@ type Packet struct {
 	Metadata      Metadata
 }
 
-// Reset clears the packet for reuse, keeping allocated capacity.
+// Reset clears the packet for reuse without releasing its payload (see
+// Buffer.Reset).
 func (p *Packet) Reset() {
 	p.StreamID = ""
 	p.Type = ""
@@ -451,7 +384,8 @@ type Plane struct {
 	Offset int
 }
 
-// Reset clears the plane for reuse, keeping the backing array.
+// Reset clears the plane for reuse without releasing its buffer (see
+// Buffer.Reset).
 func (p *Plane) Reset() {
 	p.Buffer.Reset()
 	p.Stride = 0
@@ -477,8 +411,9 @@ type AudioFrame struct {
 }
 
 // Frame is one decoded media unit: plane data plus exactly one of the Video
-// or Audio headers describing it. Plane buffers carry their own ownership
-// declarations.
+// or Audio headers describing it. Plane bytes are immutable once published
+// and shared by reference, one reference per plane (see Buffer); keep a frame
+// past the call that lent it with Ref.
 type Frame struct {
 	StreamID   StreamID
 	CodecEpoch Epoch
@@ -491,7 +426,8 @@ type Frame struct {
 	Metadata   Metadata
 }
 
-// Reset clears the frame for reuse, keeping allocated plane capacity.
+// Reset clears the frame for reuse, keeping its plane slice, without
+// releasing the plane buffers (see Buffer.Reset).
 func (f *Frame) Reset() {
 	f.StreamID = ""
 	f.CodecEpoch = 0

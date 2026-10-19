@@ -220,9 +220,9 @@ func (e *tapArmStageTestEmitter) Emit(_ context.Context, msg *pipeline.Message) 
 	e.messages = append(e.messages, msg)
 	switch msg.Kind {
 	case pipeline.MessageFrame:
-		e.frames = append(e.frames, msg.Frame)
+		e.frames = append(e.frames, msg.Frame.Ref())
 	case pipeline.MessagePacket:
-		e.packets = append(e.packets, msg.Packet)
+		e.packets = append(e.packets, msg.Packet.Ref())
 	case pipeline.MessageEvent:
 		e.events = append(e.events, msg.Event)
 	}

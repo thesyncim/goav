@@ -11,6 +11,33 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Payloads are shared by reference instead of copied per edge. `av.Buffer`
+  is `{Bytes, Owner}`: published bytes are immutable, `av.NewBuffer` returns
+  pooled bytes holding one reference, and `Retain`/`Release`/`MakeWritable`
+  (plus `Frame.Ref`/`Packet.Ref`) keep, return, and copy-before-write them.
+  A buffered slot takes a reference instead of a copy, so every branch reads
+  the producer's bytes; codec, filter, and demux stages publish their
+  adapters' output once into pooled buffers (zero copies for the govpx
+  decoder and the resize filter, one for decoders that return reference
+  pictures), so a sink may keep a frame with `Ref` and see it unchanged (the
+  scratch frame no longer gets overwritten under it). `-tags goavdebug`
+  poisons released bytes. Removed: `av.BufferOwnership` and its three values,
+  `BufferPolicy.CopyPacketBytes`/`CopyFrameBytes`/`CopyAlways`,
+  `flow.CopyMode`/`BufferCopyMode`/`BufferCopyBounds`,
+  `pipeline.ErrBufferedMessageUnsafe`/`ErrMessageTooLarge`, and the
+  `buffer_payload_unsafe`, `buffer_payload_too_large`, and
+  `buffer_budget_missing` codes. Migration: a source or stage that reused
+  bytes across emits now allocates them per emit (`av.NewBuffer`, then
+  `Release` after `Emit`); a handler that keeps a delivery calls `Ref`; one
+  that writes it calls `Ref` and `MakeWritable` first. Video decode and
+  filter results no longer preallocate plane bytes.
+- Removed graph nodes are reclaimed: a buffered node gives up its queue and
+  slots once its worker is done, the next node reuses its index, and `Stats`
+  lists the nodes `Spec` shows (removed nodes still count in the totals). 200
+  attach/detach cycles on a live task keep a flat heap; 150 cycles used to
+  keep 428 MB. A detached branch still reports its final counters
+  (`pipeline.NodeRemover`).
+
 - An attached branch connects to the running graph last: its nodes and
   internal edges are installed first, and the edges from its anchors follow,
   one route per anchor. A `Rebranch` with `SwitchAt(NextKeyframe())` no longer

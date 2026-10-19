@@ -19,6 +19,13 @@ const (
 
 // Message is the one unit that flows between nodes: a packet, a frame, or an
 // event, tagged by Kind. Exactly one payload pointer is non-nil.
+//
+// Emit and Handle lend a message for the call. The payload is immutable and
+// shared by reference (av.Buffer): a producer keeps its own references across
+// Emit and releases them after, a queued delivery takes references of its
+// own, and a handler that keeps a frame or packet past the call takes one too
+// (av.Frame.Ref, av.Packet.Ref). Nobody writes lent bytes; a handler that
+// must write takes its own reference and calls MakeWritable on it.
 type Message struct {
 	Kind   MessageKind
 	Packet *av.Packet
@@ -125,9 +132,10 @@ type Admitter interface {
 }
 
 // BufferPolicy configures one node's queue: capacity, overflow behavior
-// (Drop), staleness and byte budgets, and the copy bounds buffered execution
-// uses to keep branch payloads isolated. The zero value means direct
-// (unbuffered) execution.
+// (Drop), and staleness and byte budgets. A queued message is a header that
+// holds references to its payload, never a copy of it, so a policy bounds
+// messages, not bytes per message. The zero value means direct (unbuffered)
+// execution.
 type BufferPolicy struct {
 	Capacity   int
 	Drop       DropPolicy
@@ -137,18 +145,6 @@ type BufferPolicy struct {
 	// queuing. Zero disables byte-budget shedding (the default — no per-message
 	// byte accounting runs on the hot path).
 	MaxBytes int64
-	// CopyPacketBytes bounds graph-owned packet payload copies for buffered
-	// execution when a packet buffer is not immutable.
-	CopyPacketBytes int
-	// CopyFrameBytes bounds graph-owned frame plane copies for buffered
-	// execution when frame plane buffers are not immutable.
-	CopyFrameBytes int
-	// CopyAlways makes buffered execution copy every non-empty payload into
-	// graph-owned backing, including payloads declared av.BufferImmutable
-	// (which are otherwise shared by reference). Copies still require
-	// CopyPacketBytes/CopyFrameBytes capacity: a payload that cannot be copied
-	// is refused with ErrBufferedMessageUnsafe instead of shared.
-	CopyAlways bool
 }
 
 // IsDirect reports whether the policy means unbuffered execution: no

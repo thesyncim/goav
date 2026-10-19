@@ -46,7 +46,7 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 	packet := av.Packet{
 		StreamID:   "video",
 		CodecEpoch: 3,
-		Payload:    av.Buffer{Bytes: encoded, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: encoded},
 		PTS:        av.Timestamp{Value: 90, Base: av.RTPTimeBase(90000)},
 		Keyframe:   true,
 	}
@@ -71,7 +71,7 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 		t.Fatalf("planes = %d, want 3", len(frame.Planes))
 	}
 	for i := range frame.Planes {
-		if frame.Planes[i].Buffer.Ownership != av.BufferBorrowed || len(frame.Planes[i].Buffer.Bytes) == 0 {
+		if frame.Planes[i].Buffer.Owner != nil || len(frame.Planes[i].Buffer.Bytes) == 0 {
 			t.Fatalf("plane[%d] = %+v", i, frame.Planes[i])
 		}
 	}

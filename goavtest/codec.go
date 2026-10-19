@@ -245,9 +245,14 @@ func parseFramePayload(payload []byte, frame *av.Frame, audioScratch *av.AudioFr
 	for i := range planes {
 		frame.Planes[i].Stride = int(r.u32())
 		frame.Planes[i].Offset = int(r.u32())
-		frame.Planes[i].Buffer.Bytes = append(frame.Planes[i].Buffer.Bytes[:0], r.blob()...)
+		// Each frame gets new pooled planes the stage hands downstream by
+		// reference, like a real decoder's.
+		blob := r.blob()
+		frame.Planes[i].Buffer = av.NewBuffer(len(blob))
+		copy(frame.Planes[i].Buffer.Bytes, blob)
 	}
 	if !r.ok {
+		frame.Release()
 		frame.Reset()
 		return false
 	}

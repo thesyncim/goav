@@ -436,7 +436,7 @@ func TestRenderTaskFlowchartReadsLiveTaskSnapshot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}}}
 	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
 		Audio().
 		Tap("pkts").

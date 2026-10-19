@@ -143,7 +143,7 @@ func TestTestSourceFramesStartAndClone(t *testing.T) {
 
 func TestTestSourceMixedScriptAndAppend(t *testing.T) {
 	frame := s16Frame("", 16000, 1, []int16{1}, 0)
-	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}}
+	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{2}}}
 	event := av.Event{Type: av.EventStats, Reason: "ready", Metadata: av.Metadata{"phase": "start"}}
 	source := NewTestSource("script",
 		shape.Frame(av.MediaAudio, shape.Audio(16000, 1, av.SampleFormatS16)),
@@ -211,7 +211,7 @@ func TestTestSourceAppendComposesWithTypedScripts(t *testing.T) {
 }
 
 func TestTestSourcePacketsEventsAndDefaults(t *testing.T) {
-	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{7}, Ownership: av.BufferImmutable}}
+	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{7}}}
 	packetSource := NewTestSource("packets",
 		shape.Packet(av.MediaVideo, av.CodecVP8),
 		TestSourcePackets(nil, packet),

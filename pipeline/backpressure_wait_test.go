@@ -63,7 +63,7 @@ func TestGraphBufferedBlockedEmitAllocs(t *testing.T) {
 	emitter, stop := blockedGraph(t, &slowSink{name: "sink", delay: 20 * time.Microsecond})
 	defer stop()
 	ctx := context.Background()
-	msg := benchPacketMessage(64, true)
+	msg := benchPacketMessage(64, false)
 	if allocs := testing.AllocsPerRun(200, func() {
 		if err := emitter.Emit(ctx, msg); err != nil {
 			t.Fatal(err)
@@ -84,7 +84,7 @@ func TestGraphBufferedBlockedProducerIdles(t *testing.T) {
 	open := sync.OnceFunc(func() { close(gate) })
 	defer open() // before stop, so a failed assertion cannot strand the drain
 	ctx := context.Background()
-	msg := benchPacketMessage(64, true)
+	msg := benchPacketMessage(64, false)
 	// One message is held in the sink's Handle and one fills the queue; the
 	// third parks the producer.
 	for range 2 {

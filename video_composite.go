@@ -213,7 +213,10 @@ func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitte
 		s.message.Packet = nil
 		s.message.Frame = composited
 		s.message.Event = nil
-		if err := emitter.Emit(ctx, &s.message); err != nil {
+		err = emitter.Emit(ctx, &s.message)
+		// The canvas is the stage's own; downstream keeps it by reference.
+		composited.Release()
+		if err != nil {
 			return err
 		}
 	}
@@ -254,9 +257,10 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compositeLayout, floor
 		dst.Planes = make([]av.Plane, 3)
 	}
 	dst.Planes = dst.Planes[:3]
-	yPlane := compositePlaneBytes(dst.Planes[0].Buffer.Bytes, canvasW*canvasH)
-	uPlane := compositePlaneBytes(dst.Planes[1].Buffer.Bytes, chromaW*chromaH)
-	vPlane := compositePlaneBytes(dst.Planes[2].Buffer.Bytes, chromaW*chromaH)
+	// Each output canvas is new pooled memory: the previous one may still be
+	// queued or kept downstream.
+	y, u, v := av.NewBuffer(canvasW*canvasH), av.NewBuffer(chromaW*chromaH), av.NewBuffer(chromaW*chromaH)
+	yPlane, uPlane, vPlane := y.Bytes, u.Bytes, v.Bytes
 	// Paint the uncovered canvas video black (Y=16, U=V=128 in limited range).
 	// Zeroed chroma would render every gap between arms green.
 	fillPlane(yPlane, compositeBlackLuma)
@@ -286,9 +290,9 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compositeLayout, floor
 	dst.Audio = nil
 	dst.Video = video
 	dst.Metadata = nil
-	dst.Planes[0] = av.Plane{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferBorrowed}, Stride: canvasW}
-	dst.Planes[1] = av.Plane{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferBorrowed}, Stride: chromaW}
-	dst.Planes[2] = av.Plane{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferBorrowed}, Stride: chromaW}
+	dst.Planes[0] = av.Plane{Buffer: y, Stride: canvasW}
+	dst.Planes[1] = av.Plane{Buffer: u, Stride: chromaW}
+	dst.Planes[2] = av.Plane{Buffer: v, Stride: chromaW}
 	return dst, nil
 }
 
@@ -299,13 +303,6 @@ func firstCompositeFrame(frames []*av.Frame) *av.Frame {
 		}
 	}
 	return nil
-}
-
-func compositePlaneBytes(bytes []byte, n int) []byte {
-	if cap(bytes) < n {
-		return make([]byte, n)
-	}
-	return bytes[:n]
 }
 
 // copyPlane copies a tightly-packed source plane region into a tightly-packed
@@ -374,8 +371,8 @@ func copyPlaneInside(dst []byte, dstW int, src []byte, srcStride int, srcOffset 
 	return true
 }
 
-// cloneCompositeFrame deep-copies a frame into a reusable per-arm slot so
-// buffering survives producer reuse of the underlying buffers.
+// cloneCompositeFrame keeps an arm frame past the call that lent it: a
+// pooled header with the frame's fields and its own reference to each plane.
 func (s *videoCompositeStage) cloneCompositeFrame(frame *av.Frame) *av.Frame {
 	clone := s.takeCompositeFrame(frame.StreamID)
 	planes := clone.Planes
@@ -389,25 +386,9 @@ func (s *videoCompositeStage) cloneCompositeFrame(frame *av.Frame) *av.Frame {
 	}
 	clone.Video = video
 	clone.Audio = nil
-	clone.Planes = planes
-	if cap(clone.Planes) < len(frame.Planes) {
-		clone.Planes = make([]av.Plane, len(frame.Planes))
-	}
-	clone.Planes = clone.Planes[:len(frame.Planes)]
-	for i := range frame.Planes {
-		bytes := clone.Planes[i].Buffer.Bytes
-		clone.Planes[i] = frame.Planes[i]
-		src := frame.Planes[i].Buffer.Bytes
-		if frame.Planes[i].Buffer.Ownership == av.BufferImmutable {
-			continue
-		}
-		if cap(bytes) < len(src) {
-			bytes = make([]byte, len(src))
-		} else {
-			bytes = bytes[:len(src)]
-		}
-		copy(bytes, src)
-		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
+	clone.Planes = append(planes[:0], frame.Planes...)
+	for i := range clone.Planes {
+		clone.Planes[i].Buffer.Retain()
 	}
 	return clone
 }
@@ -438,6 +419,7 @@ func (s *videoCompositeStage) recycleCompositeFrame(frame *av.Frame) {
 	if frame == nil {
 		return
 	}
+	frame.Release()
 	id := frame.StreamID
 	s.free[id] = append(s.free[id], frame)
 }

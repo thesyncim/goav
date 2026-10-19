@@ -129,7 +129,7 @@ func controlWhenRunning(ctx context.Context, task interface {
 func TestFakeDecodeFeedsRealResample(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}})
+	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}}})
 	err := goavtest.Runtime().Run(ctx, input.
 		Audio().
 		Decode().

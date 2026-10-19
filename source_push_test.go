@@ -54,7 +54,7 @@ func TestSourcePushReportsShedsPerPush(t *testing.T) {
 				frame := &av.Frame{
 					StreamID: "push", Type: av.MediaAudio,
 					Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 				}
 				result, err := push.Frame(frame)
 				switch {

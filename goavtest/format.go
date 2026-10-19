@@ -267,8 +267,7 @@ func parseContainerStream(r *wireReader) av.Stream {
 	}
 	if extra := r.blob(); len(extra) != 0 {
 		stream.Codec.ExtraData = av.Buffer{
-			Bytes:     append([]byte(nil), extra...),
-			Ownership: av.BufferImmutable,
+			Bytes: append([]byte(nil), extra...),
 		}
 	}
 	return stream

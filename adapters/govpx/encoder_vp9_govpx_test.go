@@ -29,7 +29,7 @@ func TestEncodeVP9IntoCallerOwnedPacket(t *testing.T) {
 	if packet.StreamID != "encoded" || packet.CodecEpoch != 4 {
 		t.Fatalf("packet identity = %+v", packet)
 	}
-	if len(packet.Payload.Bytes) == 0 || packet.Payload.Ownership != av.BufferOwned {
+	if len(packet.Payload.Bytes) == 0 || packet.Payload.Owner != nil {
 		t.Fatalf("payload = %+v", packet.Payload)
 	}
 	if !packet.Keyframe {
@@ -270,9 +270,9 @@ func vp9TestFrame() av.Frame {
 			PixelFormat: av.PixelFormatI420,
 		},
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: img.Y, Ownership: av.BufferOwned}, Stride: img.YStride},
-			{Buffer: av.Buffer{Bytes: img.Cb, Ownership: av.BufferOwned}, Stride: img.CStride},
-			{Buffer: av.Buffer{Bytes: img.Cr, Ownership: av.BufferOwned}, Stride: img.CStride},
+			{Buffer: av.Buffer{Bytes: img.Y}, Stride: img.YStride},
+			{Buffer: av.Buffer{Bytes: img.Cb}, Stride: img.CStride},
+			{Buffer: av.Buffer{Bytes: img.Cr}, Stride: img.CStride},
 		},
 	}
 }

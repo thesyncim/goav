@@ -50,7 +50,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	packetArm := Source("a",
 		shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream("a")),
 		func(_ context.Context, push SourcePush) error {
-			if _, err := push.Packet(&av.Packet{StreamID: "a", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+			if _, err := push.Packet(&av.Packet{StreamID: "a", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 				return err
 			}
 			return push.EOS()

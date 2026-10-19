@@ -332,7 +332,6 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.StreamID = track.streamID
 	out.Packet.Type = track.media
 	out.Packet.Payload.Bytes = packet.Data
-	out.Packet.Payload.Ownership = av.BufferOwned
 	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS - track.codecDelayNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
 	durationNS := packet.DurationNS
 	if track.opus && packet.DiscardPaddingNS > 0 {
@@ -468,7 +467,7 @@ func streamFromTrack(track Track, index int) av.Stream {
 			Channels:   track.Audio.Channels,
 			Width:      track.Video.Width,
 			Height:     track.Video.Height,
-			ExtraData:  av.Buffer{Bytes: track.CodecPrivate, Ownership: av.BufferImmutable},
+			ExtraData:  av.Buffer{Bytes: track.CodecPrivate},
 		},
 	}
 	if stream.Codec.SampleRate > 0 {

@@ -56,9 +56,8 @@ const (
 const familyDiagnostic Family = "diagnostic"
 
 const (
-	compilerPassFailed  = Code("compiler_pass_failed")
-	graphPlanInvalid    = Code("graph_plan_invalid")
-	bufferBudgetMissing = Code("buffer_budget_missing")
+	compilerPassFailed = Code("compiler_pass_failed")
+	graphPlanInvalid   = Code("graph_plan_invalid")
 )
 
 // FamilyForCode returns the stable family for a goav error code. It also
@@ -110,8 +109,7 @@ func FamilyForCode(code Code) Family {
 
 		Code("decode_config_conflict"):
 		return FamilyBranch
-	case Code("branch_buffer_invalid"), Code("branch_buffer_unsupported"),
-		Code("buffer_payload_unsafe"), Code("buffer_payload_too_large"), bufferBudgetMissing:
+	case Code("branch_buffer_invalid"), Code("branch_buffer_unsupported"):
 		return FamilyBuffer
 	case TapInvalid, TapDomainMismatch:
 		return FamilyTap

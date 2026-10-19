@@ -26,7 +26,7 @@ func mixTestS16Frame(id av.StreamID, samples ...int16) *av.Frame {
 		StreamID: id,
 		Type:     av.MediaAudio,
 		Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 	}
 }
 
@@ -73,7 +73,7 @@ func cloneMixTestFrame(frame *av.Frame) *av.Frame {
 		payload := frame.Planes[i].Buffer.Bytes
 		bytes := make([]byte, len(payload))
 		copy(bytes, payload)
-		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
+		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes}
 	}
 	return &clone
 }
@@ -143,7 +143,7 @@ func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 			frame := &av.Frame{
 				StreamID: id, Type: av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 			}
 			if _, err := push.Frame(frame); err != nil {
 				return err
@@ -237,7 +237,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 		return Source(string(id),
 			shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream(id)),
 			func(_ context.Context, push SourcePush) error {
-				if _, err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+				if _, err := push.Packet(&av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}}}); err != nil {
 					return err
 				}
 				return push.EOS()
@@ -411,7 +411,7 @@ func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 			frame := &av.Frame{
 				StreamID: id, Type: av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: rate, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 960},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 			}
 			if _, err := push.Frame(frame); err != nil {
 				return err

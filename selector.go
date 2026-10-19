@@ -100,9 +100,9 @@ func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 		if msg.Frame == nil || msg.Frame.StreamID != active {
 			return nil
 		}
-		// Rewrite the StreamID on a shallow header copy — the payload buffer may
-		// be borrowed/shared, so mutating the original frame's id could corrupt
-		// another consumer.
+		// Rewrite the StreamID on a header copy: the message is lent, and its
+		// header is shared with every other consumer. The copy forwards the
+		// lent payload references for the call.
 		s.frame = *msg.Frame
 		s.frame.StreamID = s.out
 		s.message.Kind = pipeline.MessageFrame

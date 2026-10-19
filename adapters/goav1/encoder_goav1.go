@@ -111,7 +111,6 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 	packet.Type = av.MediaVideo
 	packet.CodecEpoch = e.stream.Epoch
 	packet.Payload.Bytes = append(packet.Payload.Bytes[:0], encoded.Data...)
-	packet.Payload.Ownership = av.BufferOwned
 	packet.PTS = rescaleAV1Timestamp(frame.PTS, e.stream.TimeBase)
 	packet.DTS = packet.PTS
 	packet.Duration = rescaleAV1Duration(frame.Duration, e.stream.TimeBase)

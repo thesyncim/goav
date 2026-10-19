@@ -55,7 +55,7 @@ func TestDecodeVP8IntoCallerOwnedI420Frame(t *testing.T) {
 	packet := av.Packet{
 		StreamID:   "video",
 		CodecEpoch: 3,
-		Payload:    av.Buffer{Bytes: encoded, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: encoded},
 		PTS:        av.Timestamp{Value: 90, Base: av.RTPTimeBase(90000)},
 		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 		Keyframe:   true,
@@ -82,8 +82,8 @@ func TestDecodeVP8IntoCallerOwnedI420Frame(t *testing.T) {
 	}
 	wantLengths := [...]int{256, 64, 64}
 	for i := range frame.Planes {
-		if frame.Planes[i].Buffer.Ownership != av.BufferOwned {
-			t.Fatalf("plane[%d] ownership = %q, want owned", i, frame.Planes[i].Buffer.Ownership)
+		if frame.Planes[i].Buffer.Owner == nil {
+			t.Fatalf("plane[%d] is not pooled: %+v", i, frame.Planes[i].Buffer)
 		}
 		if len(frame.Planes[i].Buffer.Bytes) != wantLengths[i] {
 			t.Fatalf("plane[%d] len = %d, want %d", i, len(frame.Planes[i].Buffer.Bytes), wantLengths[i])
@@ -201,20 +201,18 @@ func TestPacketLossInterFrameRequestsOneKeyframe(t *testing.T) {
 	}
 }
 
+// TestPrepareI420FrameAllocs pins that each picture's pooled planes come
+// from the pool once the previous picture was released, as the stage does
+// after publishing it.
 func TestPrepareI420FrameAllocs(t *testing.T) {
-	frame := av.Frame{
-		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: make([]byte, 0, 256)}},
-			{Buffer: av.Buffer{Bytes: make([]byte, 0, 64)}},
-			{Buffer: av.Buffer{Bytes: make([]byte, 0, 64)}},
-		},
-	}
+	frame := av.Frame{Planes: make([]av.Plane, 3)}
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		frame.Reset()
 		if err := prepareI420Frame(&frame, 16, 16); err != nil {
 			t.Fatal(err)
 		}
+		frame.Release()
 	}); allocs != 0 {
 		t.Fatalf("prepare I420 frame allocs = %v, want 0", allocs)
 	}

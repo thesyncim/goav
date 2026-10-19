@@ -581,12 +581,9 @@ func cloneEvent(event av.Event) av.Event {
 
 func cloneBuffer(buffer av.Buffer) av.Buffer {
 	if len(buffer.Bytes) == 0 {
-		return av.Buffer{Ownership: av.BufferImmutable}
+		return av.Buffer{}
 	}
-	return av.Buffer{
-		Bytes:     append([]byte(nil), buffer.Bytes...),
-		Ownership: av.BufferImmutable,
-	}
+	return av.Buffer{Bytes: append([]byte(nil), buffer.Bytes...)}
 }
 
 func cloneMetadata(metadata av.Metadata) av.Metadata {

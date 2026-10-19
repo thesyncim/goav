@@ -279,7 +279,7 @@ func TestGraphDirectSpec(t *testing.T) {
 
 func TestGraphDirectFanoutSharesPayload(t *testing.T) {
 	payload := []byte{1, 2, 3}
-	packet := av.Packet{Payload: av.Buffer{Bytes: payload, Ownership: av.BufferBorrowed}}
+	packet := av.Packet{Payload: av.Buffer{Bytes: payload}}
 	msg := Message{Kind: MessagePacket, Packet: &packet}
 	source := &directTestSource{name: "source", msg: &msg}
 	left := &directTestSink{name: "left"}
@@ -554,7 +554,7 @@ func TestGraphDirectRemoveReportsStuckNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}}}
 	stop := make(chan struct{})
 	source := &directLoopSource{name: "src", packet: packet, stop: stop}
 	sourceRef, err := graph.AddSource(source, BufferPolicy{})
@@ -604,7 +604,7 @@ func TestGraphDirectRemoveDrainsInFlightDeliveries(t *testing.T) {
 	}
 	defer graph.Close()
 
-	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}}}
 	stop := make(chan struct{})
 	source := &directLoopSource{name: "src", packet: packet, stop: stop}
 	sourceRef, err := graph.AddSource(source, BufferPolicy{})

@@ -30,7 +30,7 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 		codec.SampleRate(48_000),
 	)
 	base.Parameters.Attributes = av.Metadata{"base": "keep"}
-	base.Parameters.ExtraData = av.Buffer{Bytes: []byte{0x01}, Ownership: av.BufferImmutable}
+	base.Parameters.ExtraData = av.Buffer{Bytes: []byte{0x01}}
 
 	if got := mergeDecodeCodecSpec(base, codec.Spec{}); !codecSpecEqual(got, base) {
 		t.Fatalf("zero override = %#v, want base %#v", got, base)
@@ -53,7 +53,7 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 			Height:        180,
 			PixelFormat:   av.PixelFormatI420,
 			SampleFormat:  av.SampleFormatF32,
-			ExtraData:     av.Buffer{Bytes: []byte{0xaa, 0xbb}, Ownership: av.BufferImmutable},
+			ExtraData:     av.Buffer{Bytes: []byte{0xaa, 0xbb}},
 			Attributes:    av.Metadata{"vendor": "external"},
 		},
 		Settings: codec.CodecSettings{

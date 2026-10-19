@@ -367,40 +367,6 @@ func TestNewDecodeStageNamedCustomDecoderErrorContracts(t *testing.T) {
 	}
 }
 
-func TestDecodeResultForVideoPreallocatesPlaneBacking(t *testing.T) {
-	result := decodeResultForStream(av.Stream{
-		ID:   "video",
-		Type: av.MediaVideo,
-		Codec: av.CodecParameters{
-			ID:     av.CodecH264,
-			Type:   av.MediaVideo,
-			Width:  640,
-			Height: 360,
-		},
-	}, codec.DecodeBounds{})
-	frames := result.Frames[:cap(result.Frames)]
-	if len(frames) != 1 || cap(frames[0].Planes) < 3 {
-		t.Fatalf("frames=%d plane cap=%d", len(frames), cap(frames[0].Planes))
-	}
-	assertVideoDecodePlaneCapacity(t, frames[0], 640, 360)
-}
-
-func TestDecodeResultForVideoUsesDefaultBackingWhenGeometryIsUnknown(t *testing.T) {
-	result := decodeResultForStream(av.Stream{
-		ID:   "video",
-		Type: av.MediaVideo,
-		Codec: av.CodecParameters{
-			ID:   av.CodecVP8,
-			Type: av.MediaVideo,
-		},
-	}, codec.DecodeBounds{})
-	frames := result.Frames[:cap(result.Frames)]
-	if len(frames) != 1 {
-		t.Fatalf("frames=%d, want 1", len(frames))
-	}
-	assertVideoDecodePlaneCapacity(t, frames[0], defaultVideoDecodeWidth, defaultVideoDecodeHeight)
-}
-
 func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
 	result := decodeResultForStream(av.Stream{
 		ID:   "video",
@@ -425,24 +391,22 @@ func TestDecodeResultForVideoUsesBoundsCapacity(t *testing.T) {
 		t.Fatalf("result shape frames=%d planes=%d/%d events=%d requests=%d",
 			len(frames), cap(frames[0].Planes), cap(frames[1].Planes), cap(result.Events), cap(result.Requests))
 	}
-	assertVideoDecodePlaneCapacity(t, frames[0], 1280, 720)
-	assertVideoDecodePlaneCapacity(t, frames[1], 1280, 720)
+	assertVideoDecodePlaneSlots(t, frames[0])
+	assertVideoDecodePlaneSlots(t, frames[1])
 }
 
-func assertVideoDecodePlaneCapacity(t *testing.T, frame av.Frame, width int, height int) {
+// assertVideoDecodePlaneSlots checks a video decode result frame reserves
+// three plane slots and no plane bytes: video decoders publish each picture
+// in new pooled planes, so preallocated bytes would only sit unused.
+func assertVideoDecodePlaneSlots(t *testing.T, frame av.Frame) {
 	t.Helper()
 	if len(frame.Planes) != 3 {
 		t.Fatalf("planes = %d, want 3", len(frame.Planes))
 	}
-	chromaWidth := (width + 1) / 2
-	chromaHeight := (height + 1) / 2
-	if cap(frame.Planes[0].Buffer.Bytes) != width*height ||
-		cap(frame.Planes[1].Buffer.Bytes) != chromaWidth*chromaHeight ||
-		cap(frame.Planes[2].Buffer.Bytes) != chromaWidth*chromaHeight {
-		t.Fatalf("plane capacity = %d %d %d",
-			cap(frame.Planes[0].Buffer.Bytes),
-			cap(frame.Planes[1].Buffer.Bytes),
-			cap(frame.Planes[2].Buffer.Bytes))
+	for i := range frame.Planes {
+		if cap(frame.Planes[i].Buffer.Bytes) != 0 {
+			t.Fatalf("plane %d reserves %d bytes, want none", i, cap(frame.Planes[i].Buffer.Bytes))
+		}
 	}
 }
 

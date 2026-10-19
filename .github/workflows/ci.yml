@@ -95,6 +95,14 @@ jobs:
         if: matrix.full
         run: CGO_ENABLED=1 go test -race -count=1 ./...
 
+      # goavdebug poisons released pooled payloads, so any holder that kept
+      # bytes without a reference (Ref/Retain) fails a byte-exact test.
+      - name: Use-after-release (goavdebug)
+        if: matrix.full
+        run: |
+          CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
+          for m in rtpav webrtcav playoutav; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
       - name: Bench smoke

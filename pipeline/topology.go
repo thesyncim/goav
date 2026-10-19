@@ -15,9 +15,6 @@ var (
 	// ErrBackpressure reports a strict (non-dropping) queue that is full: the
 	// message was not delivered and a pacing producer should slow down.
 	ErrBackpressure = errors.New("pipeline: backpressure")
-	// ErrBufferedMessageUnsafe reports a mutable payload a buffered edge
-	// refused to share or could not copy within its byte bounds.
-	ErrBufferedMessageUnsafe = errors.New("pipeline: buffered message unsafe")
 	// ErrBufferedEdgesUnsupported reports a buffered route on a graph
 	// implementation that only executes direct edges.
 	ErrBufferedEdgesUnsupported = errors.New("pipeline: buffered edges unsupported by direct graph")
@@ -29,9 +26,6 @@ var (
 	// ErrInvalidLink reports a route whose endpoints cannot be wired (a sink
 	// as a route source, a source as a target).
 	ErrInvalidLink = errors.New("pipeline: invalid link")
-	// ErrMessageTooLarge reports a payload exceeding the configured copy
-	// bounds of a buffered edge.
-	ErrMessageTooLarge = errors.New("pipeline: message too large")
 	// ErrNilMessage reports a nil message handed to Emit.
 	ErrNilMessage = errors.New("pipeline: nil message")
 	// ErrNodeExists reports an added node whose name is already taken.

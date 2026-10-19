@@ -47,7 +47,7 @@ func (s *crossSeekArmSource) packetMsg(ptsMS int64, samples ...int16) *pipeline.
 	return &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 		StreamID: s.id,
 		Type:     av.MediaAudio,
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: payload},
 		PTS:      av.Timestamp{Value: ptsMS, Base: av.TimeBase{Num: 1, Den: 1000}},
 		Duration: av.Duration{Value: 20, Base: av.TimeBase{Num: 1, Den: 1000}},
 		Keyframe: true,
@@ -167,9 +167,9 @@ func (d *crossPCMDecoder) Close() error                                         
 // discontinuity reaches the joined stream, and an untargeted Seek reports
 // the non-seekable sibling arm by name without blocking the seekable one.
 //
-// The runtime is explicitly buffered with copy budgets so the decode arm's
-// mutable frames can ride buffered queues while the test also exercises the
-// same per-node worker shape realtime joins now choose by default.
+// The runtime is explicitly buffered so the decode arm's frames ride
+// buffered queues while the test also exercises the same per-node worker
+// shape realtime joins now choose by default.
 func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -177,10 +177,8 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	seekable := &crossSeekArmSource{id: "a", sought: make(chan struct{})}
 	rt := mustNew(
 		WithBufferPolicy(pipeline.BufferPolicy{
-			Capacity:        8,
-			Drop:            pipeline.DropBlock,
-			CopyPacketBytes: 4096,
-			CopyFrameBytes:  4096,
+			Capacity: 8,
+			Drop:     pipeline.DropBlock,
 		}),
 		WithDecoder(
 			codec.Descriptor{ID: pcm, Name: "PCM seek", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
@@ -350,7 +348,7 @@ func (s *crossSegmentGatedSource) Start(ctx context.Context, emitter pipeline.Em
 		msg := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 			StreamID: s.stream,
 			Type:     av.MediaAudio,
-			Payload:  av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+			Payload:  av.Buffer{Bytes: []byte{1}},
 			PTS:      av.Timestamp{Value: pos, Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
 		}}
 		if err := emitter.Emit(ctx, msg); err != nil {
@@ -489,7 +487,7 @@ func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]in
 				frame := &av.Frame{
 					StreamID: id, Type: av.MediaAudio,
 					Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(frames[i])},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 				}
 				if _, err := push.Frame(frame); err != nil {
 					return err
@@ -510,7 +508,7 @@ func crossSignaledFrameSource(id av.StreamID, queued chan<- struct{}, samples ..
 			frame := &av.Frame{
 				StreamID: id, Type: av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 			}
 			if _, err := push.Frame(frame); err != nil {
 				return err

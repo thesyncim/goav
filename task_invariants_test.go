@@ -299,7 +299,7 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
 		func(_ context.Context, push goav.SourcePush) error {
 			packet := av.Packet{
-				Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: []byte{1}},
 				Type:    av.MediaAudio,
 			}
 			if _, pushErr := push.Packet(&packet); pushErr != nil {

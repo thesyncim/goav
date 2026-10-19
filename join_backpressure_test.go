@@ -114,7 +114,7 @@ func tinyFrame(kind string, name string, i int) *av.Frame {
 	if kind == "composite" {
 		base := av.TimeBase{Num: 1, Den: 30}
 		plane := func(n int) av.Plane {
-			return av.Plane{Buffer: av.Buffer{Bytes: make([]byte, n), Ownership: av.BufferImmutable}, Stride: max(n/2, 1)}
+			return av.Plane{Buffer: av.Buffer{Bytes: make([]byte, n)}, Stride: max(n/2, 1)}
 		}
 		return &av.Frame{
 			StreamID: av.StreamID(name),
@@ -132,7 +132,7 @@ func tinyFrame(kind string, name string, i int) *av.Frame {
 		PTS:      av.Timestamp{Value: int64(i), Base: base},
 		Duration: av.Duration{Value: 1, Base: base},
 		Audio:    &av.AudioFrame{SampleRate: 48_000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}, Ownership: av.BufferImmutable}}},
+		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}}}},
 	}
 }
 

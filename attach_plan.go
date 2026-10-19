@@ -56,7 +56,6 @@ type attachPlanBranch struct {
 	destinations []attachDestination
 	dests        []int
 	buffer       pipeline.BufferPolicy
-	copyNever    bool
 	// stream is the stream the branch delivers, known once it is checked.
 	stream av.Stream
 }
@@ -186,7 +185,6 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 			source:       recipe.Source,
 			anchor:       anchor,
 			destinations: branch.destinations,
-			copyNever:    recipe.Buffer.CopyMode == flow.CopyNever,
 		}
 		facts := branchFacts{frames: anchor.shape.Domain == shape.DomainFrame}
 		for _, destination := range branch.destinations {
@@ -604,7 +602,7 @@ func (p *attachPlan) reserve() error {
 				p.buffers[n], fed = p.branches[i].buffer, true
 				continue
 			}
-			p.buffers[n] = mergeBufferCopyBounds(p.buffers[n], p.branches[i].buffer)
+			p.buffers[n] = mergeBufferPolicy(p.buffers[n], p.branches[i].buffer)
 		}
 	}
 	return nil
@@ -625,11 +623,10 @@ func (p *attachPlan) feeds(index int, node composeNode) bool {
 }
 
 // attachBufferPolicy is the queue an attached branch's nodes run behind: the
-// branch's own, or the runtime's on a buffered task, either carrying the
-// copy bounds the runtime sized for the task's shapes.
+// branch's own, or the runtime's on a buffered task.
 func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolicy {
 	policy := buffer.PipelinePolicy()
-	if _, ok := t.graph.(pipeline.NodeInjector); !ok || buffer.CopyMode == flow.CopyNever {
+	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
 		return policy
 	}
 	var runtimeBuffer pipeline.BufferPolicy
@@ -638,15 +635,6 @@ func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolic
 	}
 	if policy.IsDirect() {
 		return realtimeRecipeBufferPolicy(runtimeBuffer)
-	}
-	// An explicit branch buffer still needs the copy bounds the runtime
-	// sized, or a buffered edge would refuse mutable payloads at runtime;
-	// a bound the caller set stays.
-	if policy.CopyPacketBytes == 0 {
-		policy.CopyPacketBytes = runtimeBuffer.CopyPacketBytes
-	}
-	if policy.CopyFrameBytes == 0 {
-		policy.CopyFrameBytes = runtimeBuffer.CopyFrameBytes
 	}
 	return policy
 }
@@ -728,9 +716,6 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		} else {
 			attachment.anchorNodes = append(attachment.anchorNodes, p.lowering.refs[p.state.recipe.Streams[i].Root].String())
 		}
-		if branch.copyNever {
-			attachment.copyNever = append(attachment.copyNever, branch.name)
-		}
 		for _, destination := range branch.destinations {
 			attachment.destinations = append(attachment.destinations, workDestination{
 				ID:        workDestinationID(destination.recipe.Name),
@@ -746,7 +731,6 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	attachment.anchorNode = firstNonEmpty(attachment.anchorNodes...)
 	attachment.anchorTaps = uniqueStrings(attachment.anchorTaps)
 	attachment.anchorNodes = uniqueStrings(attachment.anchorNodes)
-	attachment.copyNever = uniqueStrings(attachment.copyNever)
 	for _, opened := range p.opened {
 		if opened.stage != nil {
 			attachment.stages = append(attachment.stages, opened.stage)

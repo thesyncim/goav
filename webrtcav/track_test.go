@@ -292,7 +292,7 @@ func TestTrackReaderUpdateCodecFeedsRTPSource(t *testing.T) {
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			events = append(events, *msg.Event)
 		}
@@ -376,7 +376,7 @@ func TestTrackReaderUpdateTrackReplacesReaderAndFeedsRTPSource(t *testing.T) {
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
-			packets = append(packets, *msg.Packet)
+			packets = append(packets, *msg.Packet.Ref())
 		case pipeline.MessageEvent:
 			events = append(events, *msg.Event)
 		}

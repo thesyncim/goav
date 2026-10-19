@@ -39,7 +39,7 @@ func BenchmarkLatencyRecordPackets(b *testing.B) {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := 0; i < b.N; i++ {
@@ -181,10 +181,8 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 	policy := flow.Sync("live-room-churn", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
 	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
-		Capacity:        4,
-		Drop:            pipeline.DropOldest,
-		CopyPacketBytes: benchPacketBytes,
-		CopyFrameBytes:  1,
+		Capacity: 4,
+		Drop:     pipeline.DropOldest,
 	})).Build(ctx,
 		benchLiveRoomChurnVideoPackets("churn-video", videoTicks, latencies, &latencyIndex, &sourceDrops).
 			Video().
@@ -263,7 +261,7 @@ func TestPerformanceLabRecordDriftSoak(t *testing.T) {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:    av.MediaVideo,
-				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: payload},
 			}
 			for i := 0; ; i++ {
 				if i&1023 == 0 {
@@ -325,10 +323,8 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 	policy := flow.Sync("live-room-churn-wall", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
 	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
-		Capacity:        4,
-		Drop:            pipeline.DropOldest,
-		CopyPacketBytes: benchPacketBytes,
-		CopyFrameBytes:  1,
+		Capacity: 4,
+		Drop:     pipeline.DropOldest,
 	})).Build(ctx,
 		benchLiveRoomChurnVideoPackets("churn-wall-video", videoTicks, latencies, &latencyIndex, &sourceDrops).
 			Video().
@@ -524,7 +520,7 @@ func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *ato
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 			}
 			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 1800, Base: base}
@@ -548,7 +544,7 @@ func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *ato
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
 				Type:     av.MediaAudio,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range n {
@@ -588,7 +584,7 @@ func benchLiveRoomChurnVideoPackets(name string, ticks <-chan int, latencies []i
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 			}
 			for i := range ticks {
 				if err := ctx.Err(); err != nil {
@@ -615,7 +611,7 @@ func benchLiveRoomChurnAudioPackets(name string, ticks <-chan int, latencies []i
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
 				Type:     av.MediaAudio,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range ticks {

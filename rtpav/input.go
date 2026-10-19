@@ -431,7 +431,7 @@ func mergeCodecIntentParameters(base av.CodecParameters, override av.CodecParame
 	if override.SampleFormat != "" {
 		out.SampleFormat = override.SampleFormat
 	}
-	if override.ExtraData.Bytes != nil || override.ExtraData.Ownership != "" || override.ExtraData.Owner != nil {
+	if override.ExtraData.Bytes != nil || override.ExtraData.Owner != nil {
 		out.ExtraData = override.ExtraData
 	}
 	if override.Attributes != nil {

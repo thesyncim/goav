@@ -22,7 +22,7 @@ func TestPrepareEncodeConfigCarriesCustomSettingsAndStreamOverrides(t *testing.T
 	input.Metadata = av.Metadata{"room": "studio"}
 	input.Codec.Profile = "input-profile"
 	input.Codec.Level = "input-level"
-	input.Codec.ExtraData = av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}
+	input.Codec.ExtraData = av.Buffer{Bytes: []byte{1, 2, 3}}
 	input.Codec.Attributes = av.Metadata{"preserve": "input"}
 
 	overrideMetadata := av.Metadata{"role": "voice"}

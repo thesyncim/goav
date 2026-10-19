@@ -25,7 +25,7 @@ func coldPathPacketSource(id av.StreamID, payloads ...[]byte) InputSpec {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			for i := range payloads {
-				p := av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: payloads[i], Ownership: av.BufferImmutable}}
+				p := av.Packet{StreamID: id, Type: av.MediaAudio, Payload: av.Buffer{Bytes: payloads[i]}}
 				if _, err := push.Packet(&p); err != nil {
 					return err
 				}

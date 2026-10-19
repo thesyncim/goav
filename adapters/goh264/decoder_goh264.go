@@ -263,15 +263,15 @@ func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *goh264lib.Frame, frame *
 
 	frame.Planes = frame.Planes[:3]
 	frame.Planes[0] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Y, Ownership: av.BufferBorrowed},
+		Buffer: av.Buffer{Bytes: src.Y},
 		Stride: src.YStride,
 	}
 	frame.Planes[1] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Cb, Ownership: av.BufferBorrowed},
+		Buffer: av.Buffer{Bytes: src.Cb},
 		Stride: src.CStride,
 	}
 	frame.Planes[2] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Cr, Ownership: av.BufferBorrowed},
+		Buffer: av.Buffer{Bytes: src.Cr},
 		Stride: src.CStride,
 	}
 

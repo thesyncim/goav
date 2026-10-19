@@ -162,8 +162,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `goav.Runtime` is a concrete type with unexported fields; its methods are
   `Run`, `Build`, `Describe`, `Explain`, `Probe` (format lookup), and the
   tier-C `ExpertGraph` bridge.
-- **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
-  `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
+- **Media vocabulary**: `av` frames/packets/buffers (`Buffer`, `NewBuffer`,
+  `BufferOwner`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
 - **Testing**: `goavtest`: deterministic sources (`Audio`, `Video`,
   `Packets`, `LiveAudio`, `NewTestSource`), `Collector`, `Clock`, passthrough

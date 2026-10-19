@@ -128,7 +128,7 @@ func s16Source(id av.StreamID, frames ...[]int16) goav.InputSpec {
 					PTS:      av.Timestamp{Value: elapsed, Base: av.TimeBase{Num: 1, Den: 8000}},
 					Duration: av.Duration{Value: int64(len(samples)), Base: av.TimeBase{Num: 1, Den: 8000}},
 					Audio:    &av.AudioFrame{SampleRate: 8000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: encodeS16(samples), Ownership: av.BufferImmutable}}},
+					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: encodeS16(samples)}}},
 				}
 				elapsed += int64(len(samples))
 				if _, err := push.Frame(&frame); err != nil {
@@ -149,7 +149,6 @@ func cloneFrame(frame *av.Frame) *av.Frame {
 	for i := range frame.Planes {
 		clone.Planes[i] = frame.Planes[i]
 		clone.Planes[i].Buffer.Bytes = append([]byte(nil), frame.Planes[i].Buffer.Bytes...)
-		clone.Planes[i].Buffer.Ownership = av.BufferOwned
 	}
 	return &clone
 }

@@ -440,7 +440,7 @@ func controlLiveAudioSource(id av.StreamID) InputSpec {
 				frame := &av.Frame{
 					StreamID: id, Type: av.MediaAudio,
 					Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+					Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 				}
 				if _, err := push.Frame(frame); err != nil {
 					if errors.Is(err, ErrBackpressure) {

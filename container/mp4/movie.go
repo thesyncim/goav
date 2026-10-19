@@ -285,14 +285,14 @@ func parseStsd(r io.ReaderAt, h boxHeader) (av.CodecID, av.MediaType, av.CodecPa
 			params.Width = w
 			params.Height = ht
 			if len(extra) != 0 {
-				params.ExtraData = av.Buffer{Bytes: extra, Ownership: av.BufferImmutable}
+				params.ExtraData = av.Buffer{Bytes: extra}
 			}
 		} else {
 			ch, sr, extra := parseAudioSampleEntry(pl)
 			params.Channels = ch
 			params.SampleRate = sr
 			if len(extra) != 0 {
-				params.ExtraData = av.Buffer{Bytes: extra, Ownership: av.BufferImmutable}
+				params.ExtraData = av.Buffer{Bytes: extra}
 			}
 		}
 		codecID, media = id, m

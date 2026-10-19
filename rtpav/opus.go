@@ -49,8 +49,7 @@ func (d *OpusDepacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 		Type:       d.stream.Type,
 		CodecEpoch: d.stream.Epoch,
 		Payload: av.Buffer{
-			Bytes:     pkt.Payload,
-			Ownership: av.BufferBorrowed,
+			Bytes: pkt.Payload,
 		},
 		PTS: av.RTPToTimestamp(pkt.Timestamp, clockRate),
 	}

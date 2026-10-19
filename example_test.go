@@ -43,7 +43,7 @@ func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frame
 					StreamID: av.StreamID(name),
 					Type:     av.MediaAudio,
 					Audio:    &av.AudioFrame{SampleRate: sampleRate, Channels: channels, SampleFormat: av.SampleFormatS16, Samples: len(samples) / channels},
-					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: pcm, Ownership: av.BufferImmutable}}},
+					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: pcm}}},
 				}
 				if i < len(ptsMS) {
 					frame.PTS = av.Timestamp{Value: ptsMS[i], Base: av.TimeBase{Num: 1, Den: 1000}}
@@ -72,9 +72,9 @@ func i420Source(name string, width int, height int, luma byte) goav.InputSpec {
 				Type:     av.MediaVideo,
 				Video:    &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 				Planes: []av.Plane{
-					{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferImmutable}, Stride: width},
-					{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
-					{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: yPlane}, Stride: width},
+					{Buffer: av.Buffer{Bytes: uPlane}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: vPlane}, Stride: chromaW},
 				},
 			}
 			if _, err := push.Frame(&frame); err != nil {
@@ -114,7 +114,7 @@ func ExampleRuntime_Run() {
 	mic := goav.Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
 		func(_ context.Context, push source.Push) error {
-			packet := av.Packet{StreamID: "mic", Payload: av.Buffer{Bytes: opusTestPacket(), Ownership: av.BufferImmutable}}
+			packet := av.Packet{StreamID: "mic", Payload: av.Buffer{Bytes: opusTestPacket()}}
 			if _, err := push.Packet(&packet); err != nil {
 				return err
 			}

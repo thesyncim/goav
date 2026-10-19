@@ -19,7 +19,7 @@ func TestDecoderDecodesLowOverheadIntoBorrowedFrame(t *testing.T) {
 	pkt := &av.Packet{
 		StreamID:   "video",
 		CodecEpoch: 7,
-		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: payload},
 		PTS:        av.RTPToTimestamp(9000, 90000),
 		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 		Keyframe:   true,
@@ -40,7 +40,7 @@ func TestDecoderDecodesLowOverheadIntoBorrowedFrame(t *testing.T) {
 		t.Fatalf("video = %+v", frame.Video)
 	}
 	if len(frame.Planes) != 1 ||
-		frame.Planes[0].Buffer.Ownership != av.BufferBorrowed ||
+		frame.Planes[0].Buffer.Owner != nil ||
 		len(frame.Planes[0].Buffer.Bytes) == 0 ||
 		frame.Planes[0].Stride == 0 {
 		t.Fatalf("planes = %+v", frame.Planes)
@@ -59,7 +59,7 @@ func TestDecoderDecodesRTPPayloadIntoBorrowedFrame(t *testing.T) {
 	pkt := &av.Packet{
 		StreamID:   "video",
 		CodecEpoch: 7,
-		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: payload},
 		PTS:        av.RTPToTimestamp(9000, 90000),
 		Duration:   av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 		Keyframe:   true,
@@ -80,7 +80,7 @@ func TestDecoderDecodesRTPPayloadIntoBorrowedFrame(t *testing.T) {
 		t.Fatalf("video = %+v", frame.Video)
 	}
 	if len(frame.Planes) != 1 ||
-		frame.Planes[0].Buffer.Ownership != av.BufferBorrowed ||
+		frame.Planes[0].Buffer.Owner != nil ||
 		len(frame.Planes[0].Buffer.Bytes) == 0 ||
 		frame.Planes[0].Stride == 0 {
 		t.Fatalf("planes = %+v", frame.Planes)
@@ -216,7 +216,7 @@ func TestDecoderFillDecodedFramePlanarFormats(t *testing.T) {
 				t.Fatalf("planes = %d, want 3", len(frame.Planes))
 			}
 			for i := range frame.Planes {
-				if frame.Planes[i].Buffer.Ownership != av.BufferBorrowed ||
+				if frame.Planes[i].Buffer.Owner != nil ||
 					len(frame.Planes[i].Buffer.Bytes) == 0 ||
 					frame.Planes[i].Stride == 0 {
 					t.Fatalf("plane %d = %+v", i, frame.Planes[i])
@@ -235,7 +235,7 @@ func TestDecoderRTPPayloadAfterLossPreservesSequenceState(t *testing.T) {
 	result := testDecodeResult(2, 1)
 	if err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
 		StreamID: "video",
-		Payload:  av.Buffer{Bytes: key, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: key},
 		Keyframe: true,
 	}, &result); err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestDecoderRTPPayloadAfterLossPreservesSequenceState(t *testing.T) {
 	result.Reset()
 	if err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
 		StreamID:   "video",
-		Payload:    av.Buffer{Bytes: delta, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: delta},
 		Keyframe:   true,
 		LossBefore: true,
 	}, &result); err != nil {
@@ -267,7 +267,7 @@ func TestDecoderRTPPayloadRetainsFragments(t *testing.T) {
 	for i := range payloads {
 		err := decoder.DecodeRTPPayloadInto(context.Background(), &av.Packet{
 			StreamID: "video",
-			Payload:  av.Buffer{Bytes: payloads[i], Ownership: av.BufferImmutable},
+			Payload:  av.Buffer{Bytes: payloads[i]},
 			Keyframe: true,
 		}, &result)
 		if err != nil {
@@ -308,7 +308,7 @@ func TestDecoderDropsUntilSyncAfterLoss(t *testing.T) {
 	result.Reset()
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
 		StreamID: "video",
-		Payload:  av.Buffer{Bytes: unsyncable, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: unsyncable},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -323,7 +323,7 @@ func TestDecoderDropsUntilSyncAfterLoss(t *testing.T) {
 	result.Reset()
 	err = decoder.DecodeInto(context.Background(), &av.Packet{
 		StreamID:   "video",
-		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: payload},
 		Keyframe:   true,
 		LossBefore: true,
 	}, &result)
@@ -337,7 +337,7 @@ func TestDecoderDropsUntilSyncAfterLoss(t *testing.T) {
 	result.Reset()
 	err = decoder.DecodeInto(context.Background(), &av.Packet{
 		StreamID: "video",
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: payload},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -359,7 +359,7 @@ func TestDecoderDetectsSyncFromLowOverheadPayload(t *testing.T) {
 	result.Reset()
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
 		StreamID:   "video",
-		Payload:    av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:    av.Buffer{Bytes: payload},
 		LossBefore: true,
 	}, &result)
 	if err != nil {
@@ -395,7 +395,7 @@ func TestDecoderCodecChangedDropsUntilSync(t *testing.T) {
 
 	result := testDecodeResult(1, 1)
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload: av.Buffer{Bytes: unsyncable, Ownership: av.BufferImmutable},
+		Payload: av.Buffer{Bytes: unsyncable},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -408,7 +408,7 @@ func TestDecoderCodecChangedDropsUntilSync(t *testing.T) {
 
 	result.Reset()
 	err = decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload: av.Buffer{Bytes: payload},
 	}, &result)
 	if err != nil {
 		t.Fatal(err)
@@ -428,7 +428,7 @@ func TestDecoderDecodeIntoAllocs(t *testing.T) {
 	ctx := context.Background()
 	result := testDecodeResult(1, 0)
 	pkt := &av.Packet{
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: payload},
 		Keyframe: true,
 	}
 	decoder.resetAfterLoss()
@@ -482,7 +482,7 @@ func TestDecoderResultFullBeforeRun(t *testing.T) {
 
 	result := testDecodeResult(0, 0)
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: payload},
 		Keyframe: true,
 	}, &result)
 	if !errors.Is(err, codec.ErrResultFull) {
@@ -506,7 +506,7 @@ func TestDecoderCloseLifecycle(t *testing.T) {
 	}
 	result := testDecodeResult(1, 0)
 	err := decoder.DecodeInto(context.Background(), &av.Packet{
-		Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+		Payload: av.Buffer{Bytes: payload},
 	}, &result)
 	if !errors.Is(err, codec.ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)

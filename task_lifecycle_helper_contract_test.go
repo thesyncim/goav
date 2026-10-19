@@ -3,7 +3,6 @@ package goav
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -121,18 +120,6 @@ func TestTaskFinishDestinationsMarksTransactions(t *testing.T) {
 	(*destinationTransaction)(nil).Fail()
 	if (*destinationTransaction)(nil).ShouldAbort() {
 		t.Fatal("nil destination transaction should not abort")
-	}
-}
-
-func TestBufferedPayloadCauseNames(t *testing.T) {
-	if got := bufferedPayloadCauseName(fmt.Errorf("wrapped: %w", pipeline.ErrBufferedMessageUnsafe)); got != "pipeline.ErrBufferedMessageUnsafe" {
-		t.Fatalf("unsafe cause = %q", got)
-	}
-	if got := bufferedPayloadCauseName(fmt.Errorf("wrapped: %w", pipeline.ErrMessageTooLarge)); got != "pipeline.ErrMessageTooLarge" {
-		t.Fatalf("too-large cause = %q", got)
-	}
-	if got := bufferedPayloadCauseName(errors.New("custom payload refusal")); got != "custom payload refusal" {
-		t.Fatalf("custom cause = %q", got)
 	}
 }
 

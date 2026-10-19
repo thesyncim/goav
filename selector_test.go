@@ -15,7 +15,7 @@ func selectorTestFrame(id av.StreamID, sample int16) *av.Frame {
 		StreamID: id,
 		Type:     av.MediaAudio,
 		Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: b}}},
 	}
 }
 
@@ -74,7 +74,7 @@ func TestSelectorForwardsActivePacketsOnly(t *testing.T) {
 	pkt := func(id av.StreamID) *pipeline.Message {
 		return &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 			StreamID: id, Type: av.MediaAudio,
-			Payload: av.Buffer{Bytes: []byte{1, 2}, Ownership: av.BufferImmutable},
+			Payload: av.Buffer{Bytes: []byte{1, 2}},
 		}}
 	}
 
@@ -153,7 +153,7 @@ type selectorPacketEmitter struct {
 
 func (c *selectorPacketEmitter) Emit(_ context.Context, m *pipeline.Message) error {
 	if m.Kind == pipeline.MessagePacket {
-		c.packets = append(c.packets, m.Packet)
+		c.packets = append(c.packets, m.Packet.Ref())
 	}
 	return nil
 }

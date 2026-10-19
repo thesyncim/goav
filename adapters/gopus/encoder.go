@@ -221,7 +221,6 @@ func (e *Encoder) encodePacket(pcm []int16, pts av.Timestamp, duration av.Durati
 	packet.StreamID = e.stream.ID
 	packet.CodecEpoch = e.stream.Epoch
 	packet.Payload.Bytes = dst[:n]
-	packet.Payload.Ownership = av.BufferOwned
 	packet.PTS = e.presentation(pts)
 	packet.Duration = duration
 	packet.Metadata = metadata
@@ -273,7 +272,7 @@ func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error 
 // EncodedParameters reports the identification header, whose pre-skip tells
 // decoders to drop the lookahead samples the first packets start with.
 func (e *Encoder) EncodedParameters() av.CodecParameters {
-	return av.CodecParameters{ExtraData: av.Buffer{Bytes: e.head, Ownership: av.BufferImmutable}}
+	return av.CodecParameters{ExtraData: av.Buffer{Bytes: e.head}}
 }
 
 // presentation moves a packet stamp from the input time it carries to the

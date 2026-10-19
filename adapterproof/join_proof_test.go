@@ -144,7 +144,7 @@ func cloneProofFrame(frame *av.Frame) *av.Frame {
 	for i := range frame.Planes {
 		clone.Planes[i] = frame.Planes[i]
 		bytes := append([]byte(nil), frame.Planes[i].Buffer.Bytes...)
-		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
+		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes}
 	}
 	return &clone
 }
@@ -221,7 +221,7 @@ func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 					PTS:      av.Timestamp{Value: elapsed, Base: av.TimeBase{Num: 1, Den: 8000}},
 					Duration: av.Duration{Value: int64(len(samples)), Base: av.TimeBase{Num: 1, Den: 8000}},
 					Keyframe: true,
-					Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+					Payload:  av.Buffer{Bytes: payload},
 				}
 				elapsed += int64(len(samples))
 				if _, err := push.Packet(packet); err != nil {
@@ -250,7 +250,7 @@ func s16FrameArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 					PTS:      av.Timestamp{Value: elapsed, Base: av.TimeBase{Num: 1, Den: 8000}},
 					Duration: av.Duration{Value: int64(len(samples)), Base: av.TimeBase{Num: 1, Den: 8000}},
 					Audio:    &av.AudioFrame{SampleRate: 8000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
-					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+					Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 				}
 				elapsed += int64(len(samples))
 				if _, err := push.Frame(frame); err != nil {

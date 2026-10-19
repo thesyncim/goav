@@ -66,7 +66,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:    av.MediaVideo,
-				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: payload},
 			}
 			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
@@ -90,7 +90,7 @@ func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
 			base := av.TimeBase{Num: 1, Den: 48_000}
 			packet := av.Packet{
 				Type:    av.MediaAudio,
-				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload: av.Buffer{Bytes: payload},
 			}
 			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * benchAudioSamples, Base: base}
@@ -124,7 +124,7 @@ func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel in
 					SampleFormat: av.SampleFormatS16,
 					Samples:      samplesPerChannel,
 				},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 			}
 			for i := range n {
 				frame.PTS = av.Timestamp{Value: int64(i) * int64(samplesPerChannel), Base: base}
@@ -151,9 +151,9 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 				Type:  av.MediaVideo,
 				Video: &av.VideoFrame{Width: width, Height: height, PixelFormat: av.PixelFormatI420},
 				Planes: []av.Plane{
-					{Buffer: av.Buffer{Bytes: luma, Ownership: av.BufferImmutable}, Stride: width},
-					{Buffer: av.Buffer{Bytes: cb, Ownership: av.BufferImmutable}, Stride: chromaW},
-					{Buffer: av.Buffer{Bytes: cr, Ownership: av.BufferImmutable}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: luma}, Stride: width},
+					{Buffer: av.Buffer{Bytes: cb}, Stride: chromaW},
+					{Buffer: av.Buffer{Bytes: cr}, Stride: chromaW},
 				},
 			}
 			for i := range n {
@@ -467,7 +467,7 @@ func (l *benchAttachLoad) input() goav.InputSpec {
 			frame := av.Frame{
 				Type:   av.MediaAudio,
 				Audio:  &av.AudioFrame{SampleRate: l.sampleRate, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: l.samples},
-				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload}}},
 			}
 			var pts int64
 			for {
@@ -575,7 +575,7 @@ func benchVideoPacketsSized(name string, n, width, height int, payload []byte) g
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range n {

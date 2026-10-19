@@ -67,7 +67,7 @@ func pinPacket() *av.Packet {
 	return &av.Packet{
 		StreamID: "s",
 		Type:     av.MediaAudio,
-		Payload:  av.Buffer{Bytes: make([]byte, 1200), Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: make([]byte, 1200)},
 	}
 }
 
@@ -76,7 +76,7 @@ func pinFrame() *av.Frame {
 		StreamID: "s",
 		Type:     av.MediaAudio,
 		Audio:    &av.AudioFrame{SampleRate: 48_000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 960},
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 1920), Ownership: av.BufferImmutable}}},
+		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 1920)}}},
 	}
 }
 
@@ -302,7 +302,7 @@ func TestSelectorPassthroughAllocs(t *testing.T) {
 	packet := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 		StreamID: "a",
 		Type:     av.MediaAudio,
-		Payload:  av.Buffer{Bytes: []byte{1, 2}, Ownership: av.BufferImmutable},
+		Payload:  av.Buffer{Bytes: []byte{1, 2}},
 	}}
 
 	if allocs := testing.AllocsPerRun(1000, func() {

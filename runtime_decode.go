@@ -12,11 +12,6 @@ import (
 	"github.com/thesyncim/goav/internal/recipeir"
 )
 
-const (
-	defaultVideoDecodeWidth  = 1920
-	defaultVideoDecodeHeight = 1080
-)
-
 func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	planned := recipeir.Stream{
@@ -306,7 +301,9 @@ func decodeResultForStream(stream av.Stream, bounds codec.DecodeBounds) codec.De
 			frames[i].Planes = []av.Plane{{Buffer: av.Buffer{Bytes: make([]byte, 0, audioDecodeBufferSize(stream))}}}
 		}
 		if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-			frames[i] = preallocVideoDecodeFrame(stream, bounds)
+			// Plane slots only: video decoders publish each picture in new
+			// pooled planes (av.NewBuffer), not in reused result bytes.
+			frames[i].Planes = make([]av.Plane, 3)
 		}
 	}
 	return codec.DecodeResult{
@@ -314,27 +311,6 @@ func decodeResultForStream(stream av.Stream, bounds codec.DecodeBounds) codec.De
 		Events:   make([]av.Event, 0, positiveOrDefault(bounds.MaxEventsPerInput, 1)),
 		Requests: make([]codec.ControlRequest, 0, positiveOrDefault(bounds.MaxRequestsPerInput, 1)),
 	}
-}
-
-func preallocVideoDecodeFrame(stream av.Stream, bounds codec.DecodeBounds) av.Frame {
-	width, height := videoDecodeGeometry(stream, bounds)
-	frame := av.Frame{Planes: make([]av.Plane, 3)}
-	frame.Planes[0].Buffer.Bytes = make([]byte, 0, width*height)
-	frame.Planes[1].Buffer.Bytes = make([]byte, 0, ((width+1)/2)*((height+1)/2))
-	frame.Planes[2].Buffer.Bytes = make([]byte, 0, ((width+1)/2)*((height+1)/2))
-	return frame
-}
-
-func videoDecodeGeometry(stream av.Stream, bounds codec.DecodeBounds) (int, int) {
-	width := positiveOrDefault(bounds.MaxWidth, stream.Codec.Width)
-	height := positiveOrDefault(bounds.MaxHeight, stream.Codec.Height)
-	if width <= 0 {
-		width = defaultVideoDecodeWidth
-	}
-	if height <= 0 {
-		height = defaultVideoDecodeHeight
-	}
-	return width, height
 }
 
 func decodeStreamWithSpec(stream av.Stream, spec codec.Spec) av.Stream {

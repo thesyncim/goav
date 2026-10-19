@@ -105,7 +105,7 @@ func benchVideoPacketsPayload(name string, n int, codecID av.CodecID, payload []
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range n {
@@ -154,7 +154,7 @@ func BenchmarkRealH264Decode(b *testing.B) {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
-				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
+				Payload:  av.Buffer{Bytes: payload},
 				Keyframe: true,
 			}
 			for i := range b.N {
