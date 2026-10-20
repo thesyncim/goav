@@ -342,6 +342,11 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 	return d, nil
 }
 func (d *macCapture) Run(ctx context.Context, emit func(*av.Frame)) error {
+	// Timing output is passed through uintptr; pin its containing object for
+	// the native call lifetime instead of relying on compiler escape analysis.
+	var pins runtime.Pinner
+	pins.Pin(d)
+	defer pins.Unpin()
 	wakeDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() { nativeCall(mac.semSignal, d.pending.semaphore); close(wakeDone) })
 	defer func() {

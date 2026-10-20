@@ -1,5 +1,8 @@
 name: camera
 on:
+  push:
+    branches: [main]
+    paths: ['cameraav/**', 'cmd/goav/**', 'scripts/camera/**', '.github/workflows/camera.yml']
   pull_request:
     paths: ['cameraav/**', 'cmd/goav/**', 'scripts/camera/**', '.github/workflows/camera.yml']
   workflow_dispatch:

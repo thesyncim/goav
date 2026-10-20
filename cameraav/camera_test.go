@@ -300,3 +300,37 @@ func TestOwnCloseReportsClosed(t *testing.T) {
 		t.Fatalf("Start=%v", err)
 	}
 }
+
+func TestEndToEndSourceZeroAllocs(t *testing.T) {
+	c := testConfig(4, 2)
+	defer c.buffers.close()
+	f := &fakeCamera{started: make(chan struct{}), frames: make(chan *av.Frame)}
+	s := testSource(f)
+	ack := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- s.Start(context.Background(), cameraEmitter(func(context.Context, *pipeline.Message) error { ack <- struct{}{}; return nil }))
+	}()
+	<-f.started
+	var pts int64
+	packed := []byte{1, 10, 2, 20, 3, 30, 4, 40, 5, 12, 6, 22, 7, 32, 8, 42}
+	allocs := testing.AllocsPerRun(1000, func() {
+		pts++
+		frame, err := copyYUYV(c, pts, packed, 8)
+		if err != nil {
+			panic(err)
+		}
+		if frame == nil {
+			panic("unexpected pool exhaustion")
+		}
+		f.frames <- frame
+		<-ack
+	})
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-result
+	if allocs != 0 {
+		t.Fatalf("YUYV copy -> native handoff -> source Emit = %g allocations/frame", allocs)
+	}
+}

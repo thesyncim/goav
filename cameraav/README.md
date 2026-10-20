@@ -4,6 +4,10 @@ Live camera frames for goav, built with `CGO_ENABLED=0` on macOS, Linux and
 Windows (amd64 and arm64). macOS uses AVFoundation through `purego`; Linux uses
 V4L2 ioctls and mmap; Windows uses Media Foundation COM. No FFmpeg executable or
 C compiler is required. OS drivers, frameworks, and camera access still apply.
+The macOS adapter includes two small Go-assembler C-ABI trampolines (amd64/arm64)
+for retain/exchange/signal callback handoff. They never enter Go or process pixels.
+This narrowly documented exception to the repository assembly guard avoids
+purego reflective callback allocations; all pixel conversion remains Go.
 
 ```go
 camera := goav.Input(cameraav.New(cameraav.Config{

@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags:
       - 'v*'
+      - 'cameraav/v*'
       - 'rtpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
@@ -124,7 +125,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in cameraav rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -375,7 +376,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|cameraav/v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
@@ -434,7 +435,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
+          for mod in cameraav rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x

@@ -10,7 +10,7 @@ revision="${1:?usage: check-consumers.sh PUBLISHED_COMMIT_OR_VERSION}"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 export GOWORK=off GOFLAGS=-mod=mod CGO_ENABLED=0
-for module in player cmd/goav webrtcav; do
+for module in player cmd/goav webrtcav cameraav; do
   dir="$scratch/${module//\//-}"
   mkdir -p "$dir"
   cd "$dir"
@@ -33,6 +33,13 @@ for module in player cmd/goav webrtcav; do
         exit 1
       fi
       GOOS=linux GOARCH="$arch" go build .
+    done
+  elif [ "$module" = cameraav ]; then
+    printf 'package consumer
+import _ "github.com/thesyncim/goav/cameraav"
+' > imports.go
+    for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+      GOOS="${target%/*}" GOARCH="${target#*/}" go build .
     done
   elif [ "$module" = cmd/goav ]; then
     gomod="$(go list -m -f '{{.GoMod}}' github.com/thesyncim/goav/cmd/goav)"

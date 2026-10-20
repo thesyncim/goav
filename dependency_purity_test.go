@@ -153,7 +153,10 @@ func moduleRef(module modulePathVersion) string {
 // thesyncim/* codec backends: vector kernels are Go SIMD behind
 // GOEXPERIMENT=simd with a scalar fallback, so every build configuration is
 // plain, checkable Go. The walk is filesystem-wide, not per-GOARCH, so a
-// kernel for any architecture is caught.
+// kernel for any architecture is caught. The two camera C-ABI trampolines are
+// explicitly exempt: they bridge foreign callbacks without entering Go or
+// computing media pixels. purego reflected callbacks allocate per frame.
+// No codec/SIMD assembly is permitted by this exception.
 func TestNoRepositoryAssembly(t *testing.T) {
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -163,6 +166,10 @@ func TestNoRepositoryAssembly(t *testing.T) {
 			return filepath.SkipDir
 		}
 		if !entry.IsDir() && (strings.HasSuffix(path, ".s") || strings.HasSuffix(path, ".S")) {
+			switch filepath.ToSlash(path) {
+			case "cameraav/bridge_darwin_amd64.s", "cameraav/bridge_darwin_arm64.s":
+				return nil // Fixed foreign callback ABI glue; see cameraav/README.md.
+			}
 			t.Errorf("assembly file %s; write the kernel with the Go simd package (GOEXPERIMENT=simd) and keep a scalar fallback", path)
 		}
 		return nil
