@@ -6,7 +6,7 @@ toolchain go1.27.2
 
 require (
 	github.com/google/go-cmp v0.7.0
-	github.com/thesyncim/goav v0.0.0-20261020160912-710e3246b213
+	github.com/thesyncim/goav v0.0.0-20261020173842-396e291e60d7
 )
 
 replace github.com/thesyncim/goav => ../..
