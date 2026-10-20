@@ -85,15 +85,13 @@ type runtimeRTPRecord struct {
 }
 
 type runtimeRTPSwitchReceiver struct {
-	records  []runtimeRTPRecord
-	initial  av.Stream
-	updated  av.Stream
-	payload  rtpav.PayloadMap
-	packets  []*rtp.Packet
-	events   chan av.Event
-	index    int
-	switched bool
-	closed   bool
+	records []runtimeRTPRecord
+	initial av.Stream
+	updated av.Stream
+	payload rtpav.PayloadMap
+	events  chan av.Event
+	index   int
+	closed  bool
 }
 
 func newRuntimeRTPSwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeRTPSwitchReceiver {

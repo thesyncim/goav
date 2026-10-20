@@ -328,10 +328,8 @@ type runtimeAV1SwitchReceiver struct {
 	updated       av.Stream
 	eventStreamID av.StreamID
 	payload       rtpav.PayloadMap
-	packets       []*rtp.Packet
 	events        chan av.Event
 	index         int
-	switched      bool
 	closed        bool
 }
 
