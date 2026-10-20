@@ -134,6 +134,21 @@ goav describe 'uri "camera://default?width=640&height=480&fps=30" ! video ! enco
 goav run 'uri "camera://default" ! video ! encode vp8 ! file camera.webm'
 ```
 
+On macOS, plain `go run` lacks the app metadata needed for the permission prompt.
+Use the bundled execution helper from `cmd/goav`:
+
+```sh
+cd cmd/goav
+CGO_ENABLED=0 GOEXPERIMENT=simd go run -exec ../../scripts/camera/go-run-macos.sh . cameras --request-access
+CGO_ENABLED=0 GOEXPERIMENT=simd go run -exec ../../scripts/camera/go-run-macos.sh . run 'uri "camera://default" ! video ! encode vp8 ! file camera.webm'
+```
+
+The helper caches a local ad-hoc-signed app for each executable and metadata
+version, shared across the project's branches and worktrees. Camera permission
+is managed by macOS; rebuilding may require granting it again. Press Ctrl-C to
+stop capture and finalize `camera.webm` in the current directory. Capture is
+video-only, with a default request of 640×480 at 30 fps.
+
 Camera input uses the same recipe, encoder and output pipeline as other sources.
 It supports macOS, Linux and Windows without cgo; available raw formats and exact
 modes depend on the device. See [`cameraav`](../cameraav/README.md) for device-ID
