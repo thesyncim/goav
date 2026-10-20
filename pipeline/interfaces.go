@@ -284,6 +284,8 @@ type Graph interface {
 // reason in DropReasons. The last event stays out of the JSON: watch the
 // task for its events.
 type GraphStats struct {
+	// PendingCleanup counts retired nodes still draining or finalizing.
+	PendingCleanup   int                     `json:"pendingCleanup,omitempty"`
 	Messages         uint64                  `json:"messages"`
 	Packets          uint64                  `json:"packets"`
 	Frames           uint64                  `json:"frames"`

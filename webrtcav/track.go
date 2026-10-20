@@ -111,6 +111,7 @@ type trackReader struct {
 	armedDone <-chan struct{}
 	stopArm   func() bool
 	armGen    uint64
+	readerGen uint64
 }
 
 var _ rtpav.PacketReader = (*trackReader)(nil)
@@ -139,33 +140,41 @@ func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	reader, stream, err := r.beginRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	packet, _, err := reader.ReadRTP()
-	if stopped := r.endRead(ctx); stopped != nil {
-		return nil, stopped
-	}
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			r.emit(av.Event{Type: av.EventEndOfStream, StreamID: stream.ID, Epoch: stream.Epoch})
+	for {
+		reader, stream, gen, err := r.beginRead(ctx)
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
+		packet, _, err := reader.ReadRTP()
+		replaced, stopped := r.endRead(ctx, gen)
+		if stopped != nil {
+			return nil, stopped
+		}
+		if replaced {
+			// Neither an old packet nor the internal deadline wake-up belongs
+			// to the replacement stream.
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				r.emit(av.Event{Type: av.EventEndOfStream, StreamID: stream.ID, Epoch: stream.Epoch})
+			}
+			return nil, err
+		}
+		return packet, nil
 	}
-	return packet, nil
 }
 
 // beginRead claims the transport reader for one read and arms its
 // interruption by ctx.
-func (r *trackReader) beginRead(ctx context.Context) (trackRTPReader, av.Stream, error) {
+func (r *trackReader) beginRead(ctx context.Context) (trackRTPReader, av.Stream, uint64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return nil, av.Stream{}, ErrClosed
+		return nil, av.Stream{}, 0, ErrClosed
 	}
 	if r.reader == nil {
-		return nil, av.Stream{}, ErrNilTrack
+		return nil, av.Stream{}, 0, ErrNilTrack
 	}
 	if done := ctx.Done(); done != r.armedDone {
 		r.armGen++
@@ -182,25 +191,30 @@ func (r *trackReader) beginRead(ctx context.Context) (trackRTPReader, av.Stream,
 	// Checked under the lock: a context that finishes after this check runs
 	// its hook later, and the hook finds this read in flight.
 	if err := ctx.Err(); err != nil {
-		return nil, av.Stream{}, err
+		return nil, av.Stream{}, 0, err
 	}
 	if r.expired == r.reader {
 		_ = r.reader.SetReadDeadline(time.Time{})
 		r.expired = nil
 	}
 	r.inflight = r.reader
-	return r.reader, r.remote.Stream, nil
+	return r.reader, r.remote.Stream, r.readerGen, nil
 }
 
 // endRead releases the read and reports why it was interrupted, if it was.
-func (r *trackReader) endRead(ctx context.Context) error {
+func (r *trackReader) endRead(ctx context.Context, gen uint64) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	replaced := gen != r.readerGen
+	if replaced && r.expired != nil {
+		_ = r.expired.SetReadDeadline(time.Time{})
+		r.expired = nil
+	}
 	r.inflight = nil
 	if r.closed {
-		return ErrClosed
+		return false, ErrClosed
 	}
-	return ctx.Err()
+	return replaced, ctx.Err()
 }
 
 // interrupt wakes the in-flight read for the context hook of generation gen;
@@ -326,6 +340,8 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 		r.remote.Codec = update.Codec
 	}
 	if replacement != nil {
+		r.expireLocked()
+		r.readerGen++
 		r.reader = replacement
 	}
 	r.remote.Payloads = payloads

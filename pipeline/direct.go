@@ -103,8 +103,8 @@ func (g *directRunner) stopLocked(context.Context, *directNode) (bool, error) {
 
 // awaitStopped drains the node's gate: a delivery already in flight loaded
 // the previous snapshot.
-func (g *directRunner) awaitStopped(ctx context.Context, n *directNode) error {
-	return waitNodeGateDrainedContext(ctx, "close", n.name, &n.gate, g.config.CloseWaitTimeout)
+func (g *directRunner) awaitStopped(ctx context.Context, n *directNode, timeout time.Duration) error {
+	return waitNodeGateDrainedContext(ctx, "close", n.name, &n.gate, timeout)
 }
 
 func (g *directRunner) Run(ctx context.Context) error {
@@ -211,13 +211,10 @@ func (g *directRunner) remove(ref NodeRef) (*directNode, error) {
 	g.rebuildLocked()
 	g.mu.Unlock()
 	if err := waitNodeGateDrained("remove", node.name, &node.gate, g.config.CloseWaitTimeout); err != nil {
+		g.reap(node)
 		return node, err
 	}
-	// No delivery is in flight and none can start: the index is free.
-	g.mu.Lock()
-	g.reclaimLocked(node)
-	g.mu.Unlock()
-	return node, node.close()
+	return node, g.finalize(node)
 }
 
 // waitNodeGateDrained tombstones a removed node's delivery gate and waits for
@@ -239,7 +236,7 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	gate.Add(nodeClosingBit)
+	gate.Or(nodeClosingBit)
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)

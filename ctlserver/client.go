@@ -8,14 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Client calls a ctl server over one connection; calls may run
 // concurrently, and watches share the connection.
 type Client struct {
-	conn net.Conn
-	wmu  sync.Mutex
-	enc  *json.Encoder
+	conn      net.Conn
+	writeInit sync.Once
+	writeGate chan struct{}
+	enc       *json.Encoder
 
 	mu      sync.Mutex
 	next    int64
@@ -31,6 +33,9 @@ type Client struct {
 
 // earlyEvents bounds the events kept for a watch whose response is in flight.
 const earlyEvents = 64
+
+const clientWriteTimeout = 5 * time.Second
+const clientCleanupTimeout = time.Second
 
 // Dial connects to a server at unix:///path or tcp://host:port, and
 // authenticates with the token a tcp://TOKEN@host:port address carries
@@ -96,6 +101,9 @@ func (c *Client) Call[T any](ctx context.Context, method string, params any) (T,
 }
 
 func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var rawParams json.RawMessage
 	if params != nil {
 		data, err := json.Marshal(params)
@@ -121,9 +129,7 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 		c.mu.Unlock()
 	}()
 
-	c.wmu.Lock()
-	err := c.enc.Encode(request{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: rawParams})
-	c.wmu.Unlock()
+	err := c.write(ctx, request{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: rawParams})
 	if err != nil {
 		return nil, err
 	}
@@ -140,16 +146,64 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 			return nil, c.closedErr()
 		}
 	case <-ctx.Done():
-		// Tell the server, so the call stops there too.
-		c.wmu.Lock()
-		_ = c.enc.Encode(request{JSONRPC: "2.0", Method: cancelMethod, Params: json.RawMessage(`{"id":` + id + `}`)})
-		c.wmu.Unlock()
+		// Returning to the caller never waits for the peer to read a cancel.
+		go func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), clientCleanupTimeout)
+			defer cancel()
+			_ = c.write(cleanup, request{JSONRPC: "2.0", Method: cancelMethod, Params: json.RawMessage(`{"id":` + id + `}`)})
+		}()
 		return nil, ctx.Err()
 	}
 	if resp.Error != nil {
 		return nil, resp.Error
 	}
 	return resp.Result, nil
+}
+
+// write owns both serialization and the transport's write deadline. A
+// canceled waiter cannot change the active writer's deadline. Once writing
+// starts, a failure closes the connection: a partial JSON record cannot be
+// safely followed by another request.
+func (c *Client) write(ctx context.Context, req request) error {
+	ctx, cancel := context.WithTimeout(ctx, clientWriteTimeout)
+	defer cancel()
+	c.writeInit.Do(func() { c.writeGate = make(chan struct{}, 1) })
+	select {
+	case c.writeGate <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.done:
+		return c.closedErr()
+	}
+	defer func() { <-c.writeGate }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	deadline, _ := ctx.Deadline()
+	if err := c.conn.SetWriteDeadline(deadline); err != nil {
+		_ = c.conn.Close()
+		return err
+	}
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = c.conn.SetWriteDeadline(time.Now())
+		close(interrupted)
+	})
+	err := c.enc.Encode(req)
+	if !stop() {
+		<-interrupted
+	}
+	if err != nil {
+		_ = c.conn.Close()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !time.Now().Before(deadline) {
+			return context.DeadlineExceeded
+		}
+		return err
+	}
+	return c.conn.SetWriteDeadline(time.Time{})
 }
 
 // Watch streams the task's events — filtered by params, such as
@@ -182,7 +236,6 @@ func (c *Client) Watch(ctx context.Context, params any) (<-chan Event, error) {
 	go func() {
 		select {
 		case <-ctx.Done():
-			_, _ = c.call(context.Background(), "unwatch", map[string]string{"subscription": sub.Subscription})
 		case <-c.done:
 		}
 		c.mu.Lock()
@@ -191,6 +244,11 @@ func (c *Client) Watch(ctx context.Context, params any) (<-chan Event, error) {
 			close(ch)
 		}
 		c.mu.Unlock()
+		if ctx.Err() != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), clientCleanupTimeout)
+			defer cancel()
+			_, _ = c.call(cleanup, "unwatch", map[string]string{"subscription": sub.Subscription})
+		}
 	}()
 	return events, nil
 }
@@ -217,7 +275,10 @@ func (c *Client) read() {
 		reply := c.pending[string(resp.ID)]
 		c.mu.Unlock()
 		if reply != nil {
-			reply <- resp
+			select {
+			case reply <- resp:
+			default: // A duplicate response must not stop all other calls.
+			}
 		}
 	}
 	c.mu.Lock()

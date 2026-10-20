@@ -248,6 +248,10 @@ it, and v1 does not freeze its shape.
 - `pipeline` graph machinery: `NewGraph`, `Graph`, `Spec`/`NodeSpec`/
   `EdgeSpec`/`Route`, `GraphStats`/`NodeStats`, node/route kind and
   drop-reason enums (`DropFlush` is the seek-flush shed).
+  `GraphStats.PendingCleanup` counts retired nodes still draining or closing:
+  a timed-out removal stops routing immediately, retains cleanup ownership,
+  and releases its slot after finalization. This diagnostic does not change
+  the recipe grammar or add a planning operation.
 - Prebuilt graph components: `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).

@@ -6,7 +6,7 @@ toolchain go1.27.2
 
 require (
 	github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728
-	github.com/thesyncim/goav v0.0.0-20261019202512-eaa4e99dff76
+	github.com/thesyncim/goav v0.0.0-20261020142137-7f8591e35024
 )
 
 require (

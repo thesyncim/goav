@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -60,7 +61,13 @@ const (
 // itself, its routes, and the per-node state the topology reads. A runner's
 // node type embeds it and adds how messages reach the node.
 type nodeBase struct {
-	name string
+	// Retirement removes routing before finalization. A timeout only stops
+	// the caller's wait; the graph continues owning the node until Close.
+	retiring  bool // guarded by topology.mu
+	closeOnce sync.Once
+	reapOnce  sync.Once
+	closeErr  error
+	name      string
 	// index is the node's position in topology.nodes, fixed for its life; a
 	// retired node's index is reused once nothing can deliver into it.
 	index  int
@@ -123,12 +130,12 @@ type strategy[P graphNode] interface {
 	// the snapshot that publishes it. Called under topology.mu.
 	attachLocked(n P, index int)
 	// stopLocked starts tearing n's delivery down as Close begins, and
-	// reports whether Close must wait n out (awaitStopped). An error leaves n
-	// stuck: it is reported and never closed. Called under topology.mu.
+	// reports whether Close must wait n out (awaitStopped). An interrupted
+	// stop is retried by eventual cleanup. Called under topology.mu.
 	stopLocked(ctx context.Context, n P) (await bool, err error)
 	// awaitStopped waits, outside topology.mu, until no delivery into n is
 	// in flight, so Close never runs under a concurrent Handle.
-	awaitStopped(ctx context.Context, n P) error
+	awaitStopped(ctx context.Context, n P, timeout time.Duration) error
 }
 
 // topology is the graph both runners share: the nodes, their routes and the
@@ -412,6 +419,7 @@ func (t *topology[P]) detachLocked(ref NodeRef) (P, error) {
 		return zero, ErrInvalidLink
 	}
 	delete(t.index, ref.String())
+	n.base().retiring = true
 	for i := range t.nodes {
 		b := t.nodes[i].base()
 		if !b.active {
@@ -454,6 +462,30 @@ func (t *topology[P]) reclaimLocked(n P) {
 	}
 	t.reusable = append(t.reusable, b.index)
 	b.index = -1
+}
+
+// finalize is shared by removal, shutdown, and eventual cleanup. Reuse is
+// allowed only after both delivery and resource finalization have finished.
+func (t *topology[P]) finalize(n P) error {
+	b := n.base()
+	b.closeOnce.Do(func() {
+		b.closeErr = b.close()
+		t.mu.Lock()
+		b.active = false
+		b.routes = nil
+		t.reclaimLocked(n)
+		t.mu.Unlock()
+	})
+	return b.closeErr
+}
+
+func (t *topology[P]) reap(n P) {
+	n.base().reapOnce.Do(func() {
+		go func() {
+			_ = t.strategy.awaitStopped(context.Background(), n, -1)
+			_ = t.finalize(n)
+		}()
+	})
 }
 
 func (t *topology[P]) Spec() Spec {
@@ -511,7 +543,13 @@ func (t *topology[P]) Stats() GraphStats {
 	}
 	nodes[len(t.nodes)] = &t.retired.counters
 	reported[len(t.nodes)] = t.retired.reported
-	return snapshotStats(&t.cold, names, nodes, reported)
+	stats := snapshotStats(&t.cold, names, nodes, reported)
+	for _, n := range t.nodes {
+		if b := n.base(); b.retiring && b.index >= 0 {
+			stats.PendingCleanup++
+		}
+	}
+	return stats
 }
 
 // SetNodePaused pauses or resumes delivery to a single node. The lock-free
@@ -535,8 +573,8 @@ func (t *topology[P]) Close() error {
 // CloseContext shuts the graph down. New emits stop at the nil routing
 // snapshot; the strategy tears each node's delivery down and waits out what
 // is in flight, so Close never runs under a concurrent Handle (the contract
-// a live Remove keeps). A node whose wait gets stuck is reported and left
-// open. The observer stream closes last.
+// a live Remove keeps). A node whose wait times out remains owned and is
+// finalized once its work finishes. Later calls also wait for pending cleanup.
 func (t *topology[P]) CloseContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -545,10 +583,7 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 		return err
 	}
 	t.mu.Lock()
-	if t.closed {
-		t.mu.Unlock()
-		return nil
-	}
+	firstClose := !t.closed
 	t.closed = true
 	t.snap.Store(nil)
 	type closing struct {
@@ -560,7 +595,7 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 	for i := range t.nodes {
 		n := closing{node: t.nodes[i]}
 		b := n.node.base()
-		if !b.active {
+		if b.index < 0 {
 			continue
 		}
 		var err error
@@ -569,6 +604,7 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 			n.stuck = true
 		}
 		b.active = false
+		b.retiring = true
 		nodes = append(nodes, n)
 	}
 	t.mu.Unlock()
@@ -578,26 +614,33 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 		if n.stuck || !n.await {
 			continue
 		}
-		if err := t.strategy.awaitStopped(ctx, n.node); err != nil {
+		if err := t.strategy.awaitStopped(ctx, n.node, t.config.CloseWaitTimeout); err != nil {
 			first = cmp.Or(first, err)
 			n.stuck = true
 		}
 	}
 	for i := range nodes {
 		if nodes[i].stuck {
+			// Even a canceled stop must stop delivery before the reaper waits.
+			t.mu.Lock()
+			_, _ = t.strategy.stopLocked(context.Background(), nodes[i].node)
+			t.mu.Unlock()
+			t.reap(nodes[i].node)
 			continue
 		}
-		if err := nodes[i].node.base().close(); err != nil {
+		if err := t.finalize(nodes[i].node); err != nil {
 			first = cmp.Or(first, err)
 		}
 	}
 	// Close events once no send is in flight, so a concurrent emit can never
 	// send on the closed channel.
-	t.sending.Add(eventsClosed)
-	for t.sending.Load() != eventsClosed {
-		runtime.Gosched()
+	if firstClose {
+		t.sending.Add(eventsClosed)
+		for t.sending.Load() != eventsClosed {
+			runtime.Gosched()
+		}
+		close(t.events)
 	}
-	close(t.events)
 	return first
 }
 
