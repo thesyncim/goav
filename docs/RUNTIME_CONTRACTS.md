@@ -9,7 +9,8 @@ separate observable outcomes. These contracts apply to recipes built with
 `task.Run(ctx)` reports execution. A nil result permits successful finalization;
 it does not mean a file was committed. The task enters `TaskFinalizing` until
 `Close` finishes. `Runtime.Run(ctx, outputs...)` performs both phases and joins
-their errors.
+their errors. Canceling the Run context reports the context error and abandons
+transactional outputs, even if a source returns nil when canceled.
 
 Destination snapshots have stable IDs and record actual finalization:
 
@@ -30,15 +31,26 @@ finalization-error events retain their existing meanings.
 
 Starting Close before Run completes irrevocably abandons active outputs. A
 later nil Run result cannot upgrade that decision to commit. Close after a
-successful Run allows commit. Explicit `DrainBranch()` requests successful
-finalization of the detached branch after its queued work drains. Once Detach
-accepts that drain request, a concurrent task Close preserves its commit intent;
-outputs still owned by the task are abandoned together. A handler failure during
-the accepted drain still aborts its transaction and remains in the branch outcome.
+successful Run allows commit. Explicit `DrainBranch()` requests commit after
+its queued work drains successfully. A handler failure or an incomplete retirement
+wait abandons its remaining transactions before downstream resources retire.
+Whole-task Close also abandons any unfinished drain; a completed drain keeps its
+committed outcome. A destination's commit/abort decision is irrevocable once its
+finalizer starts. Detach reports its own removal wait; inspect the destination
+snapshot for the authoritative finalization result. Failures remain visible in
+the branch outcome.
+
+Explicit DrainBranch and a draining Rebranch require the optional
+`pipeline.RunErrorReporter` capability, implemented by both built-in graphs.
+Custom graphs and wrappers must implement or forward `RunError() error`,
+reporting already-observed execution failures before Run returns. Unsupported
+graphs are refused before mutation. The method must be safe during finalization
+and must not call back into finalizers. Ordinary detach and abort do not require it.
 
 A caller's deadline or `pipeline.ErrCloseWait` describes that call's wait. It
 does not become a durable resource failure. Cleanup retains ownership and may
-finish later. Repeated Close waits within its own context and reports retained
+finish later. A failed drain wait chooses abort for remaining transactions,
+without recording the wait timeout as a resource failure. Repeated Close waits within its own context and reports retained
 actual failures; `Stats.PendingCleanup` reports work still retiring. A second
 `CloseContext` caller honors its deadline while another caller is closing.
 The first caller also honors its context while waiting for attachment mutation
@@ -110,6 +122,11 @@ while unrelated custom sources run freely. A plain blocking Admitter disables
 this scheduling. Providers and decorators whose capabilities are unknown before
 opening report `Admission: "runtime"`; the built task resolves it to
 `"timestamp"` or `"arrival"`. One source alone uses arrival admission.
+
+Seek/segment controls flush only source-exclusive downstream queues, including
+same-source forks and rejoins. Shared queues and their descendants preserve a
+bounded admitted tail so seeking one source cannot discard another source's
+media. The seeking arm's discontinuity resets its join state.
 
 Full blocking queues and inline handlers pace their shared producer and later
 siblings. Worker concurrency does not imply independent progress. See

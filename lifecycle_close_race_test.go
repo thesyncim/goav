@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -83,10 +84,11 @@ func TestCloseDeadlineWhileDrainDetachOwnsAttachmentLock(t *testing.T) {
 			go func() { detached <- live.Detach(t.Context(), draining, DrainBranch()) }()
 			deadline := time.Now().Add(time.Second)
 			for {
-				owner.lifecycleMu.Lock()
-				_, owned := owner.activeAttachments[draining.(*runtimeAttachment)]
-				owner.lifecycleMu.Unlock()
-				if !owned {
+				tx := draining.(*runtimeAttachment).transactions[0]
+				tx.mu.Lock()
+				accepted := tx.succeeded
+				tx.mu.Unlock()
+				if accepted {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -111,8 +113,8 @@ func TestCloseDeadlineWhileDrainDetachOwnsAttachmentLock(t *testing.T) {
 			if detachErr != nil || runErr != nil {
 				t.Fatalf("Detach=%v Run=%v", detachErr, runErr)
 			}
-			if got := draining.Snapshot().Destinations[0].State; got != DestinationCommitted {
-				t.Errorf("accepted DrainBranch outcome=%s", got)
+			if got := draining.Snapshot().Destinations[0].State; got != DestinationClosed {
+				t.Errorf("unfinished DrainBranch outcome=%s", got)
 			}
 			if got := active.Snapshot().Destinations[0].State; got != DestinationClosed {
 				t.Errorf("active attachment outcome=%s", got)
@@ -221,4 +223,44 @@ func (g *heldAttachmentStageInstallGraph) AddStage(stage pipeline.Stage, policy 
 }
 func (g *heldAttachmentStageInstallGraph) CloseContext(ctx context.Context) error {
 	return g.Graph.(interface{ CloseContext(context.Context) error }).CloseContext(ctx)
+}
+
+// Embedding the mandatory interface intentionally hides optional capabilities.
+type graphWithoutRunError struct{ pipeline.Graph }
+
+func TestDrainRequiresRunErrorReporterBeforeMutation(t *testing.T) {
+	live, err := mustNew().Build(t.Context(), lifecycleTestSource(func(context.Context, SourcePush) error { return nil }).Audio().Tap("packets").To(lifecycleTestSink("root")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := live.(*task)
+	owner.graph = graphWithoutRunError{owner.graph}
+	defer live.Close()
+	attachment, err := live.Attach(t.Context(), live.Tap("packets").As("original").To(lifecycleTestSink("original")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := live.Spec()
+	check := func(err error) {
+		t.Helper()
+		var buildErr *BuildError
+		if !errors.Is(err, pipeline.ErrDynamicGraphUnsupported) || !errors.As(err, &buildErr) || buildErr.Reason != "graph does not implement pipeline.RunErrorReporter" {
+			t.Fatalf("unsupported drain=%v", err)
+		}
+		if !reflect.DeepEqual(before, live.Spec()) {
+			t.Fatal("refused drain changed the graph")
+		}
+		if got := attachment.Snapshot(); got.State != BranchAttached || got.Destinations[0].State != DestinationOpen {
+			t.Fatalf("refused drain changed disposition: %+v", got)
+		}
+	}
+	check(live.Detach(t.Context(), attachment, DrainBranch()))
+	replacement, err := attachment.Rebranch(t.Context(), live.Tap("packets").As("replacement").To(lifecycleTestSink("replacement")), DrainBranch())
+	check(err)
+	if replacement != nil {
+		t.Fatal("refused drain installed a replacement")
+	}
+	if err := live.Detach(t.Context(), attachment); err != nil {
+		t.Fatalf("ordinary Detach=%v", err)
+	}
 }

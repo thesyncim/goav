@@ -725,7 +725,8 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	var nodes []pipeline.NodeRef
 	var routes []pipeline.Route
 	fail := func(err error) (*runtimeAttachment, error) {
-		t.detachAttachmentLifecycle(attachment, oldBranchAbort)
+		t.setAttachmentDisposition(attachment, oldBranchAbort)
+		defer t.endAttachmentLifecycle(attachment)
 		for _, opened := range p.opened {
 			if opened.owned && opened.stage != nil {
 				markPipelineStageFailed(opened.stage)

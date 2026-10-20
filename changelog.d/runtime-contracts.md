@@ -1,7 +1,10 @@
 - Separate execution success from actual output finalization. Retain per-node and
   per-destination outcomes, honor concurrent CloseContext deadlines, and distinguish
   caller wait timeouts from durable cleanup errors. Early Close deterministically
-  abandons active outputs; nontransactional abandonment reports Closed.
+  abandons active outputs; nontransactional abandonment reports Closed. Unfinished
+  branch drains abort on task Close or incomplete retirement. Explicit drains
+  require the optional RunErrorReporter graph capability; unsupported custom
+  graphs are refused before mutation.
 - Add opt-in Output.OnFailure(IsolateBranch), with FailTask as the default. Validate
   exclusive suffixes before opening resources, retire failed branches automatically,
   and retain failure/cleanup snapshots while healthy siblings continue.

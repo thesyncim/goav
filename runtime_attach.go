@@ -71,10 +71,24 @@ func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
 	return true
 }
 
-func (t *task) detachAttachmentLifecycle(a *runtimeAttachment, disposition oldBranchDisposition) {
+func (t *task) setAttachmentDisposition(a *runtimeAttachment, disposition oldBranchDisposition) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
+	if disposition == oldBranchDrain {
+		a.draining = true
+		if t.closeStarted {
+			disposition = oldBranchAbort
+		}
+	}
 	a.applyDetachDisposition(disposition)
+}
+
+// An accepted drain remains owned until removal finishes. A racing whole-task
+// Close must still abandon it if upstream work has not finished draining.
+func (t *task) endAttachmentLifecycle(a *runtimeAttachment) {
+	t.lifecycleMu.Lock()
+	defer t.lifecycleMu.Unlock()
+	a.draining = false
 	delete(t.activeAttachments, a)
 }
 
@@ -568,6 +582,27 @@ func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
 	t.branchTaps = out
 }
 
+// A commit-intent detach must be able to observe execution failure before
+// Run returns. Refuse unsupported graphs before removing children, connecting
+// replacements, or changing any destination disposition.
+func (t *task) validateAttachmentDisposition(disposition oldBranchDisposition) error {
+	if disposition != oldBranchDrain {
+		return nil
+	}
+	if _, ok := t.graph.(pipeline.RunErrorReporter); ok {
+		return nil
+	}
+	return &BuildError{
+		Phase:     phaseRun,
+		Family:    errcode.FamilyForCode(runtimeBranchGraphErrorCode),
+		Code:      runtimeBranchGraphErrorCode,
+		Operation: "drain runtime branch",
+		Reason:    "graph does not implement pipeline.RunErrorReporter",
+		fixes:     buildErrorFixes([]string{"implement or forward pipeline.RunErrorReporter before requesting DrainBranch"}),
+		cause:     pipeline.ErrDynamicGraphUnsupported,
+	}
+}
+
 func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -585,6 +620,9 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 	if attachment == nil {
 		return nil
 	}
+	if err := t.validateAttachmentDisposition(disposition); err != nil {
+		return err
+	}
 	first, stranded := t.stopAttachmentChildrenLocked(ctx, input)
 	if stranded {
 		// A child that could not stop still reads this branch: it stays
@@ -597,10 +635,19 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 		delete(t.attachments, attachment)
 		return errors.Join(first, attachment.waitRetirement(ctx))
 	}
-	t.detachAttachmentLifecycle(attachment, disposition)
+	t.setAttachmentDisposition(attachment, disposition)
 	err := attachment.stopLocked(ctx, t.graph)
+	if disposition == oldBranchDrain {
+		if runErr := t.graph.(pipeline.RunErrorReporter).RunError(); runErr != nil && !isStoppedAttachmentError(runErr) {
+			err = errorsJoinUnique(err, runErr)
+		}
+	}
 	attachment.stopped = true
 	err = errors.Join(err, attachment.waitRetirement(ctx))
+	if err != nil {
+		t.setAttachmentDisposition(attachment, oldBranchAbort)
+	}
+	t.endAttachmentLifecycle(attachment)
 	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
 	t.pruneIsolatedLocked()
@@ -767,6 +814,8 @@ type runtimeAttachment struct {
 	isolated     []*isolatedBranch
 	stopMu       sync.Mutex
 	stopped      bool
+	// draining is protected by owner.lifecycleMu, including during Close.
+	draining bool
 	// detachOutcome records the DestinationState a disposition detach
 	// (DrainBranch/AbortBranch) chose for this branch's destinations;
 	// snapshots report it instead of the plain DestinationClosed.
@@ -982,6 +1031,9 @@ func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchArg
 }
 
 func (a *runtimeAttachment) rebranchRuntimeAttachment(ctx context.Context, input runtimeRebranchInput) (Attachment, error) {
+	if err := a.owner.validateAttachmentDisposition(input.disposition); err != nil {
+		return nil, err
+	}
 	// Attach the replacements first so they are live before the old branch goes
 	// away (no delivery gap); if that fails, leave the old branch untouched.
 	next, err := a.owner.attachRuntimeBranches(ctx, input.attach)
@@ -1066,7 +1118,8 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 // Removing a node delivers what it already queued (pipeline.Graph.Remove), so
 // each node drains into downstream nodes that are still attached. An abort
 // detach has marked its destinations failed already, so what drains into them
-// is discarded with the aborted write.
+// is discarded with the aborted write. If an upstream removal cannot finish,
+// abandon the remaining destinations before any downstream finalizer can run.
 func (a *runtimeAttachment) stopLocked(ctx context.Context, graph pipeline.Graph) error {
 	var first error
 	final := a.specFromGraph(graph.Spec())
@@ -1077,12 +1130,14 @@ func (a *runtimeAttachment) stopLocked(ctx context.Context, graph pipeline.Graph
 		}
 		if err := graph.Disconnect(a.routes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
+			a.owner.setAttachmentDisposition(a, oldBranchAbort)
 		}
 	}
 	removed := make(map[string]pipeline.NodeStats, len(a.nodes))
 	for _, v := range upstreamFirst(a.nodes, a.routes) {
 		if err := removeBranchNode(ctx, graph, v, removed); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
+			a.owner.setAttachmentDisposition(a, oldBranchAbort)
 		}
 	}
 	a.removedStats.Store(&removed)

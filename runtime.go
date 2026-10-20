@@ -850,13 +850,15 @@ func (t *task) CloseContext(ctx context.Context) error {
 		t.closeStarted = true
 		t.closeAbandoned = !t.finished
 		// One ordered decision covers roots and every still-owned attachment,
-		// including a patch being installed. Detach relinquishes ownership
-		// when its disposition is accepted, before waiting for queued work.
+		// including a patch being installed or a drain still waiting for
+		// queued work. Completed detachments have relinquished ownership.
 		if t.closeAbandoned {
 			for _, tx := range t.destinations {
 				tx.Fail()
 			}
-			for attachment := range t.activeAttachments {
+		}
+		for attachment := range t.activeAttachments {
+			if t.closeAbandoned || attachment.draining {
 				attachment.applyDetachDisposition(oldBranchAbort)
 			}
 		}
@@ -977,6 +979,7 @@ type destinationTransaction struct {
 	state          DestinationState
 	err            error
 	onFinalized    func(DestinationState, error)
+	runError       func() error
 }
 
 func (t *destinationTransaction) Name() string {
@@ -1012,7 +1015,7 @@ func (t *destinationTransaction) ShouldAbort() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.failed || t.domain.Failed() || (t.requireSuccess && !t.succeeded)
+	return t.failedLocked() || (t.requireSuccess && !t.succeeded)
 }
 
 func (t *destinationTransaction) Failed() bool {
@@ -1021,7 +1024,14 @@ func (t *destinationTransaction) Failed() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.failed || t.domain.Failed()
+	return t.failedLocked()
+}
+
+// Called only under mu, on snapshot/finalization paths. The graph reports an
+// error before Run finishes waiting for a slow source, so explicit branch
+// success cannot commit work after an already-observed execution failure.
+func (t *destinationTransaction) failedLocked() bool {
+	return t.failed || t.domain.Failed() || (t.runError != nil && t.runError() != nil)
 }
 
 // compileEnv is the view of the runtime the compiler reads.

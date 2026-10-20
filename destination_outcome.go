@@ -102,6 +102,9 @@ func (t *task) bindDestination(tx *destinationTransaction, attachment *runtimeAt
 		return
 	}
 	tx.mu.Lock()
+	if reporter, ok := t.graph.(pipeline.RunErrorReporter); ok {
+		tx.runError = reporter.RunError
+	}
 	tx.onFinalized = func(state DestinationState, err error) {
 		kind := av.EventDestinationCommitted
 		switch state {
@@ -170,7 +173,7 @@ func (s trackedDestinationSink) Close() error {
 	state := DestinationClosed
 	s.transaction.mu.Lock()
 	switch {
-	case s.transaction.failed || s.transaction.domain.Failed():
+	case s.transaction.failedLocked():
 		state = DestinationClosed
 	case s.transaction.succeeded:
 		state = DestinationCommitted

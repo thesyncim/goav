@@ -8,6 +8,20 @@ import (
 	"sync/atomic"
 )
 
+// RunErrorReporter is an optional graph capability required by explicit branch
+// drains. RunError reports an already-observed execution failure even while Run
+// is still waiting for sources or handlers to return. It is safe to call during
+// resource finalization and must not call back into those finalizers. It returns
+// nil before a run and while the current run is healthy; isolated branch errors
+// remain local to their fault domain. Both built-in runners implement it.
+type RunErrorReporter interface {
+	RunError() error
+}
+
+// RunError lets a draining destination observe a failure before Run returns.
+// This is a control-plane read; successful delivery uses the atomic failure bit.
+func (t *topology[P]) RunError() error { return t.fail.err() }
+
 // runFailure is the error contract both runners share for one Run: the first
 // error a source returns or a node's Handle reports is kept, cancels the run's
 // context (when the run has one) so sibling sources and blocked producers stop

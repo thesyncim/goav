@@ -291,6 +291,11 @@ it, and v1 does not freeze its shape.
   waits by the caller context while retaining graph ownership of unfinished work.
   It adds no mandatory Graph method or recipe operation; Build/Attach shutdown
   and concurrent Close/DrainBranch tests exercise the same retirement path.
+  Explicit DrainBranch and draining Rebranch require `pipeline.RunErrorReporter`
+  (`RunError() error`) to observe execution errors before Run returns. Built-in
+  graphs implement it; custom graphs/wrappers must forward it or drain is refused
+  before mutation. Unfinished drains abort when task Close begins, including
+  after successful Run; removal wait failures abort before downstream retirement.
   `av.EventCleanupError` supplements this with the node name and wrapped
   finalization error. Observer delivery is best effort; later graph/task
   `Close` calls retain deferred failures after reclamation and observer
