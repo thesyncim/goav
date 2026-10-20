@@ -508,8 +508,10 @@ matching tier entry in this document in the same change.
 
 `cameraav` is a nested Tier-B provider module. `New(Config)` returns an `Input`
 implementing the existing provider source contract; it adds no recipe operation.
-`Config` selects an opaque device ID, exact dimensions/integer FPS and a bounded
-queue. `Device` and `Devices(ctx)` expose device discovery without activation;
+`Config` selects an opaque device ID, exact dimensions, integer FPS and a bounded
+queue. Native frame-interval quantization smaller than 100 ns is accepted while
+preserving the native interval; distinct fractional frame rates are refused.
+`Device` and `Devices(ctx)` expose device discovery without activation;
 `RequestAccess(ctx)` is the explicit macOS permission entry point. `Scheme`
 binds `camera://` URLs using the existing scheme contract. `Input.Name`, `Detail`
 and `SourceShape` expose camera/frame/video/yuv420p, requested size and realtime

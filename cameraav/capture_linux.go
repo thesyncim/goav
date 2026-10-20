@@ -250,7 +250,7 @@ func openLinuxDevice(ctx context.Context, c Config, ops *linuxOps) (captureDevic
 	if err = d.setFormat(); err != nil {
 		return nil, err
 	}
-	// S_PARM returns the negotiated rate. Never advertise a mode the driver changed.
+	// S_PARM returns the negotiated interval, including UVC tick quantization.
 	var parm [204]byte
 	put := binary.LittleEndian.PutUint32
 	put(parm[:], v4lCapture)
@@ -260,7 +260,7 @@ func openLinuxDevice(ctx context.Context, c Config, ops *linuxOps) (captureDevic
 		return nil, fmt.Errorf("cameraav: frame rate: %w", err)
 	}
 	num, den := binary.LittleEndian.Uint32(parm[12:]), binary.LittleEndian.Uint32(parm[16:])
-	if num == 0 || uint64(den) != uint64(num)*uint64(c.FPS) {
+	if !matchesFrameDuration(int64(num), int64(den), c.FPS) {
 		return nil, fmt.Errorf("%w: requested %d fps; device returned %d/%d", ErrUnsupported, c.FPS, den, num)
 	}
 	req := v4lRequest{Count: 4, Type: v4lCapture, Memory: v4lMmap}

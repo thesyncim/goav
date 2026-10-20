@@ -18,8 +18,10 @@ output := camera.Video().Encode(codec.VP8()).To(goav.URI("camera.webm"))
 
 Use `cameraav.Devices(ctx)` for opaque device IDs and supply one as `Config.Device`.
 An empty ID selects the first/default camera. The default mode is 640x480 at
-30 fps. Selection is exact: unsupported dimensions, frame rates, or raw formats
-fail instead of silently changing the declared shape. The provider opens at
+30 fps. Dimensions and raw formats are exact. Integer frame rates allow native
+interval quantization smaller than one 100 ns UVC tick; the original native
+interval and timestamps are preserved. Distinct rates such as 29.97 fps never
+match a 30 fps request. Unsupported modes fail explicitly. The provider opens at
 Build time and begins capture when its source starts. Describe and Explain do
 not enumerate devices, prompt for access, or activate the camera.
 

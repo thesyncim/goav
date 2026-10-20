@@ -493,7 +493,7 @@ func (d *windowsCapture) open() error {
 		modePins.Pin(&rate)
 		modePins.Pin(&typ)
 		valid := com(media, 8, ptr(&frameSize), ptr(&size)) == 0 && com(media, 8, ptr(&frameRate), ptr(&rate)) == 0 && com(media, 10, ptr(&subtype), ptr(&typ)) == 0
-		if valid && int(size>>32) == d.config.Width && int(uint32(size)) == d.config.Height && uint32(rate) != 0 && uint64(rate>>32) == uint64(uint32(rate))*uint64(d.config.FPS) && (typ == nv12Type || typ == yuy2Type) {
+		if valid && int(size>>32) == d.config.Width && int(uint32(size)) == d.config.Height && matchesFrameDuration(int64(uint32(rate)), int64(rate>>32), d.config.FPS) && (typ == nv12Type || typ == yuy2Type) {
 			err = hr(com(d.reader, 7, firstVideo, 0, media))
 			comRelease(media)
 			modePins.Unpin()

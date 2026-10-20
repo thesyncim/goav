@@ -24,7 +24,8 @@ var (
 	ErrFormatChanged = errors.New("cameraav: camera changed the negotiated format")
 )
 
-// Config selects an exact capture mode. Zero values select the default device,
+// Config selects exact dimensions and an integer frame rate, allowing native
+// interval quantization smaller than 100 ns. Zero values select the default device,
 // 640x480 at 30 frames/second, and a two-frame queue. Device is the opaque ID
 // returned by Devices, not a display name. Unsupported modes fail explicitly.
 // The queue drops its oldest frame when full; device callbacks never wait for

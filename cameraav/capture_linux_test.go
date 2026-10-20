@@ -298,6 +298,45 @@ func TestLinuxFormatValidatesNativeLayoutAtOpen(t *testing.T) {
 	}
 }
 
+func TestLinuxNegotiatedRateAcceptsUVCQuantization(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		num, den uint32
+		accept   bool
+	}{
+		{"exact", 1, 30, true},
+		{"quantized UVC", 333333, 10000000, true},
+		{"fractional", 1001, 30000, false},
+		{"zero numerator", 0, 30, false},
+		{"zero denominator", 1, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ops := linuxTestOpenOps(t)
+			ioctl := ops.ioctl
+			ops.ioctl = func(fd int, nr, dir uint32, p unsafe.Pointer, size uintptr) error {
+				if nr == 22 {
+					parm := (*[204]byte)(p)
+					binary.LittleEndian.PutUint32(parm[12:], tc.num)
+					binary.LittleEndian.PutUint32(parm[16:], tc.den)
+					return nil
+				}
+				return ioctl(fd, nr, dir, p, size)
+			}
+			d, err := openLinuxDevice(context.Background(), Config{Device: "/dev/video0", Width: 4, Height: 4, FPS: 30}, &ops)
+			if tc.accept {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := d.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else if !errors.Is(err, ErrUnsupported) {
+				t.Fatalf("unsupported native interval accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestLinuxOpenBoundsEveryMappingAndTotalNativeMemory(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

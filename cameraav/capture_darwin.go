@@ -332,9 +332,6 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 	return d, nil
 }
 
-// captureDuration avoids float FPS rounding at native range boundaries. Use
-// the endpoint's own representation when it equals the requested exact rate;
-// only synthesize a duration when rational comparison proves it is in range.
 func compareCMTime(a, b cmTime) (int, bool) {
 	if a.Scale <= 0 || b.Scale <= 0 {
 		return 0, false
@@ -342,6 +339,10 @@ func compareCMTime(a, b cmTime) (int, bool) {
 	var left, right big.Rat
 	return left.SetFrac64(a.Value, int64(a.Scale)).Cmp(right.SetFrac64(b.Value, int64(b.Scale))), true
 }
+
+// captureDuration only synthesizes durations proven to be inside native bounds.
+// Quantized nominal rates use the native endpoint unchanged, never an out-of-range
+// 1/fps value that could make AVFoundation raise an Objective-C exception.
 func captureDuration(minimum, maximum cmTime, fps int) (cmTime, bool) {
 	valid := func(t cmTime) bool {
 		return t.Flags&1 != 0 && t.Flags&0x1c == 0 && t.Scale > 0 && t.Value > 0 && t.Epoch == 0
@@ -349,11 +350,17 @@ func captureDuration(minimum, maximum cmTime, fps int) (cmTime, bool) {
 	if !valid(minimum) || !valid(maximum) || fps < 1 || fps > 240 {
 		return cmTime{}, false
 	}
-	requested := cmTime{Value: 1, Scale: int32(fps), Flags: 1}
-	lo, ok1 := compareCMTime(requested, minimum)
-	hi, ok2 := compareCMTime(requested, maximum)
-	if !ok1 || !ok2 || lo < 0 || hi > 0 {
+	if order, _ := compareCMTime(minimum, maximum); order > 0 {
 		return cmTime{}, false
+	}
+	requested := cmTime{Value: 1, Scale: int32(fps), Flags: 1}
+	lo, _ := compareCMTime(requested, minimum)
+	hi, _ := compareCMTime(requested, maximum)
+	if lo < 0 {
+		return minimum, matchesFrameDuration(minimum.Value, int64(minimum.Scale), fps)
+	}
+	if hi > 0 {
+		return maximum, matchesFrameDuration(maximum.Value, int64(maximum.Scale), fps)
 	}
 	if lo == 0 {
 		return minimum, true

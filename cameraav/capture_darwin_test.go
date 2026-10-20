@@ -131,10 +131,33 @@ func TestCaptureDurationUsesExactNativeBounds(t *testing.T) {
 	if got, ok := captureDuration(min, max, 20); !ok || got.Value != 1 || got.Scale != 20 {
 		t.Fatalf("interior=%+v %v", got, ok)
 	}
-	// Floating FPS can round these bounds to 30; 1/30 is outside the range.
-	rounded := cmTime{Value: 33333333, Scale: 1000000000, Flags: 1}
-	if _, ok := captureDuration(rounded, rounded, 30); ok {
-		t.Fatal("accepted rounded out-of-range duration")
+	// Nominal UVC rates are quantized. Use the exact native endpoint, never
+	// synthesize 1/30 outside its supported range (which can raise in ObjC).
+	for _, rounded := range []cmTime{
+		{Value: 333333, Scale: 10000000, Flags: 1},
+		{Value: 333334, Scale: 10000000, Flags: 1},
+		{Value: 33333333, Scale: 1000000000, Flags: 3},
+	} {
+		if got, ok := captureDuration(rounded, rounded, 30); !ok || got != rounded {
+			t.Fatalf("quantized endpoint=%+v %v; want %+v", got, ok, rounded)
+		}
+	}
+	fractional := cmTime{Value: 1001, Scale: 30000, Flags: 1}
+	if _, ok := captureDuration(fractional, fractional, 30); ok {
+		t.Fatal("accepted 29.97 fps for 30 fps")
+	}
+	if _, ok := captureDuration(max, min, 30); ok {
+		t.Fatal("accepted reversed duration range")
+	}
+	for _, invalid := range []cmTime{
+		{Value: 1, Scale: 30},
+		{Value: 1, Scale: 30, Flags: 5},
+		{Value: 1, Scale: 30, Flags: 1, Epoch: 1},
+		{Value: 1, Scale: 0, Flags: 1},
+	} {
+		if _, ok := captureDuration(invalid, invalid, 30); ok {
+			t.Fatalf("accepted invalid endpoint %+v", invalid)
+		}
 	}
 }
 func TestSessionStopNotificationIsTerminal(t *testing.T) {
