@@ -46,7 +46,9 @@ allocated during OpenSource. Frame headers are borrowed during Emit; use the
 normal goav Ref/Retain rules to hold media longer.
 
 A full delivery queue drops its oldest frame. If downstream references keep all
-preallocated slots occupied, the incoming frame is dropped. Buffers are never
+preallocated slots occupied, the oldest queued frame is evicted first. If no
+queued frame can be reclaimed, the incoming frame is dropped. Retaining more
+than two frames reduces effective queue capacity. Buffers are never
 expanded or overwritten while retained. DropReporter exposes queue/pool sheds;
 OS/device-internal drops are not necessarily included. The macOS native bridge
 retains at most one pending sample plus the sample being copied. V4L2 has a
@@ -57,7 +59,8 @@ conversion and queue handoff, macOS native callback handoff, and macOS native
 sample-to-Go copying. The fixed Go pixel storage does not depend on sync.Pool or
 GC. OS allocation and driver buffering are outside that Go-heap contract. Setup,
 permission prompts, explicit consumer Ref calls, and errors may allocate.
-Native argument marshaling uses reusable storage; allocation assertions run
+The capture goroutine uses fixed native argument storage; concurrent cold calls
+may use pools, and purego itself has internal pooling. Allocation assertions run
 without the race detector, whose sync.Pool behavior intentionally differs.
 
 Timestamps come from native capture and are rebased at the first delivered frame.

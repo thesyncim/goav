@@ -28,7 +28,9 @@ var (
 // 640x480 at 30 frames/second, and a two-frame queue. Device is the opaque ID
 // returned by Devices, not a display name. Unsupported modes fail explicitly.
 // The queue drops its oldest frame when full; device callbacks never wait for
-// the pipeline. Timestamps retain real capture gaps when frames are dropped.
+// the pipeline. Capture owns Queue+2 fixed slots; downstream retention of more
+// than two frames reduces queue capacity and can cause incoming drops.
+// Timestamps retain real capture gaps when frames are dropped.
 type Config struct {
 	Device             string
 	Width, Height, FPS int
@@ -79,6 +81,7 @@ func (in *Input) OpenSource(ctx context.Context) (pipeline.Source, []av.Stream, 
 		return nil, nil, errors.Join(err, device.Close())
 	}
 	s := &source{device: device, buffers: c.buffers, queue: make(chan *av.Frame, c.Queue), done: make(chan struct{})}
+	c.buffers.evict = s.evictOldest
 	return s, []av.Stream{videoStream(c)}, nil
 }
 func normalize(c Config) (Config, error) {
@@ -130,6 +133,16 @@ func (s *source) DroppedMessages() uint64 {
 		return s.dropped.Load() + s.buffers.dropped.Load()
 	}
 	return s.dropped.Load()
+}
+func (s *source) evictOldest() bool {
+	select {
+	case old := <-s.queue:
+		releaseFrame(old)
+		s.dropped.Add(1)
+		return true
+	default:
+		return false
+	}
 }
 func (s *source) offer(frame *av.Frame) {
 	// One backend producer. Frames own their buffers; no native memory escapes.

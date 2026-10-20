@@ -334,3 +334,54 @@ func TestEndToEndSourceZeroAllocs(t *testing.T) {
 		t.Fatalf("YUYV copy -> native handoff -> source Emit = %g allocations/frame", allocs)
 	}
 }
+
+func TestBorrowedHeadersRestoreOnReuse(t *testing.T) {
+	c := testConfig(4, 2)
+	defer c.buffers.close()
+	f := planarFrame(c, 0)
+	f.StreamID = "changed"
+	f.Type = av.MediaAudio
+	f.Video.Width = 999
+	f.Planes[0].Stride = 0
+	f.Planes[0].Buffer.Owner = nil
+	f.Planes = nil
+	f.Video = nil
+	releaseFrame(f) // Must release canonical owners, independent of lent headers.
+	for i := 0; i < len(c.buffers.slots); i++ {
+		f = planarFrame(c, int64(i))
+		if f.StreamID != "camera" || f.Type != av.MediaVideo || f.Video == nil || f.Video.Width != 4 || len(f.Planes) != 3 || f.Planes[0].Stride != 4 || f.Planes[0].Buffer.Owner == nil {
+			t.Fatalf("stale borrowed header: %+v", f)
+		}
+		releaseFrame(f)
+	}
+}
+func TestPoolExhaustionEvictsOldestQueuedFrame(t *testing.T) {
+	c := testConfig(4, 2)
+	defer c.buffers.close()
+	s := &source{queue: make(chan *av.Frame, 2), buffers: c.buffers}
+	c.buffers.evict = s.evictOldest
+	var retained []*av.Frame
+	for i := 0; i < 3; i++ {
+		f := planarFrame(c, int64(i))
+		retained = append(retained, f.Ref())
+		releaseFrame(f)
+	}
+	defer func() {
+		for _, f := range retained {
+			f.Release()
+		}
+	}()
+	old := planarFrame(c, 3)
+	s.offer(old)
+	fresh := planarFrame(c, 4)
+	if fresh == nil {
+		t.Fatal("dropped fresh sample despite reclaimable queued frame")
+	}
+	if len(s.queue) != 0 || s.DroppedMessages() != 1 {
+		t.Fatal("oldest frame not evicted and counted")
+	}
+	if fresh.PTS.Value != 4 {
+		t.Fatal("wrong sample")
+	}
+	releaseFrame(fresh)
+}

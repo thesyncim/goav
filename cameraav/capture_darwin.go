@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"runtime"
 	"sync"
@@ -30,6 +31,7 @@ type darwinAPI struct {
 	lock, unlock, width, height, format, planeCount, planeBase, planeStride, planeHeight uintptr
 	queueCreate, queueSync, dispatchRelease, semCreate, semWait, semSignal               uintptr
 	mediaVideo, pixelKey, inputPriority                                                  objc.ID
+	runtimeError, interrupted, stopped, errorKey                                         objc.ID
 	delegate                                                                             objc.Class
 	calloc                                                                               func(uintptr, uintptr) unsafe.Pointer
 	noop                                                                                 uintptr
@@ -116,6 +118,10 @@ func loadMac() error {
 		mac.mediaVideo = constant(af, "AVMediaTypeVideo")
 		mac.inputPriority = constant(af, "AVCaptureSessionPresetInputPriority")
 		mac.pixelKey = constant(cv, "kCVPixelBufferPixelFormatTypeKey")
+		mac.runtimeError = constant(af, "AVCaptureSessionRuntimeErrorNotification")
+		mac.interrupted = constant(af, "AVCaptureSessionWasInterruptedNotification")
+		mac.stopped = constant(af, "AVCaptureSessionDidStopRunningNotification")
+		mac.errorKey = constant(af, "AVCaptureSessionErrorKey")
 		if macErr != nil {
 			return
 		}
@@ -204,6 +210,7 @@ type macCapture struct {
 	queue                     uintptr
 	pending                   *nativeSample
 	timing                    cmTiming
+	arguments                 [16]uintptr
 	notifications             []objc.ID
 	errors                    chan error
 	notifyMu                  sync.Mutex
@@ -231,6 +238,7 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 		return nil, ErrNoDevice
 	}
 	var selected objc.ID
+	var duration cmTime
 	formats := object(device, "formats")
 	for i := uintptr(0); i < objc.Send[uintptr](formats, sel("count")); i++ {
 		f := object(formats, "objectAtIndex:", i)
@@ -242,8 +250,8 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 		ranges := object(f, "videoSupportedFrameRateRanges")
 		for j := uintptr(0); j < objc.Send[uintptr](ranges, sel("count")); j++ {
 			r := object(ranges, "objectAtIndex:", j)
-			if float64(c.FPS) >= objc.Send[float64](r, sel("minFrameRate")) && float64(c.FPS) <= objc.Send[float64](r, sel("maxFrameRate")) {
-				selected = f
+			if value, valid := captureDuration(objc.Send[cmTime](r, sel("minFrameDuration")), objc.Send[cmTime](r, sel("maxFrameDuration")), c.FPS); valid {
+				duration, selected = value, f
 				break
 			}
 		}
@@ -289,9 +297,16 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 		return nil, fmt.Errorf("cameraav: lock device: %s", goString(object(nativeErr, "localizedDescription")))
 	}
 	object(device, "setActiveFormat:", selected)
-	duration := cmTime{Value: 1, Scale: int32(c.FPS), Flags: 1}
-	object(device, "setActiveVideoMinFrameDuration:", duration)
-	object(device, "setActiveVideoMaxFrameDuration:", duration)
+	// Keep min <= max during the update, using exact native CMTime bounds.
+	currentMin := objc.Send[cmTime](device, sel("activeVideoMinFrameDuration"))
+	cmp, valid := compareCMTime(duration, currentMin)
+	if valid && cmp < 0 {
+		object(device, "setActiveVideoMinFrameDuration:", duration)
+		object(device, "setActiveVideoMaxFrameDuration:", duration)
+	} else {
+		object(device, "setActiveVideoMaxFrameDuration:", duration)
+		object(device, "setActiveVideoMinFrameDuration:", duration)
+	}
 	object(device, "unlockForConfiguration")
 	object(d.session, "commitConfiguration")
 	d.pending = (*nativeSample)(mac.calloc(1, unsafe.Sizeof(nativeSample{})))
@@ -309,17 +324,57 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 	d.delegate = object(object(objc.ID(mac.delegate), "alloc"), "init")
 	object(d.delegate, "setState:", uintptr(unsafe.Pointer(d.pending)))
 	object(d.output, "setSampleBufferDelegate:queue:", d.delegate, d.queue)
+	d.observeSession()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ok = true
+	return d, nil
+}
+
+// captureDuration avoids float FPS rounding at native range boundaries. Use
+// the endpoint's own representation when it equals the requested exact rate;
+// only synthesize a duration when rational comparison proves it is in range.
+func compareCMTime(a, b cmTime) (int, bool) {
+	if a.Scale <= 0 || b.Scale <= 0 {
+		return 0, false
+	}
+	var left, right big.Rat
+	return left.SetFrac64(a.Value, int64(a.Scale)).Cmp(right.SetFrac64(b.Value, int64(b.Scale))), true
+}
+func captureDuration(minimum, maximum cmTime, fps int) (cmTime, bool) {
+	valid := func(t cmTime) bool {
+		return t.Flags&1 != 0 && t.Flags&0x1c == 0 && t.Scale > 0 && t.Value > 0 && t.Epoch == 0
+	}
+	if !valid(minimum) || !valid(maximum) || fps < 1 || fps > 240 {
+		return cmTime{}, false
+	}
+	requested := cmTime{Value: 1, Scale: int32(fps), Flags: 1}
+	lo, ok1 := compareCMTime(requested, minimum)
+	hi, ok2 := compareCMTime(requested, maximum)
+	if !ok1 || !ok2 || lo < 0 || hi > 0 {
+		return cmTime{}, false
+	}
+	if lo == 0 {
+		return minimum, true
+	}
+	if hi == 0 {
+		return maximum, true
+	}
+	return cmTime{Value: 1, Scale: int32(fps), Flags: 1}, true
+}
+func (d *macCapture) observeSession() {
 	center := object(class("NSNotificationCenter"), "defaultCenter")
-	for _, name := range []string{"AVCaptureSessionRuntimeErrorNotification", "AVCaptureSessionWasInterruptedNotification"} {
+	for _, name := range []objc.ID{mac.runtimeError, mac.interrupted, mac.stopped} {
 		block := objc.NewBlock(func(_ objc.Block, note objc.ID) {
 			d.notifyMu.Lock()
 			defer d.notifyMu.Unlock()
 			if d.closing {
 				return
 			}
-			reason := "camera session interrupted"
+			reason := "camera session stopped or interrupted"
 			info := object(note, "userInfo")
-			e := object(info, "objectForKey:", nsString("AVCaptureSessionErrorKey"))
+			e := object(info, "objectForKey:", mac.errorKey)
 			if e != 0 {
 				reason = goString(object(e, "localizedDescription"))
 			}
@@ -329,17 +384,12 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 			}
 			nativeCall(mac.semSignal, d.pending.semaphore)
 		})
-		observer := object(center, "addObserverForName:object:queue:usingBlock:", nsString(name), d.session, objc.ID(0), block)
+		observer := object(center, "addObserverForName:object:queue:usingBlock:", name, d.session, objc.ID(0), block)
 		block.Release()
 		if observer != 0 {
 			d.notifications = append(d.notifications, observer)
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	ok = true
-	return d, nil
 }
 func (d *macCapture) Run(ctx context.Context, emit func(*av.Frame)) error {
 	// Timing output is passed through uintptr; pin its containing object for
@@ -372,13 +422,13 @@ func (d *macCapture) Run(ctx context.Context, emit func(*av.Frame)) error {
 			return err
 		default:
 		}
-		nativeCall(mac.semWait, d.pending.semaphore, ^uintptr(0))
+		d.call(mac.semWait, d.pending.semaphore, ^uintptr(0))
 		sample := atomic.SwapUintptr(&d.pending.sample, 0)
 		if sample == 0 {
 			continue
 		}
 		frame, err := d.copySample(sample)
-		nativeCall(mac.release, sample)
+		d.call(mac.release, sample)
 		if err != nil {
 			return err
 		}
@@ -387,12 +437,20 @@ func (d *macCapture) Run(ctx context.Context, emit func(*av.Frame)) error {
 		}
 	}
 }
+
+// Only the capture goroutine uses this argument storage; notification and
+// cancellation callbacks use nativeCall's separate storage.
+func (d *macCapture) call(fn uintptr, args ...uintptr) uintptr {
+	copy(d.arguments[:], args)
+	result, _, _ := purego.SyscallN(fn, d.arguments[:len(args)]...)
+	return result
+}
 func (d *macCapture) copySample(sample uintptr) (*av.Frame, error) {
-	buffer := nativeCall(mac.image, sample)
-	if buffer == 0 || int(nativeCall(mac.width, buffer)) != d.config.Width || int(nativeCall(mac.height, buffer)) != d.config.Height || nativeCall(mac.format, buffer) != 0x34323076 || nativeCall(mac.planeCount, buffer) != 2 {
+	buffer := d.call(mac.image, sample)
+	if buffer == 0 || int(d.call(mac.width, buffer)) != d.config.Width || int(d.call(mac.height, buffer)) != d.config.Height || uint32(d.call(mac.format, buffer)) != 0x34323076 || d.call(mac.planeCount, buffer) != 2 {
 		return nil, ErrFormatChanged
 	}
-	if status := int32(nativeCall(mac.timing, sample, 0, uintptr(unsafe.Pointer(&d.timing)))); status != 0 {
+	if status := int32(d.call(mac.timing, sample, 0, uintptr(unsafe.Pointer(&d.timing)))); status != 0 {
 		return nil, fmt.Errorf("cameraav: sample timing %d", status)
 	}
 	t := d.timing.PTS
@@ -403,16 +461,16 @@ func (d *macCapture) copySample(sample uintptr) (*av.Frame, error) {
 	if !ok {
 		return nil, errors.New("cameraav: invalid capture timebase")
 	}
-	if status := int32(nativeCall(mac.lock, buffer, 1)); status != 0 {
+	if status := int32(d.call(mac.lock, buffer, 1)); status != 0 {
 		return nil, fmt.Errorf("cameraav: pixel lock %d", status)
 	}
-	defer nativeCall(mac.unlock, buffer, 1)
-	ys, uvs := int(nativeCall(mac.planeStride, buffer, 0)), int(nativeCall(mac.planeStride, buffer, 1))
-	yh, uvh := int(nativeCall(mac.planeHeight, buffer, 0)), int(nativeCall(mac.planeHeight, buffer, 1))
+	defer d.call(mac.unlock, buffer, 1)
+	ys, uvs := int(d.call(mac.planeStride, buffer, 0)), int(d.call(mac.planeStride, buffer, 1))
+	yh, uvh := int(d.call(mac.planeHeight, buffer, 0)), int(d.call(mac.planeHeight, buffer, 1))
 	if ys < d.config.Width || uvs < d.config.Width || ys > 1<<20 || uvs > 1<<20 || yh != d.config.Height || uvh != d.config.Height/2 {
 		return nil, ErrFormatChanged
 	}
-	y, uv := nativeCall(mac.planeBase, buffer, 0), nativeCall(mac.planeBase, buffer, 1)
+	y, uv := d.call(mac.planeBase, buffer, 0), d.call(mac.planeBase, buffer, 1)
 	if y == 0 || uv == 0 {
 		return nil, errors.New("cameraav: missing pixel planes")
 	}
@@ -440,6 +498,9 @@ func (d *macCapture) Close() error {
 		object(center, "removeObserver:", n)
 	}
 	d.notifications = nil
+	if d.delegate != 0 {
+		object(d.delegate, "setState:", uintptr(0))
+	}
 	releaseObject(d.delegate)
 	releaseObject(d.output)
 	releaseObject(d.session)

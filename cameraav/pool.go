@@ -2,6 +2,7 @@ package cameraav
 
 import (
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -14,17 +15,24 @@ type framePool struct {
 	slots   []frameSlot
 	next    int
 	dropped atomic.Uint64
+	evict   func() bool
 }
 type frameSlot struct {
-	frame  av.Frame
-	video  av.VideoFrame
-	planes [3]av.Plane
-	owners [3]cameraPlaneOwner
-	busy   atomic.Bool
+	frame          av.Frame // Must remain first: releaseFrame recovers the owning slot.
+	video          av.VideoFrame
+	planes         [3]av.Plane
+	owners         [3]cameraPlaneOwner
+	busy           atomic.Bool
+	frameTemplate  av.Frame
+	videoTemplate  av.VideoFrame
+	planeTemplates [3]av.Plane
 }
+
+// Enforce the containing-slot conversion used by releaseFrame at compile time.
+var _ [0]byte = [unsafe.Offsetof(frameSlot{}.frame)]byte{}
+
 type cameraPlaneOwner struct {
 	refs atomic.Int32
-	slot *frameSlot
 }
 
 func (o *cameraPlaneOwner) Retain() {
@@ -49,16 +57,30 @@ func newFramePool(c Config) *framePool {
 		spans := [][]byte{data[:ysize:ysize], data[ysize : ysize+ysize/4 : ysize+ysize/4], data[ysize+ysize/4:]}
 		for j := range s.owners {
 			s.owners[j].refs.Store(1)
-			s.owners[j].slot = s
 			s.planes[j] = av.Plane{Buffer: av.Buffer{Bytes: spans[j], Owner: &s.owners[j]}, Stride: c.Width}
 			if j != 0 {
 				s.planes[j].Stride /= 2
 			}
 		}
+		s.frameTemplate, s.videoTemplate, s.planeTemplates = s.frame, s.video, s.planes
 	}
 	return p
 }
 func (p *framePool) take(pts int64) *av.Frame {
+	if f := p.takeAvailable(pts); f != nil {
+		return f
+	}
+	// Prefer a fresh sample to an old queued frame. Retained downstream frames
+	// cannot be reclaimed; if there is nothing queued, drop the incoming sample.
+	if p.evict != nil && p.evict() {
+		if f := p.takeAvailable(pts); f != nil {
+			return f
+		}
+	}
+	p.dropped.Add(1)
+	return nil
+}
+func (p *framePool) takeAvailable(pts int64) *av.Frame {
 	for range p.slots {
 		s := &p.slots[p.next]
 		p.next = (p.next + 1) % len(p.slots)
@@ -72,18 +94,22 @@ func (p *framePool) take(pts int64) *av.Frame {
 		for i := range s.owners {
 			s.owners[i].Retain()
 		}
+		s.frame, s.video, s.planes = s.frameTemplate, s.videoTemplate, s.planeTemplates
 		s.frame.PTS = av.Timestamp{Value: pts, Base: nanoseconds}
 		return &s.frame
 	}
-	p.dropped.Add(1)
 	return nil
 }
+
+// f is always the original borrowed frame produced by this pool, never a Ref.
+// The frame is the first struct member, so its address is the slot address.
+// This stays a Go pointer throughout; no uintptr or hidden GC reference is used.
 func releaseFrame(f *av.Frame) {
-	owner := f.Planes[0].Buffer.Owner.(*cameraPlaneOwner)
-	for i := range f.Planes {
-		f.Planes[i].Buffer.Owner.Release()
+	slot := (*frameSlot)(unsafe.Pointer(f))
+	for i := range slot.owners {
+		slot.owners[i].Release()
 	}
-	owner.slot.busy.Store(false)
+	slot.busy.Store(false)
 }
 func (p *framePool) close() {
 	for i := range p.slots {

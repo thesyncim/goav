@@ -121,3 +121,49 @@ func TestNativePixelBufferCopyZeroAllocs(t *testing.T) {
 		t.Fatalf("CoreMedia sample -> owned Go frame = %g allocations/frame", allocs)
 	}
 }
+
+func TestCaptureDurationUsesExactNativeBounds(t *testing.T) {
+	min := cmTime{Value: 1000, Scale: 30000, Flags: 1}
+	max := cmTime{Value: 1, Scale: 15, Flags: 1}
+	if got, ok := captureDuration(min, max, 30); !ok || got != min {
+		t.Fatalf("endpoint=%+v %v", got, ok)
+	}
+	if got, ok := captureDuration(min, max, 20); !ok || got.Value != 1 || got.Scale != 20 {
+		t.Fatalf("interior=%+v %v", got, ok)
+	}
+	// Floating FPS can round these bounds to 30; 1/30 is outside the range.
+	rounded := cmTime{Value: 33333333, Scale: 1000000000, Flags: 1}
+	if _, ok := captureDuration(rounded, rounded, 30); ok {
+		t.Fatal("accepted rounded out-of-range duration")
+	}
+}
+func TestSessionStopNotificationIsTerminal(t *testing.T) {
+	if err := loadMac(); err != nil {
+		t.Fatal(err)
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	p := pool()
+	defer releaseObject(p)
+	d := &macCapture{session: object(object(class("AVCaptureSession"), "alloc"), "init"), errors: make(chan error, 1)}
+	d.pending = (*nativeSample)(mac.calloc(1, unsafe.Sizeof(nativeSample{})))
+	if d.pending == nil {
+		t.Fatal("calloc")
+	}
+	d.pending.semaphore = nativeCall(mac.semCreate, 0)
+	d.observeSession()
+	defer d.Close()
+	center := object(class("NSNotificationCenter"), "defaultCenter")
+	object(center, "postNotificationName:object:", mac.stopped, d.session)
+	select {
+	case err := <-d.errors:
+		if err == nil {
+			t.Fatal("missing stop error")
+		}
+	default:
+		t.Fatal("stopped session did not signal capture")
+	}
+	if status := nativeCall(mac.semWait, d.pending.semaphore, 0); status != 0 {
+		t.Fatal("stop did not wake capture")
+	}
+}
