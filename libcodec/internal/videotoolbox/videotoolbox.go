@@ -92,7 +92,7 @@ func Codecs() []kit.Codec {
 
 func profilesOf(id av.CodecID) []string {
 	if id == hevc {
-		return []string{"main"} // 8-bit: sessions read and write y420
+		return []string{"main"} // 8-bit hardware sessions
 	}
 	return []string{"baseline", "main", "high"}
 }
