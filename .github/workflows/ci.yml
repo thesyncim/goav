@@ -418,6 +418,12 @@ jobs:
   # module at this exact commit, so an unresolvable root pin fails here.
   consumer-install:
     runs-on: ubuntu-latest
+    env:
+      # Fetch this repository's fresh PR revisions directly, while third-party
+      # modules use the proxy instead of depending on every upstream Git host.
+      GOPROXY: https://proxy.golang.org,direct
+      GONOPROXY: github.com/thesyncim/goav
+      GONOSUMDB: github.com/thesyncim
     steps:
       - uses: actions/checkout@v7
         with:
@@ -429,8 +435,6 @@ jobs:
       - name: Install each nested module from a clean directory
         env:
           GOWORK: 'off'
-          GOPROXY: direct
-          GONOSUMDB: github.com/thesyncim
           GOFLAGS: -mod=mod
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -458,7 +462,5 @@ jobs:
           if grep -q '^replace' "$gomod"; then echo "cmd/goav/go.mod carries a replace directive; go install would refuse it" >&2; exit 1; fi
       - name: Verify resolved fixes and player bundle isolation
         env:
-          GOPROXY: direct
-          GONOSUMDB: github.com/thesyncim
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash scripts/check-consumers.sh "$SHA"
