@@ -6,7 +6,7 @@ toolchain go1.27.2
 
 require (
 	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
-	github.com/thesyncim/goav/cameraav v0.0.0-20261020185810-06c498cbd23a
+	github.com/thesyncim/goav/cameraav v0.0.0-20261020202255-882256009041
 	github.com/thesyncim/goav/player v0.0.0-20261020183009-ea6589a0aecc
 	github.com/thesyncim/goav/webrtcav v0.0.0-20261020183009-ea6589a0aecc
 )
