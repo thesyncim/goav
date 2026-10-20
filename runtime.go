@@ -746,10 +746,7 @@ func (t *task) CloseContext(ctx context.Context) error {
 	if contextGraph, ok := t.graph.(interface {
 		CloseContext(context.Context) error
 	}); ok {
-		if err := contextGraph.CloseContext(ctx); first == nil && err != nil {
-			first = err
-		}
-		return first
+		return errors.Join(first, contextGraph.CloseContext(ctx))
 	}
 	if err := ctx.Err(); first == nil && err != nil {
 		first = err

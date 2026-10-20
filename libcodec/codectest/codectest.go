@@ -34,7 +34,8 @@ func (b backend) name() string {
 // decode-order timestamps, the codec configuration and an MP4 mux that
 // demuxes back, its knobs refusing bad settings, a live bitrate change, and
 // Close. Each decoder: reference bitstreams from independent encoders,
-// matched against the pure-Go decoder, loss recovery, and Close. Then the
+// matched against the pure-Go decoder, loss recovery, native audio/video
+// configuration and discontinuity transitions, and Close. Then the
 // matrix: every encoder's output through every decoder of the same codec.
 //
 // A backend that cannot run here (its library is missing) is skipped with

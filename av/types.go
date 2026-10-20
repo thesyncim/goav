@@ -488,6 +488,12 @@ const (
 	EventDestinationAborted EventType = "destination_aborted"
 	// EventDestinationCommitError reports a failed destination finalization.
 	EventDestinationCommitError EventType = "destination_commit_error"
+	// EventCleanupError reports a node's failed finalization after its caller
+	// timed out waiting for handling to stop. Reason and Metadata["node"] name
+	// the node; Cause wraps the failure. This observer notification is best
+	// effort. Graph and task Close also retain the error after reclamation,
+	// even if their observer stream has already closed.
+	EventCleanupError EventType = "cleanup_error"
 	// EventCodecChanged announces that a stream's codec parameters changed
 	// mid-run; Event.Codec carries the new parameters, and decoders reset to
 	// them.

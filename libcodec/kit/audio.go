@@ -2,6 +2,7 @@ package kit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -309,17 +310,26 @@ func (d *audioDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.closed || d.session == nil {
 		return codec.ErrClosed
 	}
 	if packet == nil || len(packet.Payload.Bytes) == 0 {
 		return nil
 	}
+	if packet.Discontinuous {
+		if err := d.restart(d.stream); err != nil {
+			return err
+		}
+	}
 	d.out = out
+	base := d.stream.TimeBase
+	if d.config.SampleRate > 0 {
+		base = av.TimeBase{Num: 1, Den: int64(d.config.SampleRate)}
+	}
 	return d.session.Decode(&Packet{
 		Data:     packet.Payload.Bytes,
-		PTS:      timeIn(packet.PTS, d.stream.TimeBase),
-		Duration: durationIn(packet.Duration, d.stream.TimeBase),
+		PTS:      timeIn(packet.PTS, base),
+		Duration: durationIn(packet.Duration, base),
 		Keyframe: true,
 	}, d.emitFn)
 }
@@ -351,7 +361,11 @@ func (d *audioDecoder) emitSamples(s *Samples) error {
 	frame.Planes[0] = av.Plane{Buffer: buffer}
 	// Each frame gets its own header: a result holds several, and the
 	// stage publishes them by reference.
-	header := &av.AudioFrame{SampleRate: rate, Channels: channels, ChannelLayout: channelLayout(channels), SampleFormat: av.SampleFormatS16, Samples: frames}
+	layout := channelLayout(channels)
+	if channels == d.stream.Codec.Channels && d.stream.Codec.ChannelLayout != "" {
+		layout = d.stream.Codec.ChannelLayout
+	}
+	header := &av.AudioFrame{SampleRate: rate, Channels: channels, ChannelLayout: layout, SampleFormat: av.SampleFormatS16, Samples: frames}
 	base := av.TimeBase{Num: 1, Den: int64(rate)}
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
@@ -369,7 +383,7 @@ func (d *audioDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) e
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.closed || d.session == nil {
 		return codec.ErrClosed
 	}
 	d.out = out
@@ -380,9 +394,63 @@ func (d *audioDecoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if d.closed {
+	if d.closed || d.session == nil {
 		return codec.ErrClosed
 	}
+	switch event.Type {
+	case av.EventDiscontinuity:
+		return d.restart(d.stream)
+	case av.EventCodecChanged:
+		next := d.stream
+		if event.Stream != nil {
+			next = *event.Stream
+			if next.ID == "" {
+				next.ID = d.stream.ID
+			}
+			if next.Type == "" {
+				next.Type = d.stream.Type
+			}
+			if next.Codec.ID == "" {
+				next.Codec = d.stream.Codec
+			}
+		}
+		if event.StreamID != "" {
+			next.ID = event.StreamID
+		}
+		if event.Epoch != 0 {
+			next.Epoch = event.Epoch
+		}
+		if event.Codec != nil {
+			next.Codec = *event.Codec
+		}
+		if next.Codec.ID != "" && next.Codec.ID != d.c.ID {
+			return codec.ErrUnsupportedCodecSwitch
+		}
+		return d.restart(next)
+	}
+	return nil
+}
+
+// restart opens the replacement before committing its configuration. A
+// backend refusal leaves the old session usable and is returned to the caller.
+// Closing the old session discards delayed samples; only EOS drains them.
+func (d *audioDecoder) restart(stream av.Stream) error {
+	config := d.config
+	config.SampleRate = firstPositive(stream.Codec.SampleRate, int(stream.Codec.ClockRate))
+	config.Channels = stream.Codec.Channels
+	config.ExtraData = slices.Clone(stream.Codec.ExtraData.Bytes)
+	if !stream.TimeBase.Valid() && config.SampleRate > 0 {
+		stream.TimeBase = av.TimeBase{Num: 1, Den: int64(config.SampleRate)}
+	}
+	session, err := d.c.NewAudioDecoder(config)
+	if err != nil {
+		return fmt.Errorf("%s %s decoder transition: %w", d.c.ID, d.c.Backend, err)
+	}
+	if err := d.session.Close(); err != nil {
+		d.session = nil
+		return errors.Join(err, session.Close())
+	}
+	d.session, d.stream, d.config, d.out = session, stream, config, nil
 	return nil
 }
 
@@ -391,8 +459,12 @@ func (d *audioDecoder) Close() error {
 		return nil
 	}
 	d.closed = true
+	if d.session == nil {
+		return nil
+	}
 	err := d.session.Close()
 	d.session = nil
+	d.out = nil
 	return err
 }
 

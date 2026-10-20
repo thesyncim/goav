@@ -156,3 +156,15 @@ type PacketReader interface {
 	Events() <-chan av.Event
 	Close() error
 }
+
+// ConfiguredPacketReader optionally binds codec changes and payload resolution
+// to a particular RTP read. Source uses this instead of ReadRTP and Events when
+// available. A non-nil event is applied before the returned packet, using the
+// returned immutable payload map. Updates before a read may be coalesced; an old
+// packet already in flight retains its old configuration. The event may also
+// accompany io.EOF. Other transport events must use this ordered handoff too.
+// Reads remain sequential, as with PacketReader.
+type ConfiguredPacketReader interface {
+	PacketReader
+	ReadRTPWithConfig(context.Context) (*rtp.Packet, *av.Event, PayloadMap, error)
+}

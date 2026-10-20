@@ -56,6 +56,23 @@ func TestWebRTCLifecycleSoak(t *testing.T) {
 	latencies := make([]time.Duration, 0, 4096)
 	start := time.Now()
 	cycles := 0
+	var maximum time.Duration
+	var over50ms int
+	defer func() {
+		slices.Sort(latencies)
+		q := func(percent int) int64 {
+			if len(latencies) == 0 {
+				return 0
+			}
+			return latencies[(len(latencies)-1)*percent/100].Nanoseconds()
+		}
+		report, _ := json.Marshal(map[string]any{"workload": "webrtc_reattach", "cycles": cycles, "elapsed_ns": time.Since(start).Nanoseconds(),
+			"latency_scope": "trailing_window", "latency_window_samples": len(latencies),
+			"media_and_feedback_p50_ns": q(50), "media_and_feedback_p95_ns": q(95), "media_and_feedback_p99_ns": q(99),
+			"whole_run_max_ns": maximum.Nanoseconds(), "whole_run_over_50ms": over50ms, "failed": t.Failed(),
+			"goroutines_before": before, "goroutines_after": runtime.NumGoroutine()})
+		t.Log(string(report))
+	}()
 	ctx, cancel := context.WithTimeout(t.Context(), duration+15*time.Second)
 	defer cancel()
 	for time.Since(start) < duration || cycles < 2 {
@@ -110,11 +127,16 @@ func TestWebRTCLifecycleSoak(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("feedback did not reach active attachment")
 		}
+		latency := time.Since(sent)
+		maximum = max(maximum, latency)
+		if latency > 50*time.Millisecond {
+			over50ms++
+		}
 		// Bound instrumentation memory for hour-scale runs.
 		if len(latencies) < cap(latencies) {
-			latencies = append(latencies, time.Since(sent))
+			latencies = append(latencies, latency)
 		} else {
-			latencies[cycles%len(latencies)] = time.Since(sent)
+			latencies[cycles%len(latencies)] = latency
 		}
 		if err := sink.Close(); err != nil {
 			t.Fatal(err)
@@ -147,10 +169,4 @@ func TestWebRTCLifecycleSoak(t *testing.T) {
 	if runtime.NumGoroutine() > before {
 		t.Fatalf("goroutines before=%d after=%d", before, runtime.NumGoroutine())
 	}
-	slices.Sort(latencies)
-	q := func(percent int) int64 { return latencies[(len(latencies)-1)*percent/100].Nanoseconds() }
-	report, _ := json.Marshal(map[string]any{"workload": "webrtc_reattach", "cycles": cycles, "elapsed_ns": time.Since(start).Nanoseconds(),
-		"media_and_feedback_p50_ns": q(50), "media_and_feedback_p95_ns": q(95), "media_and_feedback_p99_ns": q(99),
-		"goroutines_before": before, "goroutines_after": runtime.NumGoroutine()})
-	t.Log(string(report))
 }

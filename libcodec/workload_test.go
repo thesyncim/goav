@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -41,8 +42,15 @@ func TestFileLadderWorkload(t *testing.T) {
 				t.Fatal("workload needs video GOPs and simultaneous audio")
 			}
 			in := goav.FileInput(size+".mp4", bytes.NewReader(data))
-			meter := &ladderMeter{starts: make(map[time.Duration]time.Time)}
-			video := in.Video().Decode(codec.Backend(backend)).Do(meter)
+			meter := &ladderMeter{starts: make(map[time.Duration]ladderStart), latencies: make(map[string]*ladderLatencies)}
+			inputMeter := component.PacketFunc("packet-latency-start", func(_ context.Context, packet *av.Packet, emit component.Emit) error {
+				pts, _ := packet.PTS.ToDuration()
+				meter.mu.Lock()
+				meter.starts[pts] = ladderStart{input: time.Now()}
+				meter.mu.Unlock()
+				return emit.Packet(packet)
+			})
+			video := in.Video().Do(inputMeter).Decode(codec.Backend(backend)).Do(meter)
 			rt := bundle.MustNew(option)
 			var hd, sd bytes.Buffer
 			hdOut := goav.Write("hd.mp4", &hd, goav.Format(av.FormatMP4))
@@ -58,6 +66,7 @@ func TestFileLadderWorkload(t *testing.T) {
 			}
 			var outputs []goav.Output
 			for _, rung := range rungs {
+				meter.latencies[rung.name] = &ladderLatencies{}
 				encoded := video.Resize(rung.width, rung.height).Encode(codec.H264(codec.Backend(backend), codec.Bitrate(rung.bitrate), codec.KeyframeInterval(30)))
 				outputs = append(outputs, encoded.To(rung.destination), in.Audio().To(rung.destination), encoded.To(goav.Sink(&ladderLatencySink{name: rung.name, meter: meter})))
 			}
@@ -112,14 +121,30 @@ func TestFileLadderWorkload(t *testing.T) {
 					}
 				}
 			}
-			slices.Sort(meter.latencies)
-			quantile := func(q int) int64 { return meter.latencies[(len(meter.latencies)-1)*q/100].Nanoseconds() }
+			if len(meter.starts) != 0 {
+				t.Fatalf("%d inputs have incomplete latency measurements", len(meter.starts))
+			}
+			var renditions []map[string]any
+			for _, rung := range rungs {
+				measure := meter.latencies[rung.name]
+				if len(measure.input) != len(inputVideo) {
+					t.Fatalf("%s latency samples=%d", rung.name, len(measure.input))
+				}
+				slices.Sort(measure.input)
+				slices.Sort(measure.decoded)
+				q := func(samples []time.Duration, p int) int64 { return samples[(len(samples)-1)*p/100].Nanoseconds() }
+				renditions = append(renditions, map[string]any{
+					"rendition": rung.name, "samples": len(measure.input),
+					"packet_input_to_encoded_p50_ns": q(measure.input, 50), "packet_input_to_encoded_p95_ns": q(measure.input, 95), "packet_input_to_encoded_p99_ns": q(measure.input, 99),
+					"post_decode_to_encoded_p50_ns": q(measure.decoded, 50), "post_decode_to_encoded_p95_ns": q(measure.decoded, 95), "post_decode_to_encoded_p99_ns": q(measure.decoded, 99),
+				})
+			}
 			var memory runtime.MemStats
 			runtime.ReadMemStats(&memory)
 			report, _ := json.Marshal(map[string]any{
 				"workload": "file_ladder", "size": size, "backend": backend,
 				"frames": meter.frames, "elapsed_ns": elapsed.Nanoseconds(), "input_fps": float64(meter.frames) / elapsed.Seconds(),
-				"decode_to_encode_p50_ns": quantile(50), "decode_to_encode_p95_ns": quantile(95), "decode_to_encode_p99_ns": quantile(99),
+				"renditions":       renditions,
 				"av_tail_drift_ns": drift.Nanoseconds(), "goroutines_before": before, "goroutines_after": runtime.NumGoroutine(),
 				"heap_alloc_bytes": memory.HeapAlloc, "hd_bitrate": 2_000_000, "sd_bitrate": 800_000,
 			})
@@ -130,17 +155,25 @@ func TestFileLadderWorkload(t *testing.T) {
 
 type ladderMeter struct {
 	mu        sync.Mutex
-	starts    map[time.Duration]time.Time
+	starts    map[time.Duration]ladderStart
 	frames    int
-	latencies []time.Duration
+	latencies map[string]*ladderLatencies
 }
+
+type ladderStart struct {
+	input, decoded time.Time
+	outputs        int
+}
+type ladderLatencies struct{ input, decoded []time.Duration }
 
 func (*ladderMeter) Name() string { return "latency-start" }
 func (m *ladderMeter) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if msg.Frame != nil {
 		pts, _ := msg.Frame.PTS.ToDuration()
 		m.mu.Lock()
-		m.starts[pts] = time.Now()
+		start := m.starts[pts]
+		start.decoded = time.Now()
+		m.starts[pts] = start
 		m.frames++
 		m.mu.Unlock()
 	}
@@ -162,10 +195,19 @@ func (s *ladderLatencySink) Handle(_ context.Context, msg *pipeline.Message) err
 	s.meter.mu.Lock()
 	defer s.meter.mu.Unlock()
 	start, ok := s.meter.starts[pts]
-	if !ok {
-		return fmt.Errorf("encoded PTS %s has no decoded frame", pts)
+	if !ok || start.input.IsZero() || start.decoded.IsZero() {
+		return fmt.Errorf("encoded PTS %s lacks an input or decoded frame", pts)
 	}
-	s.meter.latencies = append(s.meter.latencies, time.Since(start))
+	now := time.Now()
+	measure := s.meter.latencies[s.name]
+	measure.input = append(measure.input, now.Sub(start.input))
+	measure.decoded = append(measure.decoded, now.Sub(start.decoded))
+	start.outputs++
+	if start.outputs == len(s.meter.latencies) {
+		delete(s.meter.starts, pts)
+	} else {
+		s.meter.starts[pts] = start
+	}
 	return nil
 }
 func (*ladderLatencySink) Close() error { return nil }

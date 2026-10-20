@@ -106,15 +106,17 @@ type trackReader struct {
 	// read's context finishing, moves the blocked read's deadline to now so
 	// it returns. One context.AfterFunc hook is kept per distinct read
 	// context (a source reads with one), so steady reads register nothing.
-	inflight  trackRTPReader // the transport reader a ReadRTP is blocked in
-	expired   trackRTPReader // the transport reader whose deadline was moved
-	armedDone <-chan struct{}
-	stopArm   func() bool
-	armGen    uint64
-	readerGen uint64
+	inflight        trackRTPReader // the transport reader a ReadRTP is blocked in
+	expired         trackRTPReader // the transport reader whose deadline was moved
+	armedDone       <-chan struct{}
+	stopArm         func() bool
+	armGen          uint64
+	readerGen       uint64
+	configGen       uint64
+	deliveredConfig uint64
 }
 
-var _ rtpav.PacketReader = (*trackReader)(nil)
+var _ rtpav.ConfiguredPacketReader = (*trackReader)(nil)
 var _ rtpav.FeedbackWriter = (*trackReader)(nil)
 
 func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
@@ -136,45 +138,68 @@ func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 	}
 }
 
+type trackReadState struct {
+	reader               trackRTPReader
+	stream               av.Stream
+	payloads             rtpav.PayloadMap
+	readerGen, configGen uint64
+}
+
 func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+	packet, _, _, err := r.readRTP(ctx, false)
+	return packet, err
+}
+
+// ReadRTPWithConfig pairs each packet with the configuration captured when its
+// read began. This is independent of the bounded observer notification channel.
+func (r *trackReader) ReadRTPWithConfig(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	return r.readRTP(ctx, true)
+}
+
+func (r *trackReader) readRTP(ctx context.Context, configured bool) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	for {
-		reader, stream, gen, err := r.beginRead(ctx)
+		state, err := r.beginRead(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
-		packet, _, err := reader.ReadRTP()
-		replaced, stopped := r.endRead(ctx, gen)
+		packet, _, err := state.reader.ReadRTP()
+		replaced, stopped := r.endRead(ctx, &state, packet)
 		if stopped != nil {
-			return nil, stopped
+			return nil, nil, nil, stopped
 		}
 		if replaced {
-			// Neither an old packet nor the internal deadline wake-up belongs
-			// to the replacement stream.
-			continue
+			continue // an old packet or replacement wake-up cannot escape
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				r.emit(av.Event{Type: av.EventEndOfStream, StreamID: stream.ID, Epoch: stream.Epoch})
+		var event *av.Event
+		if configured && (err == nil || errors.Is(err, io.EOF)) {
+			r.mu.Lock()
+			if state.configGen != r.deliveredConfig {
+				e := trackCodecChangedEvent(state.stream)
+				event = &e
+				r.deliveredConfig = state.configGen
 			}
-			return nil, err
+			r.mu.Unlock()
 		}
-		return packet, nil
+		if errors.Is(err, io.EOF) {
+			r.emit(av.Event{Type: av.EventEndOfStream, StreamID: state.stream.ID, Epoch: state.stream.Epoch})
+		}
+		return packet, event, state.payloads, err
 	}
 }
 
 // beginRead claims the transport reader for one read and arms its
 // interruption by ctx.
-func (r *trackReader) beginRead(ctx context.Context) (trackRTPReader, av.Stream, uint64, error) {
+func (r *trackReader) beginRead(ctx context.Context) (trackReadState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return nil, av.Stream{}, 0, ErrClosed
+		return trackReadState{}, ErrClosed
 	}
 	if r.reader == nil {
-		return nil, av.Stream{}, 0, ErrNilTrack
+		return trackReadState{}, ErrNilTrack
 	}
 	if done := ctx.Done(); done != r.armedDone {
 		r.armGen++
@@ -191,21 +216,21 @@ func (r *trackReader) beginRead(ctx context.Context) (trackRTPReader, av.Stream,
 	// Checked under the lock: a context that finishes after this check runs
 	// its hook later, and the hook finds this read in flight.
 	if err := ctx.Err(); err != nil {
-		return nil, av.Stream{}, 0, err
+		return trackReadState{}, err
 	}
 	if r.expired == r.reader {
 		_ = r.reader.SetReadDeadline(time.Time{})
 		r.expired = nil
 	}
 	r.inflight = r.reader
-	return r.reader, r.remote.Stream, r.readerGen, nil
+	return trackReadState{r.reader, r.remote.Stream, r.remote.Payloads, r.readerGen, r.configGen}, nil
 }
 
 // endRead releases the read and reports why it was interrupted, if it was.
-func (r *trackReader) endRead(ctx context.Context, gen uint64) (bool, error) {
+func (r *trackReader) endRead(ctx context.Context, state *trackReadState, packet *rtp.Packet) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	replaced := gen != r.readerGen
+	replaced := state.readerGen != r.readerGen
 	if replaced && r.expired != nil {
 		_ = r.expired.SetReadDeadline(time.Time{})
 		r.expired = nil
@@ -213,6 +238,15 @@ func (r *trackReader) endRead(ctx context.Context, gen uint64) (bool, error) {
 	r.inflight = nil
 	if r.closed {
 		return false, ErrClosed
+	}
+	// An unfamiliar payload type identifies a renegotiated packet returned
+	// by the old read. A type the captured map knows keeps the old generation.
+	if !replaced && packet != nil && state.payloads != nil && r.remote.Payloads != nil {
+		if _, old := state.payloads.Lookup(packet.PayloadType); !old {
+			if _, next := r.remote.Payloads.Lookup(packet.PayloadType); next {
+				state.stream, state.payloads, state.configGen = r.remote.Stream, r.remote.Payloads, r.configGen
+			}
+		}
 	}
 	return replaced, ctx.Err()
 }
@@ -276,12 +310,8 @@ func (r *trackReader) UpdateCodec(ctx context.Context, update TrackCodecUpdate) 
 	if !hasCodecUpdate(update) {
 		return ErrInvalidCodecUpdate
 	}
-	next, _, err := r.applyCodecUpdate(update, nil)
-	if err != nil {
-		return err
-	}
-	r.emitCodecChanged(next)
-	return nil
+	_, _, err := r.applyCodecUpdate(update, nil)
+	return err
 }
 
 func (r *trackReader) UpdateTrack(ctx context.Context, remote RemoteTrack) error {
@@ -305,12 +335,11 @@ func (r *trackReader) updateTrack(ctx context.Context, remote RemoteTrack, repla
 	if !hasCodecUpdate(update) && replacement == nil {
 		return ErrInvalidCodecUpdate
 	}
-	next, _, err := r.applyCodecUpdate(update, replacement)
+	_, _, err := r.applyCodecUpdate(update, replacement)
 	if err != nil {
 		return err
 	}
 	r.mergeRemoteTrack(remote)
-	r.emitCodecChanged(next)
 	return nil
 }
 
@@ -347,6 +376,10 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 	r.remote.Payloads = payloads
 	r.remote.Metadata = mergeMetadata(r.remote.Metadata, update.Metadata)
 	r.streams = []av.Stream{next}
+	r.configGen++
+	// Commit state and its notification under one lock so concurrent updates
+	// cannot publish in reverse order. Slow observers retain the newest state.
+	r.emitLatestLocked(trackCodecChangedEvent(next))
 	return next, payloads, nil
 }
 
@@ -379,15 +412,25 @@ func (r *trackReader) emit(event av.Event) {
 	}
 }
 
-func (r *trackReader) emitCodecChanged(stream av.Stream) {
-	r.emit(av.Event{
-		Type:     av.EventCodecChanged,
-		StreamID: stream.ID,
-		Epoch:    stream.Epoch,
-		Stream:   &stream,
-		Codec:    &stream.Codec,
-		Reason:   "webrtc track codec changed",
-	})
+func (r *trackReader) emitLatestLocked(event av.Event) {
+	for {
+		select {
+		case r.events <- event:
+			return
+		default:
+		}
+		select {
+		case <-r.events: // coalesce an obsolete observer notification
+		default: // an observer drained it between the two selects
+		}
+	}
+}
+
+func trackCodecChangedEvent(stream av.Stream) av.Event {
+	return av.Event{
+		Type: av.EventCodecChanged, StreamID: stream.ID, Epoch: stream.Epoch,
+		Stream: &stream, Codec: &stream.Codec, Reason: "webrtc track codec changed",
+	}
 }
 
 func normalizeRemoteTrack(remote RemoteTrack) RemoteTrack {
