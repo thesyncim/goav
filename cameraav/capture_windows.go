@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/thesyncim/goav/av"
@@ -44,12 +45,17 @@ var (
 	frameRate          = guid("c459a2e8-3d2c-4e44-b132-fee5156c7bb0")
 	interlaceMode      = guid("e2724bb8-e676-4806-b4b2-a8d6efb44ccd")
 	nominalRange       = guid("c21b8ee5-b956-4071-8daf-325edf5cab11")
-	defaultStride      = guid("644b4e48-1e02-4516-b0eb-c01ca9d49ac6")
+	buffer2DIID        = guid("33ae5ea6-4316-436f-8ddd-d73d22f829ec")
 	nv12Type           = guid("3231564e-0000-0010-8000-00aa00389b71")
 	yuy2Type           = guid("32595559-0000-0010-8000-00aa00389b71")
 )
 
-const firstVideo = 0xfffffffc
+const (
+	firstVideo     = 0xfffffffc
+	eNoInterface   = 0x80004002
+	eAccessDenied  = 0x80070005
+	mfFlushTimeout = 2 * time.Second
+)
 
 func guid(s string) windows.GUID {
 	v, err := windows.GUIDFromString("{" + s + "}")
@@ -60,6 +66,9 @@ func guid(s string) windows.GUID {
 }
 func ptr[T any](v *T) uintptr { return uintptr(unsafe.Pointer(v)) }
 func hr(result uintptr) error {
+	if uint32(result) == eAccessDenied {
+		return fmt.Errorf("%w: HRESULT 0x%08x", ErrPermission, uint32(result))
+	}
 	if int32(result) < 0 {
 		return fmt.Errorf("cameraav: HRESULT 0x%08x", uint32(result))
 	}
@@ -68,9 +77,16 @@ func hr(result uintptr) error {
 
 var comArguments = sync.Pool{New: func() any { return new([12]uintptr) }}
 
-func com(obj uintptr, index int, args ...uintptr) uintptr {
+func comFunction(obj uintptr, index int) uintptr {
 	vt := *(*uintptr)(nativePointer(obj))
-	fn := *(*uintptr)(nativePointer(vt + uintptr(index)*unsafe.Sizeof(uintptr(0))))
+	return *(*uintptr)(nativePointer(vt + uintptr(index)*unsafe.Sizeof(uintptr(0))))
+}
+
+// Cold COM calls may be concurrent. Capture-thread calls use windowsCapture's
+// fixed argument storage instead, so a GC clearing this pool cannot allocate
+// on the successful sample-copy path.
+func com(obj uintptr, index int, args ...uintptr) uintptr {
+	fn := comFunction(obj, index)
 	values := comArguments.Get().(*[12]uintptr)
 	values[0] = obj
 	copy(values[1:], args)
@@ -199,6 +215,53 @@ type winCallback struct {
 	refs    atomic.Int32
 	samples chan winSample
 	flushed chan struct{}
+	mu      sync.Mutex
+	closed  bool
+	// Only offer uses this array, while holding mu. SyscallN requires its
+	// argument backing storage to escape; keeping it here avoids a per-frame
+	// allocation without relying on sync.Pool surviving a collection.
+	retainArguments [1]uintptr
+}
+
+// OnReadSample lends its sample until the callback returns. Retain only an
+// accepted handoff; closing and queue publication share the same lock.
+func (c *winCallback) offer(v winSample) {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	if v.sample != 0 {
+		c.retainArguments[0] = v.sample
+		syscall.SyscallN(comFunction(v.sample, 1), c.retainArguments[:]...)
+	}
+	select {
+	case c.samples <- v:
+		c.mu.Unlock()
+	default:
+		c.mu.Unlock()
+		comRelease(v.sample)
+	}
+}
+
+// Set closed before draining, so a callback that looked this object up before
+// cleanup cannot enqueue after the drain. Release native objects outside mu:
+// their final Release may itself call into COM or release this callback.
+func (c *winCallback) close() {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	for {
+		c.mu.Lock()
+		select {
+		case v := <-c.samples:
+			c.mu.Unlock()
+			comRelease(v.sample)
+		default:
+			c.mu.Unlock()
+			return
+		}
+	}
 }
 
 var callbacks struct {
@@ -249,6 +312,7 @@ func newCallback() (uintptr, *winCallback, error) {
 			}
 			n := c.refs.Add(-1)
 			if n == 0 {
+				c.close()
 				callbacks.Lock()
 				delete(callbacks.objects, self)
 				callbacks.Unlock()
@@ -258,15 +322,7 @@ func newCallback() (uintptr, *winCallback, error) {
 		})
 		table[3] = syscall.NewCallback(func(self, status, stream, flags, timestamp, sample uintptr) uintptr {
 			if c := callbackAt(self); c != nil {
-				if sample != 0 {
-					com(sample, 1)
-				}
-				v := winSample{sample: sample, status: uint32(status), flags: uint32(flags), pts: int64(timestamp)}
-				select {
-				case c.samples <- v:
-				default:
-					comRelease(sample)
-				}
+				c.offer(winSample{sample: sample, status: uint32(status), flags: uint32(flags), pts: int64(timestamp)})
 			}
 			return 0
 		})
@@ -306,15 +362,30 @@ type windowsCapture struct {
 	config                   Config
 	source, reader, callback uintptr
 	cb                       *winCallback
-	stride                   int
 	nv12                     bool
 	start                    chan winRun
 	stop, done               chan struct{}
 	once                     sync.Once
 	closeErr                 error
-	// Reused native output storage keeps each sample read/copy allocation-free.
-	buffer, data    uintptr
-	maximum, length uint32
+	// This object is pinned for the MTA thread's lifetime. Only that thread
+	// uses these native outputs and COM arguments; callbacks have their own
+	// storage. Successful reads/copies need no per-call Go allocation.
+	arguments                           [12]uintptr
+	buffer, buffer2D, data, bufferStart uintptr
+	maximum, length                     uint32
+	pitch                               int32
+}
+
+func (d *windowsCapture) call(obj uintptr, index int, args ...uintptr) uintptr {
+	d.arguments[0] = obj
+	copy(d.arguments[1:], args)
+	result, _, _ := syscall.SyscallN(comFunction(obj, index), d.arguments[:len(args)+1]...)
+	return result
+}
+func (d *windowsCapture) release(obj uintptr) {
+	if obj != 0 {
+		d.call(obj, 2)
+	}
 }
 
 func openDevice(ctx context.Context, c Config) (captureDevice, error) {
@@ -344,7 +415,7 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 			<-d.stop
 		case <-d.stop:
 		}
-		d.closeErr = d.cleanup()
+		d.closeErr = errors.Join(d.closeErr, d.cleanup())
 	}()
 	select {
 	case err := <-ready:
@@ -457,18 +528,6 @@ func (d *windowsCapture) open() error {
 			if com(actual, 7, ptr(&nominalRange), ptr(&nominal)) == 0 && nominal != 0 && nominal != 2 {
 				return fmt.Errorf("%w: camera range must be 16-235", ErrUnsupported)
 			}
-			var stride uint32
-			actualPins.Pin(&stride)
-			if com(actual, 7, ptr(&defaultStride), ptr(&stride)) != 0 {
-				stride = uint32(d.config.Width)
-				if !d.nv12 {
-					stride *= 2
-				}
-			}
-			d.stride = int(int32(stride))
-			if d.stride <= 0 || d.stride > 1<<20 {
-				return ErrUnsupported
-			}
 			return nil
 		}
 		comRelease(media)
@@ -481,27 +540,36 @@ func (d *windowsCapture) Run(ctx context.Context, emit func(*av.Frame)) error {
 	d.start <- winRun{ctx: ctx, emit: emit, result: result}
 	return <-result
 }
+
+// Flush is asynchronous for a reader with a callback. A broken device may
+// never call OnFlush; keep that wait bounded and retain the failure for Close.
+func (d *windowsCapture) flush(timeout time.Duration) (result error) {
+	defer func() { d.closeErr = errors.Join(d.closeErr, result) }()
+	d.cb.close()
+	if err := hr(d.call(d.reader, 10, firstVideo)); err != nil {
+		return err
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-d.cb.flushed:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("cameraav: source-reader flush: %w", context.DeadlineExceeded)
+	}
+}
+
 func (d *windowsCapture) capture(ctx context.Context, emit func(*av.Frame)) (result error) {
 	defer func() {
-		if err := hr(com(d.reader, 10, firstVideo)); err == nil {
-			<-d.cb.flushed
-		} else {
+		if err := d.flush(mfFlushTimeout); err != nil {
 			result = errors.Join(result, err)
-		}
-		for {
-			select {
-			case sample := <-d.cb.samples:
-				comRelease(sample.sample)
-			default:
-				return
-			}
 		}
 	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := hr(com(d.reader, 9, firstVideo, 0, 0, 0, 0, 0)); err != nil {
+		if err := hr(d.call(d.reader, 9, firstVideo, 0, 0, 0, 0, 0)); err != nil {
 			return err
 		}
 		select {
@@ -509,18 +577,18 @@ func (d *windowsCapture) capture(ctx context.Context, emit func(*av.Frame)) (res
 			return ctx.Err()
 		case s := <-d.cb.samples:
 			if s.status&0x80000000 != 0 {
-				comRelease(s.sample)
+				d.release(s.sample)
 				return hr(uintptr(s.status))
 			}
 			if s.flags&0x33 != 0 {
-				comRelease(s.sample)
+				d.release(s.sample)
 				return fmt.Errorf("%w: source-reader flags 0x%x", ErrFormatChanged, s.flags)
 			}
 			if s.sample == 0 {
 				continue
 			}
 			frame, err := d.copySample(s.sample, s.pts)
-			comRelease(s.sample)
+			d.release(s.sample)
 			if err != nil {
 				return err
 			}
@@ -531,49 +599,80 @@ func (d *windowsCapture) capture(ctx context.Context, emit func(*av.Frame)) (res
 	}
 }
 func (d *windowsCapture) copySample(sample uintptr, pts int64) (*av.Frame, error) {
+	if pts > int64(^uint64(0)>>1)/100 || pts < (-int64(^uint64(0)>>1)-1)/100 {
+		return nil, errors.New("cameraav: invalid sample timestamp")
+	}
 	d.buffer = 0
-	if err := hr(com(sample, 41, ptr(&d.buffer))); err != nil {
+	if err := hr(d.call(sample, 41, ptr(&d.buffer))); err != nil {
 		return nil, err
 	}
-	defer comRelease(d.buffer)
-	if err := hr(com(d.buffer, 3, ptr(&d.data), ptr(&d.maximum), ptr(&d.length))); err != nil {
+	defer d.release(d.buffer)
+	d.buffer2D = 0
+	result := d.call(d.buffer, 0, ptr(&buffer2DIID), ptr(&d.buffer2D))
+	if uint32(result) == eNoInterface {
+		return d.copyContiguousBuffer(pts * 100)
+	}
+	if err := hr(result); err != nil {
 		return nil, err
 	}
-	defer com(d.buffer, 4)
-	if d.data == 0 || d.length > d.maximum || d.length > 128<<20 || pts > int64(^uint64(0)>>1)/100 || pts < (-int64(^uint64(0)>>1)-1)/100 {
+	defer d.release(d.buffer2D)
+	// IMF2DBuffer2::Lock2DSize, read-only. Its bounds describe the native
+	// allocation; IMFMediaBuffer lengths instead describe packed data.
+	if err := hr(d.call(d.buffer2D, 10, 1, ptr(&d.data), ptr(&d.pitch), ptr(&d.bufferStart), ptr(&d.length))); err != nil {
+		return nil, err
+	}
+	defer d.call(d.buffer2D, 4) // IMF2DBuffer::Unlock2D
+	if d.pitch <= 0 || d.pitch > 1<<20 {
+		return nil, fmt.Errorf("%w: camera buffer pitch %d", ErrUnsupported, d.pitch)
+	}
+	if d.bufferStart == 0 || d.data < d.bufferStart || d.length > 128<<20 || uintptr(d.length) > ^uintptr(0)-d.bufferStart || d.data-d.bufferStart > uintptr(d.length) {
+		return nil, errors.New("cameraav: invalid 2D sample bounds")
+	}
+	length := uintptr(d.length) - (d.data - d.bufferStart)
+	data := unsafe.Slice((*byte)(nativePointer(d.data)), int(length))
+	return d.copyPixels(pts*100, data, int(d.pitch))
+}
+
+func (d *windowsCapture) copyContiguousBuffer(pts int64) (*av.Frame, error) {
+	if err := hr(d.call(d.buffer, 3, ptr(&d.data), ptr(&d.maximum), ptr(&d.length))); err != nil {
+		return nil, err
+	}
+	defer d.call(d.buffer, 4)
+	if d.data == 0 || d.length > d.maximum || d.length > 128<<20 || uintptr(d.length) > ^uintptr(0)-d.data {
 		return nil, errors.New("cameraav: invalid sample buffer")
 	}
-	data := unsafe.Slice((*byte)(nativePointer(d.data)), int(d.length))
+	// IMFMediaBuffer::Lock returns the contiguous representation, even for
+	// a 2D buffer whose native pitch has padding. NV12/YUY2 use minimum stride.
+	stride := d.config.Width
+	if !d.nv12 {
+		stride *= 2
+	}
+	return d.copyPixels(pts, unsafe.Slice((*byte)(nativePointer(d.data)), int(d.length)), stride)
+}
+
+func (d *windowsCapture) copyPixels(pts int64, data []byte, stride int) (*av.Frame, error) {
 	if d.nv12 {
-		offset := d.stride * d.config.Height
+		offset := stride * d.config.Height
 		if offset > len(data) {
 			return nil, errors.New("cameraav: short NV12 buffer")
 		}
-		return copyNV12(d.config, pts*100, data[:offset], data[offset:], d.stride, d.stride)
+		return copyNV12(d.config, pts, data[:offset], data[offset:], stride, stride)
 	}
-	return copyYUYV(d.config, pts*100, data, d.stride)
+	return copyYUYV(d.config, pts, data, stride)
 }
 func (d *windowsCapture) cleanup() error {
+	if d.cb != nil {
+		d.cb.close()
+	}
 	var err error
 	if d.source != 0 {
-		err = hr(com(d.source, 12))
+		err = hr(d.call(d.source, 12))
 	}
-	comRelease(d.reader)
-	comRelease(d.source)
+	d.release(d.reader)
+	d.release(d.source)
 	d.reader = 0
 	d.source = 0
-	if d.cb != nil {
-		for {
-			select {
-			case s := <-d.cb.samples:
-				comRelease(s.sample)
-			default:
-				goto drained
-			}
-		}
-	}
-drained:
-	comRelease(d.callback)
+	d.release(d.callback) // final Release also closes and drains the callback
 	d.callback = 0
 	return err
 }

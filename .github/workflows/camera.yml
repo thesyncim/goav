@@ -32,7 +32,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           if sudo modprobe vivid n_devs=1; then
+            # udev applies device permissions asynchronously after module load.
+            sudo udevadm settle --timeout=30
+            if [ ! -c /dev/video0 ]; then
+              echo '::error::Vivid loaded, but /dev/video0 is not a character device.'
+              ls -ld /dev/video* 2>/dev/null || true
+              exit 1
+            fi
             sudo chmod a+rw /dev/video0
+            stat --format='%n: %F, mode=%a, owner=%U:%G' /dev/video0
+            if [ ! -r /dev/video0 ] || [ ! -w /dev/video0 ]; then
+              echo '::error::The runner cannot read and write the Vivid camera device.'
+              id
+              exit 1
+            fi
             echo 'GOAV_CAMERA_TEST_DEVICE=/dev/video0' >> "$GITHUB_ENV"
           else
             echo 'Vivid is unavailable; physical capture remains opt-in.'
@@ -43,3 +56,11 @@ jobs:
         run: CGO_ENABLED=1 go test -race -count=1 ./...
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
+      - name: Staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          staticcheck ./...
+      - name: Govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
