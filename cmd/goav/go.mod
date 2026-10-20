@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
-	github.com/thesyncim/goav v0.0.0-20261019214419-55a7450524dc
+	github.com/thesyncim/goav v0.0.0-20261020073829-971a75a3f9ad
 	github.com/thesyncim/goav/player v0.0.0-20261019214640-84afe0a7e974
 	github.com/thesyncim/goav/webrtcav v0.0.0-20261019214640-84afe0a7e974
 )
