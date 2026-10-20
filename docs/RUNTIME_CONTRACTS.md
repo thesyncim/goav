@@ -138,7 +138,9 @@ A map tagged through `PayloadCodec.StreamID` belongs to one track and has that
 track's monotonic epoch. Separate tracks can use the same payload type and codec
 with independent epochs. Untagged maps may cover distinct codecs and use a
 session-wide map epoch announced by a configuration event; that map epoch may
-differ from an event's stream epoch. Same-codec tracks require stream tags.
+differ from an event's stream epoch. An empty map on StreamRemoved uses the
+event stream's epoch, so removing one track cannot advance another track's
+generation. Same-codec tracks require stream tags.
 
 Stream removal drains buffered complete media under its original map and
 clears that stream incarnation. StreamAdded may reuse the ID with a fresh epoch;
@@ -148,6 +150,10 @@ media. Jitter release retains each packet's configuration provenance. A single
 configured JitterBuffer has one sequence/SSRC window; concurrent stream scopes
 are refused with `ErrJitterStreamConflict`. Use one Source and jitter buffer per
 track. WHEP supports multiple tracks without a shared jitter buffer.
+`JitterBuffer` now requires `Reset()`: after draining an old stream incarnation,
+Source resets its sequence and SSRC window before accepting a replacement or
+re-added stream, and also resets it at an explicit discontinuity. Custom jitter implementations and wrappers must forward Reset;
+`JitterRing` already implements it.
 
 WebRTC UpdateCodec keeps an already-started read on its original generation
 when its payload type still exists there. Updates may coalesce; a payload type

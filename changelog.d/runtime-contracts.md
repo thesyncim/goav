@@ -9,7 +9,7 @@
   including Select's pinned lossless queue and timestamp ordering constraints.
 - Require atomic four-result RTP reads, preserve per-track configuration through
   decorators, jitter, and bounded WHEP aggregation, and add a fixed-configuration
-  legacy adapter. PacketReader and custom pipeline.Graph implementations require
-  migration; see docs/RUNTIME_CONTRACTS.md.
+  legacy adapter. PacketReader, JitterBuffer, and custom pipeline.Graph implementations
+  require migration; see docs/RUNTIME_CONTRACTS.md.
 - Extend published-consumer validation to WebRTC ordered records and refresh
   nested module pins so installed player and CLI consumers receive these contracts.

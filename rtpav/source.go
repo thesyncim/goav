@@ -149,14 +149,25 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			if scopeErr != nil {
 				return scopeErr
 			}
+			target := recordEventTarget(event)
+			replacesJitterStream := event != nil && event.Type == av.EventCodecChanged &&
+				(len(s.streams) <= 1 || target == s.jitterScope)
+			resetsJitter := event != nil && s.jitterScoped && (replacesJitterStream ||
+				event.Type == av.EventStreamRemoved && target == s.jitterScope ||
+				event.Type == av.EventDiscontinuity && (target == "" || target == s.jitterScope))
 			if s.jitter != nil && packet != nil {
-				if s.jitterScoped && s.jitterScope != scope && !s.removed[s.jitterScope] && !(configurationEvent(event) && len(s.streams) <= 1) {
+				if s.jitterScoped && s.jitterScope != scope && !s.removed[s.jitterScope] && !replacesJitterStream {
 					return ErrJitterStreamConflict
 				}
-				s.jitterScope, s.jitterScoped = scope, true
 			}
 			epoch := payloads.Epoch()
-			epochScope := recordEpochScope(packet, payloads)
+			epochScope, epochScopeErr := recordEpochScope(packet, event, payloads)
+			if epochScopeErr != nil {
+				return epochScopeErr
+			}
+			if event != nil && epochScope != "" && scope != "" && epochScope != scope {
+				return ErrInvalidConfiguration
+			}
 			if epochScope != "" && configurationEvent(event) && event.Epoch != 0 && event.Epoch != epoch {
 				return ErrInvalidConfiguration
 			}
@@ -177,6 +188,18 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 					return flushErr
 				}
 			}
+			if resetsJitter && s.jitter != nil {
+				s.jitter.Reset()
+				if event.Type == av.EventStreamRemoved {
+					s.jitterScoped = false
+				}
+			}
+			if replacesJitterStream && s.jitterScoped {
+				s.jitterScope = scope
+			}
+			if s.jitter != nil && packet != nil {
+				s.jitterScope, s.jitterScoped = scope, true
+			}
 			s.payloads, s.scope = payloads, scope
 			s.epochs[epochScope] = epoch
 			if event != nil {
@@ -191,7 +214,7 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			}
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if isReadEOF(err) {
 				if err := s.flush(ctx, emitter); err != nil {
 					return err
 				}
@@ -200,6 +223,29 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			}
 			return err
 		}
+	}
+}
+
+// A joined finalization/protocol failure is still a failure when one sibling
+// cause is EOF. Only an error tree made entirely of EOF marks successful input
+// completion; ordinary wrappers preserve that meaning.
+func isReadEOF(err error) bool {
+	switch cause := err.(type) {
+	case interface{ Unwrap() []error }:
+		leaves := cause.Unwrap()
+		if len(leaves) == 0 {
+			return false
+		}
+		for _, leaf := range leaves {
+			if !isReadEOF(leaf) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return isReadEOF(cause.Unwrap())
+	default:
+		return errors.Is(err, io.EOF)
 	}
 }
 
@@ -351,6 +397,9 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 	if event.Stream != nil {
 		stream := cloneRTPStream(*event.Stream)
 		s.event.Stream = &stream
+		if s.event.StreamID == "" {
+			s.event.StreamID = stream.ID
+		}
 	}
 	if event.Codec != nil {
 		codec := clonePayloadCodec(PayloadCodec{Parameters: *event.Codec}).Parameters
@@ -729,17 +778,19 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 		id = codecIDFromMIME(payload.MIMEType)
 	}
 	var found Depacketizer
+	matches := 0
 	for i := range s.depacketizers {
 		if s.depacketizers[i].Codec() == id {
 			stream, known := depacketizerStream(s.depacketizers[i])
 			if payload.StreamID != "" && known && stream.ID == payload.StreamID {
 				return s.depacketizers[i]
 			}
-			if found != nil {
-				return nil
-			}
+			matches++
 			found = s.depacketizers[i]
 		}
+	}
+	if matches != 1 {
+		return nil
 	}
 	if payload.StreamID != "" {
 		matches := 0
@@ -757,25 +808,69 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 
 // Untagged maps use a session-wide configuration generation. A tagged map
 // belongs to one stream; other tracks can advance independently.
-func recordEpochScope(packet *rtp.Packet, payloads PayloadMap) av.StreamID {
-	if packet != nil {
+func recordEpochScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) (av.StreamID, error) {
+	if packet != nil && !configurationEvent(event) {
 		payload, _ := payloads.Lookup(packet.PayloadType)
-		return payload.StreamID
+		return payload.StreamID, nil
 	}
+	var scope av.StreamID
+	seen := false
 	for _, payload := range payloads.Codecs() {
-		if payload.StreamID != "" {
-			return payload.StreamID
+		if seen && payload.StreamID != scope {
+			return "", ErrInvalidConfiguration
 		}
+		scope, seen = payload.StreamID, true
+	}
+	if !seen && event != nil {
+		// A removal has no remaining payload entry to tag. Its epoch still
+		// belongs to that stream, not an aggregate session generation.
+		scope = recordEventTarget(event)
+		if event.Stream != nil && event.Stream.ID != "" {
+			scope = event.Stream.ID
+		}
+	}
+	return scope, nil
+}
+
+func recordEventTarget(event *av.Event) av.StreamID {
+	if event == nil {
+		return ""
+	}
+	if event.StreamID != "" {
+		return event.StreamID
+	}
+	if event.Stream != nil {
+		return event.Stream.ID
 	}
 	return ""
 }
 
 func (s *Source) recordScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) (av.StreamID, error) {
 	var scope av.StreamID
+	var target av.StreamID
 	if event != nil {
 		scope = event.StreamID
-		if scope == "" && event.Stream != nil {
-			scope = event.Stream.ID
+		target = scope
+		if event.Stream != nil {
+			if scope != "" && event.Stream.ID != "" && scope != event.Stream.ID {
+				// CodecChanged can target the old ID while declaring its
+				// replacement. The new ID must not take over a sibling.
+				if event.Type != av.EventCodecChanged {
+					return "", ErrInvalidConfiguration
+				}
+				for _, stream := range s.streams {
+					if stream.ID == event.Stream.ID {
+						return "", ErrInvalidConfiguration
+					}
+				}
+				scope = event.Stream.ID
+			}
+			if scope == "" {
+				scope = event.Stream.ID
+			}
+		}
+		if target == "" {
+			target = scope
 		}
 	}
 	if packet != nil {
@@ -800,7 +895,8 @@ func (s *Source) recordScope(packet *rtp.Packet, event *av.Event, payloads Paylo
 			}
 		}
 	}
-	if packet != nil && s.removed[scope] {
+	addsStream := event != nil && event.Type == av.EventStreamAdded && event.Stream != nil && recordEventTarget(event) == scope
+	if packet != nil && s.removed[scope] && !addsStream {
 		return "", ErrUnknownStream
 	}
 	if scope == "" && len(s.streams) == 1 {
@@ -808,6 +904,15 @@ func (s *Source) recordScope(packet *rtp.Packet, event *av.Event, payloads Paylo
 	}
 	if scope == "" && configurationEvent(event) && len(s.streams) > 1 {
 		return "", ErrAmbiguousStream
+	}
+	if event != nil && event.Type == av.EventCodecChanged && len(s.streams) > 1 {
+		known := false
+		for _, stream := range s.streams {
+			known = known || stream.ID == target
+		}
+		if !known {
+			return "", ErrUnknownStream
+		}
 	}
 	if scope == "" && len(s.streams) == 0 {
 		scope = s.scope

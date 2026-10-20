@@ -92,7 +92,8 @@ beginner through them.
 ## Current runtime and transport migration
 
 The pre-v1 runtime contract update changes `PacketReader.ReadRTP` to four
-results and makes `pipeline.Graph.CleanupError` mandatory. Built-task Run success
+results, requires `JitterBuffer.Reset` to reset stream incarnations, and makes
+`pipeline.Graph.CleanupError` mandatory. Built-task Run success
 means execution ended; actual destination commit/abort/close follows finalization.
 Early Close abandons active outputs deterministically. Failure isolation is
 opt-in on the existing Output value, with FailTask remaining the default.

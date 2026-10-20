@@ -98,11 +98,15 @@ func (r *JitterResult) Reset() {
 
 // JitterBuffer reorders out-of-order RTP: PushInto admits a packet and
 // releases whatever became in-order, PopInto drains one ready packet,
-// FlushInto drains everything at end of stream.
+// FlushInto drains everything at a boundary. Reset discards buffered packets
+// and clears sequence/SSRC state for a new stream incarnation. Source drains
+// the old window before resetting at removal, replacement, or discontinuity.
+// Decorators must preserve Reset along with the packet operations.
 type JitterBuffer interface {
 	PushInto(context.Context, *rtp.Packet, *JitterResult) error
 	PopInto(context.Context, *rtp.Packet) (bool, error)
 	FlushInto(context.Context, *JitterResult) error
+	Reset()
 	Stats() JitterStats
 }
 

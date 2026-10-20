@@ -144,6 +144,10 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   caller-held value (io.Writer for `Write`, `provider.Destination` for
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
+  `JitterBuffer.Reset` clears the sequence/SSRC window after old media drains at
+  stream removal or replacement; implementations and decorators must preserve it.
+  This changes no recipe shape or planning operation; Receive and its integration
+  tests cover same-SSRC sequence restart and stream-ID replacement.
   `PacketReader.ReadRTP` is the mandatory four-result atomic packet/event/map
   read. `StaticReader`/`Static` adapt only fixed configuration; `ReadRTPFunc`/
   `DecorateReader` preserve atomic interception and RTCP. `PayloadCodec.StreamID`

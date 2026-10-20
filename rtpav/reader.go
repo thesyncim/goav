@@ -3,6 +3,7 @@ package rtpav
 import (
 	"context"
 	"errors"
+
 	"github.com/pion/rtp"
 	"github.com/thesyncim/goav/av"
 )
@@ -60,19 +61,26 @@ func (r *staticReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, Pay
 	}
 	packet, err := r.StaticReader.ReadRTP(ctx)
 	if current := r.StaticReader.PayloadMap(); current != nil && current.Epoch() != r.payloads.Epoch() {
-		return nil, nil, nil, errors.Join(ErrOrderedConfigurationRequired, err)
+		return nil, nil, nil, orderedConfigurationRefusal(err)
 	}
 	select {
 	case event, ok := <-r.StaticReader.Events():
 		if ok {
 			if configurationEvent(&event) {
-				return nil, nil, nil, errors.Join(ErrOrderedConfigurationRequired, err)
+				return nil, nil, nil, orderedConfigurationRefusal(err)
 			}
 			return packet, &event, r.payloads, err
 		}
 	default:
 	}
 	return packet, nil, r.payloads, err
+}
+
+func orderedConfigurationRefusal(err error) error {
+	if err == nil || isReadEOF(err) {
+		return ErrOrderedConfigurationRequired
+	}
+	return errors.Join(ErrOrderedConfigurationRequired, err)
 }
 
 // ReadRTPFunc is the single atomic read operation, including event-only records.
