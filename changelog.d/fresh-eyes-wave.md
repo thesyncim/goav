@@ -77,3 +77,5 @@
   the Matroska demuxer, the EBML reader, and the RTP packetizers too, and pins
   govulncheck; the repository gains `.gitattributes` (LF), Dependabot,
   CODEOWNERS, and a bug-report form.
+
+Control token files are replaced atomically with owner-only permissions, including when an existing path is world-readable or a symlink.

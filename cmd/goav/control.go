@@ -53,7 +53,21 @@ func (c controlFlags) issueToken() (string, string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+	// Replace the directory entry with a fresh 0600 file. WriteFile would
+	// preserve an existing file's permissions and follow a symlink.
+	file, err := os.CreateTemp(filepath.Dir(path), ".goav-token-*")
+	if err != nil {
+		return "", "", err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.WriteString(token + "\n"); err != nil {
+		file.Close()
+		return "", "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", "", err
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
 		return "", "", err
 	}
 	return token, path, nil
