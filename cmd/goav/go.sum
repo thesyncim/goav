@@ -48,8 +48,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc h1:ZsZvoJhGC3QUH8nU97AQEST8EN8SpZv/IzZNxIJ43l8=
 github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc/go.mod h1:ICfAxq0XvxGaJjUFD7deTm/lctQ8DDCpXNek4Js9ono=
-github.com/thesyncim/goav/cameraav v0.0.0-20261020202255-882256009041 h1:yGGGUTFJ1sMYIyHt6/K1V1KoKzBBt4ewDpIGWWJ4Mag=
-github.com/thesyncim/goav/cameraav v0.0.0-20261020202255-882256009041/go.mod h1:0CQnH/3xk+yex/QcwqWO58dSeRpE/4IVsjUs6jqbH9c=
+github.com/thesyncim/goav/cameraav v0.0.0-20261020203422-726a0aae6204 h1:MPbJ+1LVr9O/urFZlWQb6P3cMKDGNm3DX/fWJTulsyM=
+github.com/thesyncim/goav/cameraav v0.0.0-20261020203422-726a0aae6204/go.mod h1:0CQnH/3xk+yex/QcwqWO58dSeRpE/4IVsjUs6jqbH9c=
 github.com/thesyncim/goav/player v0.0.0-20261020183009-ea6589a0aecc h1:75MoWs99/917pS21JvQjm0ys6SlsYu2OfBA0Pe5P4CA=
 github.com/thesyncim/goav/player v0.0.0-20261020183009-ea6589a0aecc/go.mod h1:ymhgfOXdz7ShTWxJPfv/LuikPGkldzSorlHQs+BOE80=
 github.com/thesyncim/goav/rtpav v0.0.0-20261020183009-ea6589a0aecc h1:6LvdQBfSZtmsxVCx1lkr2Frew1UzDnvXiUIQhsFrJ2I=
