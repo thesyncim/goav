@@ -1,10 +1,33 @@
 # Error Catalog
 
-<!-- Kept in lockstep with errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; update both together. -->
+This is the checked index of every code a goav `BuildError` can carry. Switch on
+`Family` first, then on `Code` (an `errcode.Code` string; the most common have
+constants in `errcode`). The table below is generated from the source and pinned by
+`TestErrorCatalogDocMatchesErrcodeCatalog`: a new code fails the test until it is
+listed here (`GOAV_UPDATE_GOLDEN=1` regenerates it). A custom `goav.Join(name, ...)`
+derives `<name>_inputs` and `<name>_arm` (family `join`); vendor codes are `external`.
 
-This catalog is the checked index of goav's public BuildError refusal codes. `TestErrorCatalogDocMatchesErrcodeCatalog` verifies, both directions, that every `Code` constant in `errcode/errcode.go` has a Full Code Index row here (with its constant name and an existing coverage test) and that every row resolves to a declared constant or derived join code, so a new code must update the source catalog and this checked document together.
+<!-- BEGIN GENERATED CODES -->
+| Family | Codes |
+| --- | --- |
+| `branch` | `branch_decode_domain_mismatch`, `branch_decode_duplicate`, `branch_operation_chain_unsupported`, `branch_transform_media_mismatch`, `decode_config_conflict` |
+| `buffer` | `branch_buffer_invalid`, `branch_buffer_unsupported` |
+| `codec` | `decode_adapter_incompatible`, `decode_adapter_missing`, `decode_adapter_unavailable`, `encode_adapter_incompatible`, `encode_adapter_missing`, `encode_adapter_unavailable` |
+| `compiler` | `compiler_pass_failed`, `graph_plan_invalid`, `recipe_graph_unsupported`, `runtime_missing` |
+| `destination` | `destination_duplicate`, `destination_format_unknown`, `destination_invalid`, `destination_mux_incompatible`, `destination_muxer_missing`, `destination_shape_mismatch`, `output_destination_missing`, `output_duplicate`, `output_format_missing`, `output_format_unknown`, `output_invalid`, `output_kind_mixed`, `output_muxer_missing`, `output_scheme_unsupported`, `output_writer_missing` |
+| `encode` | `encode_auto_unresolved`, `encode_destination_missing`, `encode_duplicate`, `encode_missing`, `encode_parameter_invalid`, `encode_stream_mismatch` |
+| `input` | `explicit_graph_source_missing`, `input_demuxer_missing`, `input_duplicate`, `input_format_unknown`, `input_invalid`, `input_scheme_unsupported`, `input_unknown`, `source_callback_missing`, `source_shape_invalid`, `source_shape_mismatch`, `source_shape_unsupported` |
+| `join` | `composite_arm`, `composite_inputs`, `join_name_invalid`, `join_stage_invalid`, `mix_arm`, `mix_inputs`, `select_arm`, `select_inputs` |
+| `runtime_branch` | `runtime_branch_anchor_missing`, `runtime_branch_copy_domain_mismatch`, `runtime_branch_decode_codec_missing`, `runtime_branch_decode_domain_mismatch`, `runtime_branch_encode_domain_mismatch`, `runtime_branch_encode_missing`, `runtime_branch_graph_error`, `runtime_branch_invalid`, `runtime_branch_mux_codec_missing`, `runtime_branch_node_duplicate`, `runtime_branch_tap_duplicate`, `runtime_branch_tap_missing`, `runtime_branch_transform_error` |
+| `shape` | `shape_adapter_ambiguous`, `shape_adapter_missing`, `shape_conversion_refused`, `shape_requirement_unmet` |
+| `stream` | `stage_missing`, `stream_ambiguous`, `stream_codec_missing`, `stream_invalid`, `stream_missing`, `stream_selector_invalid`, `stream_step_after_encode` |
+| `stream_rule` | `stream_rule_invalid` |
+| `tap` | `tap_domain_mismatch`, `tap_invalid` |
+| `transform` | `operation_shape_mismatch`, `transcode_resize_invalid`, `transform_adapter_incompatible`, `transform_adapter_missing`, `transform_invalid`, `transform_media_mismatch` |
+<!-- END GENERATED CODES -->
 
-Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, public contract check, and test name before the v1 error catalog is complete. Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or BuildError field checks in the named test.
+The snippets below pin the public constants' refusals: the bad recipe, the
+rendered error, and the fix.
 
 ## Acceptance Snippet Coverage
 
@@ -24,20 +47,3 @@ Every current catalog row names coverage. If a future row is marked `catalog-onl
 | `runtime_missing` | `TestRecipeReportsOmittedRuntime` | a recipe built with no runtime configured | adapter-backed omitted runtime guidance is asserted by the test | build on a runtime: rt.Run(ctx, outputs...), or bundle.Build/bundle.Run for the bundled runtime | `BuildError.Code` |
 | `recipe_graph_unsupported` | `TestRecipeResolvedUnsupportedContracts` | describe/build a recipe shape that has no graph plan | unsupported recipe graph helper is asserted by the test | use a supported front-door recipe shape | `BuildError.Code` |
 
-## Full Code Index
-
-| Section | Constant | Code | Kind | When it fires | Example coverage |
-|---|---|---|---|---|---|
-| Tap errcode. | `errcode.TapInvalid` | `tap_invalid` | refusal | TapInvalid fires when a tap name is empty. | TestStreamChainRejectsInvalidPostEncodeAndTapContracts |
-| Tap errcode. | `errcode.TapDomainMismatch` | `tap_domain_mismatch` | refusal | TapDomainMismatch fires when a tap sits where its stream does not carry the domain it needs, such as a join arm's tap before the arm's .Decode(). | TestJoinArmTapBeforeDecodeIsRefused |
-| Join codes. | `errcode.JoinNameInvalid` | `join_name_invalid` | refusal | JoinNameInvalid fires when a custom join (goav.Join) declares an unusable name: empty, not snake-safe ([a-z][a-z0-9_]*), reserved by a built-in kind (mix, composite, select), or colliding with another join node in the same join tree. | TestJoinRejectsInvalidNames |
-| Join codes. | `errcode.JoinStageInvalid` | `join_stage_invalid` | refusal | JoinStageInvalid fires when a custom join's convergence stage is nil or reports a Name() different from the join's name. | TestJoinRejectsStageMismatch |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("mix", "inputs")` | `mix_inputs` | refusal | Mix is given fewer than two arms. | TestMixRequiresTwoArms |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("mix", "arm")` | `mix_arm` | refusal | A Mix arm is invalid: wrong media, duplicate stream ids, an unconvertible format, or a nested arm carrying .Encode. | TestMixRequiresExplicitDecodeForPacketArms |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("composite", "inputs")` | `composite_inputs` | refusal | Composite is given fewer than two arms. | TestCompositeRequiresTwoArms |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("composite", "arm")` | `composite_arm` | refusal | A Composite arm is invalid: wrong media, duplicate stream ids, an unconvertible format, or unsupported nested operations. | TestCompositeRejectsDuplicateStreamIDs |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("select", "inputs")` | `select_inputs` | refusal | Select is given fewer than two arms. | TestSelectRequiresTwoArms |
-| Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("select", "arm")` | `select_arm` | refusal | A Select arm is invalid: duplicate stream ids, incompatible media facts, or unsupported nested operations. | TestSelectRequiresDistinctArmIDs |
-| Stream rule codes (OnStream grammar). | `errcode.StreamRuleInvalid` | `stream_rule_invalid` | refusal | StreamRuleInvalid fires when an OnStream rule is malformed (no matcher, no branch, or an unusable discovered stream). | TestOnStreamValidation |
-| Job and compiler errcode. | `errcode.RuntimeMissing` | `runtime_missing` | refusal | RuntimeMissing fires when a job reaches Build with no runtime configured. | TestRecipeReportsOmittedRuntime |
-| Job and compiler errcode. | `errcode.RecipeGraphUnsupported` | `recipe_graph_unsupported` | refusal | RecipeGraphUnsupported fires when the recipe intent matches no supported graph plan. | TestRecipeResolvedUnsupportedContracts |

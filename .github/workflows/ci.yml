@@ -10,6 +10,8 @@ on:
       - 'playoutav/v*'
       - 'player/v*'
       - 'libcodec/v*'
+      - 'gplcodec/v*'
+      - 'goavtest/expect/v*'
       - 'cmd/goav/v*'
   pull_request:
 
@@ -42,9 +44,17 @@ jobs:
             go: '1.27.x'
             full: false
             goexperiment: ''
+          # Windows runs the suite, not only a cross-compile.
+          - os: windows-latest
+            go: '1.27.x'
+            full: false
+            goexperiment: simd
     runs-on: ${{ matrix.os }}
     env:
       GOEXPERIMENT: ${{ matrix.goexperiment }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
         with:
@@ -114,7 +124,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player libcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -176,6 +186,11 @@ jobs:
           CGO_ENABLED=0 go test ./ctlserver -run '^$' -fuzz=FuzzConnection -fuzztime=10s
           (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzDepacketizers -fuzztime=10s)
           CGO_ENABLED=0 go test . -run '^$' -fuzz=FuzzRecipe -fuzztime=10s
+          CGO_ENABLED=0 go test ./launch -run '^$' -fuzz='^FuzzCompile$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/matroska -run '^$' -fuzz='^FuzzDemuxer$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/ebml -run '^$' -fuzz='^FuzzDecodeSizeVINT$' -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/ebml -run '^$' -fuzz='^FuzzReaderHeaders$' -fuzztime=10s
+          (cd rtpav && CGO_ENABLED=0 go test . -run '^$' -fuzz='^FuzzPacketizers$' -fuzztime=10s)
 
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
@@ -207,7 +222,7 @@ jobs:
       - name: Govulncheck
         if: matrix.full
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
 
       - name: Gofmt
@@ -286,6 +301,19 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
+      # The opt-in GPL codecs (gplcodec.AAC): nested so neither the root nor
+      # bundle links them (TestRootModuleDependencyPurity).
+      - name: gplcodec module
+        if: matrix.full
+        working-directory: gplcodec
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       # A backend from outside goav: public packages only, over the system zlib.
       - name: libcodec out-of-tree backend proof
         if: matrix.full
@@ -343,16 +371,18 @@ jobs:
 
       - name: Release tag validation
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
               exit 1
               ;;
           esac
-          git verify-tag "${GITHUB_REF_NAME}"
+          scripts/verify-release-signature.sh tag "${GITHUB_REF_NAME}"
           test -s CHANGELOG.md
 
   # VideoToolbox and AudioToolbox exist only on macOS, so their conformance
@@ -401,7 +431,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player libcodec goavtest/expect; do
+          for mod in rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x

@@ -29,10 +29,13 @@ return server.ListenAndServe(ctx, "unix:///run/goav/ctl.sock")
 
 `ListenAndServe` takes `unix:///path` or `tcp://host:port` and serves until
 ctx ends, then waits for calls in flight to answer. A unix socket is
-owner-only from the moment it exists; a stale socket is replaced, and a path
-another server is serving, or one that is not a socket, is refused rather
-than deleted. TCP has no authentication of its own: bind it to loopback, or
-serve over HTTP behind yours. TCP is a trusted-network interface, never an exposed one; the CLI's `--control` takes a bare path as `unix://`. `Serve(ctx, listener)` takes a listener you made.
+owner-only from the moment it exists (on Windows, it takes its directory's
+ACL); a stale socket is replaced, and a path another server is serving, or one
+that is not a socket, is refused rather than deleted. TCP needs
+`ctlserver.Token(t)`: every connection first sends
+`{"method":"$/authenticate","params":{"token":t}}` (`Dial` does, from
+`tcp://TOKEN@host:port`) or is answered `-32001` and closed; an HTTP request
+needs `Authorization: Bearer t`. `Serve(ctx, listener)` takes a listener you made.
 
 A `*Server` is an `http.Handler`, for mounting in a service you already run,
 behind its own authentication:
@@ -99,7 +102,8 @@ answer:
 
 A refusal is an error with a JSON-RPC code: `-32700` malformed JSON,
 `-32600` not a request, `-32601` unknown method, `-32602` bad params, and
-`-32000` for a call goav refused, whose `data` carries the structured detail.
+`-32000` for a call goav refused, whose `data` carries the structured detail,
+and `-32001` for a client that did not authenticate with the server's Token.
 A request too broken to read is answered with `"id": null`. A program
 refusal carries its position and the fix, and, when an element refused with a
 `*goav.BuildError`, that error under `build`:
@@ -148,8 +152,8 @@ Files are the server's policy, not the client's. Without `Files`, an attached
 program reads and writes nothing, and a `file` destination is refused.
 `Files` given a `launch.Dir(root)` confines programs to root: a path that
 escapes it, through `..` or a symlink, is refused. `launch.OS()` grants the
-process's files; `goav run --control` grants it, because its client is the
-user who started it. Serve untrusted clients a `launch.Dir`, or nothing.
+process's files. `goav run --control` grants `--control-dir` (default `.`)
+as a `launch.Dir`. Serve untrusted clients a `launch.Dir`, or nothing.
 
 ## Host methods and elements
 

@@ -127,8 +127,9 @@ func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
 	return spec
 }
 
-// FileInput declares a file-like input read from reader; name carries the
-// extension format probing uses (a .ivf name selects the IVF demuxer).
+// FileInput declares a file-like input read from reader. Its container is
+// detected from its first bytes when it opens; name (its extension) is the
+// hint used when the bytes match no format, and names the input.
 func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 	spec := InputSpec{
 		input: format.Input{
@@ -385,15 +386,19 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 			probes[i] = customSourceProbeResult(inputs[i])
 			continue
 		}
-		input := inputs[i].input
-		result, err := rt.probeInput(ctx, input, inputs[i].pinnedFormat())
-		if err != nil {
-			return nil, inputFormatProbeError(input, err)
+		input, pinned := inputs[i].input, inputs[i].pinnedFormat()
+		result, err := rt.probeInput(ctx, input, pinned, nil)
+		if err == nil {
+			_, err = rt.formats.DemuxerFactory(result.Format)
 		}
-		probes[i] = result
-		if _, err := rt.formats.DemuxerFactory(result.Format); err != nil {
+		switch {
+		case err == nil:
+			probes[i] = result
+		case pinned != "":
 			return nil, inputDemuxerMissingError(input, result.Format, err)
 		}
+		// Otherwise the name only hinted: the input's bytes decide its format
+		// when it opens (sniffInput), so a misnamed or unnamed file still works.
 	}
 	return probes, nil
 }
@@ -418,12 +423,15 @@ func (s InputSpec) pinnedFormat() av.FormatID {
 }
 
 // probeInput resolves an input's container: the pinned format when the input
-// declares one, else the runtime's probers over its name, URI, and MIME type.
-func (r *Runtime) probeInput(ctx context.Context, input format.Input, pinned av.FormatID) (format.ProbeResult, error) {
+// declares one, else the runtime's probers over its first bytes (header),
+// which outrank its name, URI, and MIME type.
+func (r *Runtime) probeInput(ctx context.Context, input format.Input, pinned av.FormatID, header []byte) (format.ProbeResult, error) {
 	if pinned != "" {
 		return format.ProbeResult{Format: pinned, Score: 100, Reason: "declared by the input"}, nil
 	}
-	return r.formats.Probe(ctx, inputProbeRequest(input))
+	request := inputProbeRequest(input)
+	request.Header = header
+	return r.formats.Probe(ctx, request)
 }
 
 func reconnectNotLiveError(node, why string) error {

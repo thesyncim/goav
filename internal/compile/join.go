@@ -231,13 +231,26 @@ func (s *recipeState) planJoinArm(p *JoinPlan, armID recipeir.NodeID, at recipei
 	}
 	armPlan.Input = input
 	armPlan.SourceShape = s.req.Inputs[input].Shape
-	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
+	if err := validateJoinArmOperations(name, armPlan.inputName, profile.media, armPlan.Domain, armOps); err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}
 	for _, operation := range armOps {
-		if operation.Kind == plan.OpDecode {
+		switch operation.Kind {
+		case plan.OpDecode:
 			armPlan.decodeGraph, armPlan.hasDecodeGraph = operation.Node, true
+		case plan.OpTransform:
+			// The arm meets the join as its transforms leave it: an inset
+			// resized on its arm takes its new size on the canvas.
+			armPlan.transforms = append(armPlan.transforms, operation)
+			var known bool
+			if armPlan.Stream, known = plannedArmTransform(armPlan.Stream, operation.Transform); !known {
+				armPlan.late = true
+			}
 		}
+	}
+	armStream := recipeir.Stream{Name: armPlan.inputName, Named: true, Operations: armPlan.transforms}
+	if err := validateRecipeIRTransformAdapters("build "+name, s.env, []recipeir.Stream{armStream}); err != nil {
+		return joinArmPlan{}, nil, nil, err
 	}
 	// A tap on a path another join's arm also reads installs once.
 	var ownOps []recipeir.Operation
@@ -293,7 +306,15 @@ func (s *recipeState) fedArm(p *JoinPlan, feed recipeir.NodeID, input int, set i
 	arm := joinArmPlan{inputName: set.Name, Domain: domain, feed: feed, fed: true}
 	if set.Known && len(set.Streams) != 0 {
 		if stream, err := SelectStream(set.Streams, recipeIRSelector(selector)); err == nil {
-			arm.Stream = stream
+			// The fed node carries the stream as the transforms before it
+			// leave it.
+			known := true
+			for _, id := range s.req.Graph.Path(feed)[1:] {
+				if op := s.req.Graph.Nodes[id].Op; op.Kind == plan.OpTransform && known {
+					stream, known = plannedArmTransform(stream, op.Transform)
+				}
+			}
+			arm.Stream, arm.late = stream, !known
 			return arm
 		}
 	}
@@ -363,6 +384,20 @@ func (l *lowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 			if arm.hasDecodeGraph {
 				l.refs[arm.decodeGraph] = upstream
 			}
+		}
+		for _, operation := range arm.transforms {
+			transform := armTransform(operation)
+			transform.Name = l.unique(p.Name + "-" + transform.Factory + "-" + string(arm.Stream.ID))
+			upstream = l.add(ComposeNode{
+				Kind:      ComposeTransform,
+				Name:      transform.Name,
+				Detail:    MediaTransformDetail(transform),
+				Inputs:    []pipeline.NodeRef{upstream},
+				Transform: transform,
+				Resolved:  true,
+				Join:      p,
+				Arm:       i,
+			})
 		}
 		if arm.stage != nil {
 			upstream = l.add(ComposeNode{

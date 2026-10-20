@@ -1,7 +1,9 @@
 package goav
 
 import (
+	"context"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 
@@ -16,7 +18,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		return cause
 	}
 	suggestions := []string{
-		"give file or URI inputs a name, URI, or MIME type a registered prober can recognize",
+		"check the input holds a container a registered format reads: its first bytes and its name, URI, and MIME type matched none",
 		"register a format adapter with goav.New(runconfig.WithFormatAdapter(...))",
 		"use goav.Input(provider) for realtime packet receive",
 	}
@@ -208,4 +210,38 @@ func containerChoiceFix(choices string) string {
 		return "register a format adapter: this runtime has no muxers"
 	}
 	return "write a container this runtime has a muxer for: " + choices
+}
+
+// inputUnreadableError refuses an input whose demuxer could not open it: it
+// names the input, the format its bytes were detected as, and what is wrong
+// with them, instead of the parser's bare error. Cancellation passes through.
+func inputUnreadableError(ctx context.Context, input format.Input, id av.FormatID, empty bool, cause error) error {
+	if ctx.Err() != nil || errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return cause
+	}
+	var refusal *BuildError
+	if errors.As(cause, &refusal) {
+		return cause
+	}
+	reason := "the input is not a valid " + string(id) + " stream: " + cause.Error()
+	fix := "check that the input really is " + string(id) + " and not damaged: open it with another player, or re-export it"
+	eof := errors.Is(cause, io.EOF) || errors.Is(cause, io.ErrUnexpectedEOF)
+	switch {
+	case empty && eof:
+		reason, fix = "the input is empty", "check the path, and that the file was written before it is read"
+	case eof:
+		reason = "the input ends inside its " + string(id) + " header: it is truncated or still being written"
+		fix = "read the file once it is complete, or re-copy it"
+	}
+	return &BuildError{
+		Phase:     phaseOpen,
+		Family:    errcode.FamilyForCode(inputInvalidCode),
+		Code:      inputInvalidCode,
+		Operation: "open input",
+		Node:      demuxNodeName(input),
+		Reason:    reason,
+		fields:    append(inputFormatFields(input), buildErrorDetail{Key: "format", Value: id}),
+		fixes:     buildErrorFixes([]string{fix}),
+		cause:     cause,
+	}
 }

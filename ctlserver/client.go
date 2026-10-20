@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -31,8 +32,11 @@ type Client struct {
 // earlyEvents bounds the events kept for a watch whose response is in flight.
 const earlyEvents = 64
 
-// Dial connects to a server at unix:///path or tcp://host:port.
+// Dial connects to a server at unix:///path or tcp://host:port, and
+// authenticates with the token a tcp://TOKEN@host:port address carries
+// (see Token).
 func Dial(ctx context.Context, address string) (*Client, error) {
+	token, address := splitToken(address)
 	network, addr, err := splitAddress(address)
 	if err != nil {
 		return nil, err
@@ -47,7 +51,23 @@ func Dial(ctx context.Context, address string) (*Client, error) {
 		done: make(chan struct{}),
 	}
 	go c.read()
+	if token != "" {
+		if _, err := c.call(ctx, authMethod, map[string]string{"token": token}); err != nil {
+			c.Close()
+			return nil, err
+		}
+	}
 	return c, nil
+}
+
+// splitToken takes the token out of a tcp://TOKEN@host:port address.
+func splitToken(address string) (string, string) {
+	rest, ok := strings.CutPrefix(address, "tcp://")
+	token, hostport, found := strings.Cut(rest, "@")
+	if !ok || !found {
+		return "", address
+	}
+	return token, "tcp://" + hostport
 }
 
 // Close closes the connection; calls in flight fail.

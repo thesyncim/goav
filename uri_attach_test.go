@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestAttachResolvesURIThroughTheRuntimeSchemes(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "attached.ivf")
 	var attachment Attachment
 	waitForCondition(t, "file branch attached", func() bool {
-		attachment, err = task.Attach(ctx, task.Tap("live").As("record").To(URI("file://"+filepath.ToSlash(out))))
+		attachment, err = task.Attach(ctx, task.Tap("live").As("record").To(URI(attachFileURL(out))))
 		return err == nil
 	})
 	waitForCondition(t, "file written", func() bool {
@@ -60,4 +61,14 @@ func TestAttachResolvesURIThroughTheRuntimeSchemes(t *testing.T) {
 	}
 	cancel()
 	<-runErr
+}
+
+// attachFileURL is the file URL of a local path: file:///C:/x on Windows, whose
+// paths have no leading slash.
+func attachFileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return "file://" + p
 }

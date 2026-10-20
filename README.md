@@ -2,14 +2,14 @@
 
 # goav
 
-**Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>no cgo, no FFmpeg, no system libraries.
+**Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>the core needs no cgo, no FFmpeg, and no system libraries.
 
 [![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/COMPATIBILITY.md)
 
 </div>
 
 You describe media work as plain Go values, and goav plans it, builds the graph, and runs it.
-The codecs and containers are pure Go (VP8, VP9, AV1, Opus, AAC; WebM, Matroska, MP4), so
+The codecs and containers are pure Go (VP8, VP9, AV1, Opus; WebM, Matroska, MP4), so
 your service still ships as one static binary.
 
 ```sh
@@ -138,13 +138,15 @@ DOT and Mermaid.
 
 | | Decode / demux | Encode / mux |
 | --- | --- | --- |
-| Video | VP8, VP9, AV1, H.264 (`goav_goh264` build tag) | VP8, VP9, AV1 |
-| Audio | Opus, AAC-LC | Opus (in WebM, Matroska, or MP4) |
+| Video | VP8, VP9, AV1, H.264 (`-tags goav_goh264`) | VP8, VP9, AV1 |
+| Audio | Opus | Opus (in WebM, Matroska, or MP4) |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, MP4 (progressive or fragmented), IVF, Annex B (H.264) |
 
 Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
 runtime with only the adapters you choose, and there is no global registry.
-See [Adapters](docs/ADAPTERS.md).
+AAC comes from [`libcodec`](libcodec) (AudioToolbox, macOS) or the opt-in [`gplcodec`](gplcodec)
+(pure Go, arm64 only, GPL). Everything `bundle` links is permissive, except LGPL H.264 under
+its tag; see [licenses](docs/ADAPTERS.md#licenses).
 
 ## Recipes
 
@@ -153,12 +155,12 @@ See [Adapters](docs/ADAPTERS.md).
 | Remux without decoding | `in.To(goav.Write("out.mkv", w))` |
 | Audio and video in one file | pass `in.Video()…To(out)` and `in.Audio()…To(out)` to one `Run` |
 | Frames into your code | `in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
-| Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen, 960, 540))`, `goav.Select(a, b)` |
+| Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen.Resize(480, 270), 1420, 790))`, `goav.Select(a, b)` |
 | Package for HLS | `goav.Custom("live", hls.New("live.m3u8", hls.Dir(dir), hls.Window(6)))`; `hls.NewLadder` for renditions, `hls.Parts` with an `hls.Server` for LL-HLS, or `goav run --serve :8080 '... ! hls live.m3u8 parts=250ms'` |
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 
-RTP and WebRTC inputs live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
+RTP and WebRTC, in and out, live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
 your own sources, codecs, and sinks plug in through small interfaces
 ([Extension cookbook](docs/EXTENSION_COOKBOOK.md)). More in [Use cases](docs/USE_CASES.md),
 [Operations](docs/OPERATIONS.md), and [`examples/`](examples), including a browser
@@ -180,18 +182,21 @@ your own sources, codecs, and sinks plug in through small interfaces
 | Module | Adds |
 | --- | --- |
 | `github.com/thesyncim/goav` | recipes, planner, runtime; bundled adapters in [`bundle`](bundle) |
-| [`goav/rtpav`](rtpav) | RTP ingest: jitter buffer, depacketizers, RTCP feedback (Pion) |
-| [`goav/webrtcav`](webrtcav) | WebRTC remote tracks as inputs (Pion) |
+| [`goav/rtpav`](rtpav) | RTP in and out: jitter buffer, (de)packetizers, RTCP feedback (Pion) |
+| [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
+| [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
+| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, ctl ([CLI](docs/CLI.md)) |
+| [`goav/goavtest/expect`](goavtest/expect) | go-cmp assertions for pipeline tests |
 
 The core module never pulls in Pion.
 
 ## Status
 
 Pre-v1: breaking changes can land until the first tag. See [V1 scope](docs/COMPATIBILITY.md#v1-scope) and
-the [roadmap](docs/ROADMAP.md).
+the [roadmap](docs/ROADMAP.md). Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
 
 ---
 

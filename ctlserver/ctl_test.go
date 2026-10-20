@@ -396,7 +396,8 @@ func TestBatchAndMalformedRequests(t *testing.T) {
 func TestUnixSocketSafety(t *testing.T) {
 	h := serve(t, liveProgram)
 	path := strings.TrimPrefix(h.address, "unix://")
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX modes: a socket there takes its directory's ACL.
+	if info, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("socket mode = %v (%v), want owner-only", info.Mode(), err)
 	}
 	if err := h.server.ListenAndServe(context.Background(), h.address); err == nil || !strings.Contains(err.Error(), "already being served") {
@@ -555,5 +556,59 @@ func TestParseErrorArrives(t *testing.T) {
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if err := json.NewDecoder(conn).Decode(&reply); err != nil || reply.Error == nil || reply.Error.Code != ctlserver.CodeParse {
 		t.Fatalf("reply = %+v, %v; want the parse error", reply.Error, err)
+	}
+}
+
+// TestTokenGuardsEveryTransport pins the control plane's authentication: a
+// tcp server needs a Token, and with one every connection and HTTP request
+// must present it before any method runs.
+func TestTokenGuardsEveryTransport(t *testing.T) {
+	const token = "0123456789abcdef0123"
+	if _, err := ctlserver.New(serve(t, liveProgram).task, ctlserver.Token("short")); err == nil {
+		t.Fatal("a short token was accepted")
+	}
+	open := serve(t, liveProgram)
+	if err := open.server.ListenAndServe(context.Background(), "tcp://127.0.0.1:0"); err == nil || !strings.Contains(err.Error(), "ctlserver.Token") {
+		t.Fatalf("tcp without a token: err = %v, want a refusal naming ctlserver.Token", err)
+	}
+
+	h := serve(t, liveProgram, ctlserver.Token(token))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var refusal *ctlserver.Error
+	if _, err := h.client.Call[json.RawMessage](ctx, "taps", nil); !errors.As(err, &refusal) || refusal.Code != ctlserver.CodeUnauthorized {
+		t.Fatalf("unauthenticated call: err = %v, want CodeUnauthorized", err)
+	}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = h.server.Serve(ctx, l) }()
+	if _, err := ctlserver.Dial(ctx, "tcp://wrong-token-0123456789@"+l.Addr().String()); !errors.As(err, &refusal) || refusal.Code != ctlserver.CodeUnauthorized {
+		t.Fatalf("wrong token: err = %v, want CodeUnauthorized", err)
+	}
+	client, err := ctlserver.Dial(ctx, "tcp://"+token+"@"+l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if taps, err := client.Call[[]goav.TapSnapshot](ctx, "taps", nil); err != nil || len(taps) != 1 {
+		t.Fatalf("authenticated taps = %v, %v", taps, err)
+	}
+
+	web := httptest.NewServer(h.server)
+	defer web.Close()
+	for auth, want := range map[string]int{"": http.StatusUnauthorized, "Bearer nope": http.StatusUnauthorized, "Bearer " + token: http.StatusOK} {
+		req, _ := http.NewRequest(http.MethodPost, web.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"taps"}`))
+		req.Header.Set("Authorization", auth)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("HTTP with %q = %d, want %d", auth, resp.StatusCode, want)
+		}
 	}
 }

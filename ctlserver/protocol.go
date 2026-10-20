@@ -52,6 +52,9 @@ const (
 	CodeMethodNotFound = -32601
 	CodeInvalidParams  = -32602
 	CodeRefused        = -32000
+	// CodeUnauthorized answers a call to a Token server that did not
+	// authenticate with its token.
+	CodeUnauthorized = -32001
 )
 
 // Error is a refused call: a JSON-RPC code and message, and for goav's own

@@ -69,15 +69,9 @@ if err != nil {
 }
 ```
 
-The public checked refusal-code list lives in
-[`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md), generated from
-[`errcode/errcode.go`](../errcode/errcode.go) and the checked derived-code
-tables: autocompletable for exported constants (`errcode.`), greppable by
-value (`rg encode_missing`), and grouped under a stable family. Every current
-catalog row names coverage.
-If a future row appears as `catalog-only`, the pin test fails until it gets a
-bad recipe, rendered error coverage, fixed recipe guidance, public contract
-coverage, and test name.
+[`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md) lists every code a refusal can carry,
+by family, generated from the source and pinned complete by
+`TestErrorCatalogDocMatchesErrcodeCatalog`.
 
 Package-internal invariant wrappers may still use typed `Code` values so
 `FamilyForCode` and rendered errors stay stable, but they are not exported

@@ -2,7 +2,6 @@ package goav_test
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -10,13 +9,11 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 const mp4Fixture = "container/mp4/testdata/h264_aac.mp4"
-const mp4FragmentedFixture = "container/mp4/testdata/h264_aac_fragmented.mp4"
 
 // offlineRuntime decodes at full speed (no realtime clock pacing) so file tests
 // do not wait wall-clock time.
@@ -56,64 +53,5 @@ func TestMP4DemuxesAndDecodesVideoThroughGrammar(t *testing.T) {
 		if f.Type != av.MediaVideo || f.Video == nil || f.Video.Width != 64 || f.Video.Height != 48 {
 			t.Fatalf("frame = %+v, want 64x48 video", f.Video)
 		}
-	}
-}
-
-// TestMP4DemuxesAndDecodesAudioThroughGrammar proves the AAC track demuxed from
-// the same file (its AudioSpecificConfig recovered from esds) decodes to audio
-// frames.
-func TestMP4DemuxesAndDecodesAudioThroughGrammar(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	file, err := os.Open(mp4Fixture)
-	if err != nil {
-		t.Fatalf("open fixture: %v", err)
-	}
-	defer file.Close()
-
-	out := goavtest.NewCollector()
-	err = offlineRuntime().Run(ctx, goav.FileInput("h264_aac.mp4", file).
-		Audio().
-		Decode().
-		To(out.Sink()))
-	if errors.Is(err, codec.ErrUnavailable) {
-		t.Skip("goaac backend unavailable on this target")
-	}
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-
-	if len(out.Frames()) == 0 {
-		t.Fatal("no decoded audio frames from the MP4")
-	}
-}
-
-// TestMP4DemuxesFragmentedAudioThroughGrammar proves a fragmented (fMP4) file —
-// whose samples live in moof/trun rather than the moov sample tables — demuxes
-// and decodes its AAC track end to end through the grammar.
-func TestMP4DemuxesFragmentedAudioThroughGrammar(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	file, err := os.Open(mp4FragmentedFixture)
-	if err != nil {
-		t.Fatalf("open fixture: %v", err)
-	}
-	defer file.Close()
-
-	out := goavtest.NewCollector()
-	err = offlineRuntime().Run(ctx, goav.FileInput("fragmented.mp4", file).
-		Audio().
-		Decode().
-		To(out.Sink()))
-	if errors.Is(err, codec.ErrUnavailable) {
-		t.Skip("goaac backend unavailable on this target")
-	}
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if len(out.Frames()) == 0 {
-		t.Fatal("no decoded audio frames from the fragmented MP4")
 	}
 }

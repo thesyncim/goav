@@ -42,6 +42,9 @@ type joinArmPlan struct {
 	decodeGraph    recipeir.NodeID
 	hasDecodeGraph bool
 	stage          *joinArmStagePlan
+	// transforms are the arm's own .Resize/.Resample steps, lowered after its
+	// decode and before any conversion to the join's format.
+	transforms []recipeir.Operation
 	// taps are the frame-domain taps the arm chain declared (.Tap after the
 	// arm's decode point), installed on the task and resolvable by tap arms.
 	taps []joinArmTap

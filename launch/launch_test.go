@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/container/matroska"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/launch"
@@ -534,4 +536,38 @@ func FuzzCompile(f *testing.F) {
 	f.Fuzz(func(t *testing.T, program string) {
 		_, _ = launch.Compile(program, launch.Files(newMemFS()))
 	})
+}
+
+// TestFileInputSeeksWhenTheFileDoes pins that a program's file input keeps
+// the opened file's capabilities: a regular file seeks over the control
+// plane instead of being refused as a plain reader.
+func TestFileInputSeeksWhenTheFileDoes(t *testing.T) {
+	dir := t.TempDir()
+	var clip bytes.Buffer
+	if err := bundle.Run(context.Background(), goavtest.Audio(48000, 1, make([]int16, 960), make([]int16, 960)).
+		Audio().Encode(codec.Opus()).To(goav.Write("a.webm", &clip))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.webm"), clip.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := launch.Dir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outs, err := launch.Compile(`file a.webm ! audio ! null`, launch.Files(files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := bundle.Build(context.Background(), outs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Control(context.Background(), control.Seek(10*time.Millisecond)); err != nil {
+		t.Fatalf("seek on a regular file: %v", err)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
 }

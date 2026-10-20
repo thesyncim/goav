@@ -3,6 +3,7 @@ package ctlserver
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 type Server struct {
 	task     goav.LiveTask
 	files    launch.FileSystem
+	token    string
 	elements []launch.Element
 	methods  map[string]*method
 
@@ -75,6 +77,22 @@ func Files(fs launch.FileSystem) Option {
 	return func(s *Server) error { s.files = fs; return nil }
 }
 
+// Token makes every client authenticate with token before its first call:
+// a connection whose first request is not {"method":"$/authenticate",
+// "params":{"token":...}} with it is answered CodeUnauthorized and closed,
+// and an HTTP request needs "Authorization: Bearer <token>". Dial sends it
+// from the address (tcp://TOKEN@host:port). ListenAndServe refuses tcp
+// without a Token: a port is reachable by every local user, and more.
+func Token(token string) Option {
+	return func(s *Server) error {
+		if len(token) < 16 {
+			return errors.New("ctlserver: a token needs at least 16 characters")
+		}
+		s.token = token
+		return nil
+	}
+}
+
 // Elements adds a host's own elements to the programs clients attach.
 func Elements(elements ...launch.Element) Option {
 	return func(s *Server) error { s.elements = append(s.elements, elements...); return nil }
@@ -112,6 +130,9 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 		return err
 	}
 	if network != "unix" {
+		if s.token == "" {
+			return fmt.Errorf("ctlserver: %s would serve the task to anyone who can reach the port; give the server a ctlserver.Token, or serve a unix socket", address)
+		}
 		l, err := (&net.ListenConfig{}).Listen(ctx, network, addr)
 		if err != nil {
 			return err
@@ -288,8 +309,14 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	// A client that hangs up cancels its calls in flight.
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	slots := make(chan struct{}, maxInFlight)
 	dec := json.NewDecoder(conn)
+	if !s.authenticate(sess, dec) {
+		if hc, ok := conn.(interface{ CloseWrite() error }); ok {
+			_ = hc.CloseWrite() // deliver the refusal before the close
+		}
+		return
+	}
+	slots := make(chan struct{}, maxInFlight)
 	for {
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
@@ -459,4 +486,38 @@ func wireEvent(e av.Event) Event {
 		out.Track.SampleRate, out.Track.Channels = codec.SampleRate, codec.Channels
 	}
 	return out
+}
+
+// authMethod is the request a Token server takes first on a connection.
+const authMethod = "$/authenticate"
+
+// authenticate takes a connection's first request as its authentication
+// when the server has a Token: the right token is answered and the
+// connection serves; anything else is answered CodeUnauthorized.
+func (s *Server) authenticate(sess *session, dec *json.Decoder) bool {
+	if s.token == "" {
+		return true
+	}
+	var req request
+	if err := dec.Decode(&req); err != nil {
+		return false
+	}
+	var p struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(req.Params, &p)
+	id := req.ID
+	if len(id) == 0 {
+		id = nullID
+	}
+	if req.Method != authMethod || !s.tokenMatches(p.Token) {
+		sess.send(response{JSONRPC: "2.0", ID: id, Error: &Error{Code: CodeUnauthorized, Message: "unauthorized: authenticate first with the server's token (" + authMethod + ")"}})
+		return false
+	}
+	sess.send(response{JSONRPC: "2.0", ID: id, Result: json.RawMessage("{}")})
+	return true
+}
+
+func (s *Server) tokenMatches(token string) bool {
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
 }

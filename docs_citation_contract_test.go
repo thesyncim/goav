@@ -2,94 +2,98 @@ package goav
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/thesyncim/goav/errcode"
 )
 
 // errcodeConstPattern matches gofmt-shaped Code constant declarations in
 // errcode/errcode.go: `\tName Code = "value"`.
 var errcodeConstPattern = regexp.MustCompile(`(?m)^\t([A-Z][A-Za-z0-9]*) Code = "([a-z0-9_]+)"`)
 
-// derivedJoinCodePattern matches the derived-code Constant cells in the
-// catalog's Full Code Index: joinErrorCode("mix", "inputs").
-var derivedJoinCodePattern = regexp.MustCompile(`^joinErrorCode\("([a-z]+)", "([a-z_]+)"\)$`)
+// builderrCodePattern matches the refusal codes internal/builderr declares:
+// `\tNameCode errcode.Code = "value"`.
+var builderrCodePattern = regexp.MustCompile(`(?m)^\t[A-Z][A-Za-z0-9]*Code +errcode\.Code = "([a-z0-9_]+)"`)
 
-// TestErrorCatalogDocMatchesErrcodeCatalog keeps docs/ERROR_CATALOG.md and
-// errcode/errcode.go in lockstep, both directions: every Code constant in the
-// source appears in the doc's Full Code Index with its constant name, every
-// doc row resolves to a declared constant or a derived join code, and every
-// named coverage test exists in this repository. The doc's header cites this
-// test by name; if the test is renamed, update the header.
+// catalogCodes is every code a goav refusal can carry, from the source: the
+// public errcode constants, the internal refusal codes, and the codes the
+// built-in joins derive (<kind>_inputs, <kind>_arm). It refuses a code with
+// no family, which would leave callers nothing stable to switch on.
+func catalogCodes(t *testing.T) map[errcode.Family][]string {
+	t.Helper()
+	var codes []string
+	for path, pattern := range map[string]*regexp.Regexp{
+		filepath.Join("errcode", "errcode.go"):            errcodeConstPattern,
+		filepath.Join("internal", "builderr", "codes.go"): builderrCodePattern,
+	} {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		matches := pattern.FindAllStringSubmatch(string(source), -1)
+		if len(matches) == 0 {
+			t.Fatalf("no codes found in %s; the declaration pattern may have drifted", path)
+		}
+		for _, match := range matches {
+			codes = append(codes, match[len(match)-1])
+		}
+	}
+	for _, kind := range []string{"mix", "composite", "select"} {
+		codes = append(codes, kind+"_inputs", kind+"_arm")
+	}
+	families := map[errcode.Family][]string{}
+	for _, code := range codes {
+		family := errcode.FamilyForCode(errcode.Code(code))
+		if family == errcode.FamilyExternal {
+			t.Errorf("code %q has no family in errcode.FamilyForCode", code)
+		}
+		if !slices.Contains(families[family], code) {
+			families[family] = append(families[family], code)
+		}
+	}
+	return families
+}
+
+// TestErrorCatalogDocMatchesErrcodeCatalog pins docs/ERROR_CATALOG.md's
+// code table to the source: it lists every code a goav refusal can carry
+// (catalogCodes), by family, and nothing else. GOAV_UPDATE_GOLDEN=1
+// regenerates it. The doc's header cites this test by name.
 func TestErrorCatalogDocMatchesErrcodeCatalog(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("errcode", "errcode.go"))
+	const begin, end = "<!-- BEGIN GENERATED CODES -->\n", "<!-- END GENERATED CODES -->"
+	families := catalogCodes(t)
+	var b strings.Builder
+	b.WriteString(begin + "| Family | Codes |\n| --- | --- |\n")
+	for _, family := range slices.Sorted(maps.Keys(families)) {
+		codes := slices.Sorted(slices.Values(families[family]))
+		b.WriteString("| `" + string(family) + "` | `" + strings.Join(codes, "`, `") + "` |\n")
+	}
+	path := filepath.Join("docs", "ERROR_CATALOG.md")
+	doc, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared := map[string]string{} // code value -> constant name
-	for _, match := range errcodeConstPattern.FindAllStringSubmatch(string(source), -1) {
-		declared[match[2]] = match[1]
+	text := string(doc)
+	if !strings.Contains(text, "TestErrorCatalogDocMatchesErrcodeCatalog") {
+		t.Fatal("docs/ERROR_CATALOG.md no longer names this test")
 	}
-	if len(declared) == 0 {
-		t.Fatal("no Code constants found in errcode/errcode.go; the declaration pattern may have drifted")
+	start, stop := strings.Index(text, begin), strings.Index(text, end)
+	if start < 0 || stop < start {
+		t.Fatalf("docs/ERROR_CATALOG.md has no %q ... %q block", strings.TrimSpace(begin), end)
 	}
-
-	doc, err := os.ReadFile(filepath.Join("docs", "ERROR_CATALOG.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	docText := string(doc)
-	if !strings.Contains(docText, "TestErrorCatalogDocMatchesErrcodeCatalog") {
-		t.Fatal("docs/ERROR_CATALOG.md header no longer names this test")
-	}
-
-	testIndex := repoTestFunctionIndex(t)
-
-	indexed := map[string]string{} // code value -> constant cell
-	inIndex := false
-	for lineNo, line := range strings.Split(docText, "\n") {
-		if strings.HasPrefix(line, "## ") {
-			inIndex = strings.Contains(line, "Full Code Index")
-			continue
-		}
-		if !inIndex || !strings.HasPrefix(line, "| ") || strings.HasPrefix(line, "|---") || strings.HasPrefix(line, "| Section") {
-			continue
-		}
-		cells := splitTableRow(line)
-		if len(cells) != 6 {
-			t.Fatalf("docs/ERROR_CATALOG.md:%d: Full Code Index row has %d cells, want 6: %s", lineNo+1, len(cells), line)
-		}
-		constant := strings.Trim(cells[1], "`")
-		code := strings.Trim(cells[2], "`")
-		coverage := cells[5]
-		indexed[code] = constant
-
-		switch {
-		case strings.HasPrefix(constant, "errcode."):
-			name := strings.TrimPrefix(constant, "errcode.")
-			if declared[code] != name {
-				t.Errorf("docs/ERROR_CATALOG.md:%d: row %q cites %s but errcode/errcode.go declares %q for that code", lineNo+1, code, constant, declared[code])
+	if got, want := text[start:stop], b.String(); got != want {
+		if os.Getenv("GOAV_UPDATE_GOLDEN") == "1" {
+			if err := os.WriteFile(path, []byte(text[:start]+want+text[stop:]), 0o644); err != nil {
+				t.Fatal(err)
 			}
-		case derivedJoinCodePattern.MatchString(constant):
-			m := derivedJoinCodePattern.FindStringSubmatch(constant)
-			if want := m[1] + "_" + m[2]; want != code {
-				t.Errorf("docs/ERROR_CATALOG.md:%d: derived constant %s does not produce code %q", lineNo+1, constant, code)
-			}
-		default:
-			t.Errorf("docs/ERROR_CATALOG.md:%d: constant cell %q is neither an errcode constant nor a derived join code", lineNo+1, constant)
+			return
 		}
-
-		if !testIndex[coverage] {
-			t.Errorf("docs/ERROR_CATALOG.md:%d: coverage test %q does not exist in the repository", lineNo+1, coverage)
-		}
-	}
-
-	for code, name := range declared {
-		if _, ok := indexed[code]; !ok {
-			t.Errorf("errcode.%s (%q) is missing from the Full Code Index in docs/ERROR_CATALOG.md", name, code)
-		}
+		t.Errorf("docs/ERROR_CATALOG.md code table differs from the source (regenerate with GOAV_UPDATE_GOLDEN=1):\n got:\n%s\nwant:\n%s", got, want)
 	}
 }
 
@@ -151,16 +155,6 @@ func TestDocsCiteOnlyLivingArtifacts(t *testing.T) {
 	}
 }
 
-func splitTableRow(line string) []string {
-	trimmed := strings.Trim(line, "|")
-	parts := strings.Split(trimmed, "|")
-	cells := make([]string, 0, len(parts))
-	for _, part := range parts {
-		cells = append(cells, strings.TrimSpace(part))
-	}
-	return cells
-}
-
 var testFuncDeclPattern = regexp.MustCompile(`(?m)^func (Test[A-Z][A-Za-z0-9_]*)\(`)
 
 // repoCitationIndex walks the repository once and returns the sets of test
@@ -175,6 +169,7 @@ func repoCitationIndex(t *testing.T) (testFiles, testFuncs, scripts map[string]b
 		if err != nil {
 			return err
 		}
+		path = filepath.ToSlash(path) // docs cite scripts/... on every OS
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", ".idea", ".claude", "vendor", "bench-results", "history":
@@ -201,10 +196,4 @@ func repoCitationIndex(t *testing.T) (testFiles, testFuncs, scripts map[string]b
 		t.Fatal(err)
 	}
 	return testFiles, testFuncs, scripts
-}
-
-func repoTestFunctionIndex(t *testing.T) map[string]bool {
-	t.Helper()
-	_, funcs, _ := repoCitationIndex(t)
-	return funcs
 }

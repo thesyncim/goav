@@ -453,3 +453,27 @@ func FirstNonEmptyMedia(values ...av.MediaType) av.MediaType {
 	}
 	return ""
 }
+
+// OpenedMuxRefusal refuses, when a destination opens, a container that
+// cannot carry every stream routed to it: the plan-time check, run again on
+// the streams an input turned out to have (a whole file into IVF), so a
+// muxer is never handed a stream it would drop.
+func OpenedMuxRefusal(name string, formatID av.FormatID, streams []av.Stream, env Env) error {
+	planned := make([]PlannedMuxStream, len(streams))
+	for i := range streams {
+		planned[i] = PlannedMuxStream{
+			Branch: string(streams[i].ID),
+			Codec:  streams[i].Codec.ID,
+			Media:  FirstNonEmptyMedia(streams[i].Type, streams[i].Codec.Type, CodecMedia(streams[i].Codec.ID)),
+		}
+	}
+	output := WorkDestination{Name: name, Operation: plan.OpMux, Format: formatID}
+	issue, ok := CheckKnownMuxCompatibility(output, planned, env)
+	if !ok {
+		return nil
+	}
+	if len(streams) > 1 {
+		issue.Suggestions = append([]string{"route only the stream it carries: input.Video().To(destination), and the others to another destination"}, issue.Suggestions...)
+	}
+	return MuxCompatibilityBuildError("open destination", issue)
+}

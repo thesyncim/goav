@@ -227,6 +227,7 @@ var compileBoundary = map[string][]string{
 	"PlanDecision":                    {"recipe_explain.go"},
 	"WorkBranch":                      {"recipe_explain.go"},
 	"WorkDestination":                 {"attach_plan.go", "recipe_explain.go", "runtime.go", "runtime_attach.go"},
+	"OpenedMuxRefusal":                {"mux_destination.go"},
 	"WorkDestinationID":               {"attach_plan.go"},
 	"WorkDestinationNameByID":         {"recipe_explain.go"},
 	"WorkInput":                       {"recipe_explain.go"},

@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -55,7 +56,7 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 					return control.ErrNotRunning
 				}
 				if errors.Is(err, pipeline.ErrInvalidLink) {
-					errs = append(errs, fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err))
+					errs = append(errs, uncontrollableSourceError(ctrl, node, err))
 					continue
 				}
 				errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
@@ -70,7 +71,7 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 				return control.ErrNotRunning
 			}
 			if ctrl.TargetsSources() && errors.Is(err, pipeline.ErrInvalidLink) {
-				errs = append(errs, fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err))
+				errs = append(errs, uncontrollableSourceError(ctrl, node, err))
 				continue
 			}
 			errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
@@ -279,3 +280,28 @@ func (t *task) encoderNodesProducing(stream av.StreamID) []pipeline.NodeRef {
 	t.attachMu.Unlock()
 	return targets
 }
+
+// uncontrollableSourceError refuses a source control the source cannot take,
+// before anything is flushed, leaving the task running. A seek or segment on
+// a source that cannot reposition wraps format.ErrNotSeekable.
+func uncontrollableSourceError(ctrl control.Control, node pipeline.NodeRef, err error) error {
+	switch ctrl.Type() {
+	case control.SeekType, control.SegmentType:
+		return &notSeekableError{control: ctrl.Type(), node: node, cause: err}
+	}
+	return fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err)
+}
+
+// notSeekableError is a reposition refused because the source cannot seek.
+// It is format.ErrNotSeekable and the graph's refusal (pipeline.ErrInvalidLink).
+type notSeekableError struct {
+	control control.Type
+	node    pipeline.NodeRef
+	cause   error
+}
+
+func (e *notSeekableError) Error() string {
+	return fmt.Sprintf("goav: %s on %q: the source cannot reposition: its input is a pipe or plain io.Reader (read a file or an io.ReadSeeker), its container cannot seek (Matroska, WebM, and MP4 can; IVF and Annex B cannot), or it is a custom source without pipeline.ControllableSource", e.control, e.node)
+}
+
+func (e *notSeekableError) Unwrap() []error { return []error{format.ErrNotSeekable, e.cause} }

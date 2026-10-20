@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -261,24 +263,50 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	}
 }
 
-func TestTaskSeekNonSeekableFileReaderFailsClearly(t *testing.T) {
-	ctx := context.Background()
+func TestTaskSeekNonSeekableFileReaderIsRefusedAndPlaysOn(t *testing.T) {
 	data := muxSeekFileMKV(t)
-	// Hide the reader's Seek method: a pure io.Reader cannot reposition, like
-	// a pipe or a network stream.
-	sink := &seekFileSink{}
-	task := seekFileTask(t, struct{ io.Reader }{bytes.NewReader(data)}, sink, WithClock(&paceFileClock{}))
+	t.Run("plain reader", func(t *testing.T) {
+		// Hide the reader's Seek method: a pure io.Reader cannot reposition.
+		assertSeekRefusedPlaysOn(t, struct{ io.Reader }{bytes.NewReader(data)})
+	})
+	t.Run("pipe", func(t *testing.T) {
+		// An *os.File has a Seek method, but over a pipe it cannot seek.
+		read, write, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer read.Close()
+		go func() {
+			_, _ = write.Write(data)
+			_ = write.Close()
+		}()
+		assertSeekRefusedPlaysOn(t, read)
+	})
+}
 
-	// The control is recorded (the demuxer supports seeking in general); the
-	// reposition itself fails when the pump applies it, stopping the task with
-	// the typed error instead of playing on from the wrong position.
-	if err := task.Control(ctx, control.Seek(450*time.Millisecond)); err != nil {
-		t.Fatalf("Seek err = %v", err)
-	}
-	err := task.Run(ctx)
+func assertSeekRefusedPlaysOn(t *testing.T, reader io.Reader) {
+	ctx := context.Background()
+	sink := &seekFileSink{}
+	task := seekFileTask(t, reader, sink, WithClock(&paceFileClock{}))
+
+	// The seek is refused when it is asked, with the typed error and the
+	// fix, and the task plays on: every packet arrives, in order, with no
+	// discontinuity.
+	err := task.Control(ctx, control.Seek(450*time.Millisecond))
 	if !errors.Is(err, format.ErrNotSeekable) {
-		t.Fatalf("Run err = %v, want it to wrap format.ErrNotSeekable", err)
+		t.Fatalf("Seek err = %v, want it to wrap format.ErrNotSeekable", err)
 	}
+	if !strings.Contains(err.Error(), "read a file or an io.ReadSeeker") {
+		t.Fatalf("Seek err = %v, want the fix named", err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run err = %v, want the task to play on", err)
+	}
+	var want []int64
+	for ms := int64(0); ms <= 900; ms += 100 {
+		want = append(want, ms*int64(time.Millisecond))
+	}
+	assertSeekFileLog(t, sink.snapshot(), append(want, -2))
 }
 
 func TestTaskRealtimeFilePlaybackIsPaced(t *testing.T) {

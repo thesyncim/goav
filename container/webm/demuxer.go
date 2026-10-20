@@ -100,6 +100,9 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 	return d.validatePacketTime(dst.TrackID, dst.TimeNS)
 }
 
+// CanSeek reports whether the reader can reposition (matroska.Demuxer.CanSeek).
+func (d *Demuxer) CanSeek() bool { return d != nil && d.inner.CanSeek() }
+
 func (d *Demuxer) SeekToTime(timeNS int64) error {
 	if err := d.inner.SeekToTime(timeNS); err != nil {
 		return err

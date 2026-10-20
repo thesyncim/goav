@@ -47,7 +47,7 @@ func Descriptor() codec.Descriptor {
 			Name:    backendName,
 			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/goaac",
-			Package: "github.com/thesyncim/goav/adapters/goaac",
+			Package: "github.com/thesyncim/goav/gplcodec/internal/goaac",
 			Status:  status,
 		},
 	}

@@ -22,23 +22,108 @@ type joinArmTap struct {
 	after plan.OperationKind
 }
 
-// validateJoinArmOperations keeps arm chains honest: a join arm supports
-// .Decode() and .Tap(...) before the join — everything else (transforms,
-// stages, encoders, copies, shape steps) was silently dropped before and is
-// now rejected with the supported alternatives.
-func validateJoinArmOperations(join string, arm string, operations []recipeir.Operation) error {
+// validateJoinArmOperations keeps arm chains honest: a join arm decodes, taps,
+// and transforms its own frames before the join (a picture-in-picture inset
+// resizes on its arm: goav.At(screen.Video().Decode().Resize(480, 270), x,
+// y)); stages, encoders, copies, and shape steps are refused with the
+// supported alternatives.
+func validateJoinArmOperations(join string, arm string, media av.MediaType, domain shape.MediaDomain, operations []recipeir.Operation) error {
+	node := cmp.Or(arm, join)
+	transformed := false
 	for i := range operations {
 		switch operations[i].Kind {
-		case plan.OpDecode, plan.OpTap:
+		case plan.OpDecode:
+			domain = shape.DomainFrame
+		case plan.OpTap:
+			if transformed {
+				return JoinArmError(join, node, "a join arm's taps sit at its decoded point, but this one follows a transform on the arm",
+					"tap the arm before its transform: a.Video().Decode().Tap(name).Resize(w, h)")
+			}
+		case plan.OpTransform:
+			transformed = true
+			if domain != shape.DomainFrame {
+				return JoinArmError(join, node, join+" arm transforms decoded frames, but this arm is still packet-domain",
+					"decode the arm before transforming it: a.Video().Decode().Resize(w, h)")
+			}
+			if want := armTransformMedia(operations[i].Transform); media != "" && want != media {
+				return JoinArmError(join, node, fmt.Sprintf("%s arms carry %s, but .%s transforms %s", join, media, armTransformCall(operations[i].Transform), want),
+					"transform the arm's own media: .Resize(w, h) for video, .Resample(rate, channels) for audio")
+			}
 		default:
-			return JoinArmError(join, cmp.Or(arm, join), fmt.Sprintf(
-				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm)",
+			return JoinArmError(join, node, fmt.Sprintf(
+				"%s arm chains support .Decode(), .Tap(...), .Resize(...), and .Resample(...) only (%s is not lowered on an arm)",
 				join, string(operations[i].Kind)),
-				"transform or encode the JOINED stream after the join: goav.Mix(a, b).Resample(...).Encode(...)",
+				"encode, or run stages on, the JOINED stream after the join: goav.Mix(a, b).Encode(...)",
 				"use a nested join arm when one arm needs its own convergence")
 		}
 	}
 	return nil
+}
+
+func armTransformMedia(transform recipeir.Transform) av.MediaType {
+	if transform.Kind == recipeir.TransformResample {
+		return av.MediaAudio
+	}
+	return av.MediaVideo
+}
+
+func armTransformCall(transform recipeir.Transform) string {
+	if transform.Kind == recipeir.TransformResample {
+		return "Resample(...)"
+	}
+	return "Resize(...)"
+}
+
+// plannedArmTransform is the stream an arm carries after one of its
+// transforms, and whether its facts are known before the input opens: a fit
+// resize's geometry follows its input's, known only when that is.
+func plannedArmTransform(stream av.Stream, transform recipeir.Transform) (av.Stream, bool) {
+	switch transform.Kind {
+	case recipeir.TransformResize:
+		resize := transform.Resize
+		if resize.PixelFormat != "" {
+			stream.Codec.PixelFormat = resize.PixelFormat
+		}
+		switch resize.Mode {
+		case filter.ResizePassthrough:
+			return stream, true
+		case filter.ResizeFit:
+			stream.Codec.Width, stream.Codec.Height = 0, 0
+			return stream, false
+		}
+		if resize.Width > 0 && resize.Height > 0 {
+			stream.Codec.Width, stream.Codec.Height = resize.Width, resize.Height
+			return stream, true
+		}
+		return stream, false
+	case recipeir.TransformResample:
+		resample := transform.Resample
+		if resample.SampleRate > 0 {
+			stream.Codec.SampleRate, stream.Codec.ClockRate = resample.SampleRate, uint32(resample.SampleRate)
+			stream.TimeBase = av.TimeBase{Num: 1, Den: int64(resample.SampleRate)}
+		}
+		if resample.Channels > 0 {
+			stream.Codec.Channels = resample.Channels
+		}
+		if resample.SampleFormat != "" {
+			stream.Codec.SampleFormat = resample.SampleFormat
+		}
+		return stream, true
+	}
+	return stream, true
+}
+
+// armTransform is the stage one arm transform lowers to, built against the
+// stream the arm resolves to; the lowering names it.
+func armTransform(operation recipeir.Operation) MediaTransform {
+	switch operation.Transform.Kind {
+	case recipeir.TransformResample:
+		resample := operation.Transform.Resample
+		return MediaTransform{Factory: cmp.Or(operation.Component, filter.FactoryResample), Audio: &resample}
+	default:
+		resize := operation.Transform.Resize
+		return MediaTransform{Factory: cmp.Or(operation.Component, filter.FactoryResize), Video: &resize}
+	}
 }
 
 // joinChainArmTaps validates and collects the taps a chain arm declared. Arm

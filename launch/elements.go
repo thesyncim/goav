@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -10,9 +11,12 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
+	"github.com/thesyncim/goav/shape"
 )
 
 // Element is one name a program can use: a source that starts a pipeline, an
@@ -264,96 +268,132 @@ func (osFiles) Remove(name string) error             { return os.Remove(name) }
 
 // Dir is the files under root and nothing else: a path that escapes root,
 // through .. or a symlink, is refused. A control server hands attached
-// programs a Dir.
+// programs a Dir. Each operation opens root for its own duration, so a Dir
+// holds no handle: it needs no Close, and root stays removable.
 func Dir(root string) (FileSystem, error) {
 	r, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, err
 	}
-	return rootFiles{r}, nil
+	return rootFiles{dir: root}, r.Close()
 }
 
-type rootFiles struct{ root *os.Root }
+type rootFiles struct{ dir string }
 
-func (f rootFiles) Open(name string) (io.Reader, error) { return f.root.Open(name) }
+// in runs fn on root, opened for the call: files fn opens stay open after.
+func (f rootFiles) in(fn func(*os.Root) error) error {
+	r, err := os.OpenRoot(f.dir)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	return fn(r)
+}
+
+func (f rootFiles) Open(name string) (io.Reader, error) {
+	var file *os.File
+	if err := f.in(func(r *os.Root) (err error) { file, err = r.Open(name); return err }); err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
 func (f rootFiles) Create(name string) (io.Writer, error) {
-	if dir := filepath.Dir(name); dir != "." {
-		if err := f.root.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
+	var file *os.File
+	err := f.in(func(r *os.Root) (err error) {
+		if dir := filepath.Dir(name); dir != "." {
+			if err := r.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
 		}
+		file, err = r.Create(name)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return f.root.Create(name)
+	return file, nil
 }
-func (f rootFiles) Rename(oldname, newname string) error { return f.root.Rename(oldname, newname) }
-func (f rootFiles) Remove(name string) error             { return f.root.Remove(name) }
 
-// lazyReader opens its file on the first read, so compiling or describing a
-// program opens nothing.
-type lazyReader struct {
+func (f rootFiles) Rename(oldname, newname string) error {
+	return f.in(func(r *os.Root) error { return r.Rename(oldname, newname) })
+}
+
+func (f rootFiles) Remove(name string) error {
+	return f.in(func(r *os.Root) error { return r.Remove(name) })
+}
+
+// fileBytes is a program's file input: the runtime opens it when the run
+// starts, so compiling or describing a program opens nothing, and the file
+// it opens keeps its own capabilities: a regular file seeks, a pipe does not.
+type fileBytes struct {
 	fs   FileSystem
 	name string
-	r    io.Reader
-	err  error
 }
 
-func (l *lazyReader) Read(p []byte) (int, error) {
-	if l.r == nil && l.err == nil {
-		l.r, l.err = l.fs.Open(l.name)
+func (f fileBytes) Name() string            { return f.name }
+func (f fileBytes) Protocol() av.ProtocolID { return av.ProtocolFile }
+func (f fileBytes) SourceShape() shape.Spec { return shape.Spec{} }
+
+func (f fileBytes) OpenBytes(ctx context.Context) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if l.err != nil {
-		return 0, l.err
+	reader, err := f.fs.Open(f.name)
+	if err != nil {
+		return nil, err
 	}
-	return l.r.Read(p)
+	if closer, ok := reader.(io.ReadCloser); ok {
+		return closer, nil
+	}
+	if seeker, ok := reader.(io.ReadSeeker); ok {
+		return nopSeekCloser{seeker}, nil
+	}
+	return io.NopCloser(reader), nil
 }
 
-func (l *lazyReader) Close() error {
-	if c, ok := l.r.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
-}
+type nopSeekCloser struct{ io.ReadSeeker }
 
-// lazyWriter creates its file on the first write, so compiling or describing
-// a program creates nothing.
-type lazyWriter struct {
+func (nopSeekCloser) Close() error { return nil }
+
+// fileDestination is a program's output file, created when the run opens
+// the destination: compiling or describing a program creates nothing, and a
+// file the FileSystem refuses fails the build (or the attach) that opens it.
+// The file keeps its own capabilities: muxers that backpatch see it seek.
+type fileDestination struct {
 	fs   FileSystem
 	name string
-	w    io.Writer
-	err  error
 }
 
-func (l *lazyWriter) Write(p []byte) (int, error) {
-	if l.w == nil && l.err == nil {
-		l.w, l.err = l.fs.Create(l.name)
-	}
-	if l.err != nil {
-		return 0, l.err
-	}
-	return l.w.Write(p)
+func (f fileDestination) Name() string { return f.name }
+
+func (f fileDestination) Contract() provider.Contract {
+	return provider.Contract{ByteStream: true, Protocol: av.ProtocolFile}
 }
 
-// Seek forwards to the file when it can seek, so muxers that backpatch
-// headers see a seekable output; otherwise it reports that it cannot.
-func (l *lazyWriter) Seek(offset int64, whence int) (int64, error) {
-	if l.w == nil && l.err == nil {
-		l.w, l.err = l.fs.Create(l.name)
+func (f fileDestination) Open(ctx context.Context, _ provider.Info) (provider.Writer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if l.err != nil {
-		return 0, l.err
+	w, err := f.fs.Create(f.name)
+	if err != nil {
+		return nil, err
 	}
-	if s, ok := l.w.(io.Seeker); ok {
-		return s.Seek(offset, whence)
+	switch w := w.(type) {
+	case provider.Writer:
+		return w, nil
+	case io.WriteSeeker:
+		return nopWriteSeekCloser{w}, nil
 	}
-	return 0, errNotSeekable
+	return nopWriteCloser{w}, nil
 }
 
-func (l *lazyWriter) Close() error {
-	if c, ok := l.w.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
-}
+type nopWriteSeekCloser struct{ io.WriteSeeker }
+
+func (nopWriteSeekCloser) Close() error { return nil }
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 var errNoTask = errors.New("this program is not attached to a running task")
-
-var errNotSeekable = errors.New("launch: output cannot seek")

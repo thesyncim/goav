@@ -171,6 +171,10 @@ func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID 
 			}
 		}
 	}
+	fixes := []string{tagFix}
+	if optIn, ok := optInDecoderFixes[codecID]; ok {
+		fixes = append([]string(nil), optIn...)
+	}
 	return &builderr.Refusal{
 		Phase:     builderr.PhaseBuild,
 		Family:    errcode.FamilyForCode(code),
@@ -179,11 +183,10 @@ func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID 
 		Node:      recipeIRStreamName(stream),
 		Reason:    reason,
 		Details:   builderr.DetailLines(details),
-		Fixes: builderr.Fixes([]string{
-			tagFix,
-			"register a codec adapter that provides a " + string(codecID) + " decoder",
+		Fixes: builderr.Fixes(append(fixes,
+			"register a codec adapter that provides a "+string(codecID)+" decoder",
 			"use input.To(output) for packet-preserving receive when decoding is not needed",
-		}),
+		)),
 		Cause: cause,
 	}
 }
@@ -862,4 +865,13 @@ func codecKnobRefusal(operation string, node string, mode codec.Mode, desc codec
 		}),
 		Cause: cause,
 	}
+}
+
+// optInDecoderFixes names how to get a decoder the bundle leaves out on
+// purpose: its only pure-Go backend is GPL, so it is an explicit opt-in.
+var optInDecoderFixes = map[av.CodecID][]string{
+	av.CodecAAC: {
+		"on macOS, register Apple's AAC decoder: bundle.New(libcodec.AudioToolbox()) (module github.com/thesyncim/goav/libcodec)",
+		"opt in to the pure-Go AAC decoder, GPL-licensed and arm64-only: bundle.New(gplcodec.AAC()) (module github.com/thesyncim/goav/gplcodec)",
+	},
 }

@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -29,7 +30,13 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 			}
 		}()
 	}
-	inputProbe, err := b.runtime.probeInput(ctx, input, pinned)
+	var header []byte
+	if pinned == "" {
+		if input, header, err = sniffInput(input); err != nil {
+			return demuxBuild{}, fmt.Errorf("goav: input %s: read its first bytes: %w", demuxNodeName(input), err)
+		}
+	}
+	inputProbe, err := b.runtime.probeInput(ctx, input, pinned, header)
 	if err != nil {
 		return demuxBuild{}, inputFormatProbeError(input, err)
 	}
@@ -53,7 +60,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 		Metadata: input.Metadata,
 	}); err != nil {
 		demuxer.Close()
-		return demuxBuild{}, err
+		return demuxBuild{}, inputUnreadableError(ctx, input, inputProbe.Format, len(header) == 0 && pinned == "", err)
 	}
 
 	streams := demuxer.Streams()
@@ -155,6 +162,15 @@ type qualifiedSeekDemuxer struct {
 
 func (d qualifiedSeekDemuxer) Seek(ctx context.Context, position time.Duration) error {
 	return d.seeker.Seek(ctx, position)
+}
+
+func (d qualifiedSeekDemuxer) CanSeek() bool { return canSeek(d.seeker) }
+
+// canSeek forwards a wrapped Seeker's CanSeek (format.Seeker): true unless
+// the seeker reports its input cannot reposition.
+func canSeek(seeker format.Seeker) bool {
+	checker, ok := seeker.(interface{ CanSeek() bool })
+	return !ok || checker.CanSeek()
 }
 
 func newQualifiedDemuxer(demuxer format.Demuxer, qualifier string) format.Demuxer {

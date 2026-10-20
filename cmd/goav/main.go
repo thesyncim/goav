@@ -53,7 +53,7 @@ func run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
-const ctlUsage = `usage: goav ctl --control unix://PATH <method> [key=value...]
+const ctlUsage = `usage: goav ctl --control unix://PATH|tcp://HOST:PORT [--control-token FILE] <method> [key=value...]
 
   goav ctl ... capabilities                    the server's methods and elements
   goav ctl ... describe format=text            the graph (json, text, dot, mermaid)
@@ -162,11 +162,16 @@ func ctlParams(method string, args []string) (map[string]string, error) {
 }
 
 func parseCtlArgs(argv []string) (string, []string, error) {
-	var control string
+	var control, tokenFile string
 	var args []string
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		switch {
+		case arg == "--control-token" && i+1 < len(argv):
+			tokenFile = argv[i+1]
+			i++
+		case strings.HasPrefix(arg, "--control-token="):
+			tokenFile = strings.TrimPrefix(arg, "--control-token=")
 		case arg == "--control":
 			if i+1 >= len(argv) {
 				return "", nil, errors.New("goav ctl: --control needs unix://PATH or tcp://host:port")
@@ -179,7 +184,11 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 			args = append(args, arg)
 		}
 	}
-	return control, args, nil
+	if control == "" {
+		return control, args, nil
+	}
+	control, err := withToken(control, tokenFile)
+	return control, args, err
 }
 
 func printErr(stderr io.Writer, err error) {

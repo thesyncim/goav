@@ -5,14 +5,14 @@ the core import graph. Use this page to see what ships today, which paths are na
 design, and where to start if you need to add another implementation.
 
 Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
-`webrtcav`, `playoutav`) do not import sibling codec modules; concrete
-integrations live under `adapters/...` and `container/...`.
+`webrtcav`, `playoutav`) import no codec module (`rtpav`'s go.mod requires
+`goav1` for an integration test only); concrete integrations live under
+`adapters/...` and `container/...`.
 
-The root module keeps third-party dependencies pinned by
-`TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
-by the built-in pure-Go AAC backend is allowed outside `github.com/thesyncim/*`
-and the standard library. `rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`,
-and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
+The root module requires only the four permissively licensed codec backends
+([Licenses](#licenses)), pinned with their licenses by
+`TestRootModuleDependencyPurity`. `rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`,
+`gplcodec`, and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
 Pion dependency tree, the player Ebitengine and oto, library codecs purego,
 while playout is dependency-light. Importing goav alone never pulls them in.
 Import paths are unchanged.
@@ -116,7 +116,6 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 
 | Codec | Media | Modes | Backend | Capabilities | Tags | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `aac` | audio | decode | `goaac` | profiles=aac_lc; samples=s16; realtime | - | active |
 | `av1` | video | decode | `goav1` | pixels=gray8, i420, i422, i444, yuv420p, yuv422p, yuv444p; rtp=video/av1; realtime; experimental | - | active |
 | `av1` | video | encode | `goav1` | pixels=i420, yuv420p; rtp=video/av1; realtime; experimental | - | active |
 | `h264` | video | decode | `goh264` | pixels=yuv420p; rtp=video/h264; realtime; experimental | goav_goh264 | planned-build-tagged |
@@ -132,28 +131,35 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | `resize` | video -> video | pixels=i420, yuv420p | exact, fill, fit, passthrough | backend=resize; realtime; stateless |
 <!-- END GENERATED BUNDLE CAPABILITIES -->
 
-#### Platform matrix
-
-Descriptor `Backend.Status` reports what the compiled target can do. The table
-above is for the host that regenerated it.
-
-| Codec | Backend | darwin/arm64, linux/arm64 | Other targets |
-| --- | --- | --- | --- |
-| `aac` decode | `goaac` | `active` | `unsupported-target`: the backend is a stub and `Open` fails with `ErrNativeUnavailable` |
-
-`TestDescriptorStatusMatchesBackendAvailability` pins the descriptor to the
-backend's own availability.
-
 Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
 `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`,
-`TestDecodePacketLossConcealmentAllocs`, decoder/encoder `*Allocs` tests) that
-fails the suite if the hot path starts allocating. The repo-wide
+`TestDecodePacketLossConcealmentAllocs`, `TestOpusEncodeAllocs`,
+`TestAV1EncodeAllocs`, and the other `*Allocs` tests) that fails the suite if
+the hot path starts allocating. The repo-wide
 proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 
 All adapters are intentionally narrow; richer features (SVC controls, color
 metadata, high bit depth, floating-point PCM, higher-quality scalers, pure-Go
 H.264 encode) are future slices.
+
+## Licenses
+
+goav is Apache-2.0. What a binary links depends on what it registers;
+`TestRootModuleDependencyPurity` pins each root dependency to its license and
+keeps copyleft out of the default import graph.
+
+| Code | License | Linked when |
+| --- | --- | --- |
+| `govpx`, `gopus` | BSD-3-Clause | `bundle` |
+| `goav1` | BSD-2-Clause plus the AOMedia patent license | `bundle` |
+| `goh264` | LGPL-2.1 | only with `-tags goav_goh264`. A statically linked Go binary must let its users relink a modified goh264: ship your source or object files with it |
+| `goaac` (FAAD2) | GPL-2.0-or-later | only through `gplcodec.AAC()`; the binary must then be GPL (3.0 or later, the version compatible with Apache-2.0). It decodes on darwin/arm64 and linux/arm64 only (`unsupported-target` elsewhere, pinned by `TestDescriptorStatusMatchesBackendAvailability`) |
+| Pion (`rtpav`, `webrtcav`) | MIT | importing those modules |
+| Ebitengine, oto, purego (`player`, `libcodec`) | Apache-2.0 | importing those modules; libraries `libcodec` loads keep their own terms (table above) |
+
+Without `gplcodec`, AAC needs a library backend: `libcodec.AudioToolbox()` on macOS; elsewhere a
+refused AAC decode names both options.
 
 ## URL schemes
 
@@ -194,12 +200,9 @@ whole or by stream, plays at its media time; a push source paces itself, or take
 
 ## Descriptor-only boundaries
 
-Default-build `govpx`, `goav1`, and `goh264` expose descriptors without
-importing concrete implementations, so applications can see planned media
-compatibility and build registries without forcing tagged code paths. Concrete
-factories replace descriptor-only registrations once each path has caller-owned
-output buffers and allocation tests. `goh264` remains decode-only in the
-default bundle for recipe encode: applications that need H.264 encoding must
+`govpx` and `goav1` register concrete decoders and encoders. `goh264` registers
+its descriptor alone unless built with `-tags goav_goh264`, so planning sees
+H.264 without linking it. It is decode-only for recipe encode: applications that need H.264 encoding must
 register an encoder explicitly: `libcodec.VideoToolbox()` or `libcodec.OpenH264()`
 (see Library codecs), `runconfig.WithEncoder`, or a codec adapter.
 

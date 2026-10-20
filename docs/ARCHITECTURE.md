@@ -20,7 +20,7 @@ and keyframe recovery are represented as events instead of hidden side effects.
 ```text
 Application
   |
-Recipes: From, stream selection, operations, taps, branches, destinations
+Recipes: inputs, stream selection, operations, taps, branches, destinations
   |
 Intent graph: inputs, selected streams, ordered operations, destinations, policies
   |
@@ -40,7 +40,7 @@ last-wins, so one call can add or override implementations.
 
 Stream values are the beginner-facing front door, and the surface is small:
 input stream selection (`input.Video()`), ordered operations, taps, forks by
-reuse, `rt.Run`/`rt.Build`, tasks, and destinations — direct `File`/`URI`/`Sink` destinations, custom `Writer`
+reuse, `rt.Run`/`rt.Build`, tasks, and destinations — direct `Write`/`URI`/`Sink` destinations, custom `Writer`
 destinations with `provider.Info`, and shared mux/sink outputs by reusing one
 destination value.
 
@@ -231,8 +231,8 @@ the event by refreshing its payload map.
 
 ## Codec backends
 
-Adapters wrap existing pure-Go codec projects (`gopus`, `goaac`, `govpx`,
-`goav1`, `goh264`) behind `codec.DecoderFactory` and `codec.EncoderFactory`; the core
+Adapters wrap existing pure-Go codec projects (`gopus`, `govpx`, `goav1`,
+`goh264`; GPL `goaac` in the nested `gplcodec`) behind `codec.DecoderFactory` and `codec.EncoderFactory`; the core
 runtime does not depend on codec internals. Decoder factories may implement
 `codec.DecodeStateFactory` when a high-level runtime needs adapter-specific
 reusable state; exact low-level applications pass their own state through

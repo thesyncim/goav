@@ -254,7 +254,7 @@ this list:
   matching element-for-element would reproduce the surface the grammar
   exists to avoid (`docs/GSTREAMER_ALTERNATIVE.md`).
 - **Hardware codec backends in core.** Core stays pure Go — every CI build
-  and test runs `CGO_ENABLED=0`, so a cgo import cannot land; acceleration
+  runs `CGO_ENABLED=0` (only race lanes enable cgo), so a cgo import cannot land; acceleration
   belongs in external adapters behind the `codec` extension points, where cgo
   is the adapter's choice.
 - **cgo in core.** Same gate; single-binary `CGO_ENABLED=0` deployment is a
@@ -288,10 +288,9 @@ The checklist below gates the tag. Each item names its current evidence.
   removed with the doc source pins (2026-06-27); accuracy is review-owned.
 - [x] **Structured errors enforced**: `error_acceptance_test.go` builds the
   bad recipes and asserts rendered refusals, and
-  `TestErrorCatalogDocMatchesErrcodeCatalog` keeps `docs/ERROR_CATALOG.md` in
-  lockstep with `errcode/errcode.go`; every current errcode names a bad
-  recipe, coverage assertion, a fix, and the test that owns it.
-- [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
+  `TestErrorCatalogDocMatchesErrcodeCatalog` pins `docs/ERROR_CATALOG.md` to
+  every code a refusal can carry, generated from the source.
+- [x] **Benchmarks present**: 13 measured workloads (`bench_test.go`) +
   pipeline/container suites plus perf-lab latency/RSS/pressure/control/fanout/
   container/real-Opus smoke; bench artifacts run in CI; methodology in
   `docs/PERFORMANCE.md`.
@@ -323,8 +322,8 @@ The checklist below gates the tag. Each item names its current evidence.
   points and are excluded by the decision recorded in `docs/API_SURFACE.md`).
 - [x] **Dependency purity**: importing the root package does not pull bundled
   adapter packages into its dependency graph. The root module still carries
-  bundled backend requirements because `goav/bundle` is not a nested module;
-  revisit a nested-module split only if SBOM or scanner pressure justifies it
+  bundled backend requirements because `goav/bundle` is not a nested module,
+  all permissively licensed; the GPL AAC backend is the nested `gplcodec`
   (`TestRootModuleDependencyPurity`). The Pion ecosystem lives in the nested
   `rtpav` and `webrtcav` modules; `playoutav` is nested for the same
   provider-seam isolation without Pion. Nested modules tag
@@ -332,8 +331,8 @@ The checklist below gates the tag. Each item names its current evidence.
   `playoutav/vX.Y.Z`), so a root v1 does not freeze the transport modules and
   vice versa; webrtcav requires rtpav requires the root, so tag the root first,
   then rtpav, then webrtcav/playoutav/player, then cmd/goav, as needed.
-- [x] **Release automation**: `.github/workflows/release.yml` validates
-  existing signed tags, runs checks in the tagged module directory, builds root
+- [x] **Release automation**: `.github/workflows/release.yml` verifies signed
+  tags through GitHub, rehearses with `dry_run`, runs checks in the tagged module directory, builds root
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.

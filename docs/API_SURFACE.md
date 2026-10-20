@@ -279,7 +279,7 @@ types stay unexported so the pinned package-level surface is the contract.
 
 Near-miss names are deliberate distinctions, one line each (each verified
 against the constructors in `input.go`/`provider.go`/`source.go`,
-`destination.go`, `stream.go`, `stream_compile.go`,
+`destination.go`, `stream.go`,
 `watch.go`, `task_control.go`, `task_pause.go`, `expert/expert.go`):
 
 - **Input vs Source vs provider.Source**: `FileInput` is the value input over
@@ -393,10 +393,9 @@ example modules. The module boundary is the dependency boundary:
   nested module — a deliberate v1 decision (see [`COMPATIBILITY.md`](COMPATIBILITY.md#module-and-dependency-decision)):
   package-level purity is enough because `TestRootImportDoesNotPullBundledAdapters`
   proves importing the root package pulls no bundled adapter, and
-  `TestRootModuleDependencyPurity` pins that module requirements stay inside
-  `github.com/thesyncim/*` plus an exact allowlist of the goaac backend's
-  modernc runtime dependencies (see `docs/ADAPTERS.md`), with no `replace`
-  directives. A nested `bundle` module would add a `go.mod` and per-module tags
+  `TestRootModuleDependencyPurity` pins the module requirements to the four
+  permissively licensed codec backends, each with its license (see
+  [`ADAPTERS.md`](ADAPTERS.md#licenses)), with no `replace` directives. A nested `bundle` module would add a `go.mod` and per-module tags
   for no isolation the package boundary does not already provide.
 - **`rtpav`, `webrtcav`, `playoutav`**: nested transport/provider modules.
   They require the root module (never the reverse), so importing goav pulls in
@@ -411,6 +410,8 @@ example modules. The module boundary is the dependency boundary:
   dependency. `cmd/goav` has no `replace`, so `go install ...@version` works.
 - **`libcodec`**: purego-bound library and OS-framework codecs (`VideoToolbox`, `AudioToolbox`,
   `OpenH264`, `Declarations`), and the public `kit` and `codectest` to add more from any module.
+- **`gplcodec`**: the opt-in copyleft codecs, `gplcodec.AAC()` (goaac, GPL),
+  nested so neither the root nor `bundle` links GPL code.
 - **runnable examples**: `examples/webrtc-runtime-ladder`,
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,

@@ -469,3 +469,24 @@ func patternedAV1Frame(width, height, n int) *av.Frame {
 		},
 	}
 }
+
+// TestAV1EncodeAllocs pins the steady-state encode path: a changing frame
+// encodes into a caller-owned result without allocating.
+func TestAV1EncodeAllocs(t *testing.T) {
+	ctx := context.Background()
+	encoder := newTestAV1Encoder(t, codec.CodecSettings{})
+	result := newAV1EncodeResult()
+	frame := patternedAV1Frame(16, 16, 0)
+	n := 0
+	if allocs := testing.AllocsPerRun(300, func() {
+		frame.PTS.Value = int64(n)
+		frame.Planes[0].Buffer.Bytes[n%len(frame.Planes[0].Buffer.Bytes)] ^= byte(n)
+		n++
+		result.Packets, result.Events = result.Packets[:0], result.Events[:0]
+		if err := encoder.EncodeInto(ctx, frame, &result); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("encode allocs = %v, want 0", allocs)
+	}
+}

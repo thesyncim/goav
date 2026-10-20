@@ -350,6 +350,16 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 
 var _ format.Seeker = (*FormatDemuxer)(nil)
 
+// CanSeek reports whether the opened input can reposition (format.Seeker):
+// the track demuxer's CanSeek when it has one.
+func (d *FormatDemuxer) CanSeek() bool {
+	if d == nil || d.demuxer == nil {
+		return false
+	}
+	checker, ok := d.demuxer.(interface{ CanSeek() bool })
+	return !ok || checker.CanSeek()
+}
+
 // Seek implements format.Seeker: it repositions the demuxer to the nearest
 // cue at or before position (falling back to the demuxer's cluster index when
 // the file carries no Cues), so the next ReadInto resumes at a keyframe-aligned

@@ -9,16 +9,22 @@ on:
       - 'playoutav/v*'
       - 'player/v*'
       - 'libcodec/v*'
+      - 'gplcodec/v*'
+      - 'goavtest/expect/v*'
       - 'cmd/goav/v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing signed tag to release
-        required: true
+        description: Existing signed tag to release (empty with dry_run rehearses the dispatched commit)
+        required: false
       draft:
         description: Create the GitHub release as a draft
         type: boolean
         default: true
+      dry_run:
+        description: Run every step but create no release; unsigned input is reported, not refused
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,45 +49,67 @@ jobs:
 
       - name: Resolve tag
         id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          dry_run="false"
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag="${{ inputs.tag }}"
-            draft="${{ inputs.draft }}"
+            tag="${INPUT_TAG}"
+            draft="${INPUT_DRAFT}"
+            dry_run="${INPUT_DRY_RUN}"
           else
             tag="${GITHUB_REF_NAME}"
             draft="false"
           fi
+          if [ -z "$tag" ] && [ "$dry_run" != "true" ]; then
+            echo "a release needs a tag; leave it empty only with dry_run" >&2
+            exit 1
+          fi
+          # A dry run with no tag rehearses the dispatched commit as a root
+          # release; its signature check runs but only warns.
+          if [ -z "$tag" ]; then
+            tag="v0.0.0-dryrun.${GITHUB_RUN_NUMBER}"
+            DRY_RUN=true scripts/verify-release-signature.sh commit "${GITHUB_SHA}"
+          fi
           case "$tag" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: $tag" >&2
               exit 1
               ;;
           esac
-          git fetch --force --tags
-          git rev-parse -q --verify "refs/tags/$tag" >/dev/null
-          git verify-tag "$tag"
-          git checkout --detach "$tag"
+          if [ "$tag" != "v0.0.0-dryrun.${GITHUB_RUN_NUMBER}" ]; then
+            DRY_RUN="$dry_run" scripts/verify-release-signature.sh tag "$tag"
+            git fetch --force --tags
+            git checkout --detach "$tag"
+          fi
           case "$tag" in
             rtpav/*) module_dir="rtpav" ;;
             webrtcav/*) module_dir="webrtcav" ;;
             playoutav/*) module_dir="playoutav" ;;
             player/*) module_dir="player" ;;
             libcodec/*) module_dir="libcodec" ;;
+            gplcodec/*) module_dir="gplcodec" ;;
+            goavtest/expect/*) module_dir="goavtest/expect" ;;
             cmd/goav/*) module_dir="cmd/goav" ;;
             *) module_dir="." ;;
           esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
           echo "module_dir=$module_dir" >> "$GITHUB_OUTPUT"
 
       - name: Verify changelog entry point
         run: test -s CHANGELOG.md
 
-      # A nested-module tag is only useful if consumers can resolve it:
-      # the module's go.mod must not lean on a replace directive and must
-      # require a real, tagged root version (not the v0.0.0 dev placeholder).
+      # A nested-module tag is only useful if consumers can resolve it: its
+      # go.mod must not lean on a replace directive, and every goav module it
+      # requires must be a tagged release, not the pseudo-version of a commit
+      # on main (docs/RELEASING.md, Nested-module root pin).
       - name: Verify tagged module is consumer-resolvable
         if: steps.release.outputs.module_dir != '.'
         working-directory: ${{ steps.release.outputs.module_dir }}
@@ -91,8 +119,8 @@ jobs:
             echo "Pin a tagged root version and drop the replace before tagging (see docs/RELEASING.md)." >&2
             exit 1
           fi
-          if grep -q 'github.com/thesyncim/goav v0\.0\.0$' go.mod; then
-            echo "go.mod requires the v0.0.0 dev placeholder of the root module; pin a real tagged version." >&2
+          if grep -Eq '^[[:space:]]*(require[[:space:]]+)?github\.com/thesyncim/goav(/[^[:space:]]+)?[[:space:]]+v0\.0\.0-' go.mod; then
+            echo "go.mod requires a goav module at a pseudo-version; tag that module first and pin its tag." >&2
             exit 1
           fi
 
@@ -137,7 +165,16 @@ jobs:
           done
           (cd dist && shasum -a 256 *.tar.gz *.txt *.json > SHA256SUMS)
 
+      - name: Upload dry-run artifacts
+        if: steps.release.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run
+          path: dist/
+          if-no-files-found: ignore
+
       - name: Create GitHub release
+        if: steps.release.outputs.dry_run != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

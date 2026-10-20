@@ -158,6 +158,8 @@ func (in httpInput) OpenBytes(ctx context.Context) (io.ReadCloser, error) {
 const (
 	minChunk = 256 << 10
 	maxChunk = 8 << 20
+	// headSize is how much of a ranged resource's start is kept.
+	headSize = 4 << 10
 	// skipLimit is how far ahead a read may land and still be served by
 	// discarding from the open body rather than by a new request.
 	skipLimit = 256 << 10
@@ -220,8 +222,11 @@ type httpReader struct {
 	// offset winStart.
 	win      []byte
 	winStart int64
-	scratch  []byte
-	closed   bool
+	// head keeps a ranged resource's first headSize bytes: probing reads
+	// them, then the demuxer reads them again, without a second request.
+	head    []byte
+	scratch []byte
+	closed  bool
 }
 
 // httpBody is one response body positioned at offset at and ending at end
@@ -425,7 +430,14 @@ func (r *httpReader) readAt(p []byte, off int64) (int, error) {
 	if !r.ranges {
 		return r.readProgressive(p, off)
 	}
-	return r.readRanged(p, off)
+	if off < int64(len(r.head)) {
+		return copy(p, r.head[off:]), nil
+	}
+	n, err := r.readRanged(p, off)
+	if off == int64(len(r.head)) && off < headSize {
+		r.head = append(r.head, p[:min(int64(n), headSize-off)]...)
+	}
+	return n, err
 }
 
 // readRanged serves a read from the open ranged body when off is in it or

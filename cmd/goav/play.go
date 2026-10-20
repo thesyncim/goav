@@ -81,8 +81,8 @@ func playCommand(argv []string, stdout, stderr io.Writer) int {
 		}
 	}
 	rest := []string{"--runtime", args.runtime}
-	if args.control != "" {
-		rest = append(rest, "--control", args.control)
+	if args.control.address != "" {
+		rest = append(rest, "--control", args.control.address)
 	}
 	return runCommand(append(rest, program), stdout, stderr)
 }

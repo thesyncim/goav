@@ -1,0 +1,25 @@
+name: Bug report
+description: Something goav does differently from its docs
+body:
+  - type: textarea
+    id: recipe
+    attributes:
+      label: The recipe or program
+      description: The smallest Go recipe or goav CLI program that shows it.
+      render: go
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened, and what you expected
+      description: The full error (a BuildError prints its code and fixes) or the wrong output.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: goav version or commit, go version, GOOS/GOARCH, and whether GOEXPERIMENT=simd is set.
+    validations:
+      required: true

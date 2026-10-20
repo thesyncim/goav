@@ -2,7 +2,6 @@ package goav
 
 import (
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
-	goaacadapter "github.com/thesyncim/goav/adapters/goaac"
 	goav1adapter "github.com/thesyncim/goav/adapters/goav1"
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
@@ -39,7 +38,6 @@ func testBundleFormats() Option {
 func testBundleCodecs() Option {
 	return func(config *Config) error {
 		gopusadapter.Register(config.Codecs)
-		goaacadapter.Register(config.Codecs)
 		govpxadapter.Register(config.Codecs)
 		goav1adapter.Register(config.Codecs)
 		goh264adapter.Register(config.Codecs)

@@ -1,0 +1,2 @@
+# LF everywhere, so a Windows checkout formats, tests, and diffs like the others.
+* text=auto eol=lf

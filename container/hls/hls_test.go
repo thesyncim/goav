@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,7 +155,8 @@ func TestDirPublishesWhole(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 		info, _ := e.Info()
-		if strings.HasPrefix(e.Name(), ".") || info.Mode().Perm() != 0o644 {
+		// Windows has no POSIX modes; there a file is readable unless read-only.
+		if strings.HasPrefix(e.Name(), ".") || runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 			t.Fatalf("%s left behind or not readable (%v)", e.Name(), info.Mode())
 		}
 	}

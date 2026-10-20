@@ -425,6 +425,15 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	if !detailsContain(buildErr.DetailLines(), "audio.decoded") {
 		t.Fatalf("details should list the declared taps, err = %v", err)
 	}
+	// Frame work on the missing tap is refused for the missing tap, not for
+	// the shape it was guessed to have.
+	for _, out := range []goav.Output{
+		task.Tap("nope").Encode(codec.Opus()).To(goavtest.NewCollector().Sink()),
+		task.Tap("nope").Resample(16000, 1).To(goavtest.NewCollector().Sink()),
+	} {
+		_, err = task.Attach(ctx, out)
+		requireBuildError(t, err, errcode.Code("runtime_branch_tap_missing"), "attach runtime branch", "nope", `add .Tap("nope") at the point you want to attach`)
+	}
 }
 
 // TestErrorAcceptanceEncoderAdapterMissing is snippet 8: .Encode with a codec
@@ -470,13 +479,13 @@ func TestErrorAcceptanceStreamMissing(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes is
-// refused before anything opens.
+// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes, by
+// its bytes or its name, is refused when it opens.
 func TestErrorAcceptanceInputFormatUnknown(t *testing.T) {
 	_, err := mustRuntime().Build(context.Background(),
 		goav.FileInput("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("input_format_unknown"), "open input", "in.unknown",
-		"a name, URI, or MIME type a registered prober can recognize",
+		"its first bytes and its name, URI, and MIME type matched none",
 	)
 }
 

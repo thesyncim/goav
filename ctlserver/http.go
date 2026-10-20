@@ -15,10 +15,15 @@ import (
 const maxRequestBytes = 1 << 20
 
 // ServeHTTP serves the methods over HTTP, for mounting the control plane in
-// an existing service (behind its own authentication): POST a JSON-RPC
+// an existing service (behind its own authentication, or a Token): POST a JSON-RPC
 // request and receive its response; GET .../events streams the task's events
 // as server-sent events, filtered by ?types=a,b and ?stream=id.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.token != "" && !s.tokenMatches(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, "unauthorized: send Authorization: Bearer <token>", http.StatusUnauthorized)
+		return
+	}
 	switch {
 	case r.Method == http.MethodPost:
 		raw, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes))

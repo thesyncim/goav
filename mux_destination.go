@@ -74,6 +74,9 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		}
 		formatID = outputProbe.Format
 	}
+	if err := publicError(compile.OpenedMuxRefusal(compile.MuxNodeName(output, index), formatID, streams, b.runtime.compileEnv())); err != nil {
+		return nil, err
+	}
 	muxFactory, err := b.runtime.formats.MuxerFactory(formatID)
 	if err != nil {
 		return nil, outputMuxerMissingError(output, index, formatID, containerChoices(b.runtime.formats), err)

@@ -139,13 +139,13 @@ custom path schemes outside the media graph until the planner knows what bytes
 will be written.
 
 ```go
-dest := goav.Writer("mem://voice.ogg",
+dest := goav.Writer("mem://voice.webm",
     func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
         // info.Format, info.Streams, info.Metadata, and info.Realtime are final.
         return upload, nil
     },
-    goav.Format(av.FormatOgg),
-    goav.MIME("audio/ogg"),
+    goav.Format(av.FormatWebM),
+    goav.MIME("audio/webm"),
     goav.Metadata(av.Metadata{"kind": "voice"}),
 )
 
@@ -363,7 +363,7 @@ package pins its hot paths with allocation guards next to the contract;
 | `rtpav` | `Source` (Pion RTP reader -> packets/events with payload maps, loss/timestamp tracking, depacketizers, EOS, feedback), `StaticPayloadMap`, `SequenceDetector` (allocation-free loss detection), `Depacketizer` and the Opus/VP8/VP9/H264/AV1 depacketizers, `FeedbackWriter` | `JitterBuffer` |
 | `webrtcav` | `TrackReader` (Pion `TrackRemote` as a packet reader) | `TrackSet` (track acceptance, same-stream replacement, codec updates) |
 | `playoutav` | - | `Input`: scheduled packets, frames, and events through `provider.Source`, in a nested module so playout does not widen the root dependency graph |
-| adapters | `adapters/gopus`, `goaac`, `ivf`, `annexb` | `adapters/govpx`, `goav1`, `goh264` (descriptor-only by default), `resample`, `resize`; see [`ADAPTERS.md`](ADAPTERS.md) |
+| adapters | `adapters/gopus`, `govpx`, `goav1`, `ivf`, `annexb` | `adapters/goh264` (descriptor-only without `-tags goav_goh264`), `resample`, `resize`, AAC in `gplcodec`; see [`ADAPTERS.md`](ADAPTERS.md) |
 
 These are the shapes recipes compile toward and that `expert.Graph(runtime)`
 wires by hand. Component tests capture `pipeline.Spec` before execution and

@@ -63,10 +63,13 @@ type Input interface {
 // the container from the input's name and MIME type, or takes
 // SourceShape().Format when set, and demuxes it with its registered formats.
 //
-// The reader may also implement io.ReaderAt, io.Seeker, Size() int64, and
-// Live() bool (a stream that turns out live when it opens); random-access
-// containers (MP4 with its index at the end) need ReaderAt or Seeker. The runtime closes the reader when the input closes or the run's
-// context ends, which must unblock a pending Read.
+// The source may also implement Name() string and Protocol() av.ProtocolID,
+// the naming facts a URL would carry. The reader may also implement
+// io.ReaderAt, io.Seeker, Size() int64, and Live() bool (a stream that turns
+// out live when it opens); random-access containers (MP4 with its index at
+// the end) need ReaderAt or Seeker. The runtime
+// closes the reader when the input closes or the run's context ends, which
+// must unblock a pending Read.
 type ByteSource interface {
 	SourceShape() shape.Spec
 	OpenBytes(ctx context.Context) (io.ReadCloser, error)

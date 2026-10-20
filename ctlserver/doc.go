@@ -41,7 +41,7 @@
 // An attached program starts at a tap (tap live ! ...) and may use the
 // elements Elements adds; it reads and writes files only through the
 // FileSystem Files grants, so a server for untrusted clients grants a
-// launch.Dir or none.
+// launch.Dir or none. A tcp server authenticates its clients with a Token.
 //
 // # Cost
 //

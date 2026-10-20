@@ -338,7 +338,7 @@ func (c *compiler) fileInput(ref fileRef, t *termNode) (value, error) {
 	}
 	in := goav.URIInput(ref.uri)
 	if ref.uri == "" {
-		in = goav.FileInput(ref.path, &lazyReader{fs: c.cfg.files, name: ref.path})
+		in = goav.Input(fileBytes{fs: c.cfg.files, name: ref.path})
 	}
 	c.inputs[ref.key()] = in
 	return value{kind: kindInput, input: in}, nil
@@ -359,7 +359,7 @@ func (c *compiler) fileDestination(ref fileRef, t *termNode) (goav.Destination, 
 	}
 	d := goav.URI(ref.uri, opts...)
 	if ref.uri == "" {
-		d = goav.Write(ref.path, &lazyWriter{fs: c.cfg.files, name: ref.path}, opts...)
+		d = goav.Custom(ref.path, fileDestination{fs: c.cfg.files, name: ref.path}, opts...)
 	}
 	c.dests[ref.key()] = d
 	return d, nil

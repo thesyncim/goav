@@ -15,7 +15,7 @@ goav ctl      --control unix://PATH <method> [key=value...]
 ```
 
 Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
-the SIMD codec paths run about twice as fast; `-tags goav_noplay` leaves the
+it enables the SIMD codec paths ([measured scope](PERFORMANCE.md)); `-tags goav_noplay` leaves the
 window out (a static Linux binary).
 
 ## The language
@@ -44,7 +44,7 @@ the one above.
 | Sources | `file PATH`, `uri URL` (or a quoted URL: http, https, whep), `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto` |
-| Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! at X Y [, sync=pts])`, `select(a, b)` |
+| Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! resize WxH ! at X Y [, sync=pts])`, `select(a, b)` |
 | Destinations | `file PATH [format=]`, `uri URL` (whip, whips), `hls PATH [segment= window= parts=]`, `play [title= size=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings
@@ -97,9 +97,13 @@ for HTTP/2, which LL-HLS players expect.
 
 ## Control
 
-With `--control unix://PATH` (a bare path means unix; `tcp://host:port` is a trusted-network interface), `goav run` serves the
+With `--control unix://PATH` (a bare path means unix), `goav run` serves the
 running task through [`ctlserver`](CONTROL_PLANE.md) until it stops, and
-`goav ctl` calls its methods, one per invocation:
+`goav ctl` calls its methods, one per invocation. Attached programs touch files
+only under `--control-dir` (default `.`). `tcp://127.0.0.1:PORT` writes a token,
+owner-only, to `--control-token FILE` (default: per address, in the config
+directory) that `goav ctl` must present; a non-loopback address needs
+`--control-remote`.
 
 ```text
 goav run --control unix:///tmp/goav.sock 'testsrc video live ! tap live ! encode vp8 ! as cam ! file live.webm'
