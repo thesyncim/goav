@@ -13,3 +13,5 @@
   require migration; see docs/RUNTIME_CONTRACTS.md.
 - Extend published-consumer validation to WebRTC ordered records and refresh
   nested module pins so installed player and CLI consumers receive these contracts.
+- Preserve unrelated input media during seek: flush only source-exclusive queues,
+  including same-source forks/rejoins, and retain the bounded tail after a shared join.

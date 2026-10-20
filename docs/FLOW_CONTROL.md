@@ -98,13 +98,16 @@ What holds today (all `-race` clean, with tests):
   timing whenever an unrelated declaration changes. Transport-internal delays
   (the rtpav jitter buffer lives in a nested module) are not composed — no
   provider seam declares latency to the root today.
-- Seek is flush-accurate on buffered tasks: once a source records a
-  `control.Seek`/`control.Segment`, `task.Control` drains the stale pre-seek
-  media queued downstream of it instead of letting it play out first — shed
-  packets/frames are honest stats under `pipeline.DropFlush`, queued events
-  survive, and nothing from a queued `EventDiscontinuity` on is touched
-  (`TestSeekFlushesInFlightMedia`). Direct tasks buffer nothing and seek
-  unchanged (`TestSeekWithoutFlushableNodesStillSeeks`).
+- Before delivering `control.Seek`/`control.Segment`, a buffered task sheds
+  stale media from queues exclusively downstream of the targeted source.
+  Same-source forks and rejoins remain exclusive. A queue shared with another
+  upstream, and every queue after it, is preserved so seeking one arm cannot
+  erase another arm's media. Those queues may deliver a bounded admitted
+  pre-seek tail before the discontinuity. Shed packets/frames are recorded
+  under `pipeline.DropFlush`; queued events and everything following a queued
+  `EventDiscontinuity` survive (`TestSeekFlushesInFlightMedia`,
+  `TestFlushDownstreamPreservesSharedQueues`). Direct tasks buffer nothing
+  (`TestSeekWithoutFlushableNodesStillSeeks`).
 - Custom sources see flow control per push: `push.X(...)` returns
   `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.
@@ -121,10 +124,12 @@ leaving.
 
 - `task.Detach(ctx, attachment)` removes the branch and reports its
   destinations as closed.
-- `task.Detach(ctx, attachment, goav.DrainBranch())` drains/finalizes the branch as
-  committed: every message already queued in the branch is delivered before
-  it closes (`TestRuntimeBranchDrainDetachDeliversQueuedFrames`). Use this for ordinary recording or participant-leave flows where
-  the output should be kept.
+- `task.Detach(ctx, attachment, goav.DrainBranch())` commits only after branch
+  removal finishes delivering every queued message. A timeout or removal error
+  fails remaining transactions before downstream retirement; whole-task
+  `Close` abandons unfinished drains. Successful recording or participant-leave
+  flows retain the completed output
+  (`TestRuntimeBranchDrainDetachDeliversQueuedFrames`).
 - `task.Detach(ctx, attachment, goav.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.

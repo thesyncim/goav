@@ -263,7 +263,10 @@ implement, with the executable evidence:
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
   Hosts that need remote access import `ctlserver`, add new verbs with
   `Method[T]`, and add custom runtime branch components with `Elements`.
-  There is no global registry and no arbitrary method invocation.
+  There is no global registry and no arbitrary method invocation. Seek/segment
+  flushing sheds media only in queues exclusively downstream of the selected
+  source. Shared queues and their descendants retain a bounded admitted tail,
+  preserving other inputs until the seeking source's discontinuity arrives.
 
 ## C. Expert tier
 
