@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -63,5 +66,28 @@ func TestControlTokenDoesNotFollowSymlink(t *testing.T) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("token path was not replaced with a regular file: %v", err)
+	}
+}
+
+func TestRunControlPortConflictPreservesExistingToken(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	path := filepath.Join(t.TempDir(), "control.token")
+	const existing = "running server token\n"
+	if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	code := run([]string{"run", "--control", "tcp://" + listener.Addr().String(), "--control-token", path,
+		"--control-dir", t.TempDir(), "testsrc video size=16x16 live ! null"}, io.Discard, &stderr)
+	if code != 1 {
+		t.Fatalf("occupied control port returned %d: %s", code, stderr.String())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != existing {
+		t.Fatalf("failed listener changed the existing server's token: %v", err)
 	}
 }

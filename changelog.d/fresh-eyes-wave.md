@@ -78,4 +78,4 @@
   govulncheck; the repository gains `.gitattributes` (LF), Dependabot,
   CODEOWNERS, and a bug-report form.
 
-Control token files are replaced atomically with owner-only permissions, including when an existing path is world-readable or a symlink.
+Control token files are replaced atomically with owner-only permissions, including when an existing path is world-readable or a symlink. A failed launch on an occupied control port preserves the running server's token.

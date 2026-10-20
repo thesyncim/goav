@@ -301,7 +301,15 @@ func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Con
 		return err
 	}
 	options := []ctlserver.Option{ctlserver.Files(attached)}
-	if strings.HasPrefix(control.address, "tcp://") {
+	var listener net.Listener
+	if address, tcp := strings.CutPrefix(control.address, "tcp://"); tcp {
+		// Reserve the port before publishing a token. A failed second
+		// launch must not replace or remove the running server's token.
+		listener, err = (&net.ListenConfig{}).Listen(ctx, "tcp", address)
+		if err != nil {
+			return err
+		}
+		defer listener.Close()
 		token, path, err := control.issueToken()
 		if err != nil {
 			return err
@@ -318,7 +326,11 @@ func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Con
 	defer cancel()
 	errC := make(chan error, 2)
 	go func() {
-		errC <- server.ListenAndServe(runCtx, control.address)
+		if listener != nil {
+			errC <- server.Serve(runCtx, listener)
+		} else {
+			errC <- server.ListenAndServe(runCtx, control.address)
+		}
 		cancel()
 	}()
 	// The task runs on the calling goroutine (a window must), the server
