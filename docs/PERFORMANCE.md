@@ -358,31 +358,44 @@ allocation/byte ceilings.
 
 ## Complete workload evidence
 
-`bash scripts/bench/workloads.sh` runs two additional workloads and writes their
-evidence under `bench-results/workloads/`:
+`bash scripts/bench/workloads.sh` writes workload evidence under
+`bench-results/workloads/`:
 
 - File H.264/AAC at 720p and 1080p, one shared native video decoder, 720p and
-  360p H.264 renditions, shared copied audio, and two MP4 outputs. It verifies
-  frame and audio counts, output finalization, drops and A/V tail drift, and
-  records decode-to-encode p50/p95/p99 latency, elapsed throughput, heap,
-  goroutines, process CPU and peak RSS. FFmpeg checks output PSNR against the
-  resized input; encoder backend and bitrate remain part of the evidence.
-- A negotiated loopback WebRTC sender repeatedly detaches, idles and reattaches.
-  Each cycle must deliver RTP, return a remote PLI to the active attachment,
-  remove its feedback subscription, and return goroutines to baseline when
-  the peers close. It records cycles and media-plus-feedback latency.
+  360p H.264 renditions, copied audio, and two finalized MP4 outputs. Each
+  rendition reports its own p50/p95/p99 for packet-input-to-encoded-output
+  latency, including decoder delay, and for post-decode-to-encoded-output
+  latency. These intervals start at the packet/frame stages, not at file I/O.
+  The test checks counts, drops and A/V tail drift. Logs include throughput,
+  heap, goroutines, process CPU and peak RSS; FFmpeg checks output PSNR against
+  resized input with backend and bitrate recorded.
+- A transport-only WebRTC probe repeatedly closes and reopens one sink on a
+  negotiated sender. Each cycle delivers RTP, returns a remote PLI to the
+  current subscriber, and checks unsubscription. Quantiles explicitly cover
+  the trailing 4096-cycle window; maximum latency and the count over 50 ms
+  cover all completed cycles, including on failure. The threshold is an
+  observation, not a playout deadline.
+- A real Task A/V workload repeatedly attaches VP8/Opus encoders to raw taps,
+  decodes both streams at a loopback peer, sends PLI to each current encoder,
+  and detaches while a separate A/V recording continues. It checks pending
+  cleanup and feedback subscribers each cycle and decodes the finalized WebM.
+- Native AudioToolbox AAC conformance alternates 48 kHz stereo and 44.1 kHz
+  mono fixtures, with explicit epochs, discontinuities and a 90 kHz input
+  clock. It verifies new output identity/format and rescaled sample timestamps.
 
 By default the file inputs are three-second synthetic motion clips independently
 encoded by FFmpeg with normal GOPs, B-frames and simultaneous audio. For
 representative recorded footage, set `GOAV_WORKLOAD_CLIPS` to a directory with
-`720p.mp4` and `1080p.mp4`; the driver records their SHA-256 hashes. The WebRTC
-payload is a transport probe, not a visual-quality or playout test.
+`720p.mp4` and `1080p.mp4`; the driver records their SHA-256 hashes. The two
+WebRTC tests have different scopes: the transport probe uses synthetic RTP;
+the Task workload uses decodable generated video and tone audio. Neither
+measures visual quality under network loss or playout deadlines.
 
 Use `GOAV_WEBRTC_SOAK_DURATION=1h bash scripts/bench/workloads.sh` before a
-release. The `lifecycle-workloads` workflow supports manual hour-scale runs and
-a weekly two-hour run, preserving artifacts on failure. Short local runs are
-smoke evidence only. Native conformance separately covers decoder seek and
-epoch changes, and deterministic graph tests cover stalled-sink recovery.
-These measurements do not establish production stream capacity, network-loss
-quality, or missed playout deadlines; profile a representative service workload
-before choosing an optimization.
+release. That duration applies to each WebRTC test, so the workflow's weekly
+2h setting runs about four hours in total. Artifacts are preserved on failure.
+Short local runs remain smoke evidence. Blocked-sink recovery, idle-reader
+replacement and concurrent configuration updates have deterministic regression
+coverage; they are not yet injected together into the continuous A/V soak.
+Hour-scale release-candidate evidence and representative service profiling
+remain necessary before claims about capacity, drift or long-run stability.

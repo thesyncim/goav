@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -43,6 +44,9 @@ func runAudio(t *testing.T, b backend, decoders []backend) {
 		return
 	}
 	t.Run("reference", func(t *testing.T) { audioReference(t, b, decoders) })
+	if b.desc.Backend.Kind != codec.KindGo {
+		t.Run("transitions", func(t *testing.T) { audioTransitions(t, b) })
+	}
 	t.Run("close", func(t *testing.T) { decoderClose(t, b, audioStream(b.desc.ID)) })
 }
 
@@ -195,5 +199,78 @@ func audioReference(t *testing.T, b backend, decoders []backend) {
 			continue
 		}
 		checkAudio(t, b, timeline(want), got, minMatchSNR)
+	}
+}
+
+// audioTransitions alternates independent AAC configurations, including a
+// non-sample input timebase, and exercises seek/reset on the actual backend.
+func audioTransitions(t *testing.T, b backend) {
+	if b.desc.ID != av.CodecAAC {
+		t.Skipf("no transition fixture for %s", b.desc.ID)
+	}
+	var fixtures []encoded
+	for _, name := range []string{"h264_high_aac.mp4", "aac_44100_mono.mp4"} {
+		stream, packets, err := demuxFixture(name, av.MediaAudio)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixtures = append(fixtures, encoded{stream: stream, packets: packets})
+	}
+	initial := fixtures[0].stream
+	initial.Epoch = 1
+	decoder := openDecoder(t, b, initial)
+	if decoder == nil {
+		return
+	}
+	defer decoder.Close()
+	out := newDecodeResult(av.MediaAudio)
+	for cycle := range 4 {
+		fixture := fixtures[(cycle+1)%2]
+		stream := fixture.stream
+		stream.ID = "transition-audio"
+		stream.Codec.ChannelLayout = "stereo"
+		if stream.Codec.Channels == 1 {
+			stream.Codec.ChannelLayout = "mono"
+		}
+		stream.Epoch = av.Epoch(cycle + 2)
+		stream.TimeBase = av.TimeBase{Num: 1, Den: 90000}
+		if err := decoder.HandleEvent(t.Context(), &av.Event{Type: av.EventCodecChanged, Stream: &stream, Epoch: stream.Epoch}); err != nil {
+			t.Fatal(err)
+		}
+		if err := decoder.DecodeInto(t.Context(), &fixture.packets[0], &out); err != nil {
+			t.Fatal(err)
+		}
+		drainFrames(&out, nil)
+		if err := decoder.HandleEvent(t.Context(), &av.Event{Type: av.EventDiscontinuity}); err != nil {
+			t.Fatal(err)
+		}
+		frames := 0
+		check := func(f *av.Frame) {
+			frames++
+			if f.StreamID != stream.ID || f.CodecEpoch != stream.Epoch || f.Audio.SampleRate != stream.Codec.SampleRate || f.Audio.Channels != stream.Codec.Channels || f.Audio.ChannelLayout != stream.Codec.ChannelLayout {
+				t.Errorf("%s: stale audio configuration: epoch=%d audio=%+v", b.name(), f.CodecEpoch, f.Audio)
+			}
+			seconds, _ := f.PTS.ToDuration()
+			if seconds < time.Second {
+				t.Errorf("pre-seek audio: %s", seconds)
+			}
+		}
+		for _, packet := range fixture.packets {
+			packet.PTS.Value += int64(stream.Codec.SampleRate)
+			packet.PTS, _ = packet.PTS.Rescale(stream.TimeBase)
+			packet.Duration, _ = packet.Duration.Rescale(stream.TimeBase)
+			packet.CodecEpoch = stream.Epoch
+			if err := decoder.DecodeInto(t.Context(), &packet, &out); err != nil {
+				t.Fatal(err)
+			}
+			drainFrames(&out, check)
+		}
+		if err := decoder.FlushInto(t.Context(), &out); err != nil {
+			t.Fatal(err)
+		}
+		drainFrames(&out, check)
+		if frames < len(fixture.packets)-1 {
+			t.Fatalf("%s: %d frames for %d packets", b.name(), frames, len(fixture.packets))
+		}
 	}
 }

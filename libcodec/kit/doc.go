@@ -35,4 +35,11 @@
 // before the event is forwarded, adopts the new stream identity, epoch,
 // timebase, geometry and parameter sets, and opens a fresh session. No
 // pre-change picture can appear after the new configuration event.
+//
+// Audio decoder transitions use the same drain/discard boundary: EOS drains
+// delayed samples, while discontinuities discard them by opening a fresh
+// session. CodecChanged adopts stream identity, epoch, rate, channels, layout
+// and extradata. Backend packets use the sample clock even when input packets
+// use another timebase. Unsupported codec switches or backend configuration
+// refusals return an error before committing the replacement configuration.
 package kit

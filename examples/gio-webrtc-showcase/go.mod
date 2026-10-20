@@ -10,9 +10,9 @@ require (
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/webrtc/v4 v4.2.24
-	github.com/thesyncim/goav v0.0.0-20261020142137-7f8591e35024
-	github.com/thesyncim/goav/rtpav v0.0.0-20261020142137-7f8591e35024
-	github.com/thesyncim/goav/webrtcav v0.0.0-20261020142137-7f8591e35024
+	github.com/thesyncim/goav v0.0.0-20261020160912-710e3246b213
+	github.com/thesyncim/goav/rtpav v0.0.0-20261020160912-710e3246b213
+	github.com/thesyncim/goav/webrtcav v0.0.0-20261020160912-710e3246b213
 )
 
 require (

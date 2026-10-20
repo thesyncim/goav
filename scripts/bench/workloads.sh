@@ -39,8 +39,10 @@ trap 'rm -rf "$build"' EXIT
 # Measure the workload processes, excluding compiler CPU and memory.
 (cd libcodec && /usr/bin/time "${timing[@]}" "$build/file-ladder.test" -test.timeout=30m -test.count=1 -test.v -test.run='^TestFileLadderWorkload$') \
   2>&1 | tee "$out/file-ladder.txt"
-(cd webrtcav && /usr/bin/time "${timing[@]}" "$build/webrtc-soak.test" -test.timeout=0 -test.count=1 -test.v -test.run='^TestWebRTCLifecycleSoak$') \
+(cd webrtcav && /usr/bin/time "${timing[@]}" "$build/webrtc-soak.test" -test.timeout=0 -test.count=1 -test.v -test.run='^(TestWebRTCLifecycleSoak|TestTaskAVLifecycleSoak)$') \
   2>&1 | tee "$out/webrtc-soak.txt"
+(cd libcodec && "$build/file-ladder.test" -test.timeout=2m -test.count=1 -test.v -test.run='^TestAudioToolbox$/aac/audiotoolbox/decode/transitions$') \
+  2>&1 | tee "$out/audio-transitions.txt"
 for size in 720p 1080p; do
   for pair in hd:1280:720 sd:640:360; do
     name="${pair%%:*}"

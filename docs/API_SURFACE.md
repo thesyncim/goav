@@ -117,7 +117,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   media. `provider.Source` (`OpenSource`), `goav.Source(fn)` with
   `source.Func`/`source.Push`/`source.Result`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
-  PayloadMap extension points), `webrtcav.Track`/`Session` (TrackReader,
+  PayloadMap extension points, plus optional ConfiguredPacketReader), `webrtcav.Track`/`Session` (TrackReader,
   TrackAdapter). `goav.WrapSource(spec, wrap)` is the decoration point: every
   input kind opens through one internal source boundary into a running
   `pipeline.Source`, and wrap intercepts it there, so externals decorate
@@ -127,6 +127,15 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   caller-held value (io.Writer for `Write`, `provider.Destination` for
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
+  `rtpav.ConfiguredPacketReader.ReadRTPWithConfig` binds an immutable payload
+  map and optional configuration event to each packet read. `rtpav.Source`
+  applies that event before the packet, preserving an already-started read's
+  old generation. This optional transport capability replaces the separate
+  event-channel handoff for implementing readers; adapter wrappers must forward
+  it to preserve that guarantee. Updates before a read may coalesce to the
+  newest configuration. Build and Attach use the same source path; no grammar
+  operation, shape conversion or Explain/Describe node is added. Read errors
+  follow the existing source failure path.
 - **Joins** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): use these when
   several streams become one. `goav.Join(name, stage, streams...)` is N->1
   convergence with a caller-supplied `pipeline.Stage` as the convergence node.
@@ -252,6 +261,12 @@ it, and v1 does not freeze its shape.
   a timed-out removal stops routing immediately, retains cleanup ownership,
   and releases its slot after finalization. This diagnostic does not change
   the recipe grammar or add a planning operation.
+  `av.EventCleanupError` supplements this with the node name and wrapped
+  finalization error. Observer delivery is best effort; later graph/task
+  `Close` calls retain deferred failures after reclamation and observer
+  shutdown, preserving `errors.Is`. Ordinary synchronous close errors remain
+  outcomes of their initiating calls. The event adds no planning operation or
+  shape facts and applies equally to Build and Attach cleanup.
 - Prebuilt graph components: `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).

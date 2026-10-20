@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -64,6 +65,9 @@ type nodeBase struct {
 	// Retirement removes routing before finalization. A timeout only stops
 	// the caller's wait; the graph continues owning the node until Close.
 	retiring  bool // guarded by topology.mu
+	deferred  bool // a caller stopped waiting; retain the eventual outcome
+	finalized bool
+	reported  bool // deferred close error recorded, guarded by topology.mu
 	closeOnce sync.Once
 	reapOnce  sync.Once
 	closeErr  error
@@ -165,6 +169,9 @@ type topology[P graphNode] struct {
 	// retired keeps the graph totals of nodes whose index was reused.
 	retired retiredCounts
 	closed  bool
+	// deferredErr survives node reclamation and observer shutdown. Ordinary
+	// synchronous close errors still belong to their initiating call only.
+	deferredErr error // guarded by mu
 	// snap is the routing snapshot the data plane reads without mu; nil once
 	// the graph is closed.
 	snap   atomic.Pointer[snapshot[P]]
@@ -473,6 +480,8 @@ func (t *topology[P]) finalize(n P) error {
 		t.mu.Lock()
 		b.active = false
 		b.routes = nil
+		b.finalized = true
+		t.rememberDeferredLocked(b)
 		t.reclaimLocked(n)
 		t.mu.Unlock()
 	})
@@ -481,11 +490,29 @@ func (t *topology[P]) finalize(n P) error {
 
 func (t *topology[P]) reap(n P) {
 	n.base().reapOnce.Do(func() {
+		t.mu.Lock()
+		n.base().deferred = true
+		// Another Close may already have finalized this node after our wait
+		// expired. Recording under the same lock covers that race as well.
+		t.rememberDeferredLocked(n.base())
+		t.mu.Unlock()
 		go func() {
 			_ = t.strategy.awaitStopped(context.Background(), n, -1)
 			_ = t.finalize(n)
 		}()
 	})
+}
+
+// rememberDeferredLocked retains the failure before PendingCleanup reaches
+// zero or the slot can be reused. Events are supplementary and may be closed.
+func (t *topology[P]) rememberDeferredLocked(b *nodeBase) {
+	if !b.deferred || !b.finalized || b.reported || b.closeErr == nil {
+		return
+	}
+	b.reported = true
+	err := fmt.Errorf("pipeline: deferred cleanup of %q: %w", b.name, b.closeErr)
+	t.deferredErr = errors.Join(t.deferredErr, err)
+	t.observe(av.Event{Type: av.EventCleanupError, Cause: err, Reason: b.name, Metadata: av.Metadata{"node": b.name}}, nil)
 }
 
 func (t *topology[P]) Spec() Spec {
@@ -574,7 +601,8 @@ func (t *topology[P]) Close() error {
 // snapshot; the strategy tears each node's delivery down and waits out what
 // is in flight, so Close never runs under a concurrent Handle (the contract
 // a live Remove keeps). A node whose wait times out remains owned and is
-// finalized once its work finishes. Later calls also wait for pending cleanup.
+// finalized once its work finishes. Later calls also wait for pending cleanup
+// and report retained deferred finalization errors, including after events close.
 func (t *topology[P]) CloseContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -641,7 +669,10 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 		}
 		close(t.events)
 	}
-	return first
+	t.mu.RLock()
+	deferred := t.deferredErr
+	t.mu.RUnlock()
+	return errors.Join(first, deferred)
 }
 
 // armReadinessLocked snapshots the readiness set at Run start: the active

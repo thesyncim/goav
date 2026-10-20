@@ -101,6 +101,7 @@ func (*heldSource) Close() error { return nil }
 type heldSink struct {
 	entered, release chan struct{}
 	closes           atomic.Int32
+	closeErr         error
 }
 
 func (*heldSink) Name() string { return "sink" }
@@ -109,7 +110,7 @@ func (s *heldSink) Handle(context.Context, *pipeline.Message) error {
 	<-s.release
 	return nil
 }
-func (s *heldSink) Close() error { s.closes.Add(1); return nil }
+func (s *heldSink) Close() error { s.closes.Add(1); return s.closeErr }
 
 func TestResolvedGraphFinalizesAfterTimeout(t *testing.T) {
 	for _, policy := range []pipeline.BufferPolicy{{}, {Capacity: 1}} {
@@ -118,7 +119,8 @@ func TestResolvedGraphFinalizesAfterTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 		source := &heldSource{ready: make(chan struct{}), stop: make(chan struct{})}
-		sink := &heldSink{entered: make(chan struct{}), release: make(chan struct{})}
+		finalization := errors.New("recording finalization failed")
+		sink := &heldSink{entered: make(chan struct{}), release: make(chan struct{}), closeErr: finalization}
 		if _, err := g.AddSource(source, policy); err != nil {
 			t.Fatal(err)
 		}
@@ -147,8 +149,12 @@ func TestResolvedGraphFinalizesAfterTimeout(t *testing.T) {
 		<-emit
 		close(source.stop)
 		<-run
-		if err := g.Close(); err != nil {
-			t.Fatal(err)
+		deadline := time.Now().Add(time.Second)
+		for g.Stats().PendingCleanup != 0 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if err := g.Close(); !errors.Is(err, finalization) {
+			t.Fatalf("resolved graph lost deferred finalization error: %v", err)
 		}
 		if sink.closes.Load() != 1 {
 			t.Fatalf("resolved graph abandoned Close: %d", sink.closes.Load())

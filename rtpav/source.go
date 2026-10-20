@@ -41,6 +41,7 @@ type Source struct {
 	name          string
 	detail        string
 	receiver      PacketReader
+	configured    ConfiguredPacketReader
 	feedback      FeedbackWriter
 	payloads      PayloadMap
 	jitter        JitterBuffer
@@ -84,7 +85,9 @@ func NewSource(config SourceConfig) (*Source, error) {
 	maxFeedback := positiveOrDefault(config.MaxFeedback, 4)
 	maxPackets := positiveOrDefault(config.MaxPackets, 8)
 
+	configured, _ := config.Receiver.(ConfiguredPacketReader)
 	return &Source{
+		configured:    configured,
 		name:          name,
 		detail:        config.Detail,
 		receiver:      config.Receiver,
@@ -125,10 +128,31 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 		return ErrClosed
 	}
 	for {
-		if err := s.emitReceiverEvents(ctx, emitter); err != nil {
-			return err
+		var packet *rtp.Packet
+		var err error
+		if s.configured != nil {
+			var event *av.Event
+			var payloads PayloadMap
+			packet, event, payloads, err = s.configured.ReadRTPWithConfig(ctx)
+			if event != nil && event.Type == av.EventCodecChanged && s.jitter != nil {
+				// Buffered old-generation RTP must leave under its original
+				// map and depacketizer before the new configuration is applied.
+				if flushErr := s.flush(ctx, emitter); flushErr != nil {
+					return flushErr
+				}
+			}
+			s.payloads = payloads
+			if event != nil {
+				if eventErr := s.emitEvent(ctx, emitter, event); eventErr != nil {
+					return eventErr
+				}
+			}
+		} else {
+			if err := s.emitReceiverEvents(ctx, emitter); err != nil {
+				return err
+			}
+			packet, err = s.receiver.ReadRTP(ctx)
 		}
-		packet, err := s.receiver.ReadRTP(ctx)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if err := s.flush(ctx, emitter); err != nil {
@@ -179,6 +203,9 @@ func (s *Source) handleRTP(ctx context.Context, emitter pipeline.Emitter, packet
 func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, packet *rtp.Packet) error {
 	payload, ok := s.lookupPayload(packet.PayloadType)
 	if !ok {
+		if s.configured != nil {
+			return ErrPayloadNotFound
+		}
 		// The receiver may have renegotiated while the read that produced
 		// this packet was blocked. Events it queued then precede the packet:
 		// apply them (refreshing the map and the depacketizers' epoch) and
@@ -319,7 +346,9 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	var canonical av.Stream
 	var canonicalize bool
 	if event != nil && event.Type == av.EventCodecChanged {
-		s.payloads = s.receiver.PayloadMap()
+		if s.configured == nil {
+			s.payloads = s.receiver.PayloadMap()
+		}
 		canonical, canonicalize = s.applyCodecChangedStream(event)
 	}
 	if event != nil && event.Type == av.EventStreamAdded {

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       duration:
-        description: WebRTC mutation soak duration
+        description: Duration of each WebRTC mutation soak
         default: 1h
         required: true
   schedule:
@@ -16,7 +16,7 @@ permissions:
 jobs:
   workloads:
     runs-on: macos-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     env:
       GOEXPERIMENT: simd
       GOAV_WEBRTC_SOAK_DURATION: ${{ inputs.duration || '2h' }}
@@ -31,7 +31,7 @@ jobs:
       - name: File ladder and real WebRTC mutation
         run: bash scripts/bench/workloads.sh
       - name: Timeout recovery under race detection
-        run: go test -race -count=100 ./pipeline -run '^TestRetirementRecoversAfterTimeout$'
+        run: go test -race -count=100 ./pipeline -run '^(TestRetirementRecoversAfterTimeout|TestDeferredCleanupRetainsErrors)$'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
