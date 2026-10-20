@@ -15,7 +15,7 @@ func TestSessionsShareOneCallback(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("AudioToolbox is macOS only")
 	}
-	c := Codec(Path)
+	c := Codec()
 	for _, lib := range c.Libraries {
 		if err := lib.Bind(Name); err != nil {
 			t.Skip(err)

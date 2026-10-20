@@ -258,6 +258,10 @@ func mergeBackend(existing BackendInfo, next BackendInfo) BackendInfo {
 	}
 	if next.Status != "" {
 		merged.Status = next.Status
+		merged.Unavailable = next.Unavailable
+	}
+	if next.Notice != "" {
+		merged.Notice = next.Notice
 	}
 	return merged
 }

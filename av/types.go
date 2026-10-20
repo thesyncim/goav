@@ -30,6 +30,7 @@ const (
 	CodecVP8      CodecID = "vp8"
 	CodecVP9      CodecID = "vp9"
 	CodecH264     CodecID = "h264"
+	CodecHEVC     CodecID = "hevc"
 	CodecAV1      CodecID = "av1"
 	CodecPCM      CodecID = "pcm"
 	CodecTextUTF8 CodecID = "text_utf8"

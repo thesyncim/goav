@@ -19,7 +19,7 @@ const Name = "videotoolbox"
 
 const (
 	pixelI420 = 0x79343230 // 'y420': kCVPixelFormatType_420YpCbCr8Planar
-	hevc      = kit.CodecHEVC
+	hevc      = av.CodecHEVC
 )
 
 // codecType is the CMVideoCodecType of a codec.
@@ -62,8 +62,6 @@ func Codecs() []kit.Codec {
 			Media:     av.MediaVideo,
 			Backend:   Name,
 			Kind:      codec.KindHardware,
-			Module:    "github.com/thesyncim/goav/libcodec",
-			Package:   "github.com/thesyncim/goav/libcodec/internal/videotoolbox",
 			Platforms: []string{"darwin"},
 			Profiles:  profilesOf(id),
 			Capabilities: codec.Capabilities{
@@ -74,16 +72,16 @@ func Codecs() []kit.Codec {
 			Bitstream: kit.AVCC,
 			Reorder:   true,
 			Libraries: libraries,
+			License:   kit.License{Class: kit.LicenseSystem},
 		}
 		encoder := base
 		encoder.Knobs = encoderKnobs(id)
-		encoder.Version = func() (string, error) { return "", f.probeEncoder(id) }
+		encoder.Version = func() (string, error) { return "", probe("encode", id, f.probeEncoder) }
 		encoder.NewVideoEncoder = func(config kit.VideoConfig) (kit.VideoEncoder, error) {
 			return newEncoder(f, id, config)
 		}
 		decoder := base
-		decoder.DecoderKnobs = []codec.Knob{}
-		decoder.Version = func() (string, error) { return "", f.probeDecoder(id) }
+		decoder.Version = func() (string, error) { return "", probe("decode", id, f.probeDecoder) }
 		decoder.NewVideoDecoder = func(config kit.VideoConfig) (kit.VideoDecoder, error) {
 			return newDecoder(f, id, config)
 		}
@@ -94,9 +92,25 @@ func Codecs() []kit.Codec {
 
 func profilesOf(id av.CodecID) []string {
 	if id == hevc {
-		return []string{"main", "main10"}
+		return []string{"main"} // 8-bit: sessions read and write y420
 	}
 	return []string{"baseline", "main", "high"}
+}
+
+// probes are the hardware checks, run once per process for each codec and
+// mode: the hardware does not change while the process runs.
+var probes sync.Map // "encode h264" -> *probed
+
+type probed struct {
+	once sync.Once
+	err  error
+}
+
+func probe(mode string, id av.CodecID, check func(av.CodecID) error) error {
+	value, _ := probes.LoadOrStore(mode+" "+string(id), &probed{})
+	p := value.(*probed)
+	p.once.Do(func() { p.err = check(id) })
+	return p.err
 }
 
 // probeDecoder checks for a hardware decoder of the codec.

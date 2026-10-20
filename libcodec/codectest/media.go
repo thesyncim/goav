@@ -272,7 +272,7 @@ func (b *seekBuffer) Seek(offset int64, whence int) (int64, error) {
 // muxable reports a codec the MP4 muxer writes.
 func muxable(id av.CodecID) bool {
 	switch id {
-	case av.CodecH264, av.CodecAAC, av.CodecAV1, av.CodecVP8, av.CodecVP9, av.CodecOpus:
+	case av.CodecH264, av.CodecHEVC, av.CodecAAC, av.CodecAV1, av.CodecVP8, av.CodecVP9, av.CodecOpus:
 		return true
 	}
 	return false

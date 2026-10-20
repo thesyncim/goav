@@ -438,7 +438,7 @@ func CodecMedia(codecID av.CodecID) av.MediaType {
 	switch codecID {
 	case av.CodecOpus, av.CodecPCM:
 		return av.MediaAudio
-	case av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
+	case av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecHEVC, av.CodecAV1:
 		return av.MediaVideo
 	default:
 		return ""

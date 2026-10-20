@@ -9,13 +9,15 @@ import (
 )
 
 // ErrUnavailable reports a backend that cannot run here: its library or
-// framework did not load, a symbol is missing, the version is unsupported,
-// or the platform has none. errors.Is also matches codec.ErrUnavailable.
+// framework did not load, a symbol is missing, the version is outside its
+// window, the platform has none, or the backend is turned off. errors.Is
+// also matches codec.ErrUnavailable.
 var ErrUnavailable = errors.New("libcodec backend unavailable")
 
 // Error is a libcodec backend failure with the exact fix: what failed (Op:
-// load, symbol, version, platform, open, encode, decode, control), on which
-// library, symbol, or setting (Name), and what to do about it.
+// load, symbol, version, platform, disabled, open, encode, decode,
+// control), on which library, symbol, or setting (Name), and what to do
+// about it.
 type Error struct {
 	Backend string
 	Op      string
@@ -48,7 +50,7 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() []error {
 	switch e.Op {
-	case "load", "symbol", "version", "platform":
+	case "load", "symbol", "version", "platform", "disabled":
 		return []error{ErrUnavailable, codec.ErrUnavailable, e.Err}
 	}
 	return []error{e.Err}
@@ -62,4 +64,15 @@ func unavailable(backend, op, name, reason, fix string, err error) *Error {
 // open, encode, decode, or control, and status the library's own code.
 func Fail(backend, op, call string, status int64) error {
 	return &Error{Backend: backend, Op: op, Name: call, Reason: "failed with status " + strconv.FormatInt(status, 10)}
+}
+
+// ErrDamaged marks a unit the library could not decode. A decoder session
+// returns it (through Damaged) and stays usable: the kit drops the unit,
+// asks upstream for a keyframe, and goes on decoding.
+var ErrDamaged = errors.New("libcodec: damaged unit")
+
+// Damaged is the error a decoder session returns for a unit its library
+// rejected as damaged: call is the library call, status its code.
+func Damaged(backend, call string, status int64) error {
+	return &Error{Backend: backend, Op: "decode", Name: call, Reason: "rejected a damaged unit (status " + strconv.FormatInt(status, 10) + ")", Err: ErrDamaged}
 }

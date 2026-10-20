@@ -53,15 +53,23 @@ func newDecoder(l *library, config kit.VideoConfig) (kit.VideoDecoder, error) {
 	return d, nil
 }
 
+// damage is the decoding states that mean a unit was lost to damage: a
+// reference lost, a bitstream error, a dependent layer lost, no parameter
+// sets.
+const damage = 0x2 | 0x4 | 0x8 | 0x10
+
 func (d *decoder) Decode(unit *kit.Packet, emit func(*kit.Picture) error) error {
 	d.info = bufferInfo{InTimeStamp: uint64(unit.PTS)}
 	d.dst = [3]*byte{}
 	state := d.vt.DecodeFrameNoDelay(d.handle, unsafe.SliceData(unit.Data), int32(len(unit.Data)), &d.dst, &d.info)
 	if state != 0 && d.info.BufferStatus != 1 {
-		// A damaged unit decodes nothing; the kit asks for a keyframe on
-		// loss, so report it only when the library says it is unusable.
+		// A damaged unit decodes nothing: report it, and the kit asks for
+		// a keyframe. Only an unusable decoder fails.
 		if state&0x1000 != 0 || state&0x4000 != 0 {
 			return kit.Fail(Name, "decode", "DecodeFrameNoDelay", int64(state))
+		}
+		if state&damage != 0 {
+			return kit.Damaged(Name, "DecodeFrameNoDelay", int64(state))
 		}
 		return nil
 	}

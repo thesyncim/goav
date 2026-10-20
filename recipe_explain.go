@@ -638,6 +638,7 @@ func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requi
 		requirement = applyCodecDescriptorRequirement(requirement, []codec.Descriptor{choice.Descriptor})
 		requirement.Backend = choice.Descriptor.Backend.Label()
 		requirement.BackendReason = choice.Reason
+		requirement.Notice = choice.Descriptor.Backend.Notice
 		for i := range choice.Alternatives {
 			requirement.Alternatives = append(requirement.Alternatives, choice.Alternatives[i].Backend.Label())
 		}

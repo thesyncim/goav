@@ -150,6 +150,9 @@ type AdapterRequirement struct {
 	// Knobs lists the settings the chosen backend takes, one summary each
 	// ("rc=cbr|vbr (default vbr): rate control").
 	Knobs []string `json:"knobs,omitempty"`
+	// Notice is the attribution the chosen backend's license asks to be
+	// shown ("OpenH264 Video Codec provided by Cisco Systems, Inc.").
+	Notice string `json:"notice,omitempty"`
 }
 
 // Diagnostic is one structured warning attached to a plan.

@@ -3,6 +3,7 @@ package compile
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -414,10 +415,44 @@ func SelectCodecBackend(operation string, node string, registry *codec.SimpleReg
 	for i := range failure.Rejected {
 		descriptors[i] = failure.Rejected[i].Descriptor
 	}
+	if field, _, _ := codecAdapterIncompatibilityField(request, descriptors); field == "codec" {
+		// No capability explains it: each backend refused for its own reason.
+		return codec.Choice{}, codecRejectionRefusal(operation, node, request, mode, failure)
+	}
 	if mode == codec.ModeDecode {
 		return codec.Choice{}, decodeAdapterIncompatibleErrorAt(operation, node, request, descriptors)
 	}
 	return codec.Choice{}, EncodeAdapterIncompatibleErrorAt(operation, node, request, descriptors)
+}
+
+// codecRejectionRefusal refuses a request every backend of the codec turned
+// down for a reason of its own, a setting none takes, say: it names each
+// backend and why, with the nearest setting name.
+func codecRejectionRefusal(operation string, node string, request CodecAdapterRequest, mode codec.Mode, failure *codec.SelectError) error {
+	noun, code := "encoder", builderr.EncodeParameterInvalidCode
+	if mode == codec.ModeDecode {
+		noun, code = "decoder", builderr.DecodeAdapterIncompatibleCode
+	}
+	details := []string{"codec=" + string(request.Codec)}
+	reasons := make([]string, len(failure.Rejected))
+	for i, rejection := range failure.Rejected {
+		reasons[i] = rejection.Descriptor.Backend.Name + " " + rejection.Reason
+		details = append(details, "rejected="+rejection.Descriptor.Backend.Label()+": "+rejection.Reason)
+	}
+	return &builderr.Refusal{
+		Phase:     builderr.PhaseBuild,
+		Family:    errcode.FamilyForCode(code),
+		Code:      code,
+		Operation: operation,
+		Node:      node,
+		Reason:    "no " + string(request.Codec) + " " + noun + " backend takes the request: " + strings.Join(reasons, "; "),
+		Details:   builderr.DetailLines(details),
+		Fixes: builderr.Fixes([]string{
+			"set only settings a backend lists",
+			"scope a setting meant for one backend as <backend>.<setting>, or name that backend with codec.Backend(...)",
+		}),
+		Cause: fmt.Errorf("%w: %w", codec.ErrInvalidSetting, failure),
+	}
 }
 
 // codecBackendRefusal refuses a request naming a backend the registry does

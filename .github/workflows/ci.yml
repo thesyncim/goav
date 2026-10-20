@@ -72,7 +72,7 @@ jobs:
       - name: Install Cisco OpenH264
         if: matrix.full
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/openh264.so.bz2" http://ciscobinary.openh264.org/libopenh264-2.6.0-linux64.8.so.bz2
+          curl -fsSL -o "$RUNNER_TEMP/openh264.so.bz2" https://ciscobinary.openh264.org/libopenh264-2.6.0-linux64.8.so.bz2
           echo "27ab53323c110b76214c1c72222f459d17febbcd1e252136cadc292b0308d75b  $RUNNER_TEMP/openh264.so.bz2" | sha256sum -c -
           bunzip2 -c "$RUNNER_TEMP/openh264.so.bz2" | sudo tee /usr/local/lib/libopenh264.so.8 >/dev/null
 

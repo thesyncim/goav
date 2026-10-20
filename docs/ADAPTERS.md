@@ -86,37 +86,14 @@ static CLI. Without an audio device playback continues silently.
 
 ### Library codecs (`libcodec`)
 
-The `libcodec` module registers codecs that live in shared libraries and the
-OS's own frameworks, bound at run time through purego, so builds keep
-`CGO_ENABLED=0`:
-`bundle.New(libcodec.VideoToolbox(), libcodec.AudioToolbox(), libcodec.OpenH264())`.
-They join the pure-Go codecs in one registry, many backends per codec. A
-request takes the backend it names (`codec.Backend("openh264")`, `encode h264
-backend=openh264`), or the most preferred one whose capabilities and settings
-fit: hardware, then shared libraries (`lib`), then pure Go, reordered per codec
-and mode with `runconfig.WithCodecPreference`. A named backend is never
-substituted. Describe names the backend on each encode node; Explain gives the
-reason, the alternatives, and the backend's knobs. Settings come in three
-tiers: the common knobs (`bitrate`, `rc`, `quality`, `qp`, `speed`, `threads`,
-`tune`, `gop`, `profile`, `level`, `realtime`), each backend's own
-(`openh264.entropy=cabac` scopes one), and a raw tier
-(`openh264-params="iMaxQp=40:iMinQp=10"`, any `SEncParamExt` field;
-VideoToolbox takes any compression property, AudioToolbox any converter
-property by code). A library loads when the runtime is built, never in
-`init`; a missing or unsupported one registers its backend as `not-installed`
-(and the like) so selection passes it over, and
-`kit.Probe(libcodec.OpenH264())` returns the typed error with the fix.
+`libcodec` binds shared-library and OS-framework codecs through purego, no cgo, into the
+pure-Go codecs' registry ([docs](https://pkg.go.dev/github.com/thesyncim/goav/libcodec)); GPL ones (x264, fdk-aac) would be opt-in modules.
 
-| Backend | Codecs | Kind | Runs on | License of what loads | Patents |
-| --- | --- | --- | --- | --- | --- |
-| `videotoolbox` | h264, hevc encode and decode | hardware | macOS with the hardware | Apple OS framework | Apple's codec, shipped with macOS; your binary carries none |
-| `audiotoolbox` | aac (LC) encode and decode | lib | macOS | Apple OS framework | Apple's codec, shipped with macOS; your binary carries none |
-| `openh264` | h264 encode and decode | lib | macOS, Linux, Windows | BSD-2-Clause | Cisco pays the H.264 royalties for its prebuilt binaries, downloaded from Cisco by the end user; builds from source (Homebrew, distributions) are not covered |
-
-GPL encoders (x264, x265) and fdk-aac, if added, would be separate opt-in
-modules, so no binary links them unless its author chooses to. A backend from
-any other module plugs in the same way (see
-[ADAPTER_AUTHORING](ADAPTER_AUTHORING.md#add-a-codec-libcodeckit)).
+| Backend | Codecs | Kind | Runs on | License |
+| --- | --- | --- | --- | --- |
+| `videotoolbox` | h264, hevc (8-bit) | hardware | macOS | OS framework |
+| `audiotoolbox` | aac-lc | lib | macOS | OS framework |
+| `openh264` | h264 | lib | macOS, Linux, Windows | BSD-2. Cisco's binaries carry its H.264 patent license if the program shows "OpenH264 Video Codec provided by Cisco Systems, Inc.", reproduces [its terms](../libcodec/internal/openh264/BINARY_LICENSE.txt), and lets the user turn it off (`GOAV_LIBCODEC_DISABLE=openh264`) |
 
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
 The tables below mirror `bundle.Options()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
@@ -127,12 +104,12 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | --- | --- | --- | --- | --- | --- |
 | `ivf` | demux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | demux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
-| `mp4` | demux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries in decode-time order, honors edit lists (B-frame delay, AAC priming, start delays), with keyframe seek |
+| `mp4` | demux | audio, video | aac, av1, flac, h264, hevc, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries in decode-time order, honors edit lists (B-frame delay, AAC priming, start delays), with keyframe seek |
 | `webm` | demux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
 | `annexb` | mux | video | h264 | 1 | Annex B destinations support one H264 video stream |
 | `ivf` | mux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | mux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
-| `mp4` | mux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 mux writes a progressive file to a seekable output and fragmented MP4 (a moof per video keyframe) to a pipe or realtime output, with edit lists for start delays, B-frame delay, and Opus pre-skip |
+| `mp4` | mux | audio, video | aac, av1, flac, h264, hevc, opus, vp8, vp9 | 1+ | MP4 mux writes a progressive file to a seekable output and fragmented MP4 (a moof per video keyframe) to a pipe or realtime output, with edit lists for start delays, B-frame delay, and Opus pre-skip |
 | `webm` | mux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
 
 ### Codecs
