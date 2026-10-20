@@ -35,8 +35,9 @@ successful Run allows commit. Explicit `DrainBranch()` requests commit after
 its queued work drains successfully. A handler failure or an incomplete retirement
 wait abandons its remaining transactions before downstream resources retire.
 Whole-task Close also abandons any unfinished drain; a completed drain keeps its
-committed outcome. A destination's commit/abort decision is irrevocable once its
-finalizer starts. Detach reports its own removal wait; inspect the destination
+committed outcome. The finalizer reads its irrevocable disposition after muxer
+flush and before Commit/Abort; a failure during the flush can still choose abort.
+Detach can report a task failure observed after a destination committed. Inspect the destination
 snapshot for the authoritative finalization result. Failures remain visible in
 the branch outcome.
 
