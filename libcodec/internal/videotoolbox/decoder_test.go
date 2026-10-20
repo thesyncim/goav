@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"unsafe"
 
 	"github.com/thesyncim/goav/libcodec/kit"
 )
@@ -60,5 +61,73 @@ func TestDrainReleasesEachImageOnce(t *testing.T) {
 	stop := errors.New("stop")
 	if err := d.drain(func(*kit.Picture) error { return stop }); err != stop || !held() {
 		t.Fatalf("drain = %v; an emit failure must release the rest once", err)
+	}
+}
+
+// Hardware decoders produce NV12. Keep its plane geometry and ownership
+// intact so the kit can convert it to pooled I420 without a platform scaler.
+func TestDecoderLendsNativeNV12(t *testing.T) {
+	f := boundFrameworks(t)
+	for _, format := range []uint32{pixelNV12Video, pixelNV12Full} {
+		t.Run(fourCCString(format), func(t *testing.T) {
+			var image uintptr
+			if status := f.cv.create(0, 16, 8, format, 0, &image); status != 0 {
+				t.Fatalf("CVPixelBufferCreate: %d", status)
+			}
+			defer f.cf.release(image)
+			if status := f.cv.lock(image, 0); status != 0 {
+				t.Fatalf("CVPixelBufferLockBaseAddress: %d", status)
+			}
+			for plane := range 2 {
+				stride, rows := f.cv.planeStride(image, plane), f.cv.planeHeight(image, plane)
+				data := unsafe.Slice((*byte)(f.cv.planeBase(image, plane)), stride*rows)
+				for row := range rows {
+					for x := range 16 {
+						value := byte(17)
+						if plane == 1 {
+							value = byte(31 + x%2)
+						}
+						data[row*stride+x] = value
+					}
+				}
+			}
+			f.cv.unlock(image, 0)
+			f.cf.retain(image) // the decode callback's queued reference
+			d := &decoder{f: f}
+			var held *kit.Picture
+			err := d.lend(picture{image: image, pts: 99}, func(pic *kit.Picture) error {
+				if pic.Format != kit.NV12 || pic.Width != 16 || pic.Height != 8 || pic.PTS != 99 {
+					t.Fatalf("unexpected native picture: %+v", pic)
+				}
+				copy := *pic
+				held = &copy
+				held.Owner.Retain()
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if held == nil {
+				t.Fatal("no picture was emitted")
+			}
+			for y := range 8 {
+				for x := range 16 {
+					if held.Planes[0][y*held.Strides[0]+x] != 17 {
+						t.Fatal("luma changed")
+					}
+				}
+			}
+			for y := range 4 {
+				for x := range 16 {
+					if held.Planes[1][y*held.Strides[1]+x] != byte(31+x%2) {
+						t.Fatal("chroma changed")
+					}
+				}
+			}
+			held.Owner.Release()
+			if refs := f.cf.retainCount(image); refs != 1 {
+				t.Fatalf("pixel buffer kept %d references, want 1", refs)
+			}
+		})
 	}
 }

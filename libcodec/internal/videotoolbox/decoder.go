@@ -12,9 +12,9 @@ import (
 // decoder is one VTDecompressionSession. Each access unit becomes a
 // CMSampleBuffer stamped with its PTS; VideoToolbox returns pictures in
 // decode order through the output callback, which retains each CVPixelBuffer
-// and queues it, and the kit reorders them. Pictures are lent to goav in
-// place: the buffer stays locked and retained until the last plane is
-// released.
+// and queues it. The kit converts native NV12 pictures into pooled I420
+// planes and reorders them. A pixel buffer stays locked and retained while
+// its picture is lent to the kit.
 type decoder struct {
 	f        *frameworks
 	id       av.CodecID
@@ -69,7 +69,11 @@ func newDecoder(f *frameworks, id av.CodecID, config kit.VideoConfig) (kit.Video
 	f.cf.dictionarySet(spec, f.vt.requireHardwareDecoder, f.cf.booleanTrue)
 	attributes := f.dictionary()
 	defer f.cf.release(attributes)
-	f.setOwned(attributes, f.cv.formatKey, f.int32Number(pixelI420))
+	// Use the hardware's native NV12 output. Requesting planar y420 makes
+	// VideoToolbox run a pixel-transfer scaler, which can fail on virtual
+	// Macs even when the hardware decoder itself works. The kit already
+	// converts NV12 into pooled I420 planes without that platform service.
+	f.setOwned(attributes, f.cv.formatKey, f.int32Number(pixelNV12Video))
 	f.setOwned(attributes, f.cv.surfaceKey, f.dictionary())
 	d.record = callbackRecord{Callback: decodedCallback(), Refcon: d.handle}
 	if s := f.vt.decompressionCreate(0, d.format, spec, attributes, &d.record, &d.session); s != 0 {
@@ -200,17 +204,23 @@ func (d *decoder) lend(p picture, emit func(*kit.Picture) error) error {
 		f.cf.release(p.image)
 		return kit.Fail(Name, "decode", "CVPixelBufferLockBaseAddress", int64(s))
 	}
-	if format := f.cv.pixelFormat(p.image); format != pixelI420 || f.cv.planeCount(p.image) != 3 {
-		return &kit.Error{Backend: Name, Op: "decode", Reason: "returned pixel format " + fourCCString(format) + ", not y420"}
+	format, planes := f.cv.pixelFormat(p.image), f.cv.planeCount(p.image)
+	pixelFormat := av.PixelFormatI420
+	switch {
+	case format == pixelI420 && planes == 3:
+	case (format == pixelNV12Video || format == pixelNV12Full) && planes == 2:
+		pixelFormat = kit.NV12
+	default:
+		return &kit.Error{Backend: Name, Op: "decode", Reason: "returned pixel format " + fourCCString(format) + ", not y420 or NV12"}
 	}
 	pic := kit.Picture{
 		Width:  f.cv.width(p.image),
 		Height: f.cv.height(p.image),
-		Format: av.PixelFormatI420,
+		Format: pixelFormat,
 		Owner:  owner,
 		PTS:    p.pts,
 	}
-	for i := range 3 {
+	for i := range planes {
 		stride, rows := f.cv.planeStride(p.image, i), f.cv.planeHeight(p.image, i)
 		pic.Planes[i] = unsafe.Slice((*byte)(f.cv.planeBase(p.image, i)), stride*rows)
 		pic.Strides[i] = stride

@@ -1,0 +1,1 @@
+Control clients preserve a received response when the peer closes immediately afterward, so authentication refusals no longer intermittently surface as EOF. VideoToolbox decoders request native NV12 output and use the codec kit's pooled I420 conversion, avoiding the platform scaler that can fail on virtual macOS hosts while retaining the same public frame format.
