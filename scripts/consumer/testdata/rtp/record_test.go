@@ -45,6 +45,8 @@ func TestResolvedRTPRecordsPreserveIndependentTrackConfiguration(t *testing.T) {
 	a := av.Stream{ID: "a", Type: av.MediaAudio, Epoch: 1, TimeBase: av.RTPTimeBase(48000), Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, ClockRate: 48000, SampleRate: 48000, Channels: 1}}
 	b := a
 	b.ID = "b"
+	c := a
+	c.ID = "c"
 	a2 := a
 	a2.Epoch = 2
 	payloads := func(s av.Stream) rtpav.PayloadMap {
@@ -56,10 +58,12 @@ func TestResolvedRTPRecordsPreserveIndependentTrackConfiguration(t *testing.T) {
 	reader := &publishedReader{records: []publishedRecord{
 		{event: &av.Event{Type: av.EventStreamAdded, StreamID: a.ID, Stream: &a}, payloads: payloads(a)},
 		{event: &av.Event{Type: av.EventStreamAdded, StreamID: b.ID, Stream: &b}, payloads: payloads(b)},
+		{event: &av.Event{Type: av.EventStreamAdded, StreamID: c.ID, Stream: &c}, payloads: payloads(c)},
 		{packet: packet(1), payloads: payloads(a)},
 		{event: &av.Event{Type: av.EventCodecChanged, StreamID: a.ID, Epoch: 2, Stream: &a2}, payloads: payloads(a2)},
 		{packet: packet(2), payloads: payloads(b)},
-		{packet: packet(3), payloads: payloads(a2)},
+		{packet: packet(3), payloads: payloads(c)},
+		{packet: packet(4), payloads: payloads(a2)},
 	}}
 	reads := 0
 	decorated := rtpav.DecorateReader(reader, func(next rtpav.ReadRTPFunc) rtpav.ReadRTPFunc {
@@ -81,7 +85,7 @@ func TestResolvedRTPRecordsPreserveIndependentTrackConfiguration(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(streams, []av.StreamID{"a", "b", "a"}) || !reflect.DeepEqual(epochs, []av.Epoch{1, 1, 2}) || reads != 7 {
+	if !reflect.DeepEqual(streams, []av.StreamID{"a", "b", "c", "a"}) || !reflect.DeepEqual(epochs, []av.Epoch{1, 1, 1, 2}) || reads != 9 {
 		t.Fatalf("streams=%v epochs=%v reads=%d", streams, epochs, reads)
 	}
 }
