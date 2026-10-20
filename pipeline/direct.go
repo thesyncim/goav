@@ -190,14 +190,20 @@ func (g *directRunner) Remove(ref NodeRef) error {
 // RemoveNode is Remove that also returns the node's final counters, read
 // once its in-flight deliveries finished (the NodeRemover capability).
 func (g *directRunner) RemoveNode(ref NodeRef) (NodeStats, error) {
-	node, err := g.remove(ref)
+	return g.RemoveNodeContext(context.Background(), ref)
+}
+
+// RemoveNodeContext is the optional context-aware removal capability. Once
+// removed, a node stays graph-owned until its queued work and finalizer finish.
+func (g *directRunner) RemoveNodeContext(ctx context.Context, ref NodeRef) (NodeStats, error) {
+	node, err := g.remove(ctx, ref)
 	if node == nil {
 		return NodeStats{}, err
 	}
 	return g.finalStats(&node.nodeBase), err
 }
 
-func (g *directRunner) remove(ref NodeRef) (*directNode, error) {
+func (g *directRunner) remove(ctx context.Context, ref NodeRef) (*directNode, error) {
 	g.mu.Lock()
 	node, err := g.detachLocked(ref)
 	if err != nil {
@@ -212,22 +218,18 @@ func (g *directRunner) remove(ref NodeRef) (*directNode, error) {
 	}
 	g.rebuildLocked()
 	g.mu.Unlock()
-	if err := waitNodeGateDrained("remove", node.name, &node.gate, g.config.CloseWaitTimeout); err != nil {
+	if err := waitNodeGateDrainedContext(ctx, "remove", node.name, &node.gate, g.config.CloseWaitTimeout); err != nil {
 		g.reap(node)
 		return node, err
 	}
 	return node, g.finalize(node)
 }
 
-// waitNodeGateDrained tombstones a removed node's delivery gate and waits for
+// waitNodeGateDrainedContext tombstones a removed node's delivery gate and waits for
 // every in-flight delivery to finish, so the node is never closed under a
 // concurrent Handle. New deliveries (from emits holding an older routing
 // snapshot) see the closing bit and shed themselves. This is the cold removal
 // path; in-flight deliveries are bounded by one downstream chain.
-func waitNodeGateDrained(operation string, node string, gate *atomic.Int64, timeout time.Duration) error {
-	return waitNodeGateDrainedContext(context.Background(), operation, node, gate, timeout)
-}
-
 func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -235,10 +237,10 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	if gate == nil {
 		return nil
 	}
+	gate.Or(nodeClosingBit)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	gate.Or(nodeClosingBit)
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)

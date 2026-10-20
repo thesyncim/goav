@@ -23,6 +23,61 @@ import (
 
 var runtimeAttachmentSeq atomic.Uint64
 
+// contextMutex is a control-plane mutex whose acquisition can honor a caller's
+// deadline. Ordinary attachment operations retain the sync.Locker interface.
+type contextMutex struct {
+	once sync.Once
+	gate chan struct{}
+}
+
+func (m *contextMutex) LockContext(ctx context.Context) error {
+	m.once.Do(func() { m.gate = make(chan struct{}, 1) })
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case m.gate <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (m *contextMutex) Lock()   { _ = m.LockContext(context.Background()) }
+func (m *contextMutex) Unlock() { <-m.gate }
+
+// Register before any node becomes graph-owned, so a racing Close cannot
+// finalize a partially installed attachment with an undecided disposition.
+// Only transactions and stages are read through this lifecycle registry;
+// those slices are immutable before publication.
+func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
+	t.lifecycleMu.Lock()
+	defer t.lifecycleMu.Unlock()
+	if t.closeStarted {
+		return false
+	}
+	if t.activeAttachments == nil {
+		t.activeAttachments = make(map[*runtimeAttachment]struct{})
+	}
+	t.activeAttachments[a] = struct{}{}
+	if t.finished {
+		for _, tx := range a.transactions {
+			if t.runErr == nil {
+				tx.Succeed()
+			} else {
+				tx.Fail()
+			}
+		}
+	}
+	return true
+}
+
+func (t *task) detachAttachmentLifecycle(a *runtimeAttachment, disposition oldBranchDisposition) {
+	t.lifecycleMu.Lock()
+	defer t.lifecycleMu.Unlock()
+	a.applyDetachDisposition(disposition)
+	delete(t.activeAttachments, a)
+}
+
 // attachDestination is one validated destination of an attaching branch: stable
 // recipe facts plus the concrete handle kept for the mutation edge.
 type attachDestination struct {
@@ -432,10 +487,27 @@ func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
 }
 
 func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
+	t.pruneIsolatedLocked()
 	if t.attachments == nil {
 		t.attachments = make(map[*runtimeAttachment]struct{})
 	}
 	t.attachments[attachment] = struct{}{}
+}
+
+// A timed-out detach can still report a real failure from an in-flight
+// handler. Keep that domain until retirement settles, then prune only healthy
+// records. Check Failed after Retired so a concurrent last handler cannot be
+// mistaken for a healthy completion.
+func (t *task) pruneIsolatedLocked() {
+	t.isolated = slices.DeleteFunc(t.isolated, func(b *isolatedBranch) bool {
+		if b.attachment == nil {
+			return false
+		}
+		if _, attached := t.attachments[b.attachment]; attached {
+			return false
+		}
+		return b.domain.Snapshot().Retired && !b.domain.Failed()
+	})
 }
 
 func (t *task) tapsLocked() []TapSnapshot {
@@ -450,6 +522,11 @@ func (t *task) tapsLocked() []TapSnapshot {
 			return
 		}
 		for _, branch := range t.isolated {
+			if branch.attachment != nil {
+				if _, attached := t.attachments[branch.attachment]; !attached {
+					continue
+				}
+			}
 			if branch.domain.Failed() && slices.Contains(branch.plan.nodes, tap.Node) {
 				return
 			}
@@ -495,15 +572,14 @@ func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	t.attachMu.Lock()
+	if err := t.attachMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer t.attachMu.Unlock()
 	return t.stopAttachmentLocked(ctx, input)
 }
 
 func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInput) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	attachment := input.runtime
 	disposition := input.disposition
 	if attachment == nil {
@@ -521,13 +597,13 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 		delete(t.attachments, attachment)
 		return errors.Join(first, attachment.waitRetirement(ctx))
 	}
-	attachment.applyDetachDisposition(disposition)
-	err := attachment.stopLocked(t.graph)
+	t.detachAttachmentLifecycle(attachment, disposition)
+	err := attachment.stopLocked(ctx, t.graph)
 	attachment.stopped = true
 	err = errors.Join(err, attachment.waitRetirement(ctx))
 	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
-	t.isolated = slices.DeleteFunc(t.isolated, func(b *isolatedBranch) bool { return b.attachment == attachment && !b.domain.Failed() })
+	t.pruneIsolatedLocked()
 	if err == nil {
 		switch disposition {
 		case oldBranchDrain:
@@ -788,7 +864,10 @@ func (a *runtimeAttachment) Stats() pipeline.GraphStats {
 	if a == nil || a.owner == nil {
 		return pipeline.GraphStats{}
 	}
-	return branchStatsForNodes(withRemovedStats(a.owner.Stats(), a.removedStats.Load()), a.nodes)
+	if removed := a.removedStats.Load(); removed != nil {
+		return branchStatsForNodes(withRemovedStats(pipeline.GraphStats{}, removed), a.nodes)
+	}
+	return branchStatsForNodes(a.owner.Stats(), a.nodes)
 }
 
 func (a *runtimeAttachment) Snapshot() BranchSnapshot {
@@ -817,6 +896,7 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) 
 		spec = a.branchSpec()
 	}
 	if a.stopped {
+		taskStats = withRemovedStats(pipeline.GraphStats{}, a.removedStats.Load())
 		state = BranchDetached
 		destinationState = DestinationClosed
 		if outcome, ok := a.detachOutcome.Load().(DestinationState); ok && outcome != "" {
@@ -841,7 +921,7 @@ func (a *runtimeAttachment) branchSnapshotLocked(taskStats pipeline.GraphStats) 
 	}
 	if len(a.isolated) > 0 {
 		snapshot.FailurePolicy = IsolateBranch
-		snapshot.Err, snapshot.PendingCleanup, snapshot.Retired = a.faultOutcome()
+		snapshot.PendingCleanup, snapshot.Retired, snapshot.Err = a.faultOutcome()
 		snapshot.Error = errorText(snapshot.Err)
 		if snapshot.Err != nil {
 			snapshot.State = BranchFailed
@@ -987,7 +1067,7 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 // each node drains into downstream nodes that are still attached. An abort
 // detach has marked its destinations failed already, so what drains into them
 // is discarded with the aborted write.
-func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
+func (a *runtimeAttachment) stopLocked(ctx context.Context, graph pipeline.Graph) error {
 	var first error
 	final := a.specFromGraph(graph.Spec())
 	a.removedSpec.Store(&final)
@@ -1001,7 +1081,7 @@ func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 	}
 	removed := make(map[string]pipeline.NodeStats, len(a.nodes))
 	for _, v := range upstreamFirst(a.nodes, a.routes) {
-		if err := removeBranchNode(graph, v, removed); err != nil && !isStoppedAttachmentError(err) && first == nil {
+		if err := removeBranchNode(ctx, graph, v, removed); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
@@ -1533,8 +1613,16 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 // attachRuntimeBranches plans the group below its anchors, opens it, and
 // applies it to the running graph as one attachment.
 func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInput) (Attachment, error) {
-	t.attachMu.Lock()
+	if err := t.attachMu.LockContext(ctx); err != nil {
+		return nil, err
+	}
 	defer t.attachMu.Unlock()
+	t.lifecycleMu.Lock()
+	closing := t.closeStarted
+	t.lifecycleMu.Unlock()
+	if closing {
+		return nil, runtimeBranchGraphError("attach branch", input.name, pipeline.ErrClosed)
+	}
 	p, err := t.planAttach(ctx, input)
 	if err != nil {
 		return nil, err

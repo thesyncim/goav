@@ -216,6 +216,12 @@ func (t *topology[P]) nodeError(ctx context.Context, b *nodeBase, err error) err
 	if err == nil {
 		return nil
 	}
+	return t.recordNodeError(ctx, b, err)
+}
+
+// recordNodeError is cold: nodeError calls it only after a handler returned a
+// non-nil error. Successful packet/frame delivery never acquires its lock.
+func (t *topology[P]) recordNodeError(ctx context.Context, b *nodeBase, err error) error {
 	// Shutdown is a graph control operation, not a handler failure boundary.
 	if errors.Is(err, ErrClosed) && t.snap.Load() == nil {
 		return err
@@ -225,17 +231,26 @@ func (t *topology[P]) nodeError(ctx context.Context, b *nodeBase, err error) err
 		t.fail.report(err)
 		return err
 	}
-	if d.Failed() {
+	// A delivery already in flight still belongs to this domain after Detach
+	// accepts its drain. Retain its failure so the old destination cannot
+	// commit incomplete work. Retirement skips nodes already owned by Remove
+	// and checks index identity before touching any same-named replacement.
+	t.mu.RLock()
+	if b.finalized || d.Failed() {
+		t.mu.RUnlock()
 		return nil
 	}
 	if ctx.Err() != nil {
+		t.mu.RUnlock()
 		t.fail.report(err)
 		return err
 	}
 	failure := &FaultError{Domain: d.id, Node: NodeRef(b.name), Cause: err}
 	if !d.failure.CompareAndSwap(nil, failure) {
+		t.mu.RUnlock()
 		return nil
 	}
+	t.mu.RUnlock()
 	if dc := d.ctx.Load(); dc != nil {
 		dc.cancel()
 	}
@@ -252,11 +267,13 @@ func (t *topology[P]) retireFaultDomain(d *FaultDomain) {
 	set := map[int]bool{}
 	for i, n := range t.nodes {
 		b := n.base()
-		if b.domain.Load() != d || b.finalized || b.index < 0 {
+		if b.domain.Load() != d || b.retiring || b.finalized || b.index < 0 {
 			continue
 		}
 		set[i] = true
-		delete(t.index, b.name)
+		if index, ok := t.index[b.name]; ok && index == i {
+			delete(t.index, b.name)
+		}
 		b.active, b.retiring, b.deferred = false, true, true
 		b.routes = nil
 		if b.kind == nodeSink {

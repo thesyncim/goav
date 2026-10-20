@@ -289,14 +289,20 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 // RemoveNode is Remove that also returns the node's final counters, read
 // once its queued tail was delivered (the NodeRemover capability).
 func (g *bufferedRunner) RemoveNode(ref NodeRef) (NodeStats, error) {
-	node, err := g.remove(ref)
+	return g.RemoveNodeContext(context.Background(), ref)
+}
+
+// RemoveNodeContext is the optional context-aware removal capability. Once
+// removed, a node stays graph-owned until its queued work and finalizer finish.
+func (g *bufferedRunner) RemoveNodeContext(ctx context.Context, ref NodeRef) (NodeStats, error) {
+	node, err := g.remove(ctx, ref)
 	if node == nil {
 		return NodeStats{}, err
 	}
 	return g.finalStats(&node.nodeBase), err
 }
 
-func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
+func (g *bufferedRunner) remove(ctx context.Context, ref NodeRef) (*bufferedNode, error) {
 	g.mu.Lock()
 	running := g.running
 	node, err := g.detachLocked(ref)
@@ -321,7 +327,7 @@ func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
 	done := node.done
 	g.rebuildLocked()
 	g.mu.Unlock()
-	err = waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
+	err = waitCloseDoneContext(ctx, "remove", node.name, done, g.config.CloseWaitTimeout)
 	g.mu.Lock()
 	g.retireLocked(node)
 	g.mu.Unlock()

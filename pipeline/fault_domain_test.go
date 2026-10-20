@@ -234,3 +234,62 @@ func TestFaultDomainSteadyDeliveryAllocs(t *testing.T) {
 		}
 	}
 }
+
+func TestDetachedFaultCannotUnregisterReplacement(t *testing.T) {
+	for _, buffer := range []BufferPolicy{{}, {Capacity: 1, Drop: DropBlock}} {
+		t.Run(string(buffer.Drop), func(t *testing.T) {
+			g, err := NewGraph(GraphConfig{Buffer: buffer, CloseWaitTimeout: time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			entered, release, sourceRelease := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			src, _ := g.AddSource(&faultSource{func(ctx context.Context, e Emitter) error {
+				err := e.Emit(ctx, &Message{Kind: MessagePacket, Packet: &av.Packet{}})
+				<-sourceRelease
+				return err
+			}}, BufferPolicy{})
+			cause := errors.New("late detached error")
+			old := &faultSink{name: "optional", handle: func(context.Context, *Message) error {
+				close(entered)
+				<-release
+				return cause
+			}}
+			dst, _ := g.AddSink(old, BufferPolicy{})
+			_ = g.Connect(Route{From: src.String(), To: []string{dst.String()}})
+			domain, _ := g.(FaultIsolator).IsolateFaults("old", []NodeRef{dst})
+			done := make(chan error, 1)
+			go func() { done <- g.Run(t.Context()) }()
+			<-entered
+			if err := g.Remove(dst); !errors.Is(err, ErrCloseWait) {
+				t.Fatalf("Remove=%v", err)
+			}
+			replacement := &faultSink{name: "optional", handle: func(context.Context, *Message) error { return nil }}
+			next, err := g.AddSink(replacement, BufferPolicy{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := g.Connect(Route{From: src.String(), To: []string{next.String()}}); err != nil {
+				t.Fatal(err)
+			}
+			close(release)
+			if err := domain.Wait(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			// A recorded failure starts another retirement goroutine; let it
+			// execute before asserting the replacement's index still resolves.
+			if domain.Failed() {
+				time.Sleep(10 * time.Millisecond)
+			}
+			removeErr := g.Remove(next)
+			close(sourceRelease)
+			runErr := <-done
+			_ = g.Close()
+			if removeErr != nil || replacement.closes.Load() != 1 {
+				t.Errorf("replacement Remove=%v closes=%d", removeErr, replacement.closes.Load())
+			}
+			if !errors.Is(domain.Snapshot().Err, cause) || runErr != nil {
+				t.Errorf("old failure was lost or escaped: domain=%+v Run=%v", domain.Snapshot(), runErr)
+			}
+		})
+	}
+}

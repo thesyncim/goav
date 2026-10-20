@@ -12,6 +12,7 @@ package goav_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -278,14 +279,17 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 	}
 }
 
-type finalizeHeldStage struct{ entered, release chan struct{} }
+type finalizeHeldStage struct {
+	entered, release chan struct{}
+	err              error
+}
 
 func (*finalizeHeldStage) Name() string         { return "held" }
 func (*finalizeHeldStage) FrameOnlyInput() bool { return false }
 func (s *finalizeHeldStage) Handle(context.Context, *pipeline.Message, pipeline.Emitter) error {
 	close(s.entered)
 	<-s.release
-	return nil
+	return s.err
 }
 func (*finalizeHeldStage) Close() error { return nil }
 
@@ -374,5 +378,121 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 	if writer.commits != 0 || writer.aborts != 1 || writer.closes != 1 {
 		t.Fatalf("commits=%d aborts=%d closes=%d, want exactly one abort and one close",
 			writer.commits, writer.aborts, writer.closes)
+	}
+}
+
+type cancelOnAbortWriter struct {
+	transactionalTestWriter
+	cancel context.CancelFunc
+}
+
+func (w *cancelOnAbortWriter) Abort(ctx context.Context) error {
+	w.cancel()
+	return w.transactionalTestWriter.Abort(ctx)
+}
+
+func TestCloseAbandonsEveryAttachmentBeforeContextExpires(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	input := goav.Source("packet", shape.Packet(av.MediaAudio, av.CodecOpus), func(context.Context, goav.SourcePush) error { return nil })
+	task, err := goavtest.Runtime().Build(t.Context(), input.Audio().Tap("packets").To(goav.Sink(goav.SinkFunc("root", func(context.Context, goav.Message) error { return nil }))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var writers []*cancelOnAbortWriter
+	for _, name := range []string{"first", "second", "third"} {
+		writer := &cancelOnAbortWriter{cancel: cancel}
+		writers = append(writers, writer)
+		_, err := task.Attach(t.Context(), task.Tap("packets").As(name).To(goav.Write(name+".ogg", writer, goav.Format(av.FormatOgg))))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := task.(interface{ CloseContext(context.Context) error }).CloseContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Close=%v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for task.Stats().PendingCleanup != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if task.Stats().PendingCleanup != 0 {
+		t.Fatal("cleanup did not finish")
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for i, writer := range writers {
+		if writer.commits != 0 || writer.aborts != 1 || writer.closes != 1 {
+			t.Errorf("writer %d: commits=%d aborts=%d closes=%d", i, writer.commits, writer.aborts, writer.closes)
+		}
+	}
+	if branches := task.Snapshot().Branches; len(branches) != 0 {
+		t.Fatalf("closed task retained live branches: %+v", branches)
+	}
+}
+
+func TestDrainIsolatedAttachmentAbortsOnInFlightHandlerFailure(t *testing.T) {
+	for _, buffered := range []bool{false, true} {
+		t.Run(fmt.Sprint(buffered), func(t *testing.T) {
+			cause := errors.New("handler failed while draining")
+			writer := &transactionalTestWriter{}
+			held := &finalizeHeldStage{entered: make(chan struct{}), release: make(chan struct{}), err: cause}
+			options := []runconfig.Option{runconfig.WithCloseWaitTimeout(time.Second)}
+			if buffered {
+				options = append(options, runconfig.WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropBlock}))
+			}
+			input := goav.Source("packet", shape.Packet(av.MediaAudio, av.CodecOpus), func(_ context.Context, push goav.SourcePush) error {
+				_, err := push.Packet(&av.Packet{Payload: av.Buffer{Bytes: []byte{0xf8, 0xff, 0xfe}}})
+				if buffered {
+					<-held.release
+				}
+				return err
+			})
+			live, err := goavtest.Runtime(options...).Build(t.Context(), input.Audio().Tap("packets").To(goav.Sink(goav.SinkFunc("root", func(context.Context, goav.Message) error { return nil }))))
+			if err != nil {
+				t.Fatal(err)
+			}
+			attachment, err := live.Attach(t.Context(), live.Tap("packets").As("optional").Do(held).To(transactionalWriterDestination(writer)).OnFailure(goav.IsolateBranch))
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := attachment.Spec().Nodes[0].Name
+			done := make(chan error, 1)
+			go func() { done <- live.Run(t.Context()) }()
+			<-held.entered
+			detached := make(chan error, 1)
+			go func() { detached <- live.Detach(t.Context(), attachment, goav.DrainBranch()) }()
+			deadline := time.Now().Add(time.Second)
+			for {
+				connected := false
+				for _, edge := range live.Spec().Edges {
+					connected = connected || edge.To.String() == first
+				}
+				if !connected {
+					break
+				}
+				if time.Now().After(deadline) {
+					close(held.release)
+					t.Fatal("Detach did not remove ingress")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			close(held.release)
+			if err := <-detached; err != nil {
+				t.Fatalf("Detach=%v", err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("Run=%v", err)
+			}
+			if err := live.Close(); err != nil {
+				t.Fatalf("Close=%v", err)
+			}
+			if writer.commits != 0 || writer.aborts != 1 || writer.closes != 1 {
+				t.Errorf("commits=%d aborts=%d closes=%d", writer.commits, writer.aborts, writer.closes)
+			}
+			if got := attachment.Snapshot(); !errors.Is(got.Err, cause) || got.Destinations[0].State != goav.DestinationAborted {
+				t.Fatalf("drained branch lost actual failure: %+v", got)
+			}
+		})
 	}
 }

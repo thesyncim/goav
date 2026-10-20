@@ -31,14 +31,19 @@ finalization-error events retain their existing meanings.
 Starting Close before Run completes irrevocably abandons active outputs. A
 later nil Run result cannot upgrade that decision to commit. Close after a
 successful Run allows commit. Explicit `DrainBranch()` requests successful
-finalization of the detached branch after its queued work drains.
+finalization of the detached branch after its queued work drains. Once Detach
+accepts that drain request, a concurrent task Close preserves its commit intent;
+outputs still owned by the task are abandoned together. A handler failure during
+the accepted drain still aborts its transaction and remains in the branch outcome.
 
 A caller's deadline or `pipeline.ErrCloseWait` describes that call's wait. It
 does not become a durable resource failure. Cleanup retains ownership and may
 finish later. Repeated Close waits within its own context and reports retained
 actual failures; `Stats.PendingCleanup` reports work still retiring. A second
 `CloseContext` caller honors its deadline while another caller is closing.
-This does not make an arbitrary user finalizer's synchronous Close interruptible.
+The first caller also honors its context while waiting for attachment mutation
+and built-in node retirement. This does not make an arbitrary user finalizer's
+synchronous Close interruptible.
 
 `Snapshot().Err` supports `errors.Is`; `Error` is its JSON text. A node's
 `pipeline.FinalizationError` carries both its name and stable identity, so two
@@ -46,7 +51,9 @@ nodes returning the same sentinel remain distinct. Snapshots retain actual
 outcomes after nodes retire and after observer channels close. Events are best
 effort, so use snapshots for authoritative state. A failed detached output's
 cleanup can populate Err while the task remains Running and healthy outputs
-continue.
+continue. Closing an executing task reports Finalizing until Run returns. The
+task's own graph-closed signal is normal shutdown; caller cancellation and
+independent source failures remain observable errors.
 
 ## Optional output failures
 
@@ -71,7 +78,9 @@ Healthy siblings continue. The error is retained as `BranchFailureError`;
 after its nodes disappear. Detach joins pending retirement and returns cleanup
 errors within its context and configured close-wait bound. Names remain reserved
 until explicit Detach, so an old handle cannot remove a later attachment.
-Healthy detached records are pruned; failed records last for the task's lifetime.
+Healthy detached records are pruned after retirement settles; records with
+pending handlers remain available to retain late failures. Failed records last
+for the task's lifetime.
 
 Isolation covers returned handler errors. It does not isolate panics, stalled
 handlers, or a shared producer blocked on an optional branch's full queue.
@@ -153,7 +162,9 @@ track. WHEP supports multiple tracks without a shared jitter buffer.
 `JitterBuffer` now requires `Reset()`: after draining an old stream incarnation,
 Source resets its sequence and SSRC window before accepting a replacement or
 re-added stream, and also resets it at an explicit discontinuity. Custom jitter implementations and wrappers must forward Reset;
-`JitterRing` already implements it.
+`JitterRing` already implements it. In a single-stream source, every CodecChanged
+starts a fresh jitter window, even if the stream ID stays the same. A late packet
+at that boundary can be dropped rather than interpreted as part of the new window.
 
 WebRTC UpdateCodec keeps an already-started read on its original generation
 when its payload type still exists there. Updates may coalesce; a payload type

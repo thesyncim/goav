@@ -139,6 +139,8 @@ func (t *task) destinationSnapshots(work []compile.WorkDestination, txs []*desti
 			state, err := tx.outcome()
 			if state != "" {
 				out[i].State = state
+			} else if tx.Failed() {
+				out[i].State = DestinationFinalizing
 			}
 			out[i].Err, out[i].Error = err, errorText(err)
 			out[i].Open = out[i].State == DestinationOpen

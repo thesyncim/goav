@@ -716,9 +716,16 @@ func (p *attachPlan) close() {
 func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	t := p.task
 	attachmentID := nextRuntimeAttachmentID(p.name)
+	attachment := &runtimeAttachment{id: attachmentID, name: p.name, owner: t, transactions: p.transactions}
+	for _, opened := range p.opened {
+		if opened.stage != nil {
+			attachment.stages = append(attachment.stages, opened.stage)
+		}
+	}
 	var nodes []pipeline.NodeRef
 	var routes []pipeline.Route
 	fail := func(err error) (*runtimeAttachment, error) {
+		t.detachAttachmentLifecycle(attachment, oldBranchAbort)
 		for _, opened := range p.opened {
 			if opened.owned && opened.stage != nil {
 				markPipelineStageFailed(opened.stage)
@@ -727,6 +734,9 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		p.close()
 		t.rollbackRuntimeBranch(nodes)
 		return nil, err
+	}
+	if !t.beginAttachmentLifecycle(attachment) {
+		return fail(runtimeBranchGraphError("attach branch", p.name, pipeline.ErrClosed))
 	}
 	for n, node := range p.plan.Nodes {
 		opened := p.opened[n]
@@ -782,16 +792,8 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		}
 		routes = append(routes, ingress)
 	}
-	attachment := &runtimeAttachment{
-		id:           attachmentID,
-		name:         p.name,
-		owner:        t,
-		nodes:        nodes,
-		routes:       routes,
-		taps:         p.taps,
-		transactions: p.transactions,
-		isolated:     isolated,
-	}
+	attachment.nodes, attachment.routes = nodes, routes
+	attachment.taps, attachment.isolated = p.taps, isolated
 	for i := range p.branches {
 		branch := p.branches[i]
 		attachment.anchorTaps = append(attachment.anchorTaps, branch.anchor.tap)
@@ -816,11 +818,6 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	attachment.anchorNode = firstNonEmpty(attachment.anchorNodes...)
 	attachment.anchorTaps = uniqueStrings(attachment.anchorTaps)
 	attachment.anchorNodes = uniqueStrings(attachment.anchorNodes)
-	for _, opened := range p.opened {
-		if opened.stage != nil {
-			attachment.stages = append(attachment.stages, opened.stage)
-		}
-	}
 	for _, tx := range attachment.transactions {
 		tx.id = attachment.id + "/" + tx.id
 		t.bindDestination(tx, attachment)

@@ -145,7 +145,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
   `JitterBuffer.Reset` clears the sequence/SSRC window after old media drains at
-  stream removal or replacement; implementations and decorators must preserve it.
+  stream removal, replacement, or a single-stream codec change; implementations
+  and decorators must preserve it.
   This changes no recipe shape or planning operation; Receive and its integration
   tests cover same-SSRC sequence restart and stream-ID replacement.
   `PacketReader.ReadRTP` is the mandatory four-result atomic packet/event/map
@@ -282,7 +283,11 @@ it, and v1 does not freeze its shape.
   `GraphStats.PendingCleanup` counts retired nodes still draining or closing:
   a timed-out removal stops routing immediately, retains cleanup ownership,
   and releases its slot after finalization. This diagnostic does not change
-  the recipe grammar or add a planning operation.
+  the recipe grammar or add a planning operation. Built-in graphs also expose
+  the optional structural `RemoveNodeContext` capability, which bounds retirement
+  waits by the caller context while retaining graph ownership of unfinished work.
+  It adds no mandatory Graph method or recipe operation; Build/Attach shutdown
+  and concurrent Close/DrainBranch tests exercise the same retirement path.
   `av.EventCleanupError` supplements this with the node name and wrapped
   finalization error. Observer delivery is best effort; later graph/task
   `Close` calls retain deferred failures after reclamation and observer

@@ -169,7 +169,9 @@ func (t *task) installIsolation(plans []isolationPlan, txs []*destinationTransac
 		record := &isolatedBranch{plan: p, domain: domain, attachment: attachment}
 		for _, tx := range txs {
 			if slices.Contains(p.nodes, tx.node) {
+				tx.mu.Lock()
 				tx.domain = domain
+				tx.mu.Unlock()
 				record.txs = append(record.txs, tx)
 			}
 		}
@@ -210,6 +212,13 @@ func (t *task) isolatedSnapshot(b *isolatedBranch, stats pipeline.GraphStats) Br
 	if !fault.Failed && b.attachment != nil && b.attachment.stopped {
 		state = BranchDetached
 	}
+	if b.attachment != nil {
+		if _, attached := t.attachments[b.attachment]; !attached {
+			// Names may now identify another attachment. Only the old handle's
+			// recorded counters belong to this retained failure record.
+			stats = withRemovedStats(pipeline.GraphStats{}, b.attachment.removedStats.Load())
+		}
+	}
 	s := BranchSnapshot{ID: b.plan.id, Name: b.plan.name, State: state, FailurePolicy: IsolateBranch, Err: fault.Err, Error: fault.Error, PendingCleanup: fault.PendingCleanup, Retired: fault.Retired, Nodes: fault.Nodes, Spec: clonePipelineSpec(b.spec), Stats: branchStatsForNodes(stats, fault.Nodes)}
 	scope := ""
 	if b.attachment != nil {
@@ -219,7 +228,7 @@ func (t *task) isolatedSnapshot(b *isolatedBranch, stats pipeline.GraphStats) Br
 	return s
 }
 
-func (a *runtimeAttachment) faultOutcome() (error, int, bool) {
+func (a *runtimeAttachment) faultOutcome() (int, bool, error) {
 	var err error
 	pending := 0
 	retired := len(a.isolated) > 0
@@ -236,5 +245,5 @@ func (a *runtimeAttachment) faultOutcome() (error, int, bool) {
 		}
 	}
 	retired = retired && (len(covered) == len(a.nodes) || a.stopped && a.owner.Stats().PendingCleanup == 0)
-	return err, pending, retired
+	return pending, retired, err
 }
