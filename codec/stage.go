@@ -332,7 +332,7 @@ func codecChangedStream(current av.Stream, event *av.Event) (av.Stream, bool) {
 	if next.TimeBase == (av.TimeBase{}) {
 		next.TimeBase = current.TimeBase
 	}
-	if next.Epoch == 0 && event.Epoch != 0 {
+	if event.Epoch != 0 {
 		next.Epoch = event.Epoch
 	}
 	return next, true

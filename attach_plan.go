@@ -646,7 +646,11 @@ func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolic
 // close closes what the plan opened: an attach that failed aborts its
 // muxers' writes.
 func (p *attachPlan) close() {
-	for _, opened := range p.opened {
+	for i := range p.opened {
+		opened := &p.opened[i]
+		if opened.transferred {
+			continue
+		}
 		if opened.owned && opened.stage != nil {
 			markPipelineStageFailed(opened.stage)
 			_ = opened.stage.Close()
@@ -654,6 +658,7 @@ func (p *attachPlan) close() {
 		if opened.owned && opened.sink != nil {
 			_ = opened.sink.Close()
 		}
+		opened.owned = false
 	}
 }
 
@@ -666,6 +671,11 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	var nodes []pipeline.NodeRef
 	var routes []pipeline.Route
 	fail := func(err error) (*runtimeAttachment, error) {
+		for _, opened := range p.opened {
+			if opened.owned && opened.stage != nil {
+				markPipelineStageFailed(opened.stage)
+			}
+		}
 		p.close()
 		t.rollbackRuntimeBranch(nodes)
 		return nil, err
@@ -685,6 +695,9 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 				return fail(runtimeBranchGraphError("add stage", node.Name, err))
 			}
 		}
+		// Add succeeded: the graph now owns retirement and Close, including
+		// rollback after a later add or ingress connection fails.
+		p.opened[n].transferred = true
 		nodes = append(nodes, ref)
 		for _, input := range node.Inputs {
 			if !slices.Contains(nodes, input) {

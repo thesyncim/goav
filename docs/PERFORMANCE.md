@@ -355,3 +355,34 @@ Release-quality mode records `PERF_GO_TEST_TIMEOUT` in the manifest and
 defaults it to `0` unless the maintainer supplies a bounded watchdog.
 `scripts/bench/baseline.sh generate` is only for intentionally refreshing CI
 allocation/byte ceilings.
+
+## Complete workload evidence
+
+`bash scripts/bench/workloads.sh` runs two additional workloads and writes their
+evidence under `bench-results/workloads/`:
+
+- File H.264/AAC at 720p and 1080p, one shared native video decoder, 720p and
+  360p H.264 renditions, shared copied audio, and two MP4 outputs. It verifies
+  frame and audio counts, output finalization, drops and A/V tail drift, and
+  records decode-to-encode p50/p95/p99 latency, elapsed throughput, heap,
+  goroutines, process CPU and peak RSS. FFmpeg checks output PSNR against the
+  resized input; encoder backend and bitrate remain part of the evidence.
+- A negotiated loopback WebRTC sender repeatedly detaches, idles and reattaches.
+  Each cycle must deliver RTP, return a remote PLI to the active attachment,
+  remove its feedback subscription, and return goroutines to baseline when
+  the peers close. It records cycles and media-plus-feedback latency.
+
+By default the file inputs are three-second synthetic motion clips independently
+encoded by FFmpeg with normal GOPs, B-frames and simultaneous audio. For
+representative recorded footage, set `GOAV_WORKLOAD_CLIPS` to a directory with
+`720p.mp4` and `1080p.mp4`; the driver records their SHA-256 hashes. The WebRTC
+payload is a transport probe, not a visual-quality or playout test.
+
+Use `GOAV_WEBRTC_SOAK_DURATION=1h bash scripts/bench/workloads.sh` before a
+release. The `lifecycle-workloads` workflow supports manual hour-scale runs and
+a weekly two-hour run, preserving artifacts on failure. Short local runs are
+smoke evidence only. Native conformance separately covers decoder seek and
+epoch changes, and deterministic graph tests cover stalled-sink recovery.
+These measurements do not establish production stream capacity, network-loss
+quality, or missed playout deadlines; profile a representative service workload
+before choosing an optimization.

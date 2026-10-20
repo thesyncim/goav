@@ -148,6 +148,8 @@ type openedNode struct {
 	// build or attach closes; a caller's own stages and sinks stay the
 	// caller's.
 	owned bool
+	// transferred is set after a successful graph Add during attachment.
+	transferred bool
 }
 
 // openComposeNode opens the component a decode, step, encode, sink, or mux

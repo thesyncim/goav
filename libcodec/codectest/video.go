@@ -92,7 +92,69 @@ func runVideo(t *testing.T, b backend, decoders []backend) {
 	}
 	t.Run("reference", func(t *testing.T) { videoReference(t, b, decoders) })
 	t.Run("loss", func(t *testing.T) { videoLoss(t, b) })
+	if b.desc.Backend.Kind != codec.KindGo {
+		t.Run("transitions", func(t *testing.T) { videoTransitions(t, b) })
+	}
 	t.Run("close", func(t *testing.T) { decoderClose(t, b, videoStream(b.desc.ID)) })
+}
+
+// videoTransitions runs the same seek/configuration contract on real native
+// sessions as the deterministic kit tests. The high-profile fixture includes
+// delayed pictures, and replay starts from an independent keyframe.
+func videoTransitions(t *testing.T, b backend) {
+	if b.desc.ID != av.CodecH264 {
+		t.Skipf("no transition fixture for %s", b.desc.ID)
+	}
+	stream, packets, err := demuxFixture("h264_high_aac.mp4", av.MediaVideo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Epoch = 1
+	decoder := openDecoder(t, b, stream)
+	if decoder == nil {
+		return
+	}
+	defer decoder.Close()
+	result := newDecodeResult(av.MediaVideo)
+	for cycle := range 3 {
+		for _, packet := range packets[:min(3, len(packets))] {
+			if err := decoder.DecodeInto(t.Context(), &packet, &result); err != nil {
+				t.Fatal(err)
+			}
+			drainFrames(&result, nil)
+		}
+		if err := decoder.HandleEvent(t.Context(), &av.Event{Type: av.EventDiscontinuity, StreamID: stream.ID}); err != nil {
+			t.Fatal(err)
+		}
+		stream.Epoch = av.Epoch(cycle + 2)
+		if err := decoder.HandleEvent(t.Context(), &av.Event{Type: av.EventCodecChanged, Stream: &stream, Epoch: stream.Epoch}); err != nil {
+			t.Fatal(err)
+		}
+		offset := int64(cycle+1) * 1_000_000
+		frames := 0
+		check := func(frame *av.Frame) {
+			frames++
+			if frame.PTS.Value < offset || frame.CodecEpoch != stream.Epoch {
+				t.Errorf("%s: stale frame after transition: PTS=%d epoch=%d, want PTS >= %d epoch=%d", b.name(), frame.PTS.Value, frame.CodecEpoch, offset, stream.Epoch)
+			}
+		}
+		for _, packet := range packets {
+			packet.PTS.Value += offset
+			packet.DTS.Value += offset
+			packet.CodecEpoch = stream.Epoch
+			if err := decoder.DecodeInto(t.Context(), &packet, &result); err != nil {
+				t.Fatal(err)
+			}
+			drainFrames(&result, check)
+		}
+		if err := decoder.FlushInto(t.Context(), &result); err != nil {
+			t.Fatal(err)
+		}
+		drainFrames(&result, check)
+		if frames != len(packets) {
+			t.Fatalf("%s: %d frames after transition, want %d", b.name(), frames, len(packets))
+		}
+	}
 }
 
 // videoRoundTrip checks the encoder's timestamps and keyframes, then

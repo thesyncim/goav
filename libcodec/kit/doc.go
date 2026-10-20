@@ -27,4 +27,12 @@
 // parameter struct as raw parameters, Picture.Owner lends decoded memory
 // without a copy, and libcodec/codectest.Run is the conformance suite.
 // github.com/thesyncim/goav/libcodec/proof/extbackend is a complete backend.
+//
+// Video decoder transitions have distinct semantics. EOS/FlushInto drains
+// valid delayed pictures in presentation order. Discontinuity, including a
+// discontinuous packet, discards pending pictures, timing and backend reference
+// state and resumes from a keyframe. CodecChanged also discards old output
+// before the event is forwarded, adopts the new stream identity, epoch,
+// timebase, geometry and parameter sets, and opens a fresh session. No
+// pre-change picture can appear after the new configuration event.
 package kit

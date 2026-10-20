@@ -579,6 +579,19 @@ func TestLocalTrackSendsAndHearsKeyframeRequests(t *testing.T) {
 	if next.SequenceNumber != lastSeq+1 || int32(next.Timestamp-lastTS) <= 0 {
 		t.Fatalf("after reattach seq=%d ts=%d, want seq %d and a later timestamp than %d", next.SequenceNumber, next.Timestamp, lastSeq+1, lastTS)
 	}
+	// Feedback after reattachment must reach the active subscription; an
+	// idle reader left by the previous attachment cannot steal the PLI.
+	if err := answerer.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(got.SSRC())}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ctrl := <-controls:
+		if ctrl.Type() != control.KeyframeType || ctrl.StreamID() != "v" {
+			t.Fatalf("reattached control = %v", ctrl)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reattached branch lost its keyframe feedback")
+	}
 }
 
 // connect negotiates offerer with answerer, candidates gathered up front.

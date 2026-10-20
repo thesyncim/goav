@@ -179,8 +179,8 @@ func (g *bufferedRunner) stopLocked(ctx context.Context, n *bufferedNode) (bool,
 }
 
 // awaitStopped waits for the node's worker to exit.
-func (g *bufferedRunner) awaitStopped(ctx context.Context, n *bufferedNode) error {
-	return waitCloseDoneContext(ctx, "close", n.name, n.done, g.config.CloseWaitTimeout)
+func (g *bufferedRunner) awaitStopped(ctx context.Context, n *bufferedNode, timeout time.Duration) error {
+	return waitCloseDoneContext(ctx, "close", n.name, n.done, timeout)
 }
 
 func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
@@ -305,9 +305,9 @@ func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
 		g.noteSinkMedia(&node.sawMedia)
 	}
 	if !running || !node.opened {
-		g.retireLocked(node, true)
+		g.retireLocked(node)
 		g.mu.Unlock()
-		return node, node.close()
+		return node, g.finalize(node)
 	}
 	// Nothing new reaches the node now; what it already queued is delivered
 	// before it closes. Its own routes stay up while it drains, so a stage
@@ -319,31 +319,22 @@ func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
 	g.mu.Unlock()
 	err = waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
 	g.mu.Lock()
-	if !node.active {
-		// Close took the graph down mid-drain and closed the node itself.
-		g.mu.Unlock()
-		return node, err
-	}
-	// A drain that timed out leaves the worker running: keep its index.
-	g.retireLocked(node, err == nil)
+	g.retireLocked(node)
 	g.mu.Unlock()
 	if err != nil {
+		g.reap(node)
 		return node, err
 	}
-	return node, node.close()
+	return node, g.finalize(node)
 }
 
 // retireLocked takes a removed node out of the graph: inactive, routeless,
-// and shedding whatever its worker still holds. Once its worker is done
-// (stopped), its index becomes reusable; the node, closed rings and slots
-// included, goes to the collector once the index is taken. Caller holds g.mu.
-func (g *bufferedRunner) retireLocked(node *bufferedNode, stopped bool) {
+// and shedding whatever its worker still holds. Finalization makes its index
+// reusable only after its worker and Close finish. Caller holds g.mu.
+func (g *bufferedRunner) retireLocked(node *bufferedNode) {
 	node.active = false
 	node.removed.Store(true)
 	node.routes = nil
-	if stopped {
-		g.reclaimLocked(node)
-	}
 	g.rebuildLocked()
 }
 

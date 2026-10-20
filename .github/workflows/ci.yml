@@ -418,6 +418,9 @@ jobs:
   consumer-install:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.x'
@@ -452,3 +455,9 @@ jobs:
           ./goav elements | grep -q "play"
           gomod="$(go mod download -json "github.com/thesyncim/goav/cmd/goav@${SHA}" | sed -n 's/.*"GoMod": "\(.*\)".*/\1/p')"
           if grep -q '^replace' "$gomod"; then echo "cmd/goav/go.mod carries a replace directive; go install would refuse it" >&2; exit 1; fi
+      - name: Verify resolved fixes and player bundle isolation
+        env:
+          GOPROXY: direct
+          GONOSUMDB: github.com/thesyncim
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/check-consumers.sh "$SHA"

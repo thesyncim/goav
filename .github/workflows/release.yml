@@ -132,6 +132,10 @@ jobs:
         working-directory: ${{ steps.release.outputs.module_dir }}
         run: CGO_ENABLED=0 go vet ./...
 
+      - name: Verify externally resolved lifecycle fixes
+        if: startsWith(steps.release.outputs.tag, 'v')
+        run: bash scripts/check-consumers.sh "$(git rev-parse HEAD)"
+
       - name: Build root CLI artifacts
         if: startsWith(steps.release.outputs.tag, 'v')
         run: |
@@ -150,17 +154,21 @@ jobs:
           # The CLI is its own module; a workspace builds it from this tag's
           # tree rather than from the root and player versions it pins.
           export GOWORK="$RUNNER_TEMP/goav.work"
-          go work init "$PWD" "$PWD/player" "$PWD/cmd/goav"
+          go work init "$PWD" "$PWD/player" "$PWD/rtpav" "$PWD/webrtcav" "$PWD/libcodec" "$PWD/gplcodec" "$PWD/cmd/goav"
           (cd cmd/goav && go list -m -json all) > dist/sbom-go-modules.json
           for goos in linux darwin; do
             for goarch in amd64 arm64; do
-              dir="goav_${tag}_${goos}_${goarch}"
-              mkdir -p "dist/$dir"
-              (cd cmd/goav && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-                go build -trimpath -ldflags="-s -w" -o "../../dist/$dir/goav" .)
-              go version -m "dist/$dir/goav" > "dist/${dir}.buildinfo.txt"
-              tar -C dist -czf "dist/${dir}.tar.gz" "$dir"
-              rm -rf "dist/$dir"
+              for variant in headless desktop; do
+                tags=""
+                if [ "$variant" = headless ]; then tags="goav_noplay"; fi
+                dir="goav_${tag}_${goos}_${goarch}_${variant}"
+                mkdir -p "dist/$dir"
+                (cd cmd/goav && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+                  go build -tags "$tags" -trimpath -ldflags="-s -w" -o "../../dist/$dir/goav" .)
+                go version -m "dist/$dir/goav" > "dist/${dir}.buildinfo.txt"
+                tar -C dist -czf "dist/${dir}.tar.gz" "$dir"
+                rm -rf "dist/$dir"
+              done
             done
           done
           (cd dist && shasum -a 256 *.tar.gz *.txt *.json > SHA256SUMS)

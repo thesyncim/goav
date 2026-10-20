@@ -74,7 +74,7 @@ say why.
 the pin must resolve. The CI job `consumer-install` fetches every nested module
 at the PR head into an empty directory with `GOWORK=off` and builds it.
 
-Bump the pin when a nested module needs newer root API, and before each tag
+Bump the pin when a nested module needs newer root behavior or API, and before each tag
 (see Tags):
 
 ```sh
@@ -85,8 +85,25 @@ go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
 Edit the `require` lines (keep the `replace`), then run the module's tests.
 `cmd/goav` pins the root, `player`, and `webrtcav` (so `rtpav`) the same way but has no `replace` (so
 `go install ...@version` works); gate it in a workspace over the checkout.
-It can pin only commits on `main`, so bump it to the new `main` pseudo-version
-right after any merge that changes `player` or root API the CLI uses.
+Use a published commit containing the fixes, then refresh pins after the merge
+if the merge changes those implementations. A published candidate commit is
+resolvable before merge; an unpushed local commit is not a valid dependency pin.
+
+Workspace tests verify integration of the checkout. They do not verify what
+an installed CLI or a player consumer receives. Run the external gate against
+the published candidate after repinning:
+
+```sh
+bash scripts/check-consumers.sh PUBLISHED_CANDIDATE_SHA
+```
+
+It creates fresh modules with `GOWORK=off`, leaves the root version selected
+by each consumer, and exercises completed replies before EOF, blocked writes
+with deadlines, and eventual cleanup after removal timeouts. It also builds
+the documented `player + bundle` combination on Linux amd64 and arm64 and
+rejects reachability of the opt-in AAC implementation. CI runs these probes
+in addition to the workspace suite. The root release workflow runs them before
+packaging binaries; a successful build alone is insufficient release evidence.
 
 ## Tags
 
@@ -125,7 +142,9 @@ that tag, runs tests and vet in the tagged module directory, then creates a
 GitHub release with generated notes.
 
 For root tags (`vX.Y.Z`) the workflow also builds pure-Go `goav` CLI archives
-for Linux and macOS on amd64/arm64. The CLI is a deliberately narrow demo and
+for Linux and macOS on amd64/arm64, with explicit `headless` (`goav_noplay`)
+and `desktop` archive names. All in-repository modules are bound to the tagged
+tree during artifact builds. The CLI is a deliberately narrow demo and
 smoke-test utility (`docs/CLI.md`) — the library is the product; the archives
 exist so the release pipeline exercises real cross-platform builds. It uploads:
 

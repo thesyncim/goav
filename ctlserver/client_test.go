@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"testing"
+	"time"
 )
 
 // The reader can queue a reply and observe EOF before the calling goroutine
@@ -14,7 +16,7 @@ func TestClientKeepsReplyBeforeEOF(t *testing.T) {
 	for _, refusal := range []bool{false, true} {
 		for range 100 {
 			c := &Client{pending: make(map[string]chan response), done: make(chan struct{})}
-			c.enc = json.NewEncoder(clientWriteFunc(func(data []byte) (int, error) {
+			c.conn = clientWriteConn{write: func(data []byte) (int, error) {
 				var req request
 				if err := json.Unmarshal(data, &req); err != nil {
 					return 0, err
@@ -27,7 +29,8 @@ func TestClientKeepsReplyBeforeEOF(t *testing.T) {
 				c.err = io.EOF
 				close(c.done)
 				return len(data), nil
-			}))
+			}}
+			c.enc = json.NewEncoder(c.conn)
 			result, err := c.call(context.Background(), "taps", nil)
 			if refusal {
 				var got *Error
@@ -41,6 +44,10 @@ func TestClientKeepsReplyBeforeEOF(t *testing.T) {
 	}
 }
 
-type clientWriteFunc func([]byte) (int, error)
+type clientWriteConn struct {
+	net.Conn
+	write func([]byte) (int, error)
+}
 
-func (f clientWriteFunc) Write(data []byte) (int, error) { return f(data) }
+func (c clientWriteConn) Write(data []byte) (int, error) { return c.write(data) }
+func (clientWriteConn) SetWriteDeadline(time.Time) error { return nil }

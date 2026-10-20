@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"io"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
@@ -118,7 +119,7 @@ type destinationWriterMuxer struct {
 	format.Muxer
 	writer      provider.Writer
 	transaction *destinationTransaction
-	failed      bool
+	failed      atomic.Bool
 }
 
 func (m *destinationWriterMuxer) Write(ctx context.Context, packet *av.Packet, result *format.WriteResult) error {
@@ -130,7 +131,7 @@ func (m *destinationWriterMuxer) Write(ctx context.Context, packet *av.Packet, r
 }
 
 func (m *destinationWriterMuxer) MarkFailed() {
-	m.failed = true
+	m.failed.Store(true)
 	m.transaction.Fail()
 }
 
@@ -141,7 +142,7 @@ func (m *destinationWriterMuxer) Close() error {
 	}
 	transactionErr := error(nil)
 	if transactional, ok := m.writer.(provider.TransactionalWriter); ok {
-		if m.failed || m.transaction.ShouldAbort() {
+		if m.failed.Load() || m.transaction.ShouldAbort() {
 			transactionErr = transactional.Abort(context.Background())
 		} else {
 			transactionErr = transactional.Commit(context.Background())

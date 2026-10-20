@@ -27,7 +27,9 @@ import (
 // feeding the stream. The track's codec is the one it takes, so the planner
 // encodes frames to it. The peer connection's interceptors answer NACK and
 // send reports (Pion's default API registers both). It carries one stream
-// and reads sender's RTCP; closing it leaves track and sender open, and it
+// and subscribes to sender's RTCP. One reader belongs to the sender until
+// the caller stops it or closes its peer connection. Closing this sink
+// unsubscribes from feedback, leaves track and sender open, and it
 // opens again when its branch reattaches, continuing the track's RTP
 // sequence and timeline, so the remote peer sees one stream.
 func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pipeline.Sink {
@@ -139,9 +141,10 @@ type trackWriter struct {
 	feedback chan []rtcp.Packet
 	closed   chan struct{}
 	// failed closes when the peer connection fails; writes then refuse.
-	failed    <-chan struct{}
-	onClose   func() error
-	closeOnce sync.Once
+	failed          <-chan struct{}
+	onClose         func() error
+	closeOnce       sync.Once
+	feedbackSources []*senderFeedback
 }
 
 type trackOut struct {
@@ -194,25 +197,13 @@ func newTrackWriter(pc *webrtc.PeerConnection, failed <-chan struct{}) *trackWri
 	return &trackWriter{pc: pc, feedback: make(chan []rtcp.Packet, 16), closed: make(chan struct{}), failed: failed}
 }
 
-// add routes ssrc to track and reads sender's RTCP until it stops.
+// add routes ssrc to track and subscribes to the sender's feedback.
 func (w *trackWriter) add(ssrc uint32, track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) {
 	w.tracks = append(w.tracks, trackOut{ssrc: ssrc, track: track})
 	if sender == nil {
 		return
 	}
-	go func() {
-		for {
-			packets, _, err := sender.ReadRTCP()
-			if err != nil {
-				return
-			}
-			select {
-			case w.feedback <- packets:
-			case <-w.closed:
-				return
-			}
-		}
-	}()
+	w.feedbackSources = append(w.feedbackSources, subscribeFeedback(sender, w))
 }
 
 func (w *trackWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
@@ -251,11 +242,69 @@ func (w *trackWriter) Close() error {
 	var err error
 	w.closeOnce.Do(func() {
 		close(w.closed)
+		for _, source := range w.feedbackSources {
+			source.mu.Lock()
+			delete(source.listeners, w)
+			source.mu.Unlock()
+		}
+		w.feedbackSources = nil
 		if w.onClose != nil {
 			err = w.onClose()
 		}
 	})
 	return err
+}
+
+// Pion's pre-negotiation ReadRTCP cannot be interrupted without stopping the
+// caller-owned sender. A single sender-lifetime reader avoids abandoned
+// attachment readers and routes feedback only to current subscriptions.
+var senderFeedbacks = struct {
+	sync.Mutex
+	readers map[*webrtc.RTPSender]*senderFeedback
+}{readers: make(map[*webrtc.RTPSender]*senderFeedback)}
+
+type senderFeedback struct {
+	mu        sync.Mutex
+	listeners map[*trackWriter]struct{}
+	done      chan struct{}
+}
+
+func subscribeFeedback(sender *webrtc.RTPSender, writer *trackWriter) *senderFeedback {
+	senderFeedbacks.Lock()
+	defer senderFeedbacks.Unlock()
+	source := senderFeedbacks.readers[sender]
+	if source == nil {
+		source = &senderFeedback{listeners: make(map[*trackWriter]struct{}), done: make(chan struct{})}
+		senderFeedbacks.readers[sender] = source
+		go source.read(sender)
+	}
+	source.mu.Lock()
+	source.listeners[writer] = struct{}{}
+	source.mu.Unlock()
+	return source
+}
+
+func (s *senderFeedback) read(sender *webrtc.RTPSender) {
+	defer func() {
+		senderFeedbacks.Lock()
+		delete(senderFeedbacks.readers, sender)
+		senderFeedbacks.Unlock()
+		close(s.done)
+	}()
+	for {
+		packets, _, err := sender.ReadRTCP()
+		if err != nil {
+			return
+		}
+		s.mu.Lock()
+		for writer := range s.listeners {
+			select {
+			case writer.feedback <- packets:
+			default: // A slow attachment cannot block the sender's feedback.
+			}
+		}
+		s.mu.Unlock()
+	}
 }
 
 // senderSSRC is the SSRC Pion sends a sender's track under, which its RTCP

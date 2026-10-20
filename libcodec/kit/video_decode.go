@@ -33,8 +33,6 @@ type videoDecoder struct {
 	// by PTS; decoded is the decode time of the last unit sent.
 	held    []av.Frame
 	decoded int64
-	// carry holds pictures a codec change drained until the next call.
-	carry codec.DecodeResult
 }
 
 func (d *videoDecoder) Descriptor() codec.Descriptor { return d.desc }
@@ -114,9 +112,13 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	if d.closed {
 		return codec.ErrClosed
 	}
-	out.Frames = takeCarriedFrames(out.Frames, &d.carry)
 	if packet == nil {
 		return d.requestKeyframe(out, "packet loss")
+	}
+	if packet.Discontinuous {
+		if err := d.reset(); err != nil {
+			return err
+		}
 	}
 	if packet.LossBefore || packet.Discontinuous || (packet.Corrupt && !packet.Keyframe) {
 		d.dropping = true
@@ -228,7 +230,6 @@ func (d *videoDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) e
 	if d.closed {
 		return codec.ErrClosed
 	}
-	out.Frames = takeCarriedFrames(out.Frames, &d.carry)
 	if d.session == nil {
 		return nil
 	}
@@ -249,19 +250,44 @@ func (d *videoDecoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	case av.EventPacketLoss:
 		d.dropping = true
 	case av.EventCodecChanged:
-		if err := d.stop(&d.carry); err != nil {
+		// A configuration event is a boundary: discard old delayed output
+		// before the stage forwards the new configuration downstream.
+		if err := d.discard(); err != nil {
 			return err
+		}
+		if event.Stream != nil {
+			d.stream = *event.Stream
+		}
+		if event.StreamID != "" {
+			d.stream.ID = event.StreamID
+		}
+		if event.Epoch != 0 {
+			d.stream.Epoch = event.Epoch
 		}
 		if event.Codec != nil {
 			d.stream.Codec = *event.Codec
-			if sets, err := configParameterSets(d.c.ID, event.Codec.ExtraData.Bytes); err == nil && len(sets) != 0 {
-				d.sets = cloneUnits(sets)
+		}
+		if d.stream.Codec.ID != "" && d.stream.Codec.ID != d.c.ID {
+			return codec.ErrUnsupportedCodecSwitch
+		}
+		if !d.stream.TimeBase.Valid() {
+			d.stream.TimeBase = d.config.TimeBase
+		}
+		d.config.Width = d.stream.Codec.Width
+		d.config.Height = d.stream.Codec.Height
+		d.config.TimeBase = d.stream.TimeBase
+		d.config.ExtraData = slices.Clone(d.stream.Codec.ExtraData.Bytes)
+		d.sets = nil
+		if nalFramed(d.c.ID, d.c.Bitstream) {
+			sets, err := configParameterSets(d.c.ID, d.stream.Codec.ExtraData.Bytes)
+			if err != nil {
+				return fmt.Errorf("%w: extradata: %v", codec.ErrUnsupportedFormat, err)
 			}
+			d.sets = cloneUnits(sets)
 		}
-		d.dropping = true
-		if d.c.Bitstream == AnnexB {
-			return d.start()
-		}
+		return d.restart()
+	case av.EventDiscontinuity:
+		return d.reset()
 	}
 	return nil
 }
@@ -277,10 +303,22 @@ func (d *videoDecoder) Close() error {
 		return nil
 	}
 	d.closed = true
+	return d.discard()
+}
+
+// discard releases both wrapper-owned pictures and backend reference state.
+// Unlike EOS/FlushInto, a seek must never drain pre-seek output.
+func (d *videoDecoder) discard() error {
 	releaseFrames(d.held)
 	d.held = nil
-	releaseFrames(d.carry.Frames)
-	d.carry.Frames = nil
+	clear(d.pending)
+	d.pending = d.pending[:0]
+	d.decoded = 0
+	d.video = nil
+	d.out = nil
+	d.fedSets = false
+	d.healing = false
+	d.dropping = true
 	if d.session == nil {
 		return nil
 	}
@@ -289,16 +327,18 @@ func (d *videoDecoder) Close() error {
 	return err
 }
 
-// takeCarriedFrames moves carried frames, and their plane references, onto
-// out.
-func takeCarriedFrames(out []av.Frame, carry *codec.DecodeResult) []av.Frame {
-	if len(carry.Frames) == 0 {
-		return out
+func (d *videoDecoder) reset() error {
+	if err := d.discard(); err != nil {
+		return err
 	}
-	out = append(out, carry.Frames...)
-	clear(carry.Frames)
-	carry.Frames = carry.Frames[:0]
-	return out
+	return d.restart()
+}
+
+func (d *videoDecoder) restart() error {
+	if !nalFramed(d.c.ID, d.c.Bitstream) || d.c.Bitstream == AnnexB || len(d.sets) != 0 {
+		return d.start()
+	}
+	return nil // AVCC waits for the replacement stream's parameter sets.
 }
 
 // accessUnit prepares a packet for the session: as it is for a raw
