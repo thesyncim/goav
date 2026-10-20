@@ -85,7 +85,8 @@ subject to the operating system's own completion behavior.
   Device paths are validated as V4L2 character devices before opening them for
   capture. Native mmap storage has its own 128 MiB total cap. This backend
   supports single-planar streaming capture in NV12 or YUYV,
-  progressive frames, and an exact integer frame rate. Multiplanar-only, MJPEG-only,
+  progressive frames, and an integer frame rate with the interval quantization
+  described above. Multiplanar-only, MJPEG-only,
   and libcamera/PipeWire-only devices are refused.
 - **Windows:** enable camera access for desktop applications in privacy settings.
   Media Foundation must be installed (including the Media Feature Pack on Windows

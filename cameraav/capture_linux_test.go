@@ -302,13 +302,15 @@ func TestLinuxNegotiatedRateAcceptsUVCQuantization(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		num, den uint32
+		fps      int
 		accept   bool
 	}{
-		{"exact", 1, 30, true},
-		{"quantized UVC", 333333, 10000000, true},
-		{"fractional", 1001, 30000, false},
-		{"zero numerator", 0, 30, false},
-		{"zero denominator", 1, 0, false},
+		{"exact", 1, 30, 30, true},
+		{"quantized UVC", 333333, 10000000, 30, true},
+		{"quantized 240 fps readback", 20833, 5000000, 240, true},
+		{"fractional", 1001, 30000, 30, false},
+		{"zero numerator", 0, 30, 30, false},
+		{"zero denominator", 1, 0, 30, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ops := linuxTestOpenOps(t)
@@ -322,7 +324,7 @@ func TestLinuxNegotiatedRateAcceptsUVCQuantization(t *testing.T) {
 				}
 				return ioctl(fd, nr, dir, p, size)
 			}
-			d, err := openLinuxDevice(context.Background(), Config{Device: "/dev/video0", Width: 4, Height: 4, FPS: 30}, &ops)
+			d, err := openLinuxDevice(context.Background(), Config{Device: "/dev/video0", Width: 4, Height: 4, FPS: tc.fps}, &ops)
 			if tc.accept {
 				if err != nil {
 					t.Fatal(err)
