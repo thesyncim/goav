@@ -10,8 +10,8 @@ require (
 	github.com/pion/rtp v1.10.5
 	github.com/pion/sdp/v3 v3.0.20
 	github.com/pion/webrtc/v4 v4.2.24
-	github.com/thesyncim/goav v0.0.0-20261020142137-7f8591e35024
-	github.com/thesyncim/goav/rtpav v0.0.0-20261020142137-7f8591e35024
+	github.com/thesyncim/goav v0.0.0-20261020160912-710e3246b213
+	github.com/thesyncim/goav/rtpav v0.0.0-20261020160912-710e3246b213
 )
 
 require (
