@@ -127,14 +127,18 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	if err != nil {
 		return nil, err
 	}
+	var resp response
 	select {
-	case resp := <-reply:
-		if resp.Error != nil {
-			return nil, resp.Error
-		}
-		return resp.Result, nil
+	case resp = <-reply:
 	case <-c.done:
-		return nil, c.closedErr()
+		// The reader queues responses before closing done. A peer may
+		// send its last reply (including an auth refusal) and then close;
+		// preserve that reply even when select observes EOF first.
+		select {
+		case resp = <-reply:
+		default:
+			return nil, c.closedErr()
+		}
 	case <-ctx.Done():
 		// Tell the server, so the call stops there too.
 		c.wmu.Lock()
@@ -142,6 +146,10 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 		c.wmu.Unlock()
 		return nil, ctx.Err()
 	}
+	if resp.Error != nil {
+		return nil, resp.Error
+	}
+	return resp.Result, nil
 }
 
 // Watch streams the task's events — filtered by params, such as
