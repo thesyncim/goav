@@ -418,20 +418,30 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 
 func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	target := av.StreamID("")
+	var uniqueTargetCodec av.CodecID
 	if event != nil && event.Type == av.EventCodecChanged {
 		for _, stream := range s.streams {
 			if eventMatchesStream(stream, event) {
 				target = stream.ID
+				uniqueTargetCodec = stream.Codec.ID
 				break
 			}
 		}
 		if target == "" && len(s.streams) == 1 {
 			target = s.streams[0].ID
+			uniqueTargetCodec = s.streams[0].Codec.ID
+		}
+		// A codec-intent depacketizer can use the input's display name. Save
+		// its unique transport scope before applying an ID replacement.
+		if !s.uniqueCodecScope(target, uniqueTargetCodec) {
+			uniqueTargetCodec = ""
 		}
 	}
 	if event != nil && (configurationEvent(event) || event.Type == av.EventDiscontinuity) {
 		for _, depacketizer := range s.depacketizers {
-			if partial, stream := partialDepacketizer(depacketizer); partial && eventMatchesStream(stream, event) {
+			partial, stream := partialDepacketizer(depacketizer)
+			uniqueTarget := uniqueTargetCodec != "" && depacketizer.Codec() == uniqueTargetCodec
+			if partial && (eventMatchesStream(stream, event) || uniqueTarget) {
 				s.discardedPartial.Add(1)
 			}
 		}
@@ -450,7 +460,10 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	s.resetTimestampState(event)
 	for i := range s.depacketizers {
 		if event != nil && event.Type == av.EventCodecChanged && target != "" {
-			if stream, known := depacketizerStream(s.depacketizers[i]); known && stream.ID != target && !s.uniqueCodecScope(target, s.depacketizers[i].Codec()) {
+			codec := s.depacketizers[i].Codec()
+			uniqueTarget := uniqueTargetCodec != "" && codec == uniqueTargetCodec
+			uniqueReplacement := canonicalize && s.uniqueCodecScope(canonical.ID, codec)
+			if stream, known := depacketizerStream(s.depacketizers[i]); known && stream.ID != target && !uniqueTarget && !uniqueReplacement {
 				continue
 			}
 		}

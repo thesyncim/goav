@@ -555,6 +555,60 @@ func TestOrderedNamedCodecIntentUsesUniqueTrack(t *testing.T) {
 	}
 }
 
+func TestOrderedNamedInputUpdatesEpochOnTrackReplacement(t *testing.T) {
+	old, next := orderedAudioStream("transport-id", 1), orderedAudioStream("replacement-id", 2)
+	r := &orderedReader{streams: []av.Stream{old}, records: []orderedRecord{
+		{packet: orderedAudioPacket(1), payloads: orderedMap(old)},
+		{event: &av.Event{Type: av.EventCodecChanged, StreamID: next.ID, Stream: &next, Epoch: 2}, packet: orderedAudioPacket(2), payloads: orderedMap(next)},
+	}}
+	source, _, err := Receive(r, WithName("mic"), WithCodec(codec.Spec{ID: av.CodecOpus, Type: av.MediaAudio})).OpenSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var epochs []av.Epoch
+	if err := source.Start(t.Context(), testEmitter(func(_ context.Context, m *pipeline.Message) error {
+		if m.Packet != nil {
+			epochs = append(epochs, m.Packet.CodecEpoch)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(epochs, []av.Epoch{1, 2}) {
+		t.Fatalf("epochs=%v", epochs)
+	}
+}
+
+func TestOrderedNamedVideoReplacementDiscardsOldAssembly(t *testing.T) {
+	old := av.Stream{ID: "transport-id", Epoch: 1, Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecH264, Type: av.MediaVideo, ClockRate: 90000}}
+	next := old
+	next.ID, next.Epoch = "replacement-id", 2
+	mapping := func(stream av.Stream) PayloadMap {
+		return NewStaticPayloadMap(stream.Epoch, []PayloadCodec{{PayloadType: 96, StreamID: stream.ID, Parameters: stream.Codec, ClockRate: 90000}})
+	}
+	r := &orderedReader{streams: []av.Stream{old}, records: []orderedRecord{
+		{packet: &rtp.Packet{Header: rtp.Header{PayloadType: 96, SequenceNumber: 1, Timestamp: 100}, Payload: []byte{0x7c, 0x85, 1}}, payloads: mapping(old)},
+		{event: &av.Event{Type: av.EventCodecChanged, StreamID: next.ID, Stream: &next, Epoch: 2}, payloads: mapping(next)},
+		{packet: &rtp.Packet{Header: rtp.Header{PayloadType: 96, SequenceNumber: 2, Timestamp: 200, Marker: true}, Payload: []byte{0x65, 2}}, payloads: mapping(next)},
+	}}
+	source, _, err := Receive(r, WithName("camera"), WithCodec(codec.Spec{ID: av.CodecH264, Type: av.MediaVideo})).OpenSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var epochs []av.Epoch
+	if err := source.Start(t.Context(), testEmitter(func(_ context.Context, m *pipeline.Message) error {
+		if m.Packet != nil {
+			epochs = append(epochs, m.Packet.CodecEpoch)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(epochs, []av.Epoch{2}) || source.(*Source).DroppedMessages() != 1 {
+		t.Fatalf("epochs=%v discarded=%d", epochs, source.(*Source).DroppedMessages())
+	}
+}
+
 func TestOrderedVideoChangeDoesNotResetSiblingAssembly(t *testing.T) {
 	a := av.Stream{ID: "a", Epoch: 1, Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecH264, Type: av.MediaVideo, ClockRate: 90000}}
 	b, next := a, a
