@@ -44,7 +44,7 @@ func (r *runtimeRTPReceiver) PayloadMap() rtpav.PayloadMap {
 	return r.payload
 }
 
-func (r *runtimeRTPReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
+func (r *runtimeRTPReceiver) readPacket(context.Context) (*rtp.Packet, error) {
 	if r.index >= len(r.packets) {
 		return nil, io.EOF
 	}
@@ -68,39 +68,46 @@ type runtimeRTPErrorReceiver struct {
 	err error
 }
 
-func (r *runtimeRTPErrorReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+func (r *runtimeRTPErrorReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
 	if r.index >= len(r.packets) {
-		return nil, r.err
+		return nil, nil, nil, r.err
 	}
 	return r.runtimeRTPReceiver.ReadRTP(ctx)
 }
 
 // runtimeRTPSwitchReceiver swaps its payload map to a different codec after
 // the first packet and announces the change on its event channel.
+type runtimeRTPRecord struct {
+	packet   *rtp.Packet
+	event    *av.Event
+	payloads rtpav.PayloadMap
+	err      error
+}
+
 type runtimeRTPSwitchReceiver struct {
-	initial  av.Stream
-	updated  av.Stream
-	payload  rtpav.PayloadMap
-	packets  []*rtp.Packet
-	events   chan av.Event
-	index    int
-	switched bool
-	closed   bool
+	records []runtimeRTPRecord
+	initial av.Stream
+	updated av.Stream
+	payload rtpav.PayloadMap
+	events  chan av.Event
+	index   int
+	closed  bool
 }
 
 func newRuntimeRTPSwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeRTPSwitchReceiver {
-	return &runtimeRTPSwitchReceiver{
-		initial: initial,
-		updated: updated,
-		payload: rtpav.NewStaticPayloadMap(1, []rtpav.PayloadCodec{{
-			PayloadType: 96,
-			Parameters:  initial.Codec,
-			MIMEType:    av.MIMEVP8,
-			ClockRate:   90000,
-		}}),
-		packets: packets,
-		events:  make(chan av.Event, 1),
+	before := rtpav.NewStaticPayloadMap(1, []rtpav.PayloadCodec{{PayloadType: 96, Parameters: initial.Codec, MIMEType: av.MIMEVP8, ClockRate: 90000}})
+	after := rtpav.NewStaticPayloadMap(2, []rtpav.PayloadCodec{{PayloadType: 97, Parameters: updated.Codec, MIMEType: av.MIMEH264, ClockRate: 90000}})
+	r := &runtimeRTPSwitchReceiver{initial: initial, updated: updated, payload: before}
+	for i, packet := range packets {
+		payloads := after
+		if i == 0 {
+			payloads = before
+		} else if i == 1 {
+			r.records = append(r.records, runtimeRTPRecord{event: &av.Event{Type: av.EventCodecChanged, StreamID: initial.ID, Epoch: updated.Epoch, Stream: &updated, Codec: &updated.Codec}, payloads: after})
+		}
+		r.records = append(r.records, runtimeRTPRecord{packet: packet, payloads: payloads})
 	}
+	return r
 }
 
 func (r *runtimeRTPSwitchReceiver) Streams(context.Context) ([]av.Stream, error) {
@@ -109,31 +116,6 @@ func (r *runtimeRTPSwitchReceiver) Streams(context.Context) ([]av.Stream, error)
 
 func (r *runtimeRTPSwitchReceiver) PayloadMap() rtpav.PayloadMap {
 	return r.payload
-}
-
-func (r *runtimeRTPSwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
-	if r.index >= len(r.packets) {
-		return nil, io.EOF
-	}
-	packet := r.packets[r.index]
-	r.index++
-	if r.index == 1 && !r.switched {
-		r.payload = rtpav.NewStaticPayloadMap(2, []rtpav.PayloadCodec{{
-			PayloadType: 97,
-			Parameters:  r.updated.Codec,
-			MIMEType:    av.MIMEH264,
-			ClockRate:   90000,
-		}})
-		r.events <- av.Event{
-			Type:     av.EventCodecChanged,
-			StreamID: r.initial.ID,
-			Epoch:    r.updated.Epoch,
-			Stream:   &r.updated,
-			Codec:    &r.updated.Codec,
-		}
-		r.switched = true
-	}
-	return packet, nil
 }
 
 func (r *runtimeRTPSwitchReceiver) Events() <-chan av.Event {
@@ -503,4 +485,18 @@ func waitForCondition(t *testing.T, label string, condition func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func (r *runtimeRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payload, err
+}
+
+func (r *runtimeRTPSwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	if r.index == len(r.records) {
+		return nil, nil, nil, io.EOF
+	}
+	record := r.records[r.index]
+	r.index++
+	return record.packet, record.event, record.payloads, record.err
 }

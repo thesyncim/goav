@@ -40,6 +40,11 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 		return nil, err
 	}
 	task := newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...)
+	task.isolated, err = task.installIsolation(gp.lowerer.isolation, service.destinationTxs, gp.work.Destinations, nil)
+	if err != nil {
+		_ = task.Close()
+		return nil, err
+	}
 	task.encoders = service.encoders
 	task.timeline = timeline
 	runtime.qos.attach(task)

@@ -32,10 +32,12 @@ import (
 type Task interface {
 	// Run drives the graph until every source ends or ctx is done. It returns
 	// the first fatal node error; otherwise nil when every source ended, or
-	// ctx.Err() when ctx stopped the task. Media does not flow before Run.
+	// ctx.Err() when ctx stopped the task. Successful Run leaves destinations
+	// finalizing: Close must finish before output success is known.
 	Run(context.Context) error
 	// Close releases the task's resources and finalizes destinations; it is
-	// idempotent and safe to call while Run is still in flight.
+	// idempotent and safe to call while Run is still in flight. Finalization
+	// errors are retained and returned by subsequent Close calls.
 	Close() error
 }
 

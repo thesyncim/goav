@@ -1567,91 +1567,111 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	}
 }
 
-func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
-	ctx := context.Background()
-	resampler := &transcodeTestFilter{}
-	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
-	encoder := &encodeTestEncoder{}
-	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
-	muxers := &remuxTestMuxerFactory{}
-	rt := mustNew(
-		withTestFilters(testFilterFactory(filter.Descriptor{
-			Name:   filter.FactoryResample,
-			Input:  av.MediaAudio,
-			Output: av.MediaAudio,
-		}, resampleFactory)),
-		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
-		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
-	)
-	graph := expertGraph(rt)
-	src := graph.Source("source", &runtimeTestSource{name: "source"})
-	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
-	builtTask, err := graph.Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mediaTask := builtTask.(*task)
-	mediaTask.taps = []TapSnapshot{{
-		Name:      "audio.frames",
-		MediaKind: av.MediaAudio,
-		Domain:    shape.DomainFrame,
-		Shape: shape.Spec{
-			Domain:       shape.DomainFrame,
-			MediaKind:    av.MediaAudio,
-			StreamID:     "audio",
-			Codec:        av.CodecOpus,
-			SampleRate:   48000,
-			Channels:     codec.Stereo,
-			SampleFormat: av.SampleFormatS16,
-		},
-		Node: "source",
-	}}
-	if err := builtTask.Close(); err != nil {
-		t.Fatal(err)
-	}
-	before := builtTask.Spec()
-
-	_, err = builtTask.Attach(ctx,
-		builtTask.Tap("audio.frames").
-			Resample(16_000, codec.Mono).
-			Encode(codec.Opus(codec.Bitrate(96_000))).
-			As("archive").
-			To(Write("archive.ogg", io.Discard, Format(av.FormatOgg))),
-	)
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) ||
-		buildErr.Code != "runtime_branch_graph_error" ||
-		buildErr.Operation != "add stage" ||
-		!errors.Is(err, pipeline.ErrClosed) {
-		t.Fatalf("err = %v, want runtime_branch_graph_error wrapping closed graph", err)
-	}
-	if resampleFactory.config.Audio == nil ||
-		resampleFactory.config.Audio.SampleRate != 16_000 ||
-		resampleFactory.config.Audio.Channels != codec.Mono {
-		t.Fatalf("runtime resample config = %+v, want opened 16k mono filter before closed-graph rejection", resampleFactory.config.Audio)
-	}
-	if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
-		t.Fatalf("runtime encode config = %+v, want Opus 96k before closed-graph rejection", encoderFactory.config)
-	}
-	if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
-		t.Fatalf("muxers = %+v, want one opened Ogg muxer before closed-graph rejection", muxers.muxers)
-	}
-	if !resampler.closed {
-		t.Fatal("runtime filter was not closed after attach to closed graph")
-	}
-	if !encoder.closed {
-		t.Fatal("runtime encoder was not closed after attach to closed graph")
-	}
-	if !muxers.muxers[0].closed {
-		t.Fatal("runtime muxer was not closed after attach to closed graph")
-	}
-	if after := builtTask.Spec(); !reflect.DeepEqual(before, after) {
-		t.Fatalf("graph mutated after closed-graph attach:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
-	}
-	for _, tap := range builtTask.Taps() {
-		if strings.Contains(tap.Node.String(), "archive") {
-			t.Fatalf("runtime branch tap registered after closed-graph attach: %+v", tap)
-		}
+func TestTaskAttachCloseRejectsOrClosesPreparedRuntimeComponents(t *testing.T) {
+	for _, duringInstall := range []bool{false, true} {
+		t.Run(fmt.Sprint(duringInstall), func(t *testing.T) {
+			ctx := context.Background()
+			resampler := &transcodeTestFilter{}
+			resampleFactory := &transcodeTestFilterFactory{filter: resampler}
+			encoder := &encodeTestEncoder{}
+			encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
+			muxers := &remuxTestMuxerFactory{}
+			rt := mustNew(
+				withTestFilters(testFilterFactory(filter.Descriptor{
+					Name:   filter.FactoryResample,
+					Input:  av.MediaAudio,
+					Output: av.MediaAudio,
+				}, resampleFactory)),
+				withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
+				withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
+			)
+			graph := expertGraph(rt)
+			src := graph.Source("source", &runtimeTestSource{name: "source"})
+			graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+			builtTask, err := graph.Build(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mediaTask := builtTask.(*task)
+			mediaTask.taps = []TapSnapshot{{
+				Name:      "audio.frames",
+				MediaKind: av.MediaAudio,
+				Domain:    shape.DomainFrame,
+				Shape: shape.Spec{
+					Domain:       shape.DomainFrame,
+					MediaKind:    av.MediaAudio,
+					StreamID:     "audio",
+					Codec:        av.CodecOpus,
+					SampleRate:   48000,
+					Channels:     codec.Stereo,
+					SampleFormat: av.SampleFormatS16,
+				},
+				Node: "source",
+			}}
+			attach := func() error {
+				_, err := builtTask.Attach(ctx,
+					builtTask.Tap("audio.frames").
+						Resample(16_000, codec.Mono).
+						Encode(codec.Opus(codec.Bitrate(96_000))).
+						As("archive").
+						To(Write("archive.ogg", io.Discard, Format(av.FormatOgg))),
+				)
+				return err
+			}
+			wantOperation := "attach branch"
+			if duringInstall {
+				install := &heldAttachmentStageInstallGraph{Graph: mediaTask.graph, entered: make(chan struct{}), release: make(chan struct{})}
+				mediaTask.graph = install
+				done := make(chan error, 1)
+				go func() { done <- attach() }()
+				<-install.entered
+				closeCtx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+				closeErr := mediaTask.CloseContext(closeCtx)
+				cancel()
+				close(install.release)
+				err = <-done
+				if !errors.Is(closeErr, context.DeadlineExceeded) {
+					t.Fatalf("Close=%v", closeErr)
+				}
+				wantOperation = "add stage"
+			} else {
+				if err := builtTask.Close(); err != nil {
+					t.Fatal(err)
+				}
+				err = attach()
+			}
+			var buildErr *BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_graph_error" || buildErr.Operation != wantOperation || !errors.Is(err, pipeline.ErrClosed) {
+				t.Fatalf("Attach=%v, want %s closed-graph refusal", err, wantOperation)
+			}
+			if duringInstall {
+				if resampleFactory.config.Audio == nil || resampleFactory.config.Audio.SampleRate != 16_000 || resampleFactory.config.Audio.Channels != codec.Mono {
+					t.Fatalf("runtime resample config=%+v, want prepared 16k mono filter", resampleFactory.config.Audio)
+				}
+				if encoderFactory.config.Parameters.ID != av.CodecOpus || encoderFactory.config.Settings.Bitrate != 96_000 {
+					t.Fatalf("runtime encode config=%+v, want prepared Opus 96k encoder", encoderFactory.config)
+				}
+				if len(muxers.muxers) != 1 || !muxers.muxers[0].opened {
+					t.Fatalf("muxers=%+v, want prepared Ogg muxer", muxers.muxers)
+				}
+				if !resampler.closed || !encoder.closed || !muxers.muxers[0].closed {
+					t.Fatal("Close racing installation leaked prepared runtime components")
+				}
+			} else if resampleFactory.config.Audio != nil || len(encoderFactory.configs) != 0 || len(muxers.muxers) != 0 {
+				t.Fatal("already-closed task opened runtime components")
+			}
+			if err := builtTask.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if spec := builtTask.Spec(); len(spec.Nodes) != 0 || len(spec.Edges) != 0 {
+				t.Fatalf("closed-graph attach changed graph: %+v", spec)
+			}
+			for _, tap := range builtTask.Taps() {
+				if strings.Contains(tap.Node.String(), "archive") {
+					t.Fatalf("runtime branch tap registered after closed-graph attach: %+v", tap)
+				}
+			}
+		})
 	}
 }
 
@@ -2831,6 +2851,7 @@ func (g *runtimeRollbackGraph) Stats() pipeline.GraphStats {
 	return pipeline.GraphStats{}
 }
 
+func (g *runtimeRollbackGraph) CleanupError() error { return nil }
 func (g *runtimeRollbackGraph) Close() error {
 	close(g.events)
 	return nil

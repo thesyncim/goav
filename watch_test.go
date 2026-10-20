@@ -41,6 +41,8 @@ func (g *watchTestGraph) Spec() pipeline.Spec             { return pipeline.Spec
 func (g *watchTestGraph) Run(context.Context) error       { return nil }
 func (g *watchTestGraph) Events() <-chan av.Event         { return g.events }
 func (g *watchTestGraph) Stats() pipeline.GraphStats      { return pipeline.GraphStats{} }
+func (g *watchTestGraph) CleanupError() error             { return nil }
+func (g *watchTestGraph) RunError() error                 { return nil }
 
 func (g *watchTestGraph) Close() error {
 	g.closeOnce.Do(func() { close(g.events) })

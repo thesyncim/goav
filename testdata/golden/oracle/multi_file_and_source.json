@@ -5,32 +5,54 @@
       {
         "name": "a.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "audio-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video@a.webm",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "select-audio@audio-1",
         "kind": "stage",
-        "detail": "select, type=audio"
+        "detail": "select, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-audio",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "o.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -59,7 +81,12 @@
         "to": "o.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 2 inputs through 2 stream branch(es) to o.webm",
@@ -268,6 +295,18 @@
         "code": "encode_required",
         "branch": "audio",
         "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: shared_destination_preserves_order"
+      },
+      {
+        "code": "serial_execution",
+        "message": "shared_destination_preserves_order; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -338,32 +377,54 @@
         {
           "name": "a.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "audio-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video@a.webm",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "select-audio@audio-1",
           "kind": "stage",
-          "detail": "select, type=audio"
+          "detail": "select, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-audio",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "o.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -392,7 +453,12 @@
           "to": "o.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

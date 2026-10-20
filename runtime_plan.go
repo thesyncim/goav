@@ -12,7 +12,16 @@ func (b *builder) Describe() (pipeline.Spec, error) {
 		Realtime: b.runtime.realtime,
 	}
 	if b.hasExplicitGraph() {
-		return b.planExplicitGraph(spec)
+		var err error
+		spec, err = b.planExplicitGraph(spec)
+		if err != nil {
+			return spec, err
+		}
+	}
+	config := pipeline.GraphConfig{Buffer: b.runtime.buffer}
+	spec.Execution = pipeline.DescribeExecution(config)
+	for i := range spec.Nodes {
+		spec.Nodes[i].Execution = pipeline.DescribeNodeExecution(spec.Nodes[i].Kind, config, b.runtime.buffer)
 	}
 	return spec, nil
 }

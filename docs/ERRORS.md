@@ -97,3 +97,10 @@ for things that did NOT fail the build, such as
 `shape_conversion_inserted` and `shape_preference_ignored`. Those strings are
 stable report vocabulary, but they are not exported `errcode` constants and do
 not appear in the public error catalog.
+
+Branch failure isolation is a planned policy: unsafe shared destinations, joins,
+or cross-domain egress return a `BuildError` with `FamilyBranch` and the governed
+pre-v1 code `branch_isolation_unsafe`. Use FailTask or an exclusive downstream
+destination. Runtime `BranchFailureError` and `pipeline.FinalizationError`
+retain original causes through `errors.Is`; caller wait errors are separate from
+actual finalization failures. See [Runtime contracts](RUNTIME_CONTRACTS.md).

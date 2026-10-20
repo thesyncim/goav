@@ -23,7 +23,9 @@ func (staticRTPReader) Streams(context.Context) ([]av.Stream, error) {
 
 func (staticRTPReader) PayloadMap() rtpav.PayloadMap { return nil }
 
-func (staticRTPReader) ReadRTP(context.Context) (*rtp.Packet, error) { return nil, io.EOF }
+func (staticRTPReader) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	return nil, nil, nil, io.EOF
+}
 
 func (staticRTPReader) Events() <-chan av.Event { return nil }
 

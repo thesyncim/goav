@@ -17,6 +17,10 @@ import (
 // active runtime branches, and counters, returned by LiveTask.Snapshot.
 type TaskSnapshot struct {
 	State TaskState `json:"state"`
+	// Err is the retained execution/finalization error, suitable for errors.Is.
+	// Error is its printable form for JSON consumers.
+	Err   error  `json:"-"`
+	Error string `json:"error,omitempty"`
 	// Paused reports whether the task timeline is frozen by LiveTask.Pause. It
 	// is orthogonal to State: a paused task still reports its run progress.
 	Paused       bool                  `json:"paused,omitempty"`
@@ -31,27 +35,36 @@ type TaskSnapshot struct {
 // attached to a running task, returned by Attachment.Snapshot and listed in
 // TaskSnapshot.Branches.
 type BranchSnapshot struct {
-	ID           string                `json:"id"`
-	Name         string                `json:"name"`
-	State        BranchState           `json:"state"`
-	AnchorTaps   []string              `json:"anchorTaps,omitempty"`
-	AnchorNodes  []string              `json:"anchorNodes,omitempty"`
-	Nodes        []pipeline.NodeRef    `json:"nodes,omitempty"`
-	Taps         []TapSnapshot         `json:"taps,omitempty"`
-	Destinations []DestinationSnapshot `json:"destinations,omitempty"`
-	Spec         pipeline.Spec         `json:"spec"`
-	Stats        pipeline.GraphStats   `json:"stats"`
+	ID             string                `json:"id"`
+	Name           string                `json:"name"`
+	State          BranchState           `json:"state"`
+	FailurePolicy  BranchFailurePolicy   `json:"failurePolicy,omitempty"`
+	Err            error                 `json:"-"`
+	Error          string                `json:"error,omitempty"`
+	PendingCleanup int                   `json:"pendingCleanup,omitempty"`
+	Retired        bool                  `json:"retired,omitempty"`
+	AnchorTaps     []string              `json:"anchorTaps,omitempty"`
+	AnchorNodes    []string              `json:"anchorNodes,omitempty"`
+	Nodes          []pipeline.NodeRef    `json:"nodes,omitempty"`
+	Taps           []TapSnapshot         `json:"taps,omitempty"`
+	Destinations   []DestinationSnapshot `json:"destinations,omitempty"`
+	Spec           pipeline.Spec         `json:"spec"`
+	Stats          pipeline.GraphStats   `json:"stats"`
 }
 
 // DestinationSnapshot is an immutable point-in-time view of a planned task or
 // branch destination.
 type DestinationSnapshot struct {
+	// ID identifies the destination within its task or attachment.
+	ID        string             `json:"id,omitempty"`
 	Name      string             `json:"name"`
 	Operation plan.OperationKind `json:"operation,omitempty"`
 	Component string             `json:"component,omitempty"`
 	Format    av.FormatID        `json:"format,omitempty"`
 	Branches  []string           `json:"branches,omitempty"`
 	State     DestinationState   `json:"state"`
+	Err       error              `json:"-"`
+	Error     string             `json:"error,omitempty"`
 	// Open mirrors State == DestinationOpen.
 	Open bool `json:"open"`
 }
@@ -75,10 +88,12 @@ const (
 	TaskBuilt TaskState = "built"
 	// TaskRunning reports a task whose Run is in progress.
 	TaskRunning TaskState = "running"
-	// TaskClosed reports a task whose run completed without error or that was
-	// closed before running.
+	// TaskFinalizing reports that execution ended but Close has not completed.
+	TaskFinalizing TaskState = "finalizing"
+	// TaskClosed reports a task whose resources finished closing without error.
 	TaskClosed TaskState = "closed"
-	// TaskFailed reports a task whose run ended with a terminal error.
+	// TaskFailed reports a terminal execution or finalization error. Cleanup
+	// may still be pending; Stats.PendingCleanup reports that separately.
 	TaskFailed TaskState = "failed"
 )
 
@@ -90,19 +105,25 @@ const (
 	BranchAttached BranchState = "attached"
 	// BranchDetached reports a runtime branch that was detached from its task.
 	BranchDetached BranchState = "detached"
+	// BranchFailed retains an isolated processing failure after retirement.
+	BranchFailed BranchState = "failed"
 )
 
 // DestinationState is the lifecycle state a DestinationSnapshot reports. It is
 // also the contract external destinations are reported through: a custom
 // provider.TransactionalWriter surfaces as DestinationOpen while accepting
-// media, DestinationCommitted after a run that completed without error
-// (Commit), DestinationAborted after a failed run (Abort), and
+// media, DestinationCommitted after actual successful finalization (Commit),
+// DestinationAborted after successful abandonment (Abort), and
 // DestinationClosed when closed without a run outcome.
 type DestinationState string
 
 const (
 	// DestinationOpen reports a destination that is open and accepting media.
 	DestinationOpen DestinationState = "open"
+	// DestinationFinalizing reports an output awaiting its actual close/commit.
+	DestinationFinalizing DestinationState = "finalizing"
+	// DestinationFailed reports a failed close, commit, or abort.
+	DestinationFailed DestinationState = "failed"
 	// DestinationCommitted reports a destination finalized by a run that
 	// completed without error.
 	DestinationCommitted DestinationState = "committed"

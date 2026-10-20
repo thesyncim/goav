@@ -5,56 +5,98 @@
       {
         "name": "a.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "mix-select-a.webm",
         "kind": "stage",
-        "detail": "bind on open, type=audio"
+        "detail": "bind on open, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-decode-a.webm",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=audio"
+        "detail": "packets -\u003e frames, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-conform-a.webm",
         "kind": "stage",
-        "detail": "conform, format=s16"
+        "detail": "conform, format=s16",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "b.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "mix-select-b.webm",
         "kind": "stage",
-        "detail": "bind on open, type=audio"
+        "detail": "bind on open, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-decode-b.webm",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=audio"
+        "detail": "packets -\u003e frames, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-conform-b.webm",
         "kind": "stage",
-        "detail": "conform, format=s16"
+        "detail": "conform, format=s16",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-mix",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -108,7 +150,12 @@
         "to": "mix.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "timestamp",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "mix 2 inputs to mix.webm",
@@ -282,6 +329,24 @@
         ]
       }
     ],
+    "decisions": [
+      {
+        "code": "execution_mode",
+        "message": "direct: serial_no_parallel_ladder"
+      },
+      {
+        "code": "serial_execution",
+        "message": "serial_no_parallel_ladder; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
+      },
+      {
+        "code": "time_ordered",
+        "message": "eligible offline sources admit packets in timestamp order; a stalled ordered source holds its peers, and buffered merges finish each packet's work before admitting the next"
+      }
+    ],
     "requiredAdapters": [
       {
         "kind": "demuxer",
@@ -426,56 +491,98 @@
         {
           "name": "a.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "mix-select-a.webm",
           "kind": "stage",
-          "detail": "bind on open, type=audio"
+          "detail": "bind on open, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-decode-a.webm",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=audio"
+          "detail": "packets -\u003e frames, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-conform-a.webm",
           "kind": "stage",
-          "detail": "conform, format=s16"
+          "detail": "conform, format=s16",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "b.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "mix-select-b.webm",
           "kind": "stage",
-          "detail": "bind on open, type=audio"
+          "detail": "bind on open, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-decode-b.webm",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=audio"
+          "detail": "packets -\u003e frames, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-conform-b.webm",
           "kind": "stage",
-          "detail": "conform, format=s16"
+          "detail": "conform, format=s16",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-mix",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -529,7 +636,12 @@
           "to": "mix.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "timestamp",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

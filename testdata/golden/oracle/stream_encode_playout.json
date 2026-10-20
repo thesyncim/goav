@@ -5,26 +5,45 @@
       {
         "name": "video-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=video"
+        "detail": "custom source, domain=frame, media=video",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "playout-video-rtp",
         "kind": "stage",
-        "detail": "playout hold-late"
+        "detail": "playout hold-late",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "rtp",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -48,7 +67,12 @@
         "to": "rtp",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from video-1 through 1 stream branch(es) to rtp",
@@ -199,6 +223,18 @@
         "code": "path_latency_budget",
         "branch": "video",
         "message": "declared latency budget 0s"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_stage_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_stage_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -225,26 +261,45 @@
         {
           "name": "video-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=video"
+          "detail": "custom source, domain=frame, media=video",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-video",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "playout-video-rtp",
           "kind": "stage",
-          "detail": "playout hold-late"
+          "detail": "playout hold-late",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "rtp",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -268,7 +323,12 @@
           "to": "rtp",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

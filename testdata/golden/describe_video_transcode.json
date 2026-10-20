@@ -5,32 +5,75 @@
     {
       "name": "input.webm",
       "kind": "source",
-      "detail": "demux, protocol=file"
+      "detail": "demux, protocol=file",
+      "execution": {
+        "kind": "source"
+      }
     },
     {
       "name": "select-video",
       "kind": "stage",
-      "detail": "select, type=video"
+      "detail": "select, type=video",
+      "execution": {
+        "kind": "worker",
+        "queue": {
+          "capacity": 32,
+          "drop": "block"
+        },
+        "blocksProducer": true
+      }
     },
     {
       "name": "decode-video",
       "kind": "stage",
-      "detail": "packets -\u003e frames, type=video"
+      "detail": "packets -\u003e frames, type=video",
+      "execution": {
+        "kind": "worker",
+        "queue": {
+          "capacity": 32,
+          "drop": "block"
+        },
+        "blocksProducer": true
+      }
     },
     {
       "name": "resize-video",
       "kind": "stage",
-      "detail": "resize, 1280x720, exact"
+      "detail": "resize, 1280x720, exact",
+      "execution": {
+        "kind": "worker",
+        "queue": {
+          "capacity": 32,
+          "drop": "block"
+        },
+        "blocksProducer": true
+      }
     },
     {
       "name": "encode-video",
       "kind": "stage",
-      "detail": "frames -\u003e packets, codec=vp9"
+      "detail": "frames -\u003e packets, codec=vp9",
+      "execution": {
+        "kind": "worker",
+        "queue": {
+          "capacity": 32,
+          "drop": "block"
+        },
+        "blocksProducer": true
+      }
     },
     {
       "name": "preview.webm",
       "kind": "stage",
-      "detail": "mux, protocol=file"
+      "detail": "mux, protocol=file",
+      "execution": {
+        "kind": "worker",
+        "queue": {
+          "capacity": 32,
+          "drop": "block"
+        },
+        "blocksProducer": true
+      }
     }
   ],
   "edges": [
@@ -59,5 +102,10 @@
       "to": "preview.webm",
       "policy": "all"
     }
-  ]
+  ],
+  "execution": {
+    "admission": "arrival",
+    "mode": "buffered",
+    "fanout": "shared_producer"
+  }
 }

@@ -19,9 +19,9 @@ import (
 // the node's Handle still sees one message at a time and needs no extra locking.
 // Reposition controls (seek, segment) are the exception: sources have no queue,
 // so they are handed to each source's Control method synchronously — and once a
-// source accepted one, the stale media queued downstream of it is flushed
-// (flushSeekBacklog) so a seek repositions promptly instead of draining the
-// old position's backlog to sinks first. Rate is task-wide: it scales the
+// source can accept one, stale media in its exclusive downstream queues is
+// flushed (flushSeekBacklog) before delivering the control. Shared queues keep
+// their admitted tail so another source's media cannot be lost. Rate is task-wide: it scales the
 // task's shared timeline, which every paced consumer (clock-aware sources and
 // playout gates) sleeps on, and never targets a node.
 func (t *task) Control(ctx context.Context, ctrl control.Control) error {
@@ -96,12 +96,13 @@ func (t *task) probeSourceControl(node pipeline.NodeRef) error {
 }
 
 // flushSeekBacklog is the flush half of a reposition control: the media queued
-// downstream of a seeking source is backlog from the old position and would
-// otherwise drain to the sinks first. The graph's structural flush capability
-// (buffered runner only) empties those queues, shedding packets/frames under
-// pipeline.DropFlush and preserving queued events; a graph without the
-// capability (direct runner) buffers nothing, so there is nothing to flush and
-// seek behaves as before.
+// exclusively downstream of a seeking source is backlog from the old position
+// and would otherwise drain to the sinks first. The graph's structural flush
+// capability (buffered runner only) empties those queues, shedding packets/frames
+// under pipeline.DropFlush and preserving queued events. Shared queues and their
+// descendants retain their admitted tail: generic components do not expose media
+// provenance, so flushing them could erase another source's valid media. A graph
+// without the capability (direct runner) buffers nothing.
 //
 // The probe -> flush -> deliver ordering closes the reposition race by
 // construction:

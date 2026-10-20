@@ -29,6 +29,7 @@ type onStreamRTPReceiver struct {
 	payloads rtpav.PayloadMap
 	events   chan av.Event
 
+	pending   *runtimeRTPRecord
 	announced bool
 	sent      int
 	stop      <-chan struct{}
@@ -42,11 +43,11 @@ func (r *onStreamRTPReceiver) PayloadMap() rtpav.PayloadMap {
 	return r.payloads
 }
 
-func (r *onStreamRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+func (r *onStreamRTPReceiver) readPacket(ctx context.Context) (*rtp.Packet, error) {
 	if !r.announced {
 		r.announced = true
 		announced := r.video
-		r.events <- av.Event{Type: av.EventStreamAdded, StreamID: announced.ID, Stream: &announced}
+		r.pending = &runtimeRTPRecord{event: &av.Event{Type: av.EventStreamAdded, StreamID: announced.ID, Stream: &announced}, payloads: r.payloads}
 		return &rtp.Packet{
 			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
@@ -146,4 +147,13 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 	if got := lateVideo.Load(); int(got) != receiver.sent {
 		t.Fatalf("rule branch received %d of %d late video packets, want all", got, receiver.sent)
 	}
+}
+
+func (r *onStreamRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	if record := r.pending; record != nil {
+		r.pending = nil
+		return record.packet, record.event, record.payloads, record.err
+	}
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payloads, err
 }

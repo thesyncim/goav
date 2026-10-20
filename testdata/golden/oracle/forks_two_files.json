@@ -5,82 +5,200 @@
       {
         "name": "a.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "b.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video@a.webm",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "decode-video@a.webm",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=video"
+        "detail": "packets -\u003e frames, type=video",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "resize-video@a.webm",
         "kind": "stage",
-        "detail": "resize, 32x24, exact"
+        "detail": "resize, 32x24, exact",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "select-video@b.webm",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "decode-video@b.webm",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=video"
+        "detail": "packets -\u003e frames, type=video",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "resize-video@b.webm",
         "kind": "stage",
-        "detail": "resize, 32x24, exact"
+        "detail": "resize, 32x24, exact",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-a-vp8",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-a-vp9",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-b-vp8",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-b-vp9",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "a-vp8.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "a-vp9.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "b-vp8.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "b-vp9.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 4,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -154,7 +272,12 @@
         "to": "b-vp9.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "buffered",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 2 inputs through 4 stream branch(es) to 4 destinations",
@@ -775,8 +898,16 @@
         "message": "muxed stream output requires encoded packets"
       },
       {
+        "code": "execution_mode",
+        "message": "buffered: automatic_encode_ladder"
+      },
+      {
         "code": "buffered_execution",
-        "message": "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel"
+        "message": "the graph runs buffered: each non-source node has a serial worker and queue; full blocking queues pace shared producers and their siblings"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -1125,82 +1256,200 @@
         {
           "name": "a.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "b.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video@a.webm",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "decode-video@a.webm",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=video"
+          "detail": "packets -\u003e frames, type=video",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "resize-video@a.webm",
           "kind": "stage",
-          "detail": "resize, 32x24, exact"
+          "detail": "resize, 32x24, exact",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "select-video@b.webm",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "decode-video@b.webm",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=video"
+          "detail": "packets -\u003e frames, type=video",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "resize-video@b.webm",
           "kind": "stage",
-          "detail": "resize, 32x24, exact"
+          "detail": "resize, 32x24, exact",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-a-vp8",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-a-vp9",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-b-vp8",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-b-vp9",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp9, backend=govpx (go)",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "a-vp8.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "a-vp9.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "b-vp8.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "b-vp9.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 4,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -1274,7 +1523,12 @@
           "to": "b-vp9.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "buffered",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

@@ -218,6 +218,10 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.running = true
 	g.draining = false
 	g.runCtx = runCtx
+	g.domainParent = runCtx
+	for _, d := range g.domains {
+		d.setContext(runCtx)
+	}
 	g.pending.n.Store(0) // no worker runs yet; queues were just reopened
 	g.workers = sync.WaitGroup{}
 	for _, node := range g.nodes {
@@ -285,14 +289,20 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 // RemoveNode is Remove that also returns the node's final counters, read
 // once its queued tail was delivered (the NodeRemover capability).
 func (g *bufferedRunner) RemoveNode(ref NodeRef) (NodeStats, error) {
-	node, err := g.remove(ref)
+	return g.RemoveNodeContext(context.Background(), ref)
+}
+
+// RemoveNodeContext is the optional context-aware removal capability. Once
+// removed, a node stays graph-owned until its queued work and finalizer finish.
+func (g *bufferedRunner) RemoveNodeContext(ctx context.Context, ref NodeRef) (NodeStats, error) {
+	node, err := g.remove(ctx, ref)
 	if node == nil {
 		return NodeStats{}, err
 	}
 	return g.finalStats(&node.nodeBase), err
 }
 
-func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
+func (g *bufferedRunner) remove(ctx context.Context, ref NodeRef) (*bufferedNode, error) {
 	g.mu.Lock()
 	running := g.running
 	node, err := g.detachLocked(ref)
@@ -317,7 +327,7 @@ func (g *bufferedRunner) remove(ref NodeRef) (*bufferedNode, error) {
 	done := node.done
 	g.rebuildLocked()
 	g.mu.Unlock()
-	err = waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
+	err = waitCloseDoneContext(ctx, "remove", node.name, done, g.config.CloseWaitTimeout)
 	g.mu.Lock()
 	g.retireLocked(node)
 	g.mu.Unlock()
@@ -424,6 +434,9 @@ func (g *bufferedRunner) closeQueuesLocked() {
 func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, msg *Message) (Delivery, error) {
 	from := e.from
 	var delivery Delivery
+	if e.self.faulted() {
+		return Delivery{Shed: 1}, nil
+	}
 	if msg == nil {
 		return delivery, ErrNilMessage
 	}
@@ -441,7 +454,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, m
 		return delivery, ErrUnknownNode
 	}
 	fromNode := &snap.nodes[from]
-	if !fromNode.active || fromNode.node != e.self {
+	if !fromNode.active || fromNode.node != e.self || fromNode.node.faulted() {
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)
@@ -523,7 +536,7 @@ func countTargets(snap *snapshot[*bufferedNode], fromNode *snapshotNode[*buffere
 // on what the pass saw. park is the producer's own parking record, nil for
 // Inject.
 func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message, park *parkedProducer) (bool, error) {
-	if node.paused.Load() {
+	if node.paused.Load() || node.faulted() {
 		// Branch paused: skip this node without touching the source or siblings.
 		return false, nil
 	}
@@ -942,13 +955,17 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode) {
 			node.spaceLine.wakeOne()
 		}
 		switch {
-		case g.fail.failed.Load():
+		case g.fail.failed.Load() || node.faulted():
 			// The run failed; shed without delivering.
 		case g.staleByLatency(node, msg):
 			observeDrop(node.counters, DropStale, &g.cold)
 			g.reportStaleQoS(node, msg)
 		default:
-			g.fail.report(g.deliver(ctx, node, &msg.message))
+			handleCtx, releaseContext := node.handlerContext(ctx)
+			g.nodeError(ctx, &node.nodeBase, g.deliver(handleCtx, node, &msg.message))
+			if releaseContext != nil {
+				releaseContext()
+			}
 		}
 		node.releaseSlot(msg)
 		g.pending.done()

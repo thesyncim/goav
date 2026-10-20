@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/interleave"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -36,8 +37,9 @@ type recipeLowerer struct {
 	joinOrder []recipeir.NodeID
 	graph     compile.ComposeGraph
 	// inputs and outputs are the handles the plan's nodes index.
-	inputs  []InputSpec
-	outputs []destinationSpec
+	inputs    []InputSpec
+	outputs   []destinationSpec
+	isolation []isolationPlan
 }
 
 func (r *recipeLowerer) withRuntime(rt *Runtime) *recipeLowerer {
@@ -56,16 +58,12 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 	qualifiers := map[int]string{}
 	sourceInputs := map[pipeline.NodeRef]int{}
 	var bounds []decodeBoundsProvider
-	buffers := r.branchBuffers()
-	bufferOf := func(node compile.ComposeNode) pipeline.BufferPolicy {
-		if node.Owner >= 0 {
-			if buffer, ok := buffers[node.Owner]; ok && !buffer.IsDirect() {
-				return buffer
-			}
-		}
-		return rt.buffer
+	execution, err := r.planExecution(gp)
+	if err != nil {
+		return err
 	}
-	in := composeLowering{realtime: realtime, admission: !realtime}
+	buffers := execution.buffers
+	in := composeLowering{realtime: realtime, admission: !realtime, buffers: buffers}
 	for _, node := range r.graph.Nodes {
 		ref := pipeline.NodeRef(node.Name)
 		switch node.Kind {
@@ -76,7 +74,7 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 			if err != nil {
 				return err
 			}
-			if _, err := graph.AddSource(build.source, rt.buffer); err != nil {
+			if _, err := graph.AddSource(build.source, buffers[node.Name]); err != nil {
 				build.source.Close()
 				return err
 			}
@@ -96,7 +94,7 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 				return err
 			}
 			stage := newStreamSelectStage(node.Name, selected, node.Selector, node.Detail)
-			if err := addComposeStage(graph, stage, rt.buffer, node.Inputs); err != nil {
+			if err := addComposeStage(graph, stage, buffers[node.Name], node.Inputs); err != nil {
 				return err
 			}
 			streams[ref] = selected
@@ -120,7 +118,22 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 			if err != nil {
 				return err
 			}
-			if err := opened.install(graph, bufferOf(node), node.Inputs); err != nil {
+			switch node.Kind {
+			case compile.ComposeSink, compile.ComposeMux, compile.ComposeRemuxSink, compile.ComposeRemuxMux:
+				tx := service.destinationTxs[len(service.destinationTxs)-1]
+				tx.node = ref
+				for _, op := range gp.work.Operations {
+					if op.Node == ref && len(op.Destinations) == 1 {
+						tx.id = op.Destinations[0]
+						for _, destination := range gp.work.Destinations {
+							if destination.ID == tx.id {
+								tx.name = destination.Name
+							}
+						}
+					}
+				}
+			}
+			if err := opened.install(graph, buffers[node.Name], node.Inputs); err != nil {
 				return err
 			}
 			streams[ref] = opened.stream
@@ -190,9 +203,9 @@ func openComposeNode(ctx context.Context, service *builder, node compile.Compose
 		if err != nil {
 			return openedNode{}, err
 		}
-		if node.Name != sink.Name() {
-			sink = namedSink{name: node.Name, sink: sink}
-		}
+		tx := &destinationTransaction{name: node.Name, node: pipeline.NodeRef(node.Name), requireSuccess: service.requireRunOK}
+		service.destinationTxs = append(service.destinationTxs, tx)
+		sink = trackedDestinationSink{namedSink: namedSink{name: node.Name, sink: sink}, transaction: tx}
 		return openedNode{sink: sink, owned: opened}, nil
 	default:
 		destination := dests[node.Output]
@@ -248,8 +261,31 @@ func (r *recipeLowerer) branchBuffers() map[int]pipeline.BufferPolicy {
 	return out
 }
 
+// executionBuffers is shared by lowering and inspection. Selects and join
+// machinery use the graph queue; branch operations and destinations may
+// override it with their declared buffer.
+func (r *recipeLowerer) executionBuffers(fallback pipeline.BufferPolicy) map[string]pipeline.BufferPolicy {
+	declared := r.branchBuffers()
+	out := make(map[string]pipeline.BufferPolicy, len(r.graph.Nodes))
+	for _, node := range r.graph.Nodes {
+		policy := fallback
+		switch node.Kind {
+		case compile.ComposeDecode, compile.ComposeStep, compile.ComposeEncode, compile.ComposeSink, compile.ComposeRemuxSink, compile.ComposeMux, compile.ComposeRemuxMux:
+			if buffer, ok := declared[node.Owner]; node.Owner >= 0 && ok && !buffer.IsDirect() {
+				policy = buffer
+			}
+		}
+		if node.Kind == compile.ComposeJoin {
+			policy = joinNodeBuffer(node.Join, policy)
+		}
+		out[node.Name] = policy
+	}
+	return out
+}
+
 // composeLowering is what building join nodes needs beyond the plan.
 type composeLowering struct {
+	buffers  map[string]pipeline.BufferPolicy
 	realtime bool
 	// admission enables per-arm backpressure on join stages.
 	admission     bool
@@ -281,22 +317,40 @@ func connectComposeInputs(graph pipeline.Graph, inputs []pipeline.NodeRef, to pi
 // realtime graph decodes or encodes, when a join needs concurrent arms or a
 // control-plane queue, when a branch declared a queue, or when a fanout of
 // goav-owned encode work can run its branches in parallel.
+type graphExecutionPlan struct {
+	config    pipeline.GraphConfig
+	buffers   map[string]pipeline.BufferPolicy
+	reason    string
+	admission string
+}
+
 func (r *recipeLowerer) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
+	plan, err := r.planExecution(gp)
+	return plan.config, err
+}
+
+// planExecution is the single selection of runner, queues, and rationale used
+// by Describe, Explain and lowering. It does not change execution defaults.
+func (r *recipeLowerer) planExecution(gp graphPlan) (graphExecutionPlan, error) {
 	rt := r.runtime
 	if rt == nil {
-		return pipeline.GraphConfig{}, publicError(compile.RecipeGraphUnsupportedRecipeError("configure graph", r.recipe))
+		return graphExecutionPlan{}, publicError(compile.RecipeGraphUnsupportedRecipeError("configure graph", r.recipe))
 	}
 	buffer := rt.buffer
+	reason := "runtime_buffer"
 	if buffer.IsDirect() {
+		reason = r.serialExecutionReason()
 		for _, id := range r.joinOrder {
 			if pinned := r.joins[id].TreeGraphBuffer(rt.realtime); pinned != nil {
 				buffer = *pinned
+				reason = "join_requires_workers"
 				break
 			}
 		}
 	}
 	if buffer.IsDirect() && rt.realtime && r.realtimeCodecWork() {
 		buffer = realtimeRecipeBufferPolicy(buffer)
+		reason = "realtime_codec_workers"
 	}
 	declared := false
 	for i := range r.recipe.Streams {
@@ -304,14 +358,40 @@ func (r *recipeLowerer) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) 
 	}
 	if buffer.IsDirect() && (declared || r.runsParallel()) {
 		buffer = pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}
+		reason = "automatic_encode_ladder"
+		if declared {
+			reason = "declared_branch_buffer"
+		}
 	}
-	return pipeline.GraphConfig{
+	config := pipeline.GraphConfig{
 		Name:             firstNonEmpty(gp.name, "goav"),
 		Realtime:         rt.realtime,
 		Buffer:           buffer,
 		EventCapacity:    rt.eventCapacity,
 		CloseWaitTimeout: rt.closeWaitTimeout,
-	}, nil
+	}
+	return graphExecutionPlan{config: config, buffers: r.executionBuffers(buffer), reason: reason, admission: r.executionAdmission(config)}, nil
+}
+
+func (r *recipeLowerer) serialExecutionReason() string {
+	for _, node := range r.graph.Nodes {
+		switch node.Kind {
+		case compile.ComposeStep:
+			if node.Transform.Stage != nil {
+				return "custom_stage_requires_explicit_buffer"
+			}
+		case compile.ComposeSink:
+			return "custom_sink_requires_explicit_buffer"
+		case compile.ComposeMux:
+			if r.outputs[node.Output].custom != nil {
+				return "custom_destination_requires_explicit_buffer"
+			}
+			if len(node.Inputs) != 1 {
+				return "shared_destination_preserves_order"
+			}
+		}
+	}
+	return "serial_no_parallel_ladder"
 }
 
 // realtimeCodecWork reports a graph that decodes or encodes, so a realtime
@@ -366,4 +446,50 @@ func (r *recipeLowerer) streamOfNode(node compile.ComposeNode) int {
 		return r.recipe.Streams[node.Owner].Input
 	}
 	return -1
+}
+
+func (r *recipeLowerer) executionAdmission(config pipeline.GraphConfig) string {
+	p := interleave.Ordering{Realtime: config.Realtime, Buffered: !config.Buffer.IsDirect()}
+	unknown := 0
+	for _, n := range r.graph.Nodes {
+		if n.Kind == compile.ComposeSource {
+			p.Sources++
+			input := r.inputs[n.Input]
+			switch {
+			case len(input.wraps) > 0 || input.provider != nil || input.bytes != nil:
+				unknown++
+			case input.source == nil && !input.realtime && !input.input.Realtime:
+				p.TimedSources++
+			}
+		}
+		if len(n.Inputs) > 1 {
+			p.Merges = true
+		}
+		var stage pipeline.Stage
+		if n.Kind == compile.ComposeJoin {
+			if n.Join.Tree.Custom != nil {
+				stage = n.Join.Tree.Custom.Stage
+			} else if n.Join.Tree.Kind == compile.JoinMix || n.Join.Tree.Kind == compile.JoinComposite {
+				p.Converging = true
+			}
+		}
+		if n.Kind == compile.ComposeStep && n.Transform.Stage != nil && n.Transform.Stage.Name() == n.Name {
+			stage = n.Transform.Stage
+		}
+		if _, ok := stage.(pipeline.Admitter); ok {
+			p.Converging = true
+			if _, gate := stage.(interleave.Gate); !gate {
+				p.BlockingAdmitter = true
+			}
+		}
+	}
+	enabled := p.Enabled()
+	p.TimedSources += unknown
+	if p.Enabled() != enabled {
+		return "runtime"
+	}
+	if enabled {
+		return "timestamp"
+	}
+	return "arrival"
 }

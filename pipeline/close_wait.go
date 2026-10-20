@@ -46,10 +46,6 @@ func normalizeCloseWaitTimeout(timeout time.Duration) time.Duration {
 	return timeout
 }
 
-func waitCloseDone(operation string, node string, done <-chan struct{}, timeout time.Duration) error {
-	return waitCloseDoneContext(context.Background(), operation, node, done, timeout)
-}
-
 func waitCloseDoneContext(ctx context.Context, operation string, node string, done <-chan struct{}, timeout time.Duration) error {
 	if done == nil {
 		return nil

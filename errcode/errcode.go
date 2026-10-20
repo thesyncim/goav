@@ -102,6 +102,7 @@ func FamilyForCode(code Code) Family {
 		return FamilyDestination
 	case
 		Code("branch_decode_duplicate"),
+		Code("branch_isolation_unsafe"),
 		Code("branch_decode_domain_mismatch"),
 		Code("branch_transform_media_mismatch"),
 

@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -34,9 +35,7 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	report.Destinations = explainDestinations(resolved.recipe.Destinations, resolved.outputFormats, work.Destinations)
 	report.Decisions = explainDecisions(work.Decisions)
 	report.Decisions = append(report.Decisions, explainStreamRuleFacts(resolved.recipe.StreamRules)...)
-	if decision, ok := explainExecutionDecision(resolved); ok {
-		report.Decisions = append(report.Decisions, decision)
-	}
+	report.Decisions = append(report.Decisions, explainExecutionDecisions(resolved)...)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, compile.MuxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
@@ -965,19 +964,57 @@ func explainSummary(recipeName string, report plan.Report) string {
 // work. Buffered execution gives every node its own worker and queue, so
 // branches and join arms run in parallel. Describe's graph shape is the same
 // either way, so Explain says which one the build will run.
-func explainExecutionDecision(resolved recipeResolved) (plan.Decision, bool) {
+func explainExecutionDecisions(resolved recipeResolved) []plan.Decision {
 	gp := resolved.graphPlan
-	if gp.lowerer == nil || gp.runtime == nil || !gp.runtime.buffer.IsDirect() {
-		return plan.Decision{}, false
+	if gp.lowerer == nil || gp.runtime == nil {
+		return nil
 	}
-	config, err := gp.lowerer.graphConfig(gp)
-	if err != nil || config.Buffer.IsDirect() {
-		return plan.Decision{}, false
+	execution, err := gp.lowerer.planExecution(gp)
+	if err != nil {
+		return nil
 	}
-	return plan.Decision{
-		Code:    compile.DiagnosticBufferedExecution,
-		Message: "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel",
-	}, true
+	mode := "buffered"
+	if execution.config.Buffer.IsDirect() {
+		mode = "direct"
+	}
+	decisions := []plan.Decision{{Code: "execution_mode", Message: mode + ": " + execution.reason}}
+	if mode == "direct" {
+		decisions = append(decisions, plan.Decision{Code: "serial_execution", Message: execution.reason + "; handlers execute inline and pace their shared producer"})
+	} else if gp.runtime.buffer.IsDirect() {
+		decisions = append(decisions, plan.Decision{Code: compile.DiagnosticBufferedExecution, Message: "the graph runs buffered: each non-source node has a serial worker and queue; full blocking queues pace shared producers and their siblings"})
+	}
+	if mode == "direct" || execution.config.Buffer.Drop == pipeline.DropBlock {
+		decisions = append(decisions, plan.Decision{Code: "branch_coupling", Message: "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"})
+	} else {
+		for _, policy := range execution.buffers {
+			if policy.Drop == pipeline.DropBlock {
+				decisions = append(decisions, plan.Decision{Code: "branch_coupling", Message: "a declared blocking queue stops its shared producer when full, delaying siblings"})
+				break
+			}
+		}
+	}
+	switch execution.admission {
+	case "timestamp":
+		decisions = append(decisions, plan.Decision{Code: "time_ordered", Message: "eligible offline sources admit packets in timestamp order; a stalled ordered source holds its peers, and buffered merges finish each packet's work before admitting the next"})
+	case "runtime":
+		decisions = append(decisions, plan.Decision{Code: "time_order_runtime", Message: "timestamp admission depends on opened provider or decorator capabilities; inspect the built task Spec for the resolved admission mode"})
+	}
+
+	if len(gp.lowerer.isolation) > 0 {
+		for _, boundary := range gp.lowerer.isolation {
+			decisions = append(decisions, plan.Decision{Code: "isolated_branch", Branch: boundary.name, Message: "returned handler errors retire this exclusive suffix; shared upstream errors still fail the task"})
+		}
+		covered := map[string]bool{}
+		for _, boundary := range gp.lowerer.isolation {
+			for _, id := range boundary.destinations {
+				covered[id] = true
+			}
+		}
+		if len(covered) == len(gp.work.Destinations) {
+			decisions = append(decisions, plan.Decision{Code: "all_outputs_isolated", Message: "all outputs isolate handler errors; Run can succeed even when every output failed; inspect branch snapshots"})
+		}
+	}
+	return decisions
 }
 
 func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {

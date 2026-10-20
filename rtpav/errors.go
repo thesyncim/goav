@@ -4,6 +4,19 @@ import "errors"
 
 // RTP sentinels, matched with errors.Is.
 var (
+	// ErrOrderedConfigurationRequired refuses a configuration change on an
+	// explicitly static legacy reader; event channels cannot prove ordering.
+	ErrOrderedConfigurationRequired = errors.New("rtpav: ordered configuration read required")
+	// ErrInvalidConfiguration reports a missing map or an unannounced change.
+	ErrInvalidConfiguration = errors.New("rtpav: invalid ordered configuration")
+	// ErrEpochRegression reports a stream's read map moving backwards.
+	ErrEpochRegression = errors.New("rtpav: configuration epoch regressed")
+	// ErrAmbiguousStream reports packet configuration without enough stream
+	// identity to choose among equal codecs on different tracks.
+	ErrAmbiguousStream = errors.New("rtpav: ambiguous RTP stream")
+	// ErrJitterStreamConflict refuses interleaved streams through one jitter
+	// window. Configure a separate receive Source and jitter buffer per track.
+	ErrJitterStreamConflict = errors.New("rtpav: jitter buffer requires one stream")
 	// ErrInvalidJitterCapacity reports a jitter ring sized <= 0.
 	ErrInvalidJitterCapacity = errors.New("rtpav: invalid jitter capacity")
 	// ErrClosed reports a read on a closed source or reader.

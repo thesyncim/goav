@@ -136,6 +136,10 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 		resolved.streamRules = g.handles(rt).streamRules(result.StreamRules)
 	}
 	if result.Lowered {
+		isolation, err := g.isolationPlans(result)
+		if err != nil {
+			return recipeResolved{}, err
+		}
 		resolved.graphPlan = newGraphPlan(rt, result.Spec, result.Work, &recipeLowerer{
 			runtime:   rt,
 			recipe:    result.Recipe,
@@ -144,6 +148,7 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 			graph:     result.Graph,
 			inputs:    resolved.inputAttachments,
 			outputs:   resolved.outputAttachments,
+			isolation: isolation,
 		})
 	}
 	return resolved, nil

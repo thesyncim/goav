@@ -5,9 +5,9 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
-	github.com/thesyncim/goav v0.0.0-20261020160912-710e3246b213
-	github.com/thesyncim/goav/player v0.0.0-20261020160912-710e3246b213
-	github.com/thesyncim/goav/webrtcav v0.0.0-20261020160912-710e3246b213
+	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
+	github.com/thesyncim/goav/player v0.0.0-20261020183009-ea6589a0aecc
+	github.com/thesyncim/goav/webrtcav v0.0.0-20261020183009-ea6589a0aecc
 )
 
 require (
@@ -34,7 +34,7 @@ require (
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/pion/turn/v5 v5.1.2 // indirect
 	github.com/pion/webrtc/v4 v4.2.24 // indirect
-	github.com/thesyncim/goav/rtpav v0.0.0-20261020160912-710e3246b213 // indirect
+	github.com/thesyncim/goav/rtpav v0.0.0-20261020183009-ea6589a0aecc // indirect
 	github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
 	github.com/thesyncim/gopus v0.2.3-0.20261017175526-c210548e8a92 // indirect
