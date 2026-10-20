@@ -10,13 +10,16 @@ revision="${1:?usage: check-consumers.sh PUBLISHED_COMMIT_OR_VERSION}"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 export GOWORK=off GOFLAGS=-mod=mod CGO_ENABLED=0
-for module in player cmd/goav; do
+for module in player cmd/goav webrtcav; do
   dir="$scratch/${module//\//-}"
   mkdir -p "$dir"
   cd "$dir"
   go mod init consumer
   go get "github.com/thesyncim/goav/${module}@${revision}"
   cp "$root/scripts/consumer/testdata/regression_test.go" .
+  if [ "$module" = webrtcav ]; then
+    cp "$root/scripts/consumer/testdata/rtp/record_test.go" .
+  fi
   go test -count=1 -timeout=2m -v .
   go list -m all
   if [ "$module" = player ]; then
@@ -31,7 +34,7 @@ for module in player cmd/goav; do
       fi
       GOOS=linux GOARCH="$arch" go build .
     done
-  else
+  elif [ "$module" = cmd/goav ]; then
     gomod="$(go list -m -f '{{.GoMod}}' github.com/thesyncim/goav/cmd/goav)"
     if grep -q '^replace' "$gomod"; then
       echo "cmd/goav still has replace directives and cannot be installed at a version" >&2

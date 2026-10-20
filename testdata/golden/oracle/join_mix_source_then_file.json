@@ -5,35 +5,61 @@
       {
         "name": "mic44",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "a.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "mix-select-a.webm",
         "kind": "stage",
-        "detail": "bind on open, type=audio"
+        "detail": "bind on open, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-decode-a.webm",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=audio"
+        "detail": "packets -\u003e frames, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix-conform-a.webm",
         "kind": "stage",
-        "detail": "conform, rate=44100, channels=1, format=s16"
+        "detail": "conform, rate=44100, channels=1, format=s16",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mixed",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -67,7 +93,12 @@
         "to": "mixed",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "mix 2 inputs to mixed",
@@ -214,6 +245,20 @@
         ]
       }
     ],
+    "decisions": [
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_sink_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_sink_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
+      }
+    ],
     "requiredAdapters": [
       {
         "kind": "demuxer",
@@ -272,35 +317,61 @@
         {
           "name": "mic44",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "a.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "mix-select-a.webm",
           "kind": "stage",
-          "detail": "bind on open, type=audio"
+          "detail": "bind on open, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-decode-a.webm",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=audio"
+          "detail": "packets -\u003e frames, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix-conform-a.webm",
           "kind": "stage",
-          "detail": "conform, rate=44100, channels=1, format=s16"
+          "detail": "conform, rate=44100, channels=1, format=s16",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mixed",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -334,7 +405,12 @@
           "to": "mixed",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

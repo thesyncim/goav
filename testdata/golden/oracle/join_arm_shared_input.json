@@ -5,29 +5,51 @@
       {
         "name": "audio-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-audio@audio-1",
         "kind": "stage",
-        "detail": "select, type=audio"
+        "detail": "select, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "audio-2",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "mix",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mixed",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "dry",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -56,7 +78,12 @@
         "to": "mixed",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 2 inputs through 1 stream branch(es) to 2 destinations",
@@ -241,6 +268,18 @@
         "code": "frame_source",
         "branch": "audio",
         "message": "source already produces decoded frames"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_sink_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_sink_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "graph": {
@@ -249,29 +288,51 @@
         {
           "name": "audio-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-audio@audio-1",
           "kind": "stage",
-          "detail": "select, type=audio"
+          "detail": "select, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "audio-2",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "mix",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mixed",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "dry",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -300,7 +361,12 @@
           "to": "mixed",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

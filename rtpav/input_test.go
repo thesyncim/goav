@@ -16,6 +16,7 @@ import (
 // inputTestReceiver ports the goav root runtime RTP test receiver: configured
 // streams, a static payload map, scripted packets, and an event channel.
 type inputTestReceiver struct {
+	records []orderedRecord
 	streams []av.Stream
 	payload PayloadMap
 	packets []*rtp.Packet
@@ -34,7 +35,7 @@ func (r *inputTestReceiver) PayloadMap() PayloadMap {
 	return r.payload
 }
 
-func (r *inputTestReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
+func (r *inputTestReceiver) readPacket(context.Context) (*rtp.Packet, error) {
 	if r.index >= len(r.packets) {
 		return nil, io.EOF
 	}
@@ -120,7 +121,7 @@ func TestReceiveOpenSourceFeedsPipeline(t *testing.T) {
 		PayloadType: 111, Timestamp: 960,
 		Payload: []byte{1, 2, 3},
 	})
-	receiver.events <- av.Event{Type: av.EventPacketLoss, StreamID: stream.ID}
+	receiver.records = append(receiver.records, orderedRecord{event: &av.Event{Type: av.EventPacketLoss, StreamID: stream.ID}, payloads: receiver.payload})
 
 	input := Receive(receiver,
 		WithName("remote-audio"),
@@ -397,4 +398,14 @@ func TestReceiveDecodeBoundsPerStream(t *testing.T) {
 	if got := unbounded.DecodeBounds("video"); got != (codec.DecodeBounds{}) {
 		t.Fatalf("unconfigured bounds = %+v, want zero", got)
 	}
+}
+
+func (r *inputTestReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, PayloadMap, error) {
+	if len(r.records) > 0 {
+		record := r.records[0]
+		r.records = r.records[1:]
+		return record.packet, record.event, record.payloads, record.err
+	}
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payload, err
 }

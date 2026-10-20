@@ -39,8 +39,9 @@ type recipeGraph struct {
 }
 
 type graphOutput struct {
-	from  recipeir.NodeID
-	dests []recipeir.NodeID
+	from    recipeir.NodeID
+	dests   []recipeir.NodeID
+	failure BranchFailurePolicy
 }
 
 // compileGraph compiles Outputs into one recipe DAG. Construction errors on
@@ -56,6 +57,9 @@ func compileGraph(outs []Output) (*recipeGraph, error) {
 	}
 	for i := range outs {
 		out := outs[i]
+		if out.failure != "" && out.failure != FailTask && out.failure != IsolateBranch {
+			return nil, unsafeIsolationError("unknown failure policy", nil)
+		}
 		if len(out.dests) == 0 {
 			return nil, publicError(compile.StreamInvalidError("", "an Output needs a destination: stream.To(goav.Write(name, writer)) or .To(goav.Sink(sink))"))
 		}
@@ -69,7 +73,7 @@ func compileGraph(outs []Output) (*recipeGraph, error) {
 			}
 			from = id
 		}
-		output := graphOutput{from: from}
+		output := graphOutput{from: from, failure: out.failure}
 		for _, dest := range out.dests {
 			node := g.destination(dest)
 			g.graph.Nodes[node].Parents = append(g.graph.Nodes[node].Parents, from)

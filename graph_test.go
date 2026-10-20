@@ -2831,6 +2831,7 @@ func (g *runtimeRollbackGraph) Stats() pipeline.GraphStats {
 	return pipeline.GraphStats{}
 }
 
+func (g *runtimeRollbackGraph) CleanupError() error { return nil }
 func (g *runtimeRollbackGraph) Close() error {
 	close(g.events)
 	return nil

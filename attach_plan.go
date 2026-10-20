@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/thesyncim/goav/av"
@@ -42,9 +43,11 @@ type attachPlan struct {
 	anchors map[pipeline.NodeRef]av.Stream
 	// opened are the components the planned nodes opened as, and shapes
 	// the shapes they emit, aligned with the schedule.
-	opened  []openedNode
-	shapes  map[pipeline.NodeRef]shape.Spec
-	buffers []pipeline.BufferPolicy
+	opened       []openedNode
+	shapes       map[pipeline.NodeRef]shape.Spec
+	buffers      []pipeline.BufferPolicy
+	transactions []*destinationTransaction
+	isolation    []isolationPlan
 	// taps are the taps the group installs; declared every named tap its
 	// branches declare, which later branches may anchor on.
 	taps     []TapSnapshot
@@ -60,6 +63,7 @@ type attachPlanBranch struct {
 	destinations []attachDestination
 	dests        []int
 	buffer       pipeline.BufferPolicy
+	failure      BranchFailurePolicy
 	// stream is the stream the branch delivers, known once it is checked.
 	stream av.Stream
 }
@@ -189,6 +193,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 			source:       recipe.Source,
 			anchor:       anchor,
 			destinations: branch.destinations,
+			failure:      branch.failure,
 		}
 		var dests []int
 		for _, destination := range branch.destinations {
@@ -214,6 +219,31 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 		return err
 	}
 	p.plan, p.streams, p.names = lowered, group.Streams, group.Names
+	for i, branch := range p.branches {
+		if branch.failure != IsolateBranch {
+			continue
+		}
+		terminals := map[pipeline.NodeRef]bool{}
+		boundary := isolationPlan{id: fmt.Sprintf("output-%d", i+1), name: branch.name}
+		for _, dest := range branch.dests {
+			for j, sibling := range p.branches {
+				if j != i && slices.Contains(sibling.dests, dest) {
+					return unsafeIsolationError("isolated Outputs cannot share destinations", nil)
+				}
+			}
+			boundary.destinations = append(boundary.destinations, compile.WorkDestinationID(p.names[dest]))
+			for _, node := range p.plan.Nodes {
+				if (node.Kind == compile.ComposeSink || node.Kind == compile.ComposeMux) && node.Output == dest {
+					terminals[pipeline.NodeRef(node.Name)] = true
+				}
+			}
+		}
+		boundary.nodes, err = exclusiveSuffix(p.plan.Nodes, terminals)
+		if err != nil {
+			return err
+		}
+		p.isolation = append(p.isolation, boundary)
+	}
 	return nil
 }
 
@@ -512,6 +542,7 @@ func (p *attachPlan) checkMuxes(ctx context.Context) error {
 func (p *attachPlan) open(ctx context.Context) error {
 	t := p.task
 	service := &builder{runtime: t.runtime}
+	defer func() { p.transactions = service.destinationTxs }()
 	realtime := t.runtime != nil && t.runtime.realtime
 	streams := map[pipeline.NodeRef]av.Stream{}
 	maps := func(ref pipeline.NodeRef) (av.Stream, shape.Spec) {
@@ -537,6 +568,14 @@ func (p *attachPlan) open(ctx context.Context) error {
 				return runtimeBranchTransformError(node.Transform.Name, err)
 			}
 			return err
+		}
+		switch node.Kind {
+		case compile.ComposeSink, compile.ComposeMux:
+			if len(service.destinationTxs) != 0 {
+				tx := service.destinationTxs[len(service.destinationTxs)-1]
+				tx.name, tx.node = p.names[node.Output], ref
+				tx.id = compile.WorkDestinationID(tx.name)
+			}
 		}
 		if node.Kind == compile.ComposeStep && node.Transform.Stage != nil {
 			// Attached gates pace on the running task's timeline and report
@@ -586,6 +625,14 @@ func (p *attachPlan) reserve() error {
 	}
 	graphSpec := t.graph.Spec()
 	seen := map[string]bool{}
+	// Retired domains leave the graph index before their attachment handle
+	// detaches. Keep its names reserved so that handle can never remove a
+	// replacement's nodes through a recycled display name.
+	for attachment := range t.attachments {
+		for _, node := range attachment.nodes {
+			seen[node.String()] = true
+		}
+	}
 	for _, node := range p.plan.Nodes {
 		if seen[node.Name] || specHasNode(graphSpec, node.Name) {
 			return runtimeBranchNodeDuplicateError(node.Name)
@@ -668,6 +715,7 @@ func (p *attachPlan) close() {
 // what the plan opened.
 func (p *attachPlan) apply() (*runtimeAttachment, error) {
 	t := p.task
+	attachmentID := nextRuntimeAttachmentID(p.name)
 	var nodes []pipeline.NodeRef
 	var routes []pipeline.Route
 	fail := func(err error) (*runtimeAttachment, error) {
@@ -710,6 +758,20 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 			routes = append(routes, next)
 		}
 	}
+	var work []compile.WorkDestination
+	for _, branch := range p.branches {
+		for _, destination := range branch.destinations {
+			work = append(work, compile.WorkDestination{ID: compile.WorkDestinationID(destination.recipe.Name), Name: destination.recipe.Name, Operation: attachDestinationOperationKind(destination), Component: attachDestinationComponent(destination), Format: destination.recipe.Format, Branches: []string{branch.name}})
+		}
+	}
+	isolation := append([]isolationPlan(nil), p.isolation...)
+	for i := range isolation {
+		isolation[i].id = attachmentID + "/" + isolation[i].id
+	}
+	isolated, err := t.installIsolation(isolation, p.transactions, work, nil)
+	if err != nil {
+		return fail(err)
+	}
 	// The branch is whole before anything reaches it: the edges from the
 	// running graph connect last, one route per anchor and route, so the
 	// first message the anchor sends — a switch's keyframe — finds every
@@ -721,12 +783,14 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 		routes = append(routes, ingress)
 	}
 	attachment := &runtimeAttachment{
-		id:     nextRuntimeAttachmentID(p.name),
-		name:   p.name,
-		owner:  t,
-		nodes:  nodes,
-		routes: routes,
-		taps:   p.taps,
+		id:           attachmentID,
+		name:         p.name,
+		owner:        t,
+		nodes:        nodes,
+		routes:       routes,
+		taps:         p.taps,
+		transactions: p.transactions,
+		isolated:     isolated,
 	}
 	for i := range p.branches {
 		branch := p.branches[i]
@@ -757,6 +821,14 @@ func (p *attachPlan) apply() (*runtimeAttachment, error) {
 			attachment.stages = append(attachment.stages, opened.stage)
 		}
 	}
+	for _, tx := range attachment.transactions {
+		tx.id = attachment.id + "/" + tx.id
+		t.bindDestination(tx, attachment)
+	}
+	for _, branch := range isolated {
+		branch.attachment = attachment
+	}
+	t.isolated = append(t.isolated, isolated...)
 	return attachment, nil
 }
 
@@ -795,7 +867,32 @@ func (p *attachPlan) connectOperation(node compile.ComposeNode, input pipeline.N
 // spec is the graph patch the plan describes: the nodes it adds and the
 // edges into them, as the running graph reports them once applied.
 func (p *attachPlan) spec() (pipeline.Spec, error) {
-	return refuse(p.plan.Spec(pipeline.Spec{Name: p.name, Realtime: p.task.graph.Spec().Realtime}))
+	graph := p.task.graph.Spec()
+	spec, err := refuse(p.plan.Spec(pipeline.Spec{Name: p.name, Realtime: graph.Realtime, Execution: graph.Execution}))
+	if err != nil {
+		return spec, err
+	}
+	config := pipeline.GraphConfig{}
+	if p.task.runtime != nil {
+		config.Buffer = p.task.runtime.buffer
+	}
+	if graph.Execution.Mode == "buffered" && config.Buffer.IsDirect() {
+		for _, node := range graph.Nodes {
+			if node.Execution.Kind == "worker" {
+				config.Buffer = node.Execution.Queue
+				break
+			}
+		}
+	}
+	for i := range spec.Nodes {
+		for j, node := range p.plan.Nodes {
+			if node.Name == spec.Nodes[i].Name {
+				spec.Nodes[i].Execution = pipeline.DescribeNodeExecution(spec.Nodes[i].Kind, config, p.buffers[j])
+				break
+			}
+		}
+	}
+	return spec, nil
 }
 
 func attachDestinationOperationKind(destination attachDestination) plan.OperationKind {

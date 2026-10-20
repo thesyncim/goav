@@ -89,6 +89,20 @@ Reaching for one of these is fine; they are first-class, governed features.
 The freeze only guarantees that `rt.Run(ctx, outputs...)` never forces a
 beginner through them.
 
+## Current runtime and transport migration
+
+The pre-v1 runtime contract update changes `PacketReader.ReadRTP` to four
+results and makes `pipeline.Graph.CleanupError` mandatory. Built-task Run success
+means execution ended; actual destination commit/abort/close follows finalization.
+Early Close abandons active outputs deterministically. Failure isolation is
+opt-in on the existing Output value, with FailTask remaining the default.
+
+See [Runtime contracts and migration](RUNTIME_CONTRACTS.md) for exact states,
+wrapper migration, RTP epoch scope, and source compatibility notes. Update root
+and transport module pins together. Execution metadata is additive JSON; clients
+must accept the new finalizing states and destination IDs. This change does not
+claim a new v1 freeze or comparative performance leadership.
+
 ## Module and dependency decision
 
 `goav/bundle` is a **package in the root module**, not a nested module, by

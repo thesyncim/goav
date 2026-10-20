@@ -87,8 +87,8 @@ func (r failedReader) PayloadMap() rtpav.PayloadMap {
 	return nil
 }
 
-func (r failedReader) ReadRTP(context.Context) (*rtp.Packet, error) {
-	return nil, r.err
+func (r failedReader) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	return nil, nil, nil, r.err
 }
 
 func (r failedReader) Events() <-chan av.Event {

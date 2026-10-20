@@ -365,6 +365,7 @@ type task struct {
 	branchTaps         []TapSnapshot
 	attachMu           sync.Mutex
 	attachments        map[*runtimeAttachment]struct{}
+	isolated           []*isolatedBranch
 
 	// watch fans the graph's event stream out to filtered Watch subscribers.
 	watch eventWatch
@@ -375,11 +376,15 @@ type task struct {
 
 	// lifecycleMu guards the recorded run/close progress below, which exists
 	// only so Snapshot can report typed lifecycle states.
-	lifecycleMu sync.Mutex
-	started     bool
-	finished    bool
-	runErr      error
-	closed      bool
+	lifecycleMu   sync.Mutex
+	closeGate     chan struct{}
+	started       bool
+	finished      bool
+	runErr        error
+	closeErr      error
+	closeStarted  bool
+	closeReturned bool
+	closed        bool
 }
 
 func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinationTransaction) *task {
@@ -387,12 +392,16 @@ func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinatio
 }
 
 func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []compile.WorkDestination, destinations ...*destinationTransaction) *task {
-	return &task{
+	t := &task{
 		graph:            graph,
 		runtime:          runtime,
 		destinations:     destinations,
 		rootDestinations: compile.CloneWorkDestinations(rootDestinations),
 	}
+	for _, tx := range destinations {
+		t.bindDestination(tx, nil)
+	}
+	return t
 }
 
 func (t *task) Spec() pipeline.Spec {
@@ -550,12 +559,12 @@ func (t *task) Run(ctx context.Context) error {
 	t.started = true
 	t.lifecycleMu.Unlock()
 	err := t.graph.Run(ctx)
-	t.finishDestinations(err)
 	// A task stopped by its context reports why, whether or not its sources
 	// returned the context error themselves.
 	if ctxErr := ctx.Err(); ctxErr != nil && (err == nil || errors.Is(err, ctxErr)) {
 		err = ctxErr
 	}
+	t.finishDestinations(err)
 	t.lifecycleMu.Lock()
 	t.finished = true
 	t.runErr = err
@@ -577,8 +586,16 @@ func (t *task) Snapshot() TaskSnapshot {
 	if t == nil {
 		return TaskSnapshot{}
 	}
-	state, destinationState := t.lifecycleStates()
 	stats := t.Stats()
+	cleanupErr := taskGraphCleanupError(t.graph)
+	t.lifecycleMu.Lock()
+	if t.closeReturned && stats.PendingCleanup == 0 {
+		t.closed = true
+	}
+	t.closeErr = cleanupErr
+	outcome := errors.Join(t.runErr, t.closeErr)
+	t.lifecycleMu.Unlock()
+	state, destinationState := t.lifecycleStates()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	branches := make([]BranchSnapshot, 0, len(t.attachments))
@@ -589,31 +606,46 @@ func (t *task) Snapshot() TaskSnapshot {
 		}
 		branches = append(branches, state)
 	}
+	for _, branch := range t.isolated {
+		if branch.attachment != nil {
+			if _, active := t.attachments[branch.attachment]; active || !branch.domain.Failed() {
+				continue
+			}
+		}
+		branches = append(branches, t.isolatedSnapshot(branch, stats))
+	}
 	return TaskSnapshot{
 		State:        state,
+		Err:          outcome,
+		Error:        errorText(outcome),
 		Paused:       t.timeline != nil && t.timeline.pausedNow(),
 		Spec:         t.Spec(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
 		Branches:     branches,
-		Destinations: taskSnapshotDestinations(destinationSnapshotsFromWork(t.rootDestinations, destinationState), branches),
+		Destinations: taskSnapshotDestinations(t.destinationSnapshots(t.rootDestinations, t.destinations, destinationState), branches),
 	}
 }
 
 // lifecycleStates derives the typed task state and the matching state of the
 // task's still-open destinations from the recorded run/close progress. The
-// destination outcome mirrors finishDestinations: a run that completes without
-// error commits destinations, a failed run aborts them.
+// Run only determines whether finalization may commit. Close and the individual
+// destination ledgers record what actually happened.
 func (t *task) lifecycleStates() (TaskState, DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	switch {
-	case t.finished && t.runErr != nil:
-		return TaskFailed, DestinationAborted
-	case t.finished:
-		return TaskClosed, DestinationCommitted
+	case t.started && !t.finished && !t.closeStarted:
+		return TaskRunning, DestinationOpen
+	case t.runErr != nil || t.closeErr != nil:
+		if t.closed {
+			return TaskFailed, DestinationClosed
+		}
+		return TaskFailed, DestinationFinalizing
 	case t.closed:
 		return TaskClosed, DestinationClosed
+	case t.finished || t.closeStarted:
+		return TaskFinalizing, DestinationFinalizing
 	case t.started:
 		return TaskRunning, DestinationOpen
 	default:
@@ -630,6 +662,9 @@ func taskSnapshotDestinations(root []DestinationSnapshot, branches []BranchSnaps
 	for i := range root {
 		destination := root[i]
 		key := destination.Name + "\x00" + string(destination.Operation) + "\x00" + destination.Component
+		if destination.ID != "" {
+			key = destination.ID
+		}
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -640,6 +675,9 @@ func taskSnapshotDestinations(root []DestinationSnapshot, branches []BranchSnaps
 		for j := range branches[i].Destinations {
 			destination := branches[i].Destinations[j]
 			key := destination.Name + "\x00" + string(destination.Operation) + "\x00" + destination.Component
+			if destination.ID != "" {
+				key = destination.ID
+			}
 			if _, ok := seen[key]; ok {
 				continue
 			}
@@ -718,9 +756,15 @@ func (t *task) stopAttachments(ctx context.Context) error {
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
+	t.lifecycleMu.Lock()
+	disposition := oldBranchDetach
+	if !t.finished {
+		disposition = oldBranchAbort
+	}
+	t.lifecycleMu.Unlock()
 	var first error
 	for attachment := range t.attachments {
-		input := runtimeDetachInputForRuntimeAttachment(attachment, oldBranchDetach)
+		input := runtimeDetachInputForRuntimeAttachment(attachment, disposition)
 		if err := t.stopAttachmentLocked(ctx, input); first == nil && err != nil {
 			first = err
 		}
@@ -737,37 +781,53 @@ func (t *task) CloseContext(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return errorsJoinUnique(taskGraphCleanupError(t.graph), err)
 	}
 	t.lifecycleMu.Lock()
-	t.closed = true
+	if t.closeGate == nil {
+		t.closeGate = make(chan struct{}, 1)
+	}
+	gate := t.closeGate
+	t.lifecycleMu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+	case <-ctx.Done():
+		return errorsJoinUnique(taskGraphCleanupError(t.graph), ctx.Err())
+	}
+	if err := ctx.Err(); err != nil {
+		return errorsJoinUnique(taskGraphCleanupError(t.graph), err)
+	}
+	t.lifecycleMu.Lock()
+	t.closeStarted = true
+	// Closing a still-running task abandons its outputs. A later successful
+	// Run cannot upgrade that decision after a reaper has begun finalization.
+	if !t.finished {
+		for _, tx := range t.destinations {
+			tx.Fail()
+		}
+	}
 	t.lifecycleMu.Unlock()
 	first := t.stopAttachments(ctx)
 	if contextGraph, ok := t.graph.(interface {
 		CloseContext(context.Context) error
 	}); ok {
-		return errors.Join(first, contextGraph.CloseContext(ctx))
+		first = errors.Join(first, contextGraph.CloseContext(ctx))
+	} else {
+		first = errors.Join(first, ctx.Err(), t.graph.Close())
 	}
-	if err := ctx.Err(); first == nil && err != nil {
-		first = err
-	}
-	if err := t.graph.Close(); first == nil && err != nil {
-		first = err
-	}
-	return first
+	t.lifecycleMu.Lock()
+	t.closed = t.graph.Stats().PendingCleanup == 0
+	t.closeReturned = true
+	t.closeErr = taskGraphCleanupError(t.graph)
+	outcome := errorsJoinUnique(t.closeErr, closeCallError(first, t.closeErr))
+	outcome = errorsJoinUnique(outcome, ctx.Err())
+	t.lifecycleMu.Unlock()
+	return outcome
 }
 
 func (t *task) finishDestinations(runErr error) {
 	ok := runErr == nil
-	failedDestinations := make(map[string]struct{})
-	if !ok {
-		for i := range t.destinations {
-			if t.destinations[i] == nil || !t.destinations[i].Failed() {
-				continue
-			}
-			failedDestinations[t.destinations[i].Name()] = struct{}{}
-		}
-	}
 	for i := range t.destinations {
 		if t.destinations[i] == nil {
 			continue
@@ -778,23 +838,18 @@ func (t *task) finishDestinations(runErr error) {
 			t.destinations[i].Fail()
 		}
 	}
-	for i := range t.rootDestinations {
-		kind := av.EventDestinationCommitted
-		var cause error
-		if !ok {
-			_, destinationFailed := failedDestinations[t.rootDestinations[i].Name]
-			if !destinationFailed && len(t.rootDestinations) == 1 && len(failedDestinations) != 0 {
-				destinationFailed = true
-			}
-			if destinationFailed {
-				kind = av.EventDestinationCommitError
-				cause = runErr
+	// Runtime attachments belong to the same execution outcome until detached.
+	t.attachMu.Lock()
+	for attachment := range t.attachments {
+		for _, tx := range attachment.transactions {
+			if ok {
+				tx.Succeed()
 			} else {
-				kind = av.EventDestinationAborted
+				tx.Fail()
 			}
 		}
-		t.publishDestinationLifecycleEvent(kind, t.rootDestinations[i].Name, nil, cause)
 	}
+	t.attachMu.Unlock()
 }
 
 func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination string, attachment *runtimeAttachment, cause error) {
@@ -828,9 +883,15 @@ func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination s
 type destinationTransaction struct {
 	mu             sync.Mutex
 	name           string
+	id             string
+	node           pipeline.NodeRef
+	domain         *pipeline.FaultDomain
 	requireSuccess bool
 	succeeded      bool
 	failed         bool
+	state          DestinationState
+	err            error
+	onFinalized    func(DestinationState, error)
 }
 
 func (t *destinationTransaction) Name() string {
@@ -866,7 +927,7 @@ func (t *destinationTransaction) ShouldAbort() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.failed || (t.requireSuccess && !t.succeeded)
+	return t.failed || t.domain.Failed() || (t.requireSuccess && !t.succeeded)
 }
 
 func (t *destinationTransaction) Failed() bool {
@@ -875,7 +936,7 @@ func (t *destinationTransaction) Failed() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.failed
+	return t.failed || t.domain.Failed()
 }
 
 // compileEnv is the view of the runtime the compiler reads.

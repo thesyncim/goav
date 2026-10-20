@@ -100,7 +100,8 @@ bash scripts/check-consumers.sh PUBLISHED_CANDIDATE_SHA
 It creates fresh modules with `GOWORK=off`, leaves the root version selected
 by each consumer, and exercises completed replies before EOF, blocked writes
 with deadlines, and eventual cleanup after removal timeouts, including retained finalization
-failures after the observer channel closes. It also builds
+failures after the observer channel closes. It also resolves the WebRTC consumer and checks atomic RTP decorators plus
+independent same-codec track epochs. It builds
 the documented `player + bundle` combination on Linux amd64 and arm64 and
 rejects reachability of the opt-in AAC implementation. CI runs these probes
 in addition to the workspace suite. The root release workflow runs them before

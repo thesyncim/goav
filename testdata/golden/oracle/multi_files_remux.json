@@ -5,17 +5,27 @@
       {
         "name": "a.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "b.webm",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "r.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -29,7 +39,12 @@
         "to": "r.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "timestamp",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 2 inputs to r.webm",
@@ -132,6 +147,22 @@
         "code": "packet_copy",
         "branch": "b.webm",
         "message": "packet copy requested; packets are copied to outputs"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: serial_no_parallel_ladder"
+      },
+      {
+        "code": "serial_execution",
+        "message": "serial_no_parallel_ladder; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
+      },
+      {
+        "code": "time_ordered",
+        "message": "eligible offline sources admit packets in timestamp order; a stalled ordered source holds its peers, and buffered merges finish each packet's work before admitting the next"
       }
     ],
     "requiredAdapters": [
@@ -208,17 +239,27 @@
         {
           "name": "a.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "b.webm",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "r.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -232,7 +273,12 @@
           "to": "r.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "timestamp",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

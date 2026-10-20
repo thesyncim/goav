@@ -13,13 +13,15 @@ import (
 )
 
 type fakeReceiver struct {
-	packets  []*rtp.Packet
-	payloads PayloadMap
-	events   chan av.Event
-	feedback []rtcp.Packet
-	err      error
-	index    int
-	closed   bool
+	records     []orderedRecord
+	recordIndex int
+	packets     []*rtp.Packet
+	payloads    PayloadMap
+	events      chan av.Event
+	feedback    []rtcp.Packet
+	err         error
+	index       int
+	closed      bool
 }
 
 type fakeFeedbackWriter struct {
@@ -84,7 +86,7 @@ func (r *fakeReceiver) PayloadMap() PayloadMap {
 	return r.payloads
 }
 
-func (r *fakeReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
+func (r *fakeReceiver) readPacket(context.Context) (*rtp.Packet, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -112,6 +114,7 @@ func (r *fakeReceiver) Close() error {
 
 func (r *fakeReceiver) Reset() {
 	r.index = 0
+	r.recordIndex = 0
 	r.closed = false
 	r.feedback = r.feedback[:0]
 }
@@ -238,16 +241,17 @@ func TestSourceCodecChangedReplacementUpdatesEOSStream(t *testing.T) {
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
-	events := make(chan av.Event, 1)
-	events <- av.Event{
+	var events []av.Event
+	events = append(events, av.Event{
 		Type:     av.EventCodecChanged,
 		StreamID: updated.ID,
 		Epoch:    updated.Epoch,
 		Stream:   &updated,
 		Codec:    &updated.Codec,
-	}
+	})
+	receiver := &fakeReceiver{payloads: NewStaticPayloadMap(updated.Epoch, nil)}
 	source, err := NewSource(SourceConfig{
-		Receiver: &fakeReceiver{events: events},
+		Receiver: receiver,
 		Streams:  []av.Stream{initial},
 	})
 	if err != nil {
@@ -255,6 +259,7 @@ func TestSourceCodecChangedReplacementUpdatesEOSStream(t *testing.T) {
 	}
 
 	var got []av.Event
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		if msg.Kind == pipeline.MessageEvent && msg.Event != nil {
 			got = append(got, *msg.Event)
@@ -287,14 +292,14 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 	updated := initial
 	updated.ID = "video-replaced"
 	updated.Epoch = 2
-	events := make(chan av.Event, 1)
-	events <- av.Event{
+	var events []av.Event
+	events = append(events, av.Event{
 		Type:     av.EventCodecChanged,
 		StreamID: initial.ID,
 		Epoch:    updated.Epoch,
 		Stream:   &updated,
 		Codec:    &updated.Codec,
-	}
+	})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 96,
@@ -306,7 +311,6 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: []byte{0x10, 0x00, 0xcc},
 		}},
-		events: events,
 	}
 	source, err := NewSource(SourceConfig{
 		Receiver:      receiver,
@@ -326,6 +330,7 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 
 	var packets []av.Packet
 	var eventsOut []av.Event
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
@@ -361,14 +366,14 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 	updated := initial
 	updated.Epoch = 2
 	updated.Codec = av.CodecParameters{ID: av.CodecH264, Type: av.MediaVideo, ClockRate: 90000}
-	events := make(chan av.Event, 1)
-	events <- av.Event{
+	var events []av.Event
+	events = append(events, av.Event{
 		Type:     av.EventCodecChanged,
 		StreamID: initial.ID,
 		Epoch:    updated.Epoch,
 		Stream:   &updated,
 		Codec:    &updated.Codec,
-	}
+	})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 96,
@@ -380,7 +385,6 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: []byte{0x65, 0xcc},
 		}},
-		events: events,
 	}
 	source, err := NewSource(SourceConfig{
 		Receiver: receiver,
@@ -403,6 +407,7 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 
 	var packets []av.Packet
 	var eventsOut []av.Event
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
@@ -642,8 +647,8 @@ func TestSourceRoutesFeedbackToExplicitWriter(t *testing.T) {
 }
 
 func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
-	events := make(chan av.Event, 1)
-	events <- av.Event{Type: av.EventPacketLoss, StreamID: "audio"}
+	var events []av.Event
+	events = append(events, av.Event{Type: av.EventPacketLoss, StreamID: "audio"})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
@@ -651,7 +656,6 @@ func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
 			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
-		events: events,
 	}
 	depacketizer := &eventDepacketizer{}
 	source, err := NewSource(SourceConfig{
@@ -662,6 +666,7 @@ func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(context.Context, *pipeline.Message) error {
 		return nil
 	})); err != nil {
@@ -715,14 +720,14 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 	}
 	updated := initial
 	updated.Epoch = 2
-	events := make(chan av.Event, 1)
-	events <- av.Event{
+	var events []av.Event
+	events = append(events, av.Event{
 		Type:     av.EventCodecChanged,
 		StreamID: updated.ID,
 		Epoch:    updated.Epoch,
 		Stream:   &updated,
 		Codec:    &updated.Codec,
-	}
+	})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
@@ -734,7 +739,6 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 			PayloadType: 112, Timestamp: 960,
 			Payload: []byte{9, 8, 7},
 		}},
-		events: events,
 	}
 	source, err := NewSource(SourceConfig{
 		Receiver:      receiver,
@@ -753,6 +757,7 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 	var packets []av.Packet
 	var gotEvents []av.Event
 
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
@@ -850,8 +855,8 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 	ctx := context.Background()
 	audio := av.Stream{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, ClockRate: 48000}}
 	video := av.Stream{ID: "cam", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000}}
-	events := make(chan av.Event, 1)
-	events <- av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video}
+	var events []av.Event
+	events = append(events, av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{
 			{PayloadType: 111, Parameters: audio.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000},
@@ -861,7 +866,6 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 			{PayloadType: 111, Timestamp: 960, Payload: []byte{1, 2, 3}},
 			{PayloadType: 96, Marker: true, Timestamp: 90, Payload: []byte{0x10, 0x00, 0x11, 0x22}},
 		},
-		events: events,
 	}
 	source, err := NewSource(SourceConfig{
 		Receiver:      receiver,
@@ -875,6 +879,7 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 
 	var packets []av.Packet
 	var got []av.Event
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(ctx, testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		switch msg.Kind {
 		case pipeline.MessagePacket:
@@ -910,12 +915,11 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 func TestSourceStreamRemovedDropsLateStream(t *testing.T) {
 	audio := av.Stream{ID: "audio", Epoch: 3, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}
 	video := av.Stream{ID: "cam", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
-	events := make(chan av.Event, 2)
-	events <- av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video}
-	events <- av.Event{Type: av.EventStreamRemoved, StreamID: video.ID}
+	var events []av.Event
+	events = append(events, av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video})
+	events = append(events, av.Event{Type: av.EventStreamRemoved, StreamID: video.ID})
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, nil),
-		events:   events,
 	}
 	source, err := NewSource(SourceConfig{
 		Receiver: receiver,
@@ -926,6 +930,7 @@ func TestSourceStreamRemovedDropsLateStream(t *testing.T) {
 	}
 
 	var got []av.Event
+	receiver.queueEvents(receiver.payloads, events...)
 	if err := source.Start(context.Background(), testEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		if msg.Kind == pipeline.MessageEvent {
 			got = append(got, *msg.Event)
@@ -1004,45 +1009,29 @@ func TestSourceUnwrapsRTPTimestampRollover(t *testing.T) {
 	}
 }
 
-// updateDuringReadReceiver simulates a receiver whose payload map is
-// renegotiated while ReadRTP is blocked: the update lands (map swapped,
-// CodecChanged queued) just before the read returns its packet.
-type updateDuringReadReceiver struct {
-	fakeReceiver
-	updateOnRead int
-	updated      PayloadMap
-	event        av.Event
-}
-
-func (r *updateDuringReadReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
-	if r.index == r.updateOnRead {
-		r.payloads = r.updated
-		r.events <- r.event
-	}
-	return r.fakeReceiver.ReadRTP(ctx)
-}
-
-func newUpdateDuringReadReceiver(updateOnRead int, packets ...*rtp.Packet) (*updateDuringReadReceiver, av.Stream) {
+// configurationRecordReceiver scripts atomic records. In-flight read races are
+// exercised on the real WebRTC trackReader; Source consumes their exact result.
+func newConfigurationRecordReceiver(combined bool, packets ...*rtp.Packet) (*orderedReader, av.Stream) {
 	initial := av.Stream{ID: "audio", Epoch: 1, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, ClockRate: 48000}}
 	updated := initial
 	updated.Epoch = 2
-	return &updateDuringReadReceiver{
-		fakeReceiver: fakeReceiver{
-			payloads: NewStaticPayloadMap(1, []PayloadCodec{{PayloadType: 111, Parameters: initial.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}}),
-			packets:  packets,
-			events:   make(chan av.Event, 1),
-		},
-		updateOnRead: updateOnRead,
-		updated:      NewStaticPayloadMap(2, []PayloadCodec{{PayloadType: 112, Parameters: updated.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}}),
-		event:        av.Event{Type: av.EventCodecChanged, StreamID: updated.ID, Epoch: updated.Epoch, Stream: &updated, Codec: &updated.Codec},
-	}, initial
+	before := NewStaticPayloadMap(1, []PayloadCodec{{PayloadType: 111, Parameters: initial.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}})
+	after := NewStaticPayloadMap(2, []PayloadCodec{{PayloadType: 112, Parameters: updated.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000}})
+	event := &av.Event{Type: av.EventCodecChanged, StreamID: updated.ID, Epoch: 2, Stream: &updated, Codec: &updated.Codec}
+	records := []orderedRecord{{packet: packets[0], payloads: before}}
+	if combined {
+		records = append(records, orderedRecord{packet: packets[1], event: event, payloads: after})
+	} else {
+		records = append(records, orderedRecord{event: event, payloads: after}, orderedRecord{packet: packets[1], payloads: after})
+	}
+	return &orderedReader{streams: []av.Stream{initial}, records: records}, initial
 }
 
-// A packet of the renegotiated payload type that arrives on the same read the
-// update landed during resolves through the new map and epoch.
-func TestSourcePayloadUpdateDuringBlockedRead(t *testing.T) {
+// A record carrying both a configuration event and a packet applies the event
+// before depacketizing that packet, with and without the jitter buffer.
+func TestSourceAppliesConfigurationBeforeItsRecordPacket(t *testing.T) {
 	for _, jitter := range []bool{false, true} {
-		receiver, initial := newUpdateDuringReadReceiver(1,
+		receiver, initial := newConfigurationRecordReceiver(true,
 			&rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{1}},
 			&rtp.Packet{Header: rtp.Header{PayloadType: 112, SequenceNumber: 2, Timestamp: 1920}, Payload: []byte{2}},
 		)
@@ -1068,11 +1057,10 @@ func TestSourcePayloadUpdateDuringBlockedRead(t *testing.T) {
 	}
 }
 
-// A packet of the old payload type returned by the read the update landed
-// during is older than the update: it keeps the old map and epoch, and the
-// update applies from the next packet.
-func TestSourcePayloadUpdateKeepsInFlightPacketOnOldEpoch(t *testing.T) {
-	receiver, initial := newUpdateDuringReadReceiver(0,
+// An old packet record before a new configuration record keeps its original
+// map and epoch; processing a later record cannot relabel it.
+func TestSourcePreservesPacketBeforeConfigurationRecord(t *testing.T) {
+	receiver, initial := newConfigurationRecordReceiver(false,
 		&rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{1}},
 		&rtp.Packet{Header: rtp.Header{PayloadType: 112, SequenceNumber: 2, Timestamp: 1920}, Payload: []byte{2}},
 	)
@@ -1086,5 +1074,21 @@ func TestSourcePayloadUpdateKeepsInFlightPacketOnOldEpoch(t *testing.T) {
 	}
 	if len(events) != 2 || events[0].Type != av.EventCodecChanged || events[1].Type != av.EventEndOfStream {
 		t.Fatalf("events = %+v", events)
+	}
+}
+
+func (r *fakeReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, PayloadMap, error) {
+	if r.recordIndex < len(r.records) {
+		record := r.records[r.recordIndex]
+		r.recordIndex++
+		return record.packet, record.event, record.payloads, record.err
+	}
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payloads, err
+}
+
+func (r *fakeReceiver) queueEvents(payloads PayloadMap, events ...av.Event) {
+	for _, event := range events {
+		r.records = append(r.records, orderedRecord{event: &event, payloads: payloads})
 	}
 }

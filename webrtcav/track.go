@@ -116,11 +116,12 @@ type trackReader struct {
 	deliveredConfig uint64
 }
 
-var _ rtpav.ConfiguredPacketReader = (*trackReader)(nil)
+var _ rtpav.PacketReader = (*trackReader)(nil)
 var _ rtpav.FeedbackWriter = (*trackReader)(nil)
 
 func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 	stream := streamFromRemoteTrack(remote)
+	stream = cloneReadStream(stream)
 	payloads := remote.Payloads
 	if payloads == nil {
 		payloads = rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{
@@ -128,7 +129,7 @@ func newTrackReader(remote RemoteTrack, reader trackRTPReader) *trackReader {
 		})
 	}
 	remote.Stream = stream
-	remote.Payloads = payloads
+	remote.Payloads = trackPayloadMap(stream, payloads)
 
 	return &trackReader{
 		remote:  remote,
@@ -145,18 +146,9 @@ type trackReadState struct {
 	readerGen, configGen uint64
 }
 
-func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
-	packet, _, _, err := r.readRTP(ctx, false)
-	return packet, err
-}
-
-// ReadRTPWithConfig pairs each packet with the configuration captured when its
+// ReadRTP pairs each packet with the configuration captured when its
 // read began. This is independent of the bounded observer notification channel.
-func (r *trackReader) ReadRTPWithConfig(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
-	return r.readRTP(ctx, true)
-}
-
-func (r *trackReader) readRTP(ctx context.Context, configured bool) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
@@ -174,7 +166,7 @@ func (r *trackReader) readRTP(ctx context.Context, configured bool) (*rtp.Packet
 			continue // an old packet or replacement wake-up cannot escape
 		}
 		var event *av.Event
-		if configured && (err == nil || errors.Is(err, io.EOF)) {
+		if err == nil || errors.Is(err, io.EOF) {
 			r.mu.Lock()
 			if state.configGen != r.deliveredConfig {
 				e := trackCodecChangedEvent(state.stream)
@@ -293,7 +285,9 @@ func (r *trackReader) Streams(context.Context) ([]av.Stream, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	streams := make([]av.Stream, len(r.streams))
-	copy(streams, r.streams)
+	for i, stream := range r.streams {
+		streams[i] = cloneReadStream(stream)
+	}
 	return streams, nil
 }
 
@@ -354,6 +348,10 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 		current = r.streams[0]
 	}
 	next := streamFromCodecUpdate(current, update)
+	next = cloneReadStream(next)
+	if next.Epoch <= current.Epoch {
+		return av.Stream{}, nil, ErrInvalidCodecUpdate
+	}
 	payloads := update.Payloads
 	if payloads == nil {
 		codec := update.Codec
@@ -373,6 +371,7 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 		r.readerGen++
 		r.reader = replacement
 	}
+	payloads = trackPayloadMap(next, payloads)
 	r.remote.Payloads = payloads
 	r.remote.Metadata = mergeMetadata(r.remote.Metadata, update.Metadata)
 	r.streams = []av.Stream{next}
@@ -427,6 +426,7 @@ func (r *trackReader) emitLatestLocked(event av.Event) {
 }
 
 func trackCodecChangedEvent(stream av.Stream) av.Event {
+	stream = cloneReadStream(stream)
 	return av.Event{
 		Type: av.EventCodecChanged, StreamID: stream.ID, Epoch: stream.Epoch,
 		Stream: &stream, Codec: &stream.Codec, Reason: "webrtc track codec changed",
@@ -514,7 +514,7 @@ func streamFromCodecUpdate(current av.Stream, update TrackCodecUpdate) av.Stream
 	if update.Stream.Epoch == 0 && update.Payloads != nil && update.Payloads.Epoch() != 0 {
 		next.Epoch = update.Payloads.Epoch()
 	}
-	if next.Epoch == current.Epoch {
+	if next.Epoch <= current.Epoch {
 		next.Epoch = current.Epoch + 1
 		if next.Epoch == 0 {
 			next.Epoch = 1
@@ -637,6 +637,16 @@ func payloadCodecFromWebRTC(codec webrtc.RTPCodecParameters, params av.CodecPara
 		FMTP:        codec.SDPFmtpLine,
 		Attributes:  params.Attributes,
 	}
+}
+
+// Every atomic map carries transport provenance, even when several tracks use
+// the same payload type and codec. Its epoch belongs to this track only.
+func trackPayloadMap(stream av.Stream, payloads rtpav.PayloadMap) rtpav.PayloadMap {
+	codecs := payloads.Codecs()
+	for i := range codecs {
+		codecs[i].StreamID = stream.ID
+	}
+	return rtpav.NewStaticPayloadMap(stream.Epoch, codecs)
 }
 
 func codecIDFromMIME(mimeType string) (av.CodecID, av.MediaType) {

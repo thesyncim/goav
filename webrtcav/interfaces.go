@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/rtpav"
@@ -37,13 +36,9 @@ type TrackCodecUpdate struct {
 // accepts live codec and track replacement updates, so renegotiations never
 // rebuild the pipeline.
 type TrackReader interface {
-	Streams(context.Context) ([]av.Stream, error)
-	PayloadMap() rtpav.PayloadMap
+	rtpav.PacketReader
 	UpdateCodec(context.Context, TrackCodecUpdate) error
 	UpdateTrack(context.Context, RemoteTrack) error
-	ReadRTP(context.Context) (*rtp.Packet, error)
-	Events() <-chan av.Event
-	Close() error
 }
 
 // TrackAdapter turns an accepted remote track into a TrackReader; custom

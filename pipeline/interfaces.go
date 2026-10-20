@@ -137,14 +137,14 @@ type Admitter interface {
 // messages, not bytes per message. The zero value means direct (unbuffered)
 // execution.
 type BufferPolicy struct {
-	Capacity   int
-	Drop       DropPolicy
-	MaxLatency time.Duration
+	Capacity   int           `json:"capacity,omitempty"`
+	Drop       DropPolicy    `json:"drop,omitempty"`
+	MaxLatency time.Duration `json:"maxLatency,omitempty"`
 	// MaxBytes caps the total queued payload bytes for a buffered node; admitting
 	// a message that would exceed it sheds the message (DropOverflow) instead of
 	// queuing. Zero disables byte-budget shedding (the default — no per-message
 	// byte accounting runs on the hot path).
-	MaxBytes int64
+	MaxBytes int64 `json:"maxBytes,omitempty"`
 }
 
 // IsDirect reports whether the policy means unbuffered execution: no
@@ -277,6 +277,9 @@ type Graph interface {
 	Events() <-chan av.Event
 	Stats() GraphStats
 	Close() error
+	// CleanupError retains actual resource finalization failures, including
+	// deferred cleanup. It excludes caller cancellation and wait timeouts.
+	CleanupError() error
 }
 
 // GraphStats is a point-in-time counter snapshot for the whole graph, with

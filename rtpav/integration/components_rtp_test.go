@@ -162,7 +162,7 @@ func (r *componentRTPReader) PayloadMap() rtpav.PayloadMap {
 	return r.payloads
 }
 
-func (r *componentRTPReader) ReadRTP(context.Context) (*rtp.Packet, error) {
+func (r *componentRTPReader) readPacket(context.Context) (*rtp.Packet, error) {
 	if r.reads >= len(r.packets) {
 		return nil, io.EOF
 	}
@@ -261,4 +261,9 @@ func componentCELTPacket() []byte {
 		data[i] = byte(i * 7)
 	}
 	return data
+}
+
+func (r *componentRTPReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payloads, err
 }

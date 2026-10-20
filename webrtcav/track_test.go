@@ -425,7 +425,7 @@ func TestTrackReaderReadRTPAndClose(t *testing.T) {
 		packets: []*rtp.Packet{packet},
 	})
 
-	got, err := reader.ReadRTP(context.Background())
+	got, _, _, err := reader.ReadRTP(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestTrackReaderReadRTPAndClose(t *testing.T) {
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.ReadRTP(context.Background()); !errors.Is(err, ErrClosed) {
+	if _, _, _, err := reader.ReadRTP(context.Background()); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)
 	}
 }
@@ -512,7 +512,7 @@ func TestTrackReaderRoutesSourceFeedback(t *testing.T) {
 func TestTrackReaderEOFEmitsEndOfStream(t *testing.T) {
 	reader := newTrackReader(RemoteTrack{Stream: av.Stream{ID: "audio", Epoch: 4}}, &fakeTrackRTPReader{})
 
-	_, err := reader.ReadRTP(context.Background())
+	_, _, _, err := reader.ReadRTP(context.Background())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want io.EOF", err)
 	}
@@ -532,7 +532,7 @@ func TestTrackReaderContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := reader.ReadRTP(ctx); !errors.Is(err, context.Canceled) {
+	if _, _, _, err := reader.ReadRTP(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
@@ -619,7 +619,7 @@ func waitRead(t *testing.T, reader *blockingTrackRTPReader) {
 func readAsync(reader TrackReader, ctx context.Context) <-chan error {
 	done := make(chan error, 1)
 	go func() {
-		_, err := reader.ReadRTP(ctx)
+		_, _, _, err := reader.ReadRTP(ctx)
 		done <- err
 	}()
 	return done

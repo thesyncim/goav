@@ -1,9 +1,9 @@
 # Flow control
 
 Flow control answers one question: when a live branch cannot keep up, who pays
-the cost? In goav the answer is branch-local by default. A slow preview branch
-should not stall a record branch, and an intentional drop should show up in
-stats instead of disappearing.
+the cost? Each branch chooses its queue policy. A blocking branch can pace its
+shared producer and siblings; a dropping preview can instead bound its latency.
+Intentional drops show up in stats.
 
 Branch buffers are branch-local policy (`flow` package): `Blocking`,
 `DropOldest`, `DropNewest`, `Latest`, `Unbounded`, with `BufferMaxBytes` and
@@ -20,10 +20,11 @@ What holds today (all `-race` clean, with tests):
   lock-free ring, so a blocking send cannot deadlock topology changes or
   re-emitting stages. A blocked producer parks on its own wake channel and
   is woken once the queue has both a free position and a free slot.
-- Fanout backpressure is independent: a full or slow branch sheds or paces
-  itself without stalling siblings or the source; per-branch drop counters and
-  reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
-  stats and snapshots.
+- Fanout visits targets on one producer. A full `Blocking` queue waits there,
+  delaying later siblings and the next source message. Direct handlers run
+  inline and also pace that producer. Dropping queues shed independently;
+  per-branch drop counters and reasons (`DropOldest`, `DropOverflow`, latency
+  shedding) are reported through stats and snapshots.
 - A `.Buffer(...)` holds wherever the fork declares it: a recipe fork as well
   as an Output added with runtime `Attach`
   (`TestBuildTimeBranchBufferIsHonored`). On an offline run a declared buffer
@@ -40,6 +41,14 @@ What holds today (all `-race` clean, with tests):
   a `.Do` stage, or a shared output keeps the fanout serial unless a branch
   declares `.Buffer`
   (`TestEncodeLadderRunsRungsConcurrently`, `TestParallelLadderMatchesSerialRungs`).
+- `Explain().Graph.Execution` reports the selected runner and admission mode;
+  Explain Decisions report why they were chosen.
+  Each node's `Execution` identifies a source, inline handler, or serial worker,
+  with its actual queue policy and whether it can block its producer. The same
+  fields appear in `Describe`, `task.Spec`, and `task.Snapshot().Spec`. A custom
+  stage or sink can change an offline ladder from buffered to direct execution;
+  the reason is inspectable. An explicit `.Buffer(...)` opts into worker
+  concurrency. Every node's handler remains serialized.
 - Stream-local `flow.SyncPolicy` gates can align live audio/video streams without
   changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
@@ -128,6 +137,7 @@ task.Watch(goav.WatchTypes(
     av.EventBranchDetached,
     av.EventDestinationCommitted,
     av.EventDestinationAborted,
+    av.EventDestinationClosed,
     av.EventDestinationCommitError,
 ))
 ```
@@ -138,3 +148,12 @@ destination name and runtime attachment metadata where applicable.
 
 Remaining design choice: whether the bare buffered default should also block
 rather than error on full (currently: only explicit `Blocking` blocks).
+
+## Failure isolation
+
+An Output may declare `.OnFailure(goav.IsolateBranch)`; the default is
+`goav.FailTask`. Returned handler errors retire only its validated exclusive
+suffix. This does not isolate stalls: a full blocking queue still paces its
+shared producer. Snapshots retain failed branch and destination outcomes;
+Detach joins pending retirement. See [Runtime contracts](RUNTIME_CONTRACTS.md)
+for topology refusals, finalization states, and all-outputs-isolated semantics.

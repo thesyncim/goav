@@ -5,20 +5,42 @@
       {
         "name": "audio-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "audio-2",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 32,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       },
       {
         "name": "active",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "worker",
+          "queue": {
+            "capacity": 32,
+            "drop": "block"
+          },
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -37,7 +59,12 @@
         "to": "active",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "buffered",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "select 2 inputs to active",
@@ -165,8 +192,16 @@
     ],
     "decisions": [
       {
+        "code": "execution_mode",
+        "message": "buffered: join_requires_workers"
+      },
+      {
         "code": "buffered_execution",
-        "message": "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel"
+        "message": "the graph runs buffered: each non-source node has a serial worker and queue; full blocking queues pace shared producers and their siblings"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "graph": {
@@ -175,20 +210,42 @@
         {
           "name": "audio-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "audio-2",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 32,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         },
         {
           "name": "active",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "worker",
+            "queue": {
+              "capacity": 32,
+              "drop": "block"
+            },
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -207,7 +264,12 @@
           "to": "active",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "buffered",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

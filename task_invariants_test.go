@@ -21,7 +21,9 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
+	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -240,7 +242,7 @@ func TestTaskSnapshotIsRaceSafeDuringAttachDetach(t *testing.T) {
 // TestTransactionalCommitFailureSurfacesFromTaskClose pins the Build-path
 // finalize contract: a successful run commits the transactional destination
 // on Task.Close, and a Commit failure is THAT call's return value — Run stays
-// the data-plane error, the second Close stays nil, and the writer still
+// the data-plane error, subsequent Close retains the failure, and the writer still
 // closes exactly once.
 func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 	ctx := context.Background()
@@ -259,12 +261,64 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 	if err := task.Close(); !errors.Is(err, commitErr) {
 		t.Fatalf("first Close = %v, want the commit failure %v", err, commitErr)
 	}
-	if err := task.Close(); err != nil {
-		t.Fatalf("second Close = %v, want nil", err)
+	if err := task.Close(); !errors.Is(err, commitErr) {
+		t.Fatalf("second Close = %v, want retained failure %v", err, commitErr)
+	}
+	snapshot := task.Snapshot()
+	if snapshot.State != goav.TaskFailed || !errors.Is(snapshot.Err, commitErr) {
+		t.Fatalf("final outcome = %+v", snapshot)
+	}
+	if len(snapshot.Destinations) != 1 || snapshot.Destinations[0].State != goav.DestinationFailed ||
+		!errors.Is(snapshot.Destinations[0].Err, commitErr) {
+		t.Fatalf("destination outcome = %+v", snapshot.Destinations)
 	}
 	if writer.commits != 1 || writer.aborts != 0 || writer.closes != 1 {
 		t.Fatalf("commits=%d aborts=%d closes=%d, want exactly one commit and one close",
 			writer.commits, writer.aborts, writer.closes)
+	}
+}
+
+type finalizeHeldStage struct{ entered, release chan struct{} }
+
+func (*finalizeHeldStage) Name() string { return "held" }
+func (s *finalizeHeldStage) Handle(context.Context, *pipeline.Message, pipeline.Emitter) error {
+	close(s.entered)
+	<-s.release
+	return nil
+}
+func (*finalizeHeldStage) Close() error { return nil }
+
+func TestCloseBeforeRunCompletionIrrevocablyAbortsTransaction(t *testing.T) {
+	writer := &transactionalTestWriter{}
+	held := &finalizeHeldStage{entered: make(chan struct{}), release: make(chan struct{})}
+	input := goav.Source("packet", shape.Packet(av.MediaAudio, av.CodecOpus), func(_ context.Context, push goav.SourcePush) error {
+		_, err := push.Packet(&av.Packet{Payload: av.Buffer{Bytes: []byte{0xf8, 0xff, 0xfe}}})
+		return err
+	})
+	task, err := goavtest.Runtime(runconfig.WithCloseWaitTimeout(time.Millisecond)).Build(t.Context(), input.Audio().Do(held).To(transactionalWriterDestination(writer)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- task.Run(t.Context()) }()
+	<-held.entered
+	if err := task.Close(); !errors.Is(err, pipeline.ErrCloseWait) {
+		t.Fatalf("first Close=%v", err)
+	}
+	close(held.release)
+	if err := <-done; err != nil {
+		t.Fatalf("Run=%v", err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatalf("later Close=%v", err)
+	}
+	if writer.commits != 0 || writer.aborts != 1 || writer.closes != 1 {
+		t.Fatalf("commits=%d aborts=%d closes=%d", writer.commits, writer.aborts, writer.closes)
+	}
+	for _, destination := range task.Snapshot().Destinations {
+		if destination.State != goav.DestinationAborted {
+			t.Fatalf("late Run upgraded outcome: %+v", destination)
+		}
 	}
 }
 

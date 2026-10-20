@@ -5,21 +5,36 @@
       {
         "name": "vp8-1",
         "kind": "source",
-        "detail": "custom source, domain=packet, media=video, codec=vp8"
+        "detail": "custom source, domain=packet, media=video, codec=vp8",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "decode-video",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=video"
+        "detail": "packets -\u003e frames, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "frames",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -38,7 +53,12 @@
         "to": "frames",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from vp8-1 through 1 stream branch(es) to frames",
@@ -147,6 +167,18 @@
         "code": "decode_required",
         "branch": "video",
         "message": "operation specs require decoded frames"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_sink_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_sink_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -173,21 +205,36 @@
         {
           "name": "vp8-1",
           "kind": "source",
-          "detail": "custom source, domain=packet, media=video, codec=vp8"
+          "detail": "custom source, domain=packet, media=video, codec=vp8",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "decode-video",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=video"
+          "detail": "packets -\u003e frames, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "frames",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -206,7 +253,12 @@
           "to": "frames",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

@@ -5,38 +5,67 @@
       {
         "name": "vp8-1",
         "kind": "source",
-        "detail": "custom source, domain=packet, media=video, codec=vp8"
+        "detail": "custom source, domain=packet, media=video, codec=vp8",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "composite-decode-vp8-1",
         "kind": "stage",
-        "detail": "packets -\u003e frames, type=video"
+        "detail": "packets -\u003e frames, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "video-2",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=video"
+        "detail": "custom source, domain=frame, media=video",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "composite",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "video-3",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=video"
+        "detail": "custom source, domain=frame, media=video",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "composite-2",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "c1",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "c2",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -75,7 +104,12 @@
         "to": "c2",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 3 inputs to 2 destinations",
@@ -322,6 +356,20 @@
         ]
       }
     ],
+    "decisions": [
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_sink_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_sink_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
+      }
+    ],
     "requiredAdapters": [
       {
         "kind": "decoder",
@@ -346,38 +394,67 @@
         {
           "name": "vp8-1",
           "kind": "source",
-          "detail": "custom source, domain=packet, media=video, codec=vp8"
+          "detail": "custom source, domain=packet, media=video, codec=vp8",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "composite-decode-vp8-1",
           "kind": "stage",
-          "detail": "packets -\u003e frames, type=video"
+          "detail": "packets -\u003e frames, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "video-2",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=video"
+          "detail": "custom source, domain=frame, media=video",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "composite",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "video-3",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=video"
+          "detail": "custom source, domain=frame, media=video",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "composite-2",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "c1",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "c2",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -416,7 +493,12 @@
           "to": "c2",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

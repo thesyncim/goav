@@ -24,12 +24,15 @@ type (
 // receiver learned out of band.
 type PayloadCodec struct {
 	PayloadType uint8
-	Parameters  av.CodecParameters
-	MIMEType    string
-	ClockRate   uint32
-	Channels    uint16
-	FMTP        string
-	Attributes  av.Metadata
+	// StreamID disambiguates equal codecs and payload types on different
+	// tracks. An atomic read's map describes the track that produced it.
+	StreamID   av.StreamID
+	Parameters av.CodecParameters
+	MIMEType   string
+	ClockRate  uint32
+	Channels   uint16
+	FMTP       string
+	Attributes av.Metadata
 }
 
 // PayloadMap resolves RTP payload types to codecs. Epoch increments when the
@@ -144,27 +147,22 @@ type FeedbackWriter interface {
 	WriteRTCP(context.Context, []rtcp.Packet) error
 }
 
-// PacketReader is the transport seam Receive adapts: it declares the streams
-// it carries, resolves payload types, and delivers RTP packets until io.EOF.
-// Events surfaces transport-side events (loss, stream changes); nil is fine.
-// A payload-map change is announced with av.EventCodecChanged; a packet the
-// previous map cannot resolve is resolved after the events queued so far.
+// PacketReader is the transport seam Receive adapts. ReadRTP atomically returns
+// a packet, an optional preceding event, and that record's immutable payload
+// map. Event-only records are legal. Configuration events travel through this
+// operation; Events is a best-effort observer stream, never the data contract.
+// A map whose entries carry StreamID belongs to that one stream, with its own
+// monotonic epoch. Untagged maps can cover several distinct codecs and use a
+// session-wide epoch; any configuration event announces its next generation.
+// A changed epoch requires a configuration event. StreamRemoved ends a tagged
+// stream's incarnation; StreamAdded can start it again at a new initial epoch.
+// A packet already in flight retains its old map. Reads are sequential. Packet
+// and event memory may be reused only after the next ReadRTP; maps stay immutable.
+// Legacy readers with a fixed configuration can use Static.
 type PacketReader interface {
 	Streams(context.Context) ([]av.Stream, error)
 	PayloadMap() PayloadMap
-	ReadRTP(context.Context) (*rtp.Packet, error)
+	ReadRTP(context.Context) (*rtp.Packet, *av.Event, PayloadMap, error)
 	Events() <-chan av.Event
 	Close() error
-}
-
-// ConfiguredPacketReader optionally binds codec changes and payload resolution
-// to a particular RTP read. Source uses this instead of ReadRTP and Events when
-// available. A non-nil event is applied before the returned packet, using the
-// returned immutable payload map. Updates before a read may be coalesced; an old
-// packet already in flight retains its old configuration. The event may also
-// accompany io.EOF. Other transport events must use this ordered handoff too.
-// Reads remain sequential, as with PacketReader.
-type ConfiguredPacketReader interface {
-	PacketReader
-	ReadRTPWithConfig(context.Context) (*rtp.Packet, *av.Event, PayloadMap, error)
 }

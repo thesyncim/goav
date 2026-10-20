@@ -40,7 +40,7 @@ var ErrWHEPDisconnected = errors.New("webrtcav: whep session disconnected")
 // go out by PATCH when the server accepts trickle, and STUN/TURN servers an
 // answer names (Link rel="ice-server") configure the session: the first to
 // name new ones is re-offered with them, later ones to that host start so.
-// The input is live, one stream per track (one track per codec), and its
+// The input is live, one stream per track, and its
 // Close DELETEs the session's resource. A dropped peer connection fails the
 // input with ErrWHEPDisconnected; a refused request is a *StatusError. WHEP
 // is an input scheme: WHIP publishes.
@@ -119,10 +119,9 @@ type whepSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	arrived  chan arrival
-	failed   chan struct{}
-	packets  chan *rtp.Packet
-	readErrs chan error
+	arrived chan arrival
+	failed  chan struct{}
+	records chan whepRecord
 	// events announces a track the answer did not declare (av.EventStreamAdded).
 	events chan av.Event
 	// declared maps the answer's sending media sections (by mid) to their
@@ -138,19 +137,27 @@ type whepSession struct {
 	failOnce  sync.Once
 }
 
+// One bounded FIFO carries every configuration record and its packet. Each
+// record retains its track-local epoch/map; aggregate epochs are not compared.
+type whepRecord struct {
+	packet   *rtp.Packet
+	event    *av.Event
+	payloads rtpav.PayloadMap
+	err      error
+}
+
 func newWHEPSession(config signalConfig, pc *webrtc.PeerConnection) *whepSession {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &whepSession{
-		config:   config,
-		pc:       pc,
-		sig:      newSignaling(ctx, "whep", config, pc),
-		ctx:      ctx,
-		cancel:   cancel,
-		arrived:  make(chan arrival, 4),
-		failed:   make(chan struct{}),
-		packets:  make(chan *rtp.Packet, 64),
-		readErrs: make(chan error, 4),
-		events:   make(chan av.Event, 4),
+		config:  config,
+		pc:      pc,
+		sig:     newSignaling(ctx, "whep", config, pc),
+		ctx:     ctx,
+		cancel:  cancel,
+		arrived: make(chan arrival, 4),
+		failed:  make(chan struct{}),
+		records: make(chan whepRecord, 64),
+		events:  make(chan av.Event, 4),
 	}
 	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		select {
@@ -223,7 +230,7 @@ func (s *whepSession) declare(answer string) {
 		stream := streamFromRemoteTrack(RemoteTrack{Codec: codec, Stream: av.Stream{ID: av.StreamID(id), Name: id}})
 		s.declared[mid] = len(s.streams)
 		s.streams = append(s.streams, stream)
-		s.payloads = append(s.payloads, rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{payloadCodecFromWebRTC(codec, stream.Codec)}))
+		s.payloads = append(s.payloads, trackPayloadMap(stream, rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{payloadCodecFromWebRTC(codec, stream.Codec)})))
 	}
 }
 
@@ -290,7 +297,7 @@ func (s *whepSession) adoptLate() {
 		case late := <-s.arrived:
 			if err := s.adopt(s.ctx, late); err != nil {
 				select {
-				case s.readErrs <- err:
+				case s.records <- whepRecord{err: err}:
 				case <-s.ctx.Done():
 				}
 				return
@@ -333,19 +340,39 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		reader.Close()
 		return ErrClosed
 	}
+	if !declared && slices.ContainsFunc(s.streams, func(stream av.Stream) bool { return stream.ID == streams[0].ID }) {
+		s.mu.Unlock()
+		reader.Close()
+		return ErrStreamExists
+	}
 	s.readers = append(s.readers, reader)
+	var added *av.Event
 	if declared {
 		s.payloads[index] = reader.PayloadMap()
 	} else {
 		s.streams = append(s.streams, streams[0])
 		s.payloads = append(s.payloads, reader.PayloadMap())
 		stream := streams[0]
+		added = &av.Event{Type: av.EventStreamAdded, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
 		select {
-		case s.events <- av.Event{Type: av.EventStreamAdded, StreamID: stream.ID, Stream: &stream}:
+		case s.events <- *cloneReadEvent(added):
 		default:
 		}
 	}
 	s.mu.Unlock()
+	return s.startTrack(reader, added)
+}
+
+// startTrack publishes a late stream before starting its packet pump. Queue
+// backpressure applies to configuration too; cancellation releases both waits.
+func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
+	if added != nil {
+		select {
+		case s.records <- whepRecord{event: cloneReadEvent(added), payloads: reader.PayloadMap()}:
+		case <-s.ctx.Done():
+			return ErrClosed
+		}
+	}
 	go s.pump(reader)
 	return nil
 }
@@ -353,17 +380,17 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 // pump moves one track's packets into the merged reader.
 func (s *whepSession) pump(reader TrackReader) {
 	for {
-		packet, err := reader.ReadRTP(s.ctx)
-		if err != nil {
-			select {
-			case s.readErrs <- err:
-			case <-s.ctx.Done():
-			}
+		packet, event, payloads, err := reader.ReadRTP(s.ctx)
+		if packet != nil {
+			packet = packet.Clone()
+		}
+		event = cloneReadEvent(event)
+		select {
+		case s.records <- whepRecord{packet: packet, event: event, payloads: payloads, err: err}:
+		case <-s.ctx.Done():
 			return
 		}
-		select {
-		case s.packets <- packet:
-		case <-s.ctx.Done():
+		if err != nil {
 			return
 		}
 	}
@@ -374,7 +401,11 @@ func (s *whepSession) pump(reader TrackReader) {
 func (s *whepSession) Streams(context.Context) ([]av.Stream, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]av.Stream(nil), s.streams...), nil
+	streams := make([]av.Stream, len(s.streams))
+	for i, stream := range s.streams {
+		streams[i] = cloneReadStream(stream)
+	}
+	return streams, nil
 }
 
 func (s *whepSession) PayloadMap() rtpav.PayloadMap {
@@ -383,25 +414,26 @@ func (s *whepSession) PayloadMap() rtpav.PayloadMap {
 	return append(mergedPayloads(nil), s.payloads...)
 }
 
-func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, error) {
+func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
 	select {
-	case packet := <-s.packets:
-		return packet, nil
-	case err := <-s.readErrs:
-		if s.isClosed() {
-			return nil, io.EOF
+	case record := <-s.records:
+		if record.err != nil {
+			if s.isClosed() {
+				record.err = io.EOF
+			} else if errors.Is(record.err, io.EOF) {
+				record.err = ErrWHEPDisconnected
+			}
 		}
-		if errors.Is(err, io.EOF) {
-			return nil, ErrWHEPDisconnected
-		}
-		return nil, err
+		return record.packet, record.event, record.payloads, record.err
 	case <-s.failed:
 		if s.isClosed() {
-			return nil, io.EOF
+			return nil, nil, nil, io.EOF
 		}
-		return nil, ErrWHEPDisconnected
+		return nil, nil, nil, ErrWHEPDisconnected
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, nil, ctx.Err()
+	case <-s.ctx.Done():
+		return nil, nil, nil, io.EOF
 	}
 }
 
@@ -442,7 +474,9 @@ func (s *whepSession) Close() error {
 	return err
 }
 
-// mergedPayloads resolves payload types across a session's tracks.
+// mergedPayloads is the session inventory. Epoch is an inventory maximum,
+// never the generation of a read. Ambiguous PT lookup is refused; each ordered
+// read carries its own track's map, including when tracks share a PT and codec.
 type mergedPayloads []rtpav.PayloadMap
 
 func (m mergedPayloads) Epoch() av.Epoch {
@@ -454,12 +488,17 @@ func (m mergedPayloads) Epoch() av.Epoch {
 }
 
 func (m mergedPayloads) Lookup(payloadType uint8) (rtpav.PayloadCodec, bool) {
+	var found rtpav.PayloadCodec
+	matched := false
 	for _, payloads := range m {
 		if codec, ok := payloads.Lookup(payloadType); ok {
-			return codec, true
+			if matched {
+				return rtpav.PayloadCodec{}, false
+			}
+			found, matched = codec, true
 		}
 	}
-	return rtpav.PayloadCodec{}, false
+	return found, matched
 }
 
 func (m mergedPayloads) Codecs() []rtpav.PayloadCodec {

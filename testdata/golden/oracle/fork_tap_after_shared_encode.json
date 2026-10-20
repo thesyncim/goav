@@ -5,25 +5,44 @@
       {
         "name": "audio-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-audio",
         "kind": "stage",
-        "detail": "select, type=audio"
+        "detail": "select, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-audio",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "a",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "b",
-        "kind": "sink"
+        "kind": "sink",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -47,7 +66,12 @@
         "to": "b",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from audio-1 through 2 stream branch(es) to 2 destinations",
@@ -316,6 +340,18 @@
         "code": "encode_required",
         "branch": "b",
         "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_sink_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_sink_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -358,25 +394,44 @@
         {
           "name": "audio-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-audio",
           "kind": "stage",
-          "detail": "select, type=audio"
+          "detail": "select, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-audio",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "a",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "b",
-          "kind": "sink"
+          "kind": "sink",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -400,7 +455,12 @@
           "to": "b",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

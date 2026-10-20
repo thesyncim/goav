@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync/atomic"
 
@@ -93,14 +94,12 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		muxer.Close()
 		return nil, err
 	}
-	if writer != nil {
-		transaction := &destinationTransaction{requireSuccess: b.requireRunOK, name: compile.MuxNodeName(output, index)}
-		b.destinationTxs = append(b.destinationTxs, transaction)
-		muxer = &destinationWriterMuxer{
-			Muxer:       muxer,
-			writer:      writer,
-			transaction: transaction,
-		}
+	transaction := &destinationTransaction{requireSuccess: b.requireRunOK, name: compile.MuxNodeName(output, index), node: pipeline.NodeRef(compile.MuxNodeName(output, index))}
+	b.destinationTxs = append(b.destinationTxs, transaction)
+	muxer = &destinationWriterMuxer{
+		Muxer:       muxer,
+		writer:      writer,
+		transaction: transaction,
 	}
 	stage, err := format.NewMuxStage(format.MuxStageConfig{
 		Name:   compile.MuxNodeName(output, index),
@@ -141,8 +140,12 @@ func (m *destinationWriterMuxer) Close() error {
 		m.MarkFailed()
 	}
 	transactionErr := error(nil)
+	state := DestinationCommitted
+	if m.failed.Load() || m.transaction.ShouldAbort() {
+		state = DestinationAborted
+	}
 	if transactional, ok := m.writer.(provider.TransactionalWriter); ok {
-		if m.failed.Load() || m.transaction.ShouldAbort() {
+		if state == DestinationAborted {
 			transactionErr = transactional.Abort(context.Background())
 		} else {
 			transactionErr = transactional.Commit(context.Background())
@@ -150,18 +153,20 @@ func (m *destinationWriterMuxer) Close() error {
 		if transactionErr != nil {
 			m.transaction.Fail()
 		}
+	} else if state == DestinationAborted {
+		// A plain writer may have retained partial bytes. No Abort took place.
+		state = DestinationClosed
 	}
-	writerErr := m.writer.Close()
+	var writerErr error
+	if m.writer != nil {
+		writerErr = m.writer.Close()
+	}
 	if writerErr != nil {
 		m.transaction.Fail()
 	}
-	if muxErr != nil {
-		return muxErr
-	}
-	if transactionErr != nil {
-		return transactionErr
-	}
-	return writerErr
+	err := errors.Join(muxErr, transactionErr, writerErr)
+	m.transaction.finalize(state, err)
+	return err
 }
 
 func closeDestinationWriterAfterFailure(writer provider.Writer) {

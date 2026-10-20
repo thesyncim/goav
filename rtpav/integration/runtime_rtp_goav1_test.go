@@ -323,6 +323,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 }
 
 type runtimeAV1SwitchReceiver struct {
+	records       []runtimeRTPRecord
 	initial       av.Stream
 	updated       av.Stream
 	eventStreamID av.StreamID
@@ -376,14 +377,18 @@ func newRuntimeAV1SwitchReceiver(initial av.Stream, updated av.Stream, packets [
 }
 
 func newRuntimeAV1SwitchReceiverWithEventStreamID(initial av.Stream, updated av.Stream, eventStreamID av.StreamID, packets []*rtp.Packet) *runtimeAV1SwitchReceiver {
-	return &runtimeAV1SwitchReceiver{
-		initial:       initial,
-		updated:       updated,
-		eventStreamID: eventStreamID,
-		payload:       runtimeAV1PayloadMap(1, 96, initial),
-		packets:       packets,
-		events:        make(chan av.Event, 1),
+	before, after := runtimeAV1PayloadMap(1, 96, initial), runtimeAV1PayloadMap(2, 97, updated)
+	r := &runtimeAV1SwitchReceiver{initial: initial, updated: updated, eventStreamID: eventStreamID, payload: before}
+	for i, packet := range packets {
+		payloads := after
+		if i == 0 {
+			payloads = before
+		} else if i == 1 {
+			r.records = append(r.records, runtimeRTPRecord{event: &av.Event{Type: av.EventCodecChanged, StreamID: eventStreamID, Epoch: updated.Epoch, Stream: &updated, Codec: &updated.Codec}, payloads: after})
+		}
+		r.records = append(r.records, runtimeRTPRecord{packet: packet, payloads: payloads})
 	}
+	return r
 }
 
 func (r *runtimeAV1SwitchReceiver) Streams(context.Context) ([]av.Stream, error) {
@@ -392,26 +397,6 @@ func (r *runtimeAV1SwitchReceiver) Streams(context.Context) ([]av.Stream, error)
 
 func (r *runtimeAV1SwitchReceiver) PayloadMap() rtpav.PayloadMap {
 	return r.payload
-}
-
-func (r *runtimeAV1SwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
-	if r.index >= len(r.packets) {
-		return nil, io.EOF
-	}
-	packet := r.packets[r.index]
-	r.index++
-	if r.index == 1 && !r.switched {
-		r.payload = runtimeAV1PayloadMap(2, 97, r.updated)
-		r.events <- av.Event{
-			Type:     av.EventCodecChanged,
-			StreamID: r.eventStreamID,
-			Epoch:    r.updated.Epoch,
-			Stream:   &r.updated,
-			Codec:    &r.updated.Codec,
-		}
-		r.switched = true
-	}
-	return packet, nil
 }
 
 func (r *runtimeAV1SwitchReceiver) Events() <-chan av.Event {
@@ -556,4 +541,13 @@ func (w *runtimeAV1BitWriter) trailingBits() []byte {
 		w.writeBits(0, 1)
 	}
 	return w.buf[:w.bit>>3]
+}
+
+func (r *runtimeAV1SwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	if r.index == len(r.records) {
+		return nil, nil, nil, io.EOF
+	}
+	record := r.records[r.index]
+	r.index++
+	return record.packet, record.event, record.payloads, record.err
 }

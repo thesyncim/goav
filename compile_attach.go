@@ -22,6 +22,7 @@ type attachBranch struct {
 	operations []recipeir.Operation
 	buffer     flow.BranchBuffer
 	dests      []destinationRef
+	failure    BranchFailurePolicy
 }
 
 // rebranchArg lets an attach branch ride the RebranchArg list
@@ -69,7 +70,9 @@ func (t *task) attachBranches(outs []Output) ([]attachBranch, error) {
 	for i, out := range g.outputs {
 		source := g.anchorSource(g.graph.Path(out.from)[0], taps)
 		for _, plan := range planned[i] {
-			branches = append(branches, handles.attachBranch(plan, source))
+			branch := handles.attachBranch(plan, source)
+			branch.failure = out.failure
+			branches = append(branches, branch)
 		}
 	}
 	return branches, nil

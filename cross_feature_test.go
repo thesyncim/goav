@@ -454,11 +454,11 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	}
 
 	snap := task.Snapshot()
-	if snap.State != TaskClosed {
-		t.Fatalf("task state = %q, want %q", snap.State, TaskClosed)
+	if snap.State != TaskFinalizing {
+		t.Fatalf("task state = %q, want %q", snap.State, TaskFinalizing)
 	}
 	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
-	if !ok || committed.State != DestinationCommitted || committed.Open {
+	if !ok || committed.State != DestinationFinalizing || committed.Open {
 		t.Fatalf("mid-window destination after run = %+v, want committed rec destination", committed)
 	}
 	if got := recorded.Load(); got != 3 {

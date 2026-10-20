@@ -492,9 +492,9 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 }
 
 // TestRebranchOldBranchDispositionReportsDestinationStates pins the drain and
-// abort dispositions: DrainBranch commits the replaced branch's
-// destinations, AbortBranch aborts them, and without a disposition the
-// detached branch reports plain closed — today's behavior.
+// abort dispositions: DrainBranch completes the replaced branch's sinks;
+// AbortBranch and plain detach close sinks without claiming transactional
+// rollback. These sinks have no Abort operation.
 func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -544,7 +544,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 		t.Fatalf("drained branch destination state = %v, want %v", got, DestinationCommitted)
 	}
 
-	// Abort: the replaced branch's destination aborts.
+	// Abort: the plain sink closes; it has no transactional Abort operation.
 	attC, err := attB.Rebranch(ctx,
 		task.Tap("pkts").As("c").To(sink("c-sink")),
 		AbortBranch(),
@@ -552,8 +552,8 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := destinationState(attB, "aborted branch b"); got != DestinationAborted {
-		t.Fatalf("aborted branch destination state = %v, want %v", got, DestinationAborted)
+	if got := destinationState(attB, "aborted branch b"); got != DestinationClosed {
+		t.Fatalf("plain sink after abort disposition = %v, want %v", got, DestinationClosed)
 	}
 
 	// Default: a plain detach keeps reporting closed.

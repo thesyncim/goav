@@ -128,8 +128,8 @@ func (emptyTrackReader) UpdateTrack(context.Context, RemoteTrack) error {
 	return nil
 }
 
-func (emptyTrackReader) ReadRTP(context.Context) (*rtp.Packet, error) {
-	return nil, ErrUnknownStream
+func (emptyTrackReader) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	return nil, nil, nil, ErrUnknownStream
 }
 
 func (emptyTrackReader) Events() <-chan av.Event {

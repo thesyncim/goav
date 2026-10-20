@@ -5,21 +5,36 @@
       {
         "name": "in.mp4",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "bsf",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "out.mkv",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -38,7 +53,12 @@
         "to": "out.mkv",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from in.mp4 through 1 stream branch(es) to out.mkv",
@@ -147,6 +167,18 @@
         "code": "packet_copy",
         "branch": "video",
         "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: custom_stage_requires_explicit_buffer"
+      },
+      {
+        "code": "serial_execution",
+        "message": "custom_stage_requires_explicit_buffer; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -210,21 +242,36 @@
         {
           "name": "in.mp4",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "bsf",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "out.mkv",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -243,7 +290,12 @@
           "to": "out.mkv",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

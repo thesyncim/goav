@@ -5,22 +5,37 @@
       {
         "name": "video-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=video"
+        "detail": "custom source, domain=frame, media=video",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "out",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -39,7 +54,12 @@
         "to": "out",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain_error": {
     "code": "destination_format_unknown",

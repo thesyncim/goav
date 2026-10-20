@@ -108,6 +108,7 @@ func (g *directRunner) awaitStopped(ctx context.Context, n *directNode, timeout 
 }
 
 func (g *directRunner) Run(ctx context.Context) error {
+	g.startFaultDomains(ctx)
 	g.mu.RLock()
 	if g.closed {
 		g.mu.RUnlock()
@@ -151,6 +152,7 @@ func (g *directRunner) Run(ctx context.Context) error {
 	// its own mutex, and that first call must not be on the message path.
 	_ = runCtx.Done()
 	g.fail.reset(cancel)
+	g.startFaultDomains(runCtx)
 	// Offline file sources interleave by time instead of racing (time_order.go);
 	// the rest run freely, as every source of a realtime graph does.
 	ordered := timeOrderedSources(g.config.Realtime, false, g.snap.Load(), sources, directSourceRun.of)
@@ -260,6 +262,9 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 
 func (g *directRunner) emitDelivery(ctx context.Context, e *directEmitter, msg *Message) (Delivery, error) {
 	var delivery Delivery
+	if e.self.faulted() {
+		return Delivery{Shed: 1}, nil
+	}
 	if msg == nil {
 		return delivery, ErrNilMessage
 	}

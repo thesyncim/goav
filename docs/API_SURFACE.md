@@ -87,7 +87,7 @@ Advanced governed vocabulary lives in the focused docs where it is needed:
 
 The live-task vocabulary is root, beside the `LiveTask` and `Attachment` that
 return and take it (governed pre-v1 with runtime `Attach`/`Detach`/`Rebranch`):
-four concepts, each sealed where it is an argument.
+the following concepts, each sealed where it is an argument.
 
 - Views: `TaskSnapshot`, `BranchSnapshot`, `DestinationSnapshot`, and
   `TapSnapshot`, with their states `TaskState`, `BranchState`, and
@@ -100,6 +100,23 @@ four concepts, each sealed where it is an argument.
 - Rebranch arguments: `RebranchArg` (replacement Outputs, a `DetachOption`, or
   `SwitchAt(boundary)` with `NextFrame()`, `NextKeyframe()`, or
   `AtMediaTime(d)` building the `SwitchBoundary`).
+
+`Output.OnFailure(BranchFailurePolicy)` adds `FailTask` (default) or
+`IsolateBranch` to the existing Output record. No new stream operation or media
+shape is produced. Both Build and Attach compute the exclusive downstream
+suffix and refuse unsafe shared egress/joins with `branch_isolation_unsafe`
+before resources open. Explain records `isolated_branch` and
+`all_outputs_isolated`; `BranchSnapshot` carries FailurePolicy, Retired,
+PendingCleanup, Err, and Error. `BranchFailed` and `BranchFailureError` retain the
+failure; `av.EventBranchFailed` is its best-effort notification. Public consumer
+probes exercise direct and buffered isolation through the same Output API.
+
+`TaskFinalizing`, `DestinationFinalizing`, stable destination IDs, and
+snapshot Err/Error fields expose real completion. `av.EventDestinationClosed`
+reports a nontransactional close without claiming Abort. No planner operation or
+shape is added; Build and Attach share outcome bookkeeping. The finalization and
+concurrent-close public probes cover this surface; see
+[Runtime contracts](RUNTIME_CONTRACTS.md).
 
 ## B. Extension Points
 
@@ -117,7 +134,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   media. `provider.Source` (`OpenSource`), `goav.Source(fn)` with
   `source.Func`/`source.Push`/`source.Result`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
-  PayloadMap extension points, plus optional ConfiguredPacketReader), `webrtcav.Track`/`Session` (TrackReader,
+  PayloadMap extension points), `webrtcav.Track`/`Session` (TrackReader,
   TrackAdapter). `goav.WrapSource(spec, wrap)` is the decoration point: every
   input kind opens through one internal source boundary into a running
   `pipeline.Source`, and wrap intercepts it there, so externals decorate
@@ -127,15 +144,16 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   caller-held value (io.Writer for `Write`, `provider.Destination` for
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
-  `rtpav.ConfiguredPacketReader.ReadRTPWithConfig` binds an immutable payload
-  map and optional configuration event to each packet read. `rtpav.Source`
-  applies that event before the packet, preserving an already-started read's
-  old generation. This optional transport capability replaces the separate
-  event-channel handoff for implementing readers; adapter wrappers must forward
-  it to preserve that guarantee. Updates before a read may coalesce to the
-  newest configuration. Build and Attach use the same source path; no grammar
-  operation, shape conversion or Explain/Describe node is added. Read errors
-  follow the existing source failure path.
+  `PacketReader.ReadRTP` is the mandatory four-result atomic packet/event/map
+  read. `StaticReader`/`Static` adapt only fixed configuration; `ReadRTPFunc`/
+  `DecorateReader` preserve atomic interception and RTCP. `PayloadCodec.StreamID`
+  distinguishes equal-codec tracks; malformed, regressing, legacy dynamic, or
+  removed-stream records return `ErrInvalidConfiguration`, `ErrEpochRegression`,
+  `ErrOrderedConfigurationRequired`, `ErrUnknownStream`, or
+  `ErrJitterStreamConflict` for multiple scopes sharing one jitter window. This adds no recipe
+  operation or shape conversion: Build and Attach use the same source seam,
+  and runtime errors follow the source failure path. See the migration and
+  epoch rules in [Runtime contracts](RUNTIME_CONTRACTS.md#rtp-reader-migration).
 - **Joins** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): use these when
   several streams become one. `goav.Join(name, stage, streams...)` is N->1
   convergence with a caller-supplied `pipeline.Stage` as the convergence node.
@@ -264,9 +282,21 @@ it, and v1 does not freeze its shape.
   `av.EventCleanupError` supplements this with the node name and wrapped
   finalization error. Observer delivery is best effort; later graph/task
   `Close` calls retain deferred failures after reclamation and observer
-  shutdown, preserving `errors.Is`. Ordinary synchronous close errors remain
-  outcomes of their initiating calls. The event adds no planning operation or
+  shutdown, preserving `errors.Is`. Synchronous and deferred finalizer failures are retained by the mandatory
+  `Graph.CleanupError()` method. `FinalizationError` identifies each node and
+  preserves `errors.Is`, independently of observer delivery. The event adds no planning operation or
   shape facts and applies equally to Build and Attach cleanup.
+  `Spec.Execution` (`ExecutionSpec`) and `NodeSpec.Execution` (`NodeExecution`)
+  expose scheduling and actual queues. `DescribeExecution` and
+  `DescribeNodeExecution` normalize the same policies used by graph construction;
+  reasons remain in plan Decisions. Compiler-oracle and live-Spec comparisons
+  cover inspection without adding media operations or changing shapes.
+  `FaultIsolator.IsolateFaults` installs validated downstream-closed domains;
+  `FaultDomain` (`Failed`, `Snapshot`, `Wait`), `FaultSnapshot`, `FaultError`, and
+  `ErrUnsafeFaultDomain` support the same Output failure policy on expert graphs.
+  Invalid domains fail before installation; runtime cleanup uses the graph's
+  existing node ownership. Failed branches and cleanup remain visible through
+  snapshots, and normal users configure them through Output.OnFailure.
 - Prebuilt graph components: `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).
