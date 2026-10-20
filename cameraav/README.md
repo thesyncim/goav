@@ -63,9 +63,13 @@ The capture goroutine uses fixed native argument storage; concurrent cold calls
 may use pools, and purego itself has internal pooling. Allocation assertions run
 without the race detector, whose sync.Pool behavior intentionally differs.
 
-Timestamps come from native capture and are rebased at the first delivered frame.
-Gaps remain visible when frames drop. Cancellation stops native reads/callbacks;
-Close waits for their completion before releasing native state. A device fault
+Valid native capture timestamps are rebased at the first delivered frame; gaps
+remain visible when frames drop. Linux uses monotonic arrival time when a driver
+marks timestamps unknown/COPY or supplies zero. Native frames older than a
+previously delivered arrival timestamp are dropped until capture catches up;
+a regression in the native monotonic clock fails explicitly. Cancellation stops native reads/callbacks;
+Close waits for completion before releasing native state. Windows bounds the
+asynchronous flush-notification wait to two seconds and retains timeout errors. A device fault
 or unexpected format change fails the source. Native startup/shutdown calls are
 subject to the operating system's own completion behavior.
 
@@ -76,7 +80,9 @@ subject to the operating system's own completion behavior.
   of risking the OS terminating it. The CLI packaging helper below supplies
   this metadata. Capture requests AVFoundation video-range NV12.
 - **Linux:** the user needs read/write access to the selected `/dev/video*` node.
-  This backend supports single-planar streaming capture in NV12 or YUYV,
+  Device paths are validated as V4L2 character devices before opening them for
+  capture. Native mmap storage has its own 128 MiB total cap. This backend
+  supports single-planar streaming capture in NV12 or YUYV,
   progressive frames, and an exact integer frame rate. Multiplanar-only, MJPEG-only,
   and libcamera/PipeWire-only devices are refused.
 - **Windows:** enable camera access for desktop applications in privacy settings.
@@ -104,7 +110,8 @@ bundle; distribution signing/notarization is the application's responsibility.
 
 Normal tests never activate a physical camera. They cover ownership after Ref,
 bounded retention, cleanup, URL planning, native ABI handoff, real synthetic
-CoreVideo/CoreMedia samples, and allocation counts. The CI matrix runs the
+CoreVideo/CoreMedia and Media Foundation samples (including padded native
+pitch), V4L2 dequeue/copy/requeue behavior, and allocation counts. The CI matrix runs the
 module on all three operating systems. Set `GOAV_CAMERA_TEST_DEVICE` explicitly
 for an opt-in capture smoke test; it checks frames and timestamps without saving
 or transmitting images. On Linux CI, a Vivid virtual device is used when present.
