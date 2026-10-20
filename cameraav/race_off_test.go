@@ -1,4 +1,4 @@
-//go:build !race
+//go:build !race && (darwin || windows) && (amd64 || arm64)
 
 package cameraav
 
