@@ -1,0 +1,42 @@
+name: camera
+on:
+  pull_request:
+    paths: ['cameraav/**', 'cmd/goav/**', 'scripts/camera/**', '.github/workflows/camera.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  camera:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: cameraav
+    env:
+      GOWORK: 'off'
+      GOEXPERIMENT: simd
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+      - name: Enable a virtual Linux camera when available
+        if: runner.os == 'Linux'
+        run: |
+          if sudo modprobe vivid n_devs=1; then
+            sudo chmod a+rw /dev/video0
+            echo 'GOAV_CAMERA_TEST_DEVICE=/dev/video0' >> "$GITHUB_ENV"
+          else
+            echo 'Vivid is unavailable; physical capture remains opt-in.'
+          fi
+      - name: Pure Go tests and allocation guards
+        run: CGO_ENABLED=0 go test -count=1 ./...
+      - name: Race and buffer ownership
+        run: CGO_ENABLED=1 go test -race -count=1 ./...
+      - name: Vet
+        run: CGO_ENABLED=0 go vet ./...

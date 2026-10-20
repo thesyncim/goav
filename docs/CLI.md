@@ -121,3 +121,20 @@ until Ctrl-C; a refusal prints to stderr and exits 1. `capabilities` lists a
 server's methods, the host's own included, and its elements. Use `goav ctl`
 for inspection, controls, and attach. Hot-path media logic belongs in
 the Go library.
+
+## Camera capture
+
+`goav cameras` lists native camera IDs; `--json` emits machine-readable devices.
+The optional `--request-access` flag requests macOS camera permission from an app
+bundle containing usage metadata. Listing and planning do not activate capture.
+
+```sh
+goav cameras --json
+goav describe 'uri "camera://default?width=640&height=480&fps=30" ! video ! encode vp8 ! file camera.webm'
+goav run 'uri "camera://default" ! video ! encode vp8 ! file camera.webm'
+```
+
+Camera input uses the same recipe, encoder and output pipeline as other sources.
+It supports macOS, Linux and Windows without cgo; available raw formats and exact
+modes depend on the device. See [`cameraav`](../cameraav/README.md) for device-ID
+selection, bounded dropping, permission packaging and platform limits.
