@@ -22,6 +22,7 @@ const usage = `usage: goav <command> ...
   explain   print the plan a program builds, as JSON
   play      play a file or a program in a window
   elements  list the elements a program can use
+  cameras   list cameras or request camera access
   ctl       inspect and steer a running task
 `
 
@@ -43,6 +44,8 @@ func run(argv []string, stdout io.Writer, stderr io.Writer) int {
 		return describeCommand(argv[1:], stdout, stderr)
 	case "explain":
 		return explainCommand(argv[1:], stdout, stderr)
+	case "cameras":
+		return camerasCommand(argv[1:], stdout, stderr)
 	case "elements":
 		return elementsCommand(stdout)
 	case "ctl":

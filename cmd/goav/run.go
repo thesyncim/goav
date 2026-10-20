@@ -20,6 +20,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/cameraav"
 	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/goavtest"
@@ -456,13 +457,14 @@ func encodeJSON(stdout, stderr io.Writer, v any) int {
 // cliURIs lets programs open the network URLs the CLI's runtime resolves,
 // beside the files Files grants: uri "https://cdn/in.mp4" ! ..., a whep://
 // stream, or a whip:// (whips://) destination.
-var cliURIs = launch.URIs("http", "https", "whep", "whep+http", "whip", "whips", "whip+http")
+var cliURIs = launch.URIs("camera", "http", "https", "whep", "whep+http", "whip", "whips", "whip+http")
 
-// withCLISchemes adds the WHEP and WHIP clients to the bundle's file and
+// withCLISchemes adds camera capture and the WHEP and WHIP clients to the bundle's file and
 // http(s) schemes, one of each under all its names.
 func withCLISchemes(options ...runconfig.Option) []runconfig.Option {
 	whep, whip := webrtcav.WHEP(), webrtcav.WHIP()
 	return append(options,
+		runconfig.Scheme("camera", cameraav.Scheme{}),
 		runconfig.Scheme("whep", whep), runconfig.Scheme("whep+http", whep),
 		runconfig.Scheme("whip", whip), runconfig.Scheme("whips", whip), runconfig.Scheme("whip+http", whip))
 }

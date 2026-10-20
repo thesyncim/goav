@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags:
       - 'v*'
+      - 'cameraav/v*'
       - 'rtpav/v*'
       - 'webrtcav/v*'
       - 'playoutav/v*'
@@ -124,7 +125,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in cameraav rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -375,7 +376,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|cameraav/v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
@@ -417,6 +418,12 @@ jobs:
   # module at this exact commit, so an unresolvable root pin fails here.
   consumer-install:
     runs-on: ubuntu-latest
+    env:
+      # Fetch this repository's fresh PR revisions directly, while third-party
+      # modules use the proxy instead of depending on every upstream Git host.
+      GOPROXY: https://proxy.golang.org,direct
+      GONOPROXY: github.com/thesyncim/goav
+      GONOSUMDB: github.com/thesyncim
     steps:
       - uses: actions/checkout@v7
         with:
@@ -428,13 +435,11 @@ jobs:
       - name: Install each nested module from a clean directory
         env:
           GOWORK: 'off'
-          GOPROXY: direct
-          GONOSUMDB: github.com/thesyncim
           GOFLAGS: -mod=mod
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
+          for mod in cameraav rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x
@@ -457,7 +462,5 @@ jobs:
           if grep -q '^replace' "$gomod"; then echo "cmd/goav/go.mod carries a replace directive; go install would refuse it" >&2; exit 1; fi
       - name: Verify resolved fixes and player bundle isolation
         env:
-          GOPROXY: direct
-          GONOSUMDB: github.com/thesyncim
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash scripts/check-consumers.sh "$SHA"

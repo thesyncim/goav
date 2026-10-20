@@ -503,3 +503,26 @@ root imports neither. The task-domain noun packages that wave also made
 facet of the task the root already returns, and three imports for one concept
 was the wrong split. New exported symbols in governed packages require a
 matching tier entry in this document in the same change.
+
+## Optional camera provider
+
+`cameraav` is a nested Tier-B provider module. `New(Config)` returns an `Input`
+implementing the existing provider source contract; it adds no recipe operation.
+`Config` selects an opaque device ID, exact dimensions, integer FPS and a bounded
+queue. Native frame-interval quantization smaller than 100 ns is accepted while
+preserving the native interval; distinct fractional frame rates are refused.
+`Device` and `Devices(ctx)` expose device discovery without activation;
+`RequestAccess(ctx)` is the explicit macOS permission entry point. `Scheme`
+binds `camera://` URLs using the existing scheme contract. `Input.Name`, `Detail`
+and `SourceShape` expose camera/frame/video/yuv420p, requested size and realtime
+facts to Describe/Explain; `OpenSource` is the ordinary Build/Attach resource
+boundary. Snapshot uses the normal source representation and DropReporter.
+Invalid configuration fails before native resources; native mode/access errors
+fail Build or Attach and release partial resources. `ErrUnsupported`,
+`ErrPermission`, `ErrNoDevice`, and `ErrFormatChanged` are matchable refusals.
+There is no separate execution path or root-module native dependency.
+
+The external adapter path is `goav.Input(cameraav.New(config))` or a registered
+`cameraav.Scheme`; tests exercise borrowed/retained frames, allocation counts,
+URL planning, shutdown and platform ABI. See [`cameraav/README.md`](../cameraav/README.md)
+for limits and opt-in device verification. This optional adapter is pre-v1.
