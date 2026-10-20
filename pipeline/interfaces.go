@@ -93,11 +93,11 @@ const (
 	// These drops happen inside the node, not in its queue, so they reach the
 	// counters through the optional DropReporter capability at snapshot time.
 	DropSync DropPolicy = "sync"
-	// DropFlush is the reason recorded when a queued packet/frame is shed by a
-	// reposition flush: after a seek or segment control is recorded at a
-	// source, the buffered runner drains the stale pre-seek media queued
-	// downstream of it instead of letting it play out to sinks first. Queued
-	// events are never flushed.
+	// DropFlush records queued packet/frame media shed from queues exclusively
+	// downstream of a source before seek/segment control. Shared queues and
+	// their descendants retain their bounded admitted tail; unrelated media
+	// must not be discarded. Events and media following a queued discontinuity
+	// are preserved. This is an observation reason, not a selectable policy.
 	DropFlush DropPolicy = "flush"
 	// DropObserver is the reason recorded when the graph's cold-side observer
 	// event channel is full. Media/event delivery to graph routes still
@@ -137,14 +137,14 @@ type Admitter interface {
 // messages, not bytes per message. The zero value means direct (unbuffered)
 // execution.
 type BufferPolicy struct {
-	Capacity   int
-	Drop       DropPolicy
-	MaxLatency time.Duration
+	Capacity   int           `json:"capacity,omitempty"`
+	Drop       DropPolicy    `json:"drop,omitempty"`
+	MaxLatency time.Duration `json:"maxLatency,omitempty"`
 	// MaxBytes caps the total queued payload bytes for a buffered node; admitting
 	// a message that would exceed it sheds the message (DropOverflow) instead of
 	// queuing. Zero disables byte-budget shedding (the default — no per-message
 	// byte accounting runs on the hot path).
-	MaxBytes int64
+	MaxBytes int64 `json:"maxBytes,omitempty"`
 }
 
 // IsDirect reports whether the policy means unbuffered execution: no
@@ -277,6 +277,9 @@ type Graph interface {
 	Events() <-chan av.Event
 	Stats() GraphStats
 	Close() error
+	// CleanupError retains actual resource finalization failures, including
+	// deferred cleanup. It excludes caller cancellation and wait timeouts.
+	CleanupError() error
 }
 
 // GraphStats is a point-in-time counter snapshot for the whole graph, with

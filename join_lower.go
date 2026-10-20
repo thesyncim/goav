@@ -30,7 +30,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		}
 		stage := newArmRestampStage(node.Name, node.Detail, stream.ID, p.Arms[node.Arm].Stream.ID)
 		stream.ID = p.Arms[node.Arm].Stream.ID
-		return stream, addComposeStage(graph, stage, rt.buffer, node.Inputs)
+		return stream, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
 	case compile.ComposeArmDecode:
 		stream := streams[node.Inputs[0]]
 		// Arm events must flow through decode (dropInputEvents=false): the
@@ -40,7 +40,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		if err != nil {
 			return av.Stream{}, err
 		}
-		return stream, addComposeStage(graph, stage, rt.buffer, node.Inputs)
+		return stream, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
 	case compile.ComposeArmConform:
 		stream := streams[node.Inputs[0]]
 		first := stream
@@ -49,7 +49,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		}
 		target := p.Profile.ConformTarget(p, first)
 		stage := newJoinConformStage(service, node.Name, node.Detail, target, rt.realtime)
-		return compile.ConformedStream(stream, target), addComposeStage(graph, stage, rt.buffer, node.Inputs)
+		return compile.ConformedStream(stream, target), addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
 	case compile.ComposeTransform:
 		stream := node.Stream
 		if node.Resolved {
@@ -60,7 +60,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			return av.Stream{}, err
 		}
 		out.ID = streams[node.Inputs[0]].ID
-		return out, addComposeStage(graph, stage, rt.buffer, node.Inputs)
+		return out, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
 	case compile.ComposeJoin:
 		armIDs := make([]av.StreamID, 0, len(node.Inputs))
 		seen := make(map[av.StreamID]struct{}, len(node.Inputs))
@@ -73,41 +73,45 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			seen[id] = struct{}{}
 			armIDs = append(armIDs, id)
 		}
-		stage, pinned := newJoinStage(p, armIDs, rt)
+		stage := newJoinStage(p, armIDs, rt)
 		if admitting, ok := stage.(interface{ enableAdmission() }); ok && in.admission {
 			admitting.enableAdmission()
-		}
-		buffer := rt.buffer
-		if pinned != nil {
-			buffer = *pinned
 		}
 		joined := p.Joined
 		if p.Late {
 			joined = p.ResolvedJoinedStream(streams, node.Inputs)
 		}
-		return joined, addComposeStage(graph, stage, buffer, node.Inputs)
+		return joined, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
 	}
 	return av.Stream{}, nil
 }
 
-// newJoinStage builds a join's convergence stage. A non-nil buffer pins the
-// stage's input queue.
-func newJoinStage(p *compile.JoinPlan, armIDs []av.StreamID, rt *Runtime) (pipeline.Stage, *pipeline.BufferPolicy) {
+// newJoinStage builds a join's convergence stage. Queue selection belongs to
+// the execution planner, shared with inspection.
+func newJoinStage(p *compile.JoinPlan, armIDs []av.StreamID, rt *Runtime) pipeline.Stage {
 	if p.Tree.Custom != nil {
-		return p.Tree.Custom.Stage, nil
+		return p.Tree.Custom.Stage
 	}
 	switch p.Tree.Kind {
 	case compile.JoinMix:
-		return newAudioMixStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt)), nil
+		return newAudioMixStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt))
 	case compile.JoinComposite:
-		return newVideoCompositeStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Layouts, p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt)), nil
+		return newVideoCompositeStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Layouts, p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt))
 	default:
 		// The selector is the control target: an injected SelectActive shares
 		// its input queue with the flooding arms, so a lossy queue could evict
 		// the control before the worker applies it. The pinned non-lossy
 		// DropBlock queue backpressures instead, so the switch is always
 		// delivered (the DropBlock control-plane lesson).
-		return newSelectorStage(p.Name, armIDs, av.StreamID(p.Name)),
-			&pipeline.BufferPolicy{Capacity: compile.SelectBufferCapacity, Drop: pipeline.DropBlock}
+		return newSelectorStage(p.Name, armIDs, av.StreamID(p.Name))
 	}
+}
+
+// joinNodeBuffer preserves the selector's lossless control-plane queue even
+// when the graph default or an output queue is lossy.
+func joinNodeBuffer(p *compile.JoinPlan, fallback pipeline.BufferPolicy) pipeline.BufferPolicy {
+	if p.Tree.Custom == nil && p.Tree.Kind != compile.JoinMix && p.Tree.Kind != compile.JoinComposite {
+		return pipeline.BufferPolicy{Capacity: compile.SelectBufferCapacity, Drop: pipeline.DropBlock}
+	}
+	return fallback
 }

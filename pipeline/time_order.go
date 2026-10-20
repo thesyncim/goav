@@ -104,29 +104,53 @@ func timeOrderedSources[P graphNode, S any](realtime, buffered bool, topo *snaps
 	if count < 2 {
 		return nil // and allocates nothing: most graphs end here
 	}
-	every := count == len(sources)
-	converging := false
-	for i := range topo.nodes {
-		admit := topo.nodes[i].node.base().admit
-		if !topo.nodes[i].active || admit == nil {
-			continue
-		}
-		if _, ok := admit.(interleave.Gate); !ok {
-			return nil
-		}
-		converging = true
-	}
-	if (buffered || converging) && !every {
+	if !topologyOrdering(realtime, buffered, topo, len(sources), count).Enabled() {
 		return nil
-	}
-	if buffered && !merges(topo) {
-		return nil // each node has one producer chain, already in order
 	}
 	ordered := make([]bool, len(sources))
 	for i := range sources {
 		ordered[i] = byTime(source(sources[i]))
 	}
 	return ordered
+}
+
+// topologyOrdering supplies the same facts to Run and the live Spec.
+func topologyOrdering[P graphNode](realtime, buffered bool, topo *snapshot[P], sources, timed int) interleave.Ordering {
+	p := interleave.Ordering{Realtime: realtime, Buffered: buffered, Sources: sources, TimedSources: timed}
+	if topo == nil || realtime || timed < 2 {
+		return p
+	}
+	for _, n := range topo.nodes {
+		if !n.active || n.node.base().admit == nil {
+			continue
+		}
+		p.Converging = true
+		if _, ok := n.node.base().admit.(interleave.Gate); !ok {
+			p.BlockingAdmitter = true
+		}
+	}
+	if buffered && !p.BlockingAdmitter {
+		p.Merges = merges(topo)
+	}
+	return p
+}
+
+// executionAdmission is called under the topology read lock.
+func (t *topology[P]) executionAdmission() string {
+	sources, timed := 0, 0
+	for _, n := range t.nodes {
+		b := n.base()
+		if b.active && b.source != nil {
+			sources++
+			if byTime(b.source) {
+				timed++
+			}
+		}
+	}
+	if topologyOrdering(t.config.Realtime, !t.config.Buffer.IsDirect(), t.snap.Load(), sources, timed).Enabled() {
+		return "timestamp"
+	}
+	return "arrival"
 }
 
 // merges reports whether some node of topo has more than one producer, the

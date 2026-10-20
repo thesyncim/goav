@@ -74,7 +74,7 @@ func collect(task goav.LiveTask) []*family {
 	snap := task.Snapshot()
 
 	ts := add("task_state", "Task lifecycle state, one-hot.", "gauge")
-	for _, s := range []goav.TaskState{goav.TaskBuilt, goav.TaskRunning, goav.TaskClosed, goav.TaskFailed} {
+	for _, s := range []goav.TaskState{goav.TaskBuilt, goav.TaskRunning, goav.TaskFinalizing, goav.TaskClosed, goav.TaskFailed} {
 		put(ts, b2f(snap.State == s), "state", string(s))
 	}
 	put(add("task_paused", "1 while the task timeline is paused.", "gauge"), b2f(snap.Paused))
@@ -128,7 +128,7 @@ func collect(task goav.LiveTask) []*family {
 	}
 	ds := add("destination_state", "Destination state, one-hot.", "gauge")
 	for _, d := range snap.Destinations {
-		for _, s := range []goav.DestinationState{goav.DestinationOpen, goav.DestinationCommitted, goav.DestinationAborted, goav.DestinationClosed} {
+		for _, s := range []goav.DestinationState{goav.DestinationOpen, goav.DestinationFinalizing, goav.DestinationCommitted, goav.DestinationAborted, goav.DestinationClosed, goav.DestinationFailed} {
 			put(ds, b2f(d.State == s), "destination", d.Name, "state", string(s))
 		}
 	}

@@ -17,7 +17,7 @@ type configuredTestReader struct {
 	stream av.Stream
 }
 
-func (r *configuredTestReader) ReadRTPWithConfig(context.Context) (*rtp.Packet, *av.Event, PayloadMap, error) {
+func (r *configuredTestReader) ReadRTP(context.Context) (*rtp.Packet, *av.Event, PayloadMap, error) {
 	if r.index == len(r.packets) {
 		return nil, nil, r.payloads, io.EOF
 	}

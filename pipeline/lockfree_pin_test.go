@@ -26,6 +26,8 @@ var messagePathRoots = []string{
 // lock, each for a reason that is not "a packet or frame went by". The walk
 // stops at them; every other function it reaches must take no lock.
 var coldCallees = map[string]string{
+	"topology.recordNodeError":   "called only after a non-nil handler error; serializes failure publication against removal",
+	"topology.retireFaultDomain": "supervisor goroutine launched only after the first isolated handler error; never runs on the delivery stack",
 	"runFailure.report":          "records the run's first error, once; every later delivery sheds",
 	"runFailure.firstErr":        "returned only after the run failed",
 	"runFailure.reset":           "name shared with the slot resets on the path; called by Run only",

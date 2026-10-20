@@ -16,7 +16,7 @@ func TestTrackReplacementInterruptsSilentTransport(t *testing.T) {
 	for i := range 12 {
 		done := make(chan error, 1)
 		go func() {
-			packet, err := reader.ReadRTP(t.Context())
+			packet, _, _, err := reader.ReadRTP(t.Context())
 			if err == nil && packet.SequenceNumber != uint16(i) {
 				t.Errorf("replacement packet = %d, want %d", packet.SequenceNumber, i)
 			}

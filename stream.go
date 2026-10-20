@@ -312,9 +312,26 @@ func newJoinStream(kind string, name string, stage pipeline.Stage, args []JoinAr
 type Output struct {
 	stream Stream
 	// remux is the input every stream of which copies to the destinations.
-	remux *InputSpec
-	dests []Destination
+	remux   *InputSpec
+	dests   []Destination
+	failure BranchFailurePolicy
 }
+
+// BranchFailurePolicy determines the scope of a returned handler error.
+type BranchFailurePolicy string
+
+const (
+	// FailTask is the default: the first handler error stops the task.
+	FailTask BranchFailurePolicy = "fail_task"
+	// IsolateBranch retires this Output's exclusive suffix on its first
+	// handler error. Shared upstream errors still fail the task. Panics and
+	// stalls are outside this policy; blocking queues still pace producers.
+	IsolateBranch BranchFailurePolicy = "isolate_branch"
+)
+
+// OnFailure selects the failure scope for this Output at Build or Attach.
+// Isolation is refused for shared destinations, joins, or unsafe egress.
+func (o Output) OnFailure(policy BranchFailurePolicy) Output { o.failure = policy; return o }
 
 // To routes the stream to destinations: packets mux into a container,
 // frames or packets reach a Sink.

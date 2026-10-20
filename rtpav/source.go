@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"strings"
+	"sync/atomic"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -41,10 +43,14 @@ type Source struct {
 	name          string
 	detail        string
 	receiver      PacketReader
-	configured    ConfiguredPacketReader
 	feedback      FeedbackWriter
 	payloads      PayloadMap
+	scope         av.StreamID
+	epochs        map[av.StreamID]av.Epoch
+	removed       map[av.StreamID]bool
 	jitter        JitterBuffer
+	jitterScope   av.StreamID
+	jitterScoped  bool
 	depacketizers []Depacketizer
 	streams       []av.Stream
 	timestamps    []sourceTimestampState
@@ -53,10 +59,12 @@ type Source struct {
 	depacketOut   DepacketizeResult
 	message       pipeline.Message
 	// packet is the header a depacketized packet is published under.
-	packet        av.Packet
-	eos           av.Event
-	discontinuity av.Event
-	closed        bool
+	packet           av.Packet
+	eos              av.Event
+	event            av.Event
+	discontinuity    av.Event
+	closed           bool
+	discardedPartial atomic.Uint64
 }
 
 type sourceTimestampState struct {
@@ -85,9 +93,9 @@ func NewSource(config SourceConfig) (*Source, error) {
 	maxFeedback := positiveOrDefault(config.MaxFeedback, 4)
 	maxPackets := positiveOrDefault(config.MaxPackets, 8)
 
-	configured, _ := config.Receiver.(ConfiguredPacketReader)
 	return &Source{
-		configured:    configured,
+		epochs:        map[av.StreamID]av.Epoch{},
+		removed:       map[av.StreamID]bool{},
 		name:          name,
 		detail:        config.Detail,
 		receiver:      config.Receiver,
@@ -116,6 +124,10 @@ func (s *Source) Name() string {
 	return s.name
 }
 
+// DroppedMessages counts incomplete built-in access units discarded at a
+// configuration, removal, or discontinuity boundary.
+func (s *Source) DroppedMessages() uint64 { return s.discardedPartial.Load() }
+
 // DescribeNode reports the source's spec entry for Describe.
 func (s *Source) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
@@ -128,33 +140,81 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 		return ErrClosed
 	}
 	for {
-		var packet *rtp.Packet
-		var err error
-		if s.configured != nil {
-			var event *av.Event
-			var payloads PayloadMap
-			packet, event, payloads, err = s.configured.ReadRTPWithConfig(ctx)
-			if event != nil && event.Type == av.EventCodecChanged && s.jitter != nil {
-				// Buffered old-generation RTP must leave under its original
-				// map and depacketizer before the new configuration is applied.
-				if flushErr := s.flush(ctx, emitter); flushErr != nil {
+		packet, event, payloads, err := s.receiver.ReadRTP(ctx)
+		if err == nil || event != nil || packet != nil {
+			if payloads == nil || (err == nil && packet == nil && event == nil) {
+				return ErrInvalidConfiguration
+			}
+			scope, scopeErr := s.recordScope(packet, event, payloads)
+			if scopeErr != nil {
+				return scopeErr
+			}
+			target := recordEventTarget(event)
+			replacesJitterStream := event != nil && event.Type == av.EventCodecChanged &&
+				(len(s.streams) <= 1 || target == s.jitterScope)
+			resetsJitter := event != nil && s.jitterScoped && (replacesJitterStream ||
+				event.Type == av.EventStreamRemoved && target == s.jitterScope ||
+				event.Type == av.EventDiscontinuity && (target == "" || target == s.jitterScope))
+			if s.jitter != nil && packet != nil {
+				if s.jitterScoped && s.jitterScope != scope && !s.removed[s.jitterScope] && !replacesJitterStream {
+					return ErrJitterStreamConflict
+				}
+			}
+			epoch := payloads.Epoch()
+			epochScope, epochScopeErr := recordEpochScope(packet, event, payloads)
+			if epochScopeErr != nil {
+				return epochScopeErr
+			}
+			if event != nil && epochScope != "" && scope != "" && epochScope != scope {
+				return ErrInvalidConfiguration
+			}
+			if epochScope != "" && configurationEvent(event) && event.Epoch != 0 && event.Epoch != epoch {
+				return ErrInvalidConfiguration
+			}
+			if previous, seen := s.epochs[epochScope]; seen {
+				if epoch < previous {
+					return ErrEpochRegression
+				}
+				if epoch != previous && !configurationEvent(event) {
+					return ErrInvalidConfiguration
+				}
+			}
+			// The jitter window contains one stream/configuration at a time.
+			// Drain using its retained map BEFORE switching. Complete old units
+			// emit normally; configuration events discard incomplete assembly.
+			boundary := s.payloads != nil && (scope != s.scope || epoch != s.payloads.Epoch())
+			if boundary || configurationEvent(event) || event != nil && event.Type == av.EventDiscontinuity {
+				if flushErr := s.flushJitter(ctx, emitter); flushErr != nil {
 					return flushErr
 				}
 			}
-			s.payloads = payloads
+			if resetsJitter && s.jitter != nil {
+				s.jitter.Reset()
+				if event.Type == av.EventStreamRemoved {
+					s.jitterScoped = false
+				}
+			}
+			if replacesJitterStream && s.jitterScoped {
+				s.jitterScope = scope
+			}
+			if s.jitter != nil && packet != nil {
+				s.jitterScope, s.jitterScoped = scope, true
+			}
+			s.payloads, s.scope = payloads, scope
+			s.epochs[epochScope] = epoch
 			if event != nil {
 				if eventErr := s.emitEvent(ctx, emitter, event); eventErr != nil {
 					return eventErr
 				}
 			}
-		} else {
-			if err := s.emitReceiverEvents(ctx, emitter); err != nil {
-				return err
+		}
+		if packet != nil {
+			if handleErr := s.handleRTP(ctx, emitter, packet); handleErr != nil {
+				return handleErr
 			}
-			packet, err = s.receiver.ReadRTP(ctx)
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if isReadEOF(err) {
 				if err := s.flush(ctx, emitter); err != nil {
 					return err
 				}
@@ -163,9 +223,29 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			}
 			return err
 		}
-		if err := s.handleRTP(ctx, emitter, packet); err != nil {
-			return err
+	}
+}
+
+// A joined finalization/protocol failure is still a failure when one sibling
+// cause is EOF. Only an error tree made entirely of EOF marks successful input
+// completion; ordinary wrappers preserve that meaning.
+func isReadEOF(err error) bool {
+	switch cause := err.(type) {
+	case interface{ Unwrap() []error }:
+		leaves := cause.Unwrap()
+		if len(leaves) == 0 {
+			return false
 		}
+		for _, leaf := range leaves {
+			if !isReadEOF(leaf) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return isReadEOF(cause.Unwrap())
+	default:
+		return errors.Is(err, io.EOF)
 	}
 }
 
@@ -203,20 +283,7 @@ func (s *Source) handleRTP(ctx context.Context, emitter pipeline.Emitter, packet
 func (s *Source) depacketize(ctx context.Context, emitter pipeline.Emitter, packet *rtp.Packet) error {
 	payload, ok := s.lookupPayload(packet.PayloadType)
 	if !ok {
-		if s.configured != nil {
-			return ErrPayloadNotFound
-		}
-		// The receiver may have renegotiated while the read that produced
-		// this packet was blocked. Events it queued then precede the packet:
-		// apply them (refreshing the map and the depacketizers' epoch) and
-		// resolve again. A packet the current map resolves never takes a
-		// newer map: its update applies from the next read.
-		if err := s.emitReceiverEvents(ctx, emitter); err != nil {
-			return err
-		}
-		if payload, ok = s.lookupPayload(packet.PayloadType); !ok {
-			return ErrPayloadNotFound
-		}
+		return ErrPayloadNotFound
 	}
 	depacketizer := s.depacketizerFor(payload)
 	if depacketizer == nil {
@@ -250,7 +317,7 @@ func (s *Source) lookupPayload(payloadType uint8) (PayloadCodec, bool) {
 	return s.payloads.Lookup(payloadType)
 }
 
-func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
+func (s *Source) flushJitter(ctx context.Context, emitter pipeline.Emitter) error {
 	if s.jitter != nil {
 		s.jitterOut.Reset()
 		if err := s.jitter.FlushInto(ctx, &s.jitterOut); err != nil {
@@ -264,6 +331,13 @@ func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
+	if err := s.flushJitter(ctx, emitter); err != nil {
+		return err
 	}
 	for i := range s.depacketizers {
 		s.depacketOut.Reset()
@@ -306,22 +380,6 @@ func (s *Source) emitPacket(ctx context.Context, emitter pipeline.Emitter, packe
 	return err
 }
 
-func (s *Source) emitReceiverEvents(ctx context.Context, emitter pipeline.Emitter) error {
-	for {
-		select {
-		case event, ok := <-s.receiver.Events():
-			if !ok {
-				return nil
-			}
-			if err := s.emitEvent(ctx, emitter, &event); err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
-	}
-}
-
 func (s *Source) emitEvents(ctx context.Context, emitter pipeline.Emitter, events []av.Event) error {
 	for i := range events {
 		if err := s.emitEvent(ctx, emitter, &events[i]); err != nil {
@@ -332,6 +390,22 @@ func (s *Source) emitEvents(ctx context.Context, emitter pipeline.Emitter, event
 }
 
 func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event *av.Event) error {
+	if event == nil {
+		return nil
+	}
+	s.event = *event
+	if event.Stream != nil {
+		stream := cloneRTPStream(*event.Stream)
+		s.event.Stream = &stream
+		if s.event.StreamID == "" {
+			s.event.StreamID = stream.ID
+		}
+	}
+	if event.Codec != nil {
+		codec := clonePayloadCodec(PayloadCodec{Parameters: *event.Codec}).Parameters
+		s.event.Codec = &codec
+	}
+	event = &s.event
 	if err := s.handleEvent(ctx, event); err != nil {
 		return err
 	}
@@ -343,16 +417,41 @@ func (s *Source) emitEvent(ctx context.Context, emitter pipeline.Emitter, event 
 }
 
 func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
+	target := av.StreamID("")
+	var uniqueTargetCodec av.CodecID
+	if event != nil && event.Type == av.EventCodecChanged {
+		for _, stream := range s.streams {
+			if eventMatchesStream(stream, event) {
+				target = stream.ID
+				uniqueTargetCodec = stream.Codec.ID
+				break
+			}
+		}
+		if target == "" && len(s.streams) == 1 {
+			target = s.streams[0].ID
+			uniqueTargetCodec = s.streams[0].Codec.ID
+		}
+		// A codec-intent depacketizer can use the input's display name. Save
+		// its unique transport scope before applying an ID replacement.
+		if !s.uniqueCodecScope(target, uniqueTargetCodec) {
+			uniqueTargetCodec = ""
+		}
+	}
+	if event != nil && (configurationEvent(event) || event.Type == av.EventDiscontinuity) {
+		for _, depacketizer := range s.depacketizers {
+			partial, stream := partialDepacketizer(depacketizer)
+			uniqueTarget := uniqueTargetCodec != "" && depacketizer.Codec() == uniqueTargetCodec
+			if partial && (eventMatchesStream(stream, event) || uniqueTarget) {
+				s.discardedPartial.Add(1)
+			}
+		}
+	}
 	var canonical av.Stream
 	var canonicalize bool
 	if event != nil && event.Type == av.EventCodecChanged {
-		if s.configured == nil {
-			s.payloads = s.receiver.PayloadMap()
-		}
 		canonical, canonicalize = s.applyCodecChangedStream(event)
 	}
 	if event != nil && event.Type == av.EventStreamAdded {
-		s.payloads = s.receiver.PayloadMap()
 		s.applyStreamAdded(event)
 	}
 	if event != nil && event.Type == av.EventStreamRemoved {
@@ -360,14 +459,69 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 	}
 	s.resetTimestampState(event)
 	for i := range s.depacketizers {
+		if event != nil && event.Type == av.EventCodecChanged && target != "" {
+			codec := s.depacketizers[i].Codec()
+			uniqueTarget := uniqueTargetCodec != "" && codec == uniqueTargetCodec
+			uniqueReplacement := canonicalize && s.uniqueCodecScope(canonical.ID, codec)
+			if stream, known := depacketizerStream(s.depacketizers[i]); known && stream.ID != target && !uniqueTarget && !uniqueReplacement {
+				continue
+			}
+		}
+		if event != nil && event.Type == av.EventStreamRemoved {
+			reset := *event
+			reset.Type = av.EventDiscontinuity
+			if err := s.depacketizers[i].HandleEvent(ctx, &reset); err != nil {
+				return err
+			}
+		}
 		if err := s.depacketizers[i].HandleEvent(ctx, event); err != nil {
 			return err
 		}
+	}
+	if event != nil && event.Type == av.EventStreamRemoved {
+		kept := s.depacketizers[:0]
+		for _, depacketizer := range s.depacketizers {
+			stream, known := depacketizerStream(depacketizer)
+			if !known || !eventMatchesStream(stream, event) {
+				kept = append(kept, depacketizer)
+			}
+		}
+		s.depacketizers = kept
 	}
 	if canonicalize {
 		canonicalizeCodecChangedEvent(event, canonical)
 	}
 	return nil
+}
+
+func (s *Source) uniqueCodecScope(target av.StreamID, codec av.CodecID) bool {
+	matches := 0
+	found := false
+	for _, stream := range s.streams {
+		if stream.Codec.ID == codec {
+			matches++
+			found = found || stream.ID == target
+		}
+	}
+	return found && matches == 1
+}
+
+func partialDepacketizer(depacketizer Depacketizer) (bool, av.Stream) {
+	var assembler *videoFrameAssembler
+	switch d := depacketizer.(type) {
+	case *VP8Depacketizer:
+		assembler = &d.assembler
+	case *VP9Depacketizer:
+		assembler = &d.assembler
+	case *H264Depacketizer:
+		assembler = &d.assembler
+	case *AV1Depacketizer:
+		assembler = &d.assembler
+	}
+	if assembler == nil {
+		return false, av.Stream{}
+	}
+	return assembler.started, assembler.stream
 }
 
 func (s *Source) applyCodecChangedStream(event *av.Event) (av.Stream, bool) {
@@ -391,11 +545,8 @@ func (s *Source) applyCodecChangedStream(event *av.Event) (av.Stream, bool) {
 
 // applyStreamAdded tracks a stream the receiver announced mid-run
 // (av.EventStreamAdded with the full av.Stream): the stream and its timestamp
-// state join the source's set, and when no depacketizer handles the new
-// stream's codec yet, the default depacketizer for that codec is derived and
-// bound to the new stream — so a late stream of a distinct codec flows with
-// its own stream id. A late stream sharing an existing depacketizer's codec
-// keeps the receiver-owned disambiguation (the existing depacketizer stays).
+// state join the source's set. A default depacketizer is bound to each new
+// stream, including streams using the same codec or RTP payload type.
 // The event itself continues downstream regardless.
 func (s *Source) applyStreamAdded(event *av.Event) {
 	if event == nil || event.Stream == nil {
@@ -408,6 +559,7 @@ func (s *Source) applyStreamAdded(event *av.Event) {
 	if stream.ID == "" {
 		return
 	}
+	delete(s.removed, stream.ID)
 	for i := range s.streams {
 		if s.streams[i].ID == stream.ID {
 			// Known stream re-announced: refresh its facts, keep machinery.
@@ -421,7 +573,7 @@ func (s *Source) applyStreamAdded(event *av.Event) {
 		return
 	}
 	for i := range s.depacketizers {
-		if s.depacketizers[i].Codec() == stream.Codec.ID {
+		if existing, ok := depacketizerStream(s.depacketizers[i]); ok && existing.ID == stream.ID {
 			return
 		}
 	}
@@ -437,6 +589,8 @@ func (s *Source) applyStreamRemoved(event *av.Event) {
 	if event == nil || event.StreamID == "" {
 		return
 	}
+	delete(s.epochs, event.StreamID)
+	s.removed[event.StreamID] = true
 	streams := s.streams[:0]
 	for i := range s.streams {
 		if s.streams[i].ID == event.StreamID {
@@ -636,12 +790,147 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 	if id == "" {
 		id = codecIDFromMIME(payload.MIMEType)
 	}
+	var found Depacketizer
+	matches := 0
 	for i := range s.depacketizers {
 		if s.depacketizers[i].Codec() == id {
-			return s.depacketizers[i]
+			stream, known := depacketizerStream(s.depacketizers[i])
+			if payload.StreamID != "" && known && stream.ID == payload.StreamID {
+				return s.depacketizers[i]
+			}
+			matches++
+			found = s.depacketizers[i]
 		}
 	}
-	return nil
+	if matches != 1 {
+		return nil
+	}
+	if payload.StreamID != "" {
+		matches := 0
+		for _, stream := range s.streams {
+			if stream.Codec.ID == id {
+				matches++
+			}
+		}
+		if matches > 1 {
+			return nil
+		}
+	}
+	return found
+}
+
+// Untagged maps use a session-wide configuration generation. A tagged map
+// belongs to one stream; other tracks can advance independently.
+func recordEpochScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) (av.StreamID, error) {
+	if packet != nil && !configurationEvent(event) {
+		payload, _ := payloads.Lookup(packet.PayloadType)
+		return payload.StreamID, nil
+	}
+	var scope av.StreamID
+	seen := false
+	for _, payload := range payloads.Codecs() {
+		if seen && payload.StreamID != scope {
+			return "", ErrInvalidConfiguration
+		}
+		scope, seen = payload.StreamID, true
+	}
+	if !seen && event != nil {
+		// A removal has no remaining payload entry to tag. Its epoch still
+		// belongs to that stream, not an aggregate session generation.
+		scope = recordEventTarget(event)
+		if event.Stream != nil && event.Stream.ID != "" {
+			scope = event.Stream.ID
+		}
+	}
+	return scope, nil
+}
+
+func recordEventTarget(event *av.Event) av.StreamID {
+	if event == nil {
+		return ""
+	}
+	if event.StreamID != "" {
+		return event.StreamID
+	}
+	if event.Stream != nil {
+		return event.Stream.ID
+	}
+	return ""
+}
+
+func (s *Source) recordScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) (av.StreamID, error) {
+	var scope av.StreamID
+	var target av.StreamID
+	if event != nil {
+		scope = event.StreamID
+		target = scope
+		if event.Stream != nil {
+			if scope != "" && event.Stream.ID != "" && scope != event.Stream.ID {
+				// CodecChanged can target the old ID while declaring its
+				// replacement. The new ID must not take over a sibling.
+				if event.Type != av.EventCodecChanged {
+					return "", ErrInvalidConfiguration
+				}
+				for _, stream := range s.streams {
+					if stream.ID == event.Stream.ID {
+						return "", ErrInvalidConfiguration
+					}
+				}
+				scope = event.Stream.ID
+			}
+			if scope == "" {
+				scope = event.Stream.ID
+			}
+		}
+		if target == "" {
+			target = scope
+		}
+	}
+	if packet != nil {
+		payload, ok := payloads.Lookup(packet.PayloadType)
+		if !ok {
+			return "", ErrPayloadNotFound
+		}
+		if payload.StreamID != "" {
+			if scope != "" && scope != payload.StreamID {
+				return "", ErrInvalidConfiguration
+			}
+			scope = payload.StreamID
+		}
+		if scope == "" {
+			for _, stream := range s.streams {
+				if stream.Codec.ID == payload.Parameters.ID {
+					if scope != "" {
+						return "", ErrAmbiguousStream
+					}
+					scope = stream.ID
+				}
+			}
+		}
+	}
+	addsStream := event != nil && event.Type == av.EventStreamAdded && event.Stream != nil && recordEventTarget(event) == scope
+	if packet != nil && s.removed[scope] && !addsStream {
+		return "", ErrUnknownStream
+	}
+	if scope == "" && len(s.streams) == 1 {
+		scope = s.streams[0].ID
+	}
+	if scope == "" && configurationEvent(event) && len(s.streams) > 1 {
+		return "", ErrAmbiguousStream
+	}
+	if event != nil && event.Type == av.EventCodecChanged && len(s.streams) > 1 {
+		known := false
+		for _, stream := range s.streams {
+			known = known || stream.ID == target
+		}
+		if !known {
+			return "", ErrUnknownStream
+		}
+	}
+	if scope == "" && len(s.streams) == 0 {
+		scope = s.scope
+	}
+	return scope, nil
 }
 
 func codecIDFromMIME(mimeType string) av.CodecID {
@@ -673,8 +962,16 @@ func cloneStreams(streams []av.Stream) []av.Stream {
 		return nil
 	}
 	out := make([]av.Stream, len(streams))
-	copy(out, streams)
+	for i, stream := range streams {
+		out[i] = cloneRTPStream(stream)
+	}
 	return out
+}
+
+func cloneRTPStream(stream av.Stream) av.Stream {
+	stream.Metadata = maps.Clone(stream.Metadata)
+	stream.Codec = clonePayloadCodec(PayloadCodec{Parameters: stream.Codec}).Parameters
+	return stream
 }
 
 func endOfStreamEvent(streams []av.Stream) av.Event {

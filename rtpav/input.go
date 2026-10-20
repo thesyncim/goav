@@ -42,7 +42,8 @@ type Input struct {
 
 // Receive builds an RTP receive Input around a packet reader. Without
 // WithCodec or WithDepacketizers, each stream the reader reports gets its
-// codec's built-in depacketizer (one stream per codec).
+// codec's built-in depacketizer. Equal-codec tracks require StreamID in each
+// read's payload map so their assemblies stay separate.
 func Receive(receiver PacketReader, options ...ReceiveOption) *Input {
 	input := &Input{receiver: receiver}
 	for i := range options {

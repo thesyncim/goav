@@ -87,7 +87,7 @@ func TestComponentWebRTCTrackSetFeedsRTPSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertComponentSpecStable(t, graph, spec)
-	if adapter.readers[0].reads != 1 || sink.packets != 1 || sink.events != 1 || sink.lastEvent != av.EventEndOfStream {
+	if adapter.readers[0].reads != 1 || sink.packets != 1 || sink.events != 2 || sink.lastEvent != av.EventEndOfStream {
 		t.Fatalf("reads=%d packets=%d events=%d last=%s",
 			adapter.readers[0].reads, sink.packets, sink.events, sink.lastEvent)
 	}
@@ -99,7 +99,7 @@ func TestComponentWebRTCTrackSetFeedsRTPSource(t *testing.T) {
 			sink.lastPacketBytes, sink.lastPacketPooled)
 	}
 	stats := graph.Stats()
-	if stats.Packets != 1 || stats.Events != 1 || stats.Delivered != 2 {
+	if stats.Packets != 1 || stats.Events != 2 || stats.Delivered != 3 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if err := graph.Close(); err != nil {
@@ -203,7 +203,13 @@ func (a *componentTrackAdapter) AdaptTrack(_ context.Context, remote webrtcav.Re
 	return reader, nil
 }
 
+type componentTrackRecord struct {
+	event    *av.Event
+	payloads rtpav.PayloadMap
+}
+
 type componentTrackReader struct {
+	records  []componentTrackRecord
 	stream   av.Stream
 	payloads rtpav.PayloadMap
 	packets  []*rtp.Packet
@@ -227,6 +233,8 @@ func (r *componentTrackReader) UpdateCodec(_ context.Context, update webrtcav.Tr
 	if update.Payloads != nil {
 		r.payloads = update.Payloads
 	}
+	stream := r.stream
+	r.records = append(r.records, componentTrackRecord{event: &av.Event{Type: av.EventCodecChanged, StreamID: stream.ID, Epoch: stream.Epoch, Stream: &stream, Codec: &stream.Codec}, payloads: r.payloads})
 	return nil
 }
 
@@ -238,10 +246,12 @@ func (r *componentTrackReader) UpdateTrack(_ context.Context, remote webrtcav.Re
 	if remote.Payloads != nil {
 		r.payloads = remote.Payloads
 	}
+	stream := r.stream
+	r.records = append(r.records, componentTrackRecord{event: &av.Event{Type: av.EventCodecChanged, StreamID: stream.ID, Epoch: stream.Epoch, Stream: &stream, Codec: &stream.Codec}, payloads: r.payloads})
 	return nil
 }
 
-func (r *componentTrackReader) ReadRTP(context.Context) (*rtp.Packet, error) {
+func (r *componentTrackReader) readPacket(context.Context) (*rtp.Packet, error) {
 	if r.reads >= len(r.packets) {
 		return nil, io.EOF
 	}
@@ -366,4 +376,56 @@ func componentWebRTCOpusRemote(id av.StreamID, epoch av.Epoch) webrtcav.RemoteTr
 			Channels:    1,
 		}}),
 	}
+}
+
+func (r *componentTrackReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	if len(r.records) > 0 {
+		record := r.records[0]
+		r.records = r.records[1:]
+		return nil, record.event, record.payloads, nil
+	}
+	packet, err := r.readPacket(ctx)
+	return packet, nil, r.payloads, err
+}
+
+func TestComponentTrackReaderKeepsEachBurstConfigurationMap(t *testing.T) {
+	initial := componentWebRTCOpusRemote("audio", 1)
+	adapter := &componentTrackAdapter{packets: []*rtp.Packet{{PayloadType: 111, Timestamp: 480, Payload: []byte{0xf8}}}}
+	reader, err := adapter.AdaptTrack(t.Context(), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _, err := rtpav.Receive(reader).OpenSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	for _, epoch := range []av.Epoch{2, 3} {
+		next := componentWebRTCOpusRemote("audio", epoch)
+		if err := reader.UpdateCodec(t.Context(), webrtcav.TrackCodecUpdate{Stream: next.Stream, Payloads: next.Payloads}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var epochs []av.Epoch
+	var packetEpoch av.Epoch
+	if err := source.Start(t.Context(), componentRecordEmitter(func(_ context.Context, msg *pipeline.Message) error {
+		if msg.Event != nil && msg.Event.Type == av.EventCodecChanged {
+			epochs = append(epochs, msg.Event.Epoch)
+		}
+		if msg.Packet != nil {
+			packetEpoch = msg.Packet.CodecEpoch
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(epochs, []av.Epoch{2, 3}) || packetEpoch != 3 {
+		t.Fatalf("events=%v packet=%d", epochs, packetEpoch)
+	}
+}
+
+type componentRecordEmitter func(context.Context, *pipeline.Message) error
+
+func (e componentRecordEmitter) Emit(ctx context.Context, msg *pipeline.Message) error {
+	return e(ctx, msg)
 }

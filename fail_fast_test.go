@@ -102,17 +102,17 @@ func TestLiveTaskFailsFastOnDestinationError(t *testing.T) {
 			if errors.Is(err, context.Canceled) {
 				t.Fatalf("Run = %v, want the destination's error, not the cancellation it caused", err)
 			}
+			// Run records abort intent; finalization events follow actual Close.
+			_ = task.Close()
 
-			ended := 0
-			for ended < len(outs) {
-				select {
-				case event := <-events:
-					if event.Type == av.EventDestinationCommitted {
-						t.Fatalf("destination %q committed after a failed run", event.Metadata[av.MetadataDestinationName])
-					}
-					ended++
-				case <-time.After(time.Second):
-					t.Fatalf("%d of %d destinations reported an abort", ended, len(outs))
+			for event := range events {
+				if event.Type == av.EventDestinationCommitted {
+					t.Fatalf("destination %q committed after a failed run", event.Metadata[av.MetadataDestinationName])
+				}
+			}
+			for _, destination := range task.Snapshot().Destinations {
+				if destination.State != goav.DestinationAborted && destination.State != goav.DestinationClosed && destination.State != goav.DestinationFailed {
+					t.Fatalf("destination still accepts media after failure: %+v", destination)
 				}
 			}
 		})

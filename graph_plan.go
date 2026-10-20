@@ -47,12 +47,27 @@ func (p graphPlan) lower(ctx context.Context, graph pipeline.Graph, service *bui
 }
 
 func (p graphPlan) spec() pipeline.Spec {
-	return pipeline.Spec{
+	spec := pipeline.Spec{
 		Name:     p.name,
 		Realtime: p.realtime,
 		Nodes:    append([]pipeline.NodeSpec(nil), p.nodes...),
 		Edges:    append([]pipeline.EdgeSpec(nil), p.edges...),
 	}
+	if p.lowerer == nil {
+		return spec
+	}
+	execution, err := p.lowerer.planExecution(p)
+	if err != nil {
+		return spec
+	}
+	config := execution.config
+	spec.Execution = pipeline.DescribeExecution(config)
+	spec.Execution.Admission = execution.admission
+	byName := execution.buffers
+	for i := range spec.Nodes {
+		spec.Nodes[i].Execution = pipeline.DescribeNodeExecution(spec.Nodes[i].Kind, config, byName[spec.Nodes[i].Name])
+	}
+	return spec
 }
 
 func (p graphPlan) workPlan() compile.WorkPlan {

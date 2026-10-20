@@ -5,52 +5,90 @@
       {
         "name": "video-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=video"
+        "detail": "custom source, domain=frame, media=video",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "audio-2",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "select-video@video-1",
         "kind": "stage",
-        "detail": "select, type=video"
+        "detail": "select, type=video",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "select-audio@audio-2",
         "kind": "stage",
-        "detail": "select, type=audio"
+        "detail": "select, type=audio",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-hd",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "resize-sd",
         "kind": "stage",
-        "detail": "resize, 32x24, exact"
+        "detail": "resize, 32x24, exact",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-sd",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-audio",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "hd.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "sd.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -104,7 +142,12 @@
         "to": "sd.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from 2 inputs through 3 stream branch(es) to 2 destinations",
@@ -482,6 +525,18 @@
         "code": "encode_required",
         "branch": "audio",
         "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: shared_destination_preserves_order"
+      },
+      {
+        "code": "serial_execution",
+        "message": "shared_destination_preserves_order; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -610,52 +665,90 @@
         {
           "name": "video-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=video"
+          "detail": "custom source, domain=frame, media=video",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "audio-2",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "select-video@video-1",
           "kind": "stage",
-          "detail": "select, type=video"
+          "detail": "select, type=video",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "select-audio@audio-2",
           "kind": "stage",
-          "detail": "select, type=audio"
+          "detail": "select, type=audio",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-hd",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "resize-sd",
           "kind": "stage",
-          "detail": "resize, 32x24, exact"
+          "detail": "resize, 32x24, exact",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-sd",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-audio",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "hd.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "sd.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -709,7 +802,12 @@
           "to": "sd.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

@@ -72,6 +72,7 @@ type nodeBase struct {
 	reapOnce  sync.Once
 	closeErr  error
 	name      string
+	id        uint64
 	// index is the node's position in topology.nodes, fixed for its life; a
 	// retired node's index is reused once nothing can deliver into it.
 	index  int
@@ -92,6 +93,8 @@ type nodeBase struct {
 	// frame; the readiness signal counts sinks out through it. The delivery
 	// path pays one atomic load per media message, nothing more.
 	sawMedia atomic.Bool
+	policy   BufferPolicy
+	domain   atomic.Pointer[FaultDomain]
 }
 
 // graphNode is a runner's node type: a pointer to a struct embedding nodeBase.
@@ -171,7 +174,11 @@ type topology[P graphNode] struct {
 	closed  bool
 	// deferredErr survives node reclamation and observer shutdown. Ordinary
 	// synchronous close errors still belong to their initiating call only.
-	deferredErr error // guarded by mu
+	deferredErr  error // guarded by mu
+	cleanupErr   error // all real finalizer failures, never a caller's wait timeout
+	domains      []*FaultDomain
+	domainParent context.Context
+	nextNodeID   uint64
 	// snap is the routing snapshot the data plane reads without mu; nil once
 	// the graph is closed.
 	snap   atomic.Pointer[snapshot[P]]
@@ -232,6 +239,7 @@ func (t *topology[P]) AddSource(source Source, policy BufferPolicy) (NodeRef, er
 		return "", err
 	}
 	b := n.base()
+	b.policy = policy
 	b.name, b.kind, b.source = source.Name(), nodeSource, source
 	return t.add(n)
 }
@@ -242,6 +250,7 @@ func (t *topology[P]) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error
 		return "", err
 	}
 	b := n.base()
+	b.policy = policy
 	b.name, b.kind, b.stage = stage.Name(), nodeStage, stage
 	if admit, ok := stage.(Admitter); ok {
 		b.admit = admit
@@ -255,6 +264,7 @@ func (t *topology[P]) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
 		return "", err
 	}
 	b := n.base()
+	b.policy = policy
 	b.name, b.kind, b.sink = sink.Name(), nodeSink, sink
 	return t.add(n)
 }
@@ -285,6 +295,8 @@ func (t *topology[P]) add(n P) (NodeRef, error) {
 		t.nodes = append(t.nodes, n)
 	}
 	b.index = index
+	t.nextNodeID++
+	b.id = t.nextNodeID
 	b.active = true
 	b.counters = &nodeCounters{}
 	t.index[b.name] = index
@@ -325,6 +337,11 @@ func (t *topology[P]) Connect(route Route) error {
 		}
 		if t.nodes[to].base().kind == nodeSource {
 			return ErrInvalidLink
+		}
+		src, dst := t.nodes[from].base(), t.nodes[to].base()
+		sd, dd := src.domain.Load(), dst.domain.Load()
+		if sd != nil && sd != dd || (sd != nil || dd != nil) && (src.admit != nil || dst.admit != nil) {
+			return ErrUnsafeFaultDomain
 		}
 		destinations = append(destinations, to)
 	}
@@ -481,11 +498,32 @@ func (t *topology[P]) finalize(n P) error {
 		b.active = false
 		b.routes = nil
 		b.finalized = true
+		var outcome error
+		if b.closeErr != nil {
+			outcome = &FinalizationError{ID: b.id, Node: NodeRef(b.name), Cause: b.closeErr}
+			t.cleanupErr = errors.Join(t.cleanupErr, outcome)
+		}
+		if d := b.domain.Load(); d != nil && d.finalized(outcome) {
+			for i, domain := range t.domains {
+				if domain == d {
+					t.domains = append(t.domains[:i], t.domains[i+1:]...)
+					break
+				}
+			}
+		}
 		t.rememberDeferredLocked(b)
 		t.reclaimLocked(n)
 		t.mu.Unlock()
 	})
 	return b.closeErr
+}
+
+// CleanupError is the durable outcome of resource finalization. A caller
+// timing out while waiting for a handler is not a finalization failure.
+func (t *topology[P]) CleanupError() error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.cleanupErr
 }
 
 func (t *topology[P]) reap(n P) {
@@ -519,15 +557,19 @@ func (t *topology[P]) Spec() Spec {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	spec := Spec{
-		Name:     t.config.Name,
-		Realtime: t.config.Realtime,
+		Name:      t.config.Name,
+		Realtime:  t.config.Realtime,
+		Execution: DescribeExecution(t.config),
 	}
+	spec.Execution.Admission = t.executionAdmission()
 	for i := range t.nodes {
 		node := t.nodes[i].base()
 		if !node.active {
 			continue
 		}
-		spec.Nodes = append(spec.Nodes, node.spec())
+		specNode := node.spec()
+		specNode.Execution = DescribeNodeExecution(specNode.Kind, t.config, node.policy)
+		spec.Nodes = append(spec.Nodes, specNode)
 		for j := range node.routes {
 			route := &node.routes[j]
 			for k := range route.to {
@@ -607,9 +649,6 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	t.mu.Lock()
 	firstClose := !t.closed
 	t.closed = true
@@ -618,7 +657,7 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 		node         P
 		await, stuck bool
 	}
-	var first error
+	first := ctx.Err()
 	nodes := make([]closing, 0, len(t.nodes))
 	for i := range t.nodes {
 		n := closing{node: t.nodes[i]}

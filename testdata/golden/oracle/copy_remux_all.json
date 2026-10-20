@@ -5,12 +5,19 @@
       {
         "name": "in.mp4",
         "kind": "source",
-        "detail": "demux, protocol=file"
+        "detail": "demux, protocol=file",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "out.mkv",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -19,7 +26,12 @@
         "to": "out.mkv",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "from in.mp4 to out.mkv",
@@ -80,6 +92,18 @@
         "code": "packet_copy",
         "branch": "in.mp4",
         "message": "packet copy requested; packets are copied to outputs"
+      },
+      {
+        "code": "execution_mode",
+        "message": "direct: serial_no_parallel_ladder"
+      },
+      {
+        "code": "serial_execution",
+        "message": "serial_no_parallel_ladder; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
       }
     ],
     "requiredAdapters": [
@@ -143,12 +167,19 @@
         {
           "name": "in.mp4",
           "kind": "source",
-          "detail": "demux, protocol=file"
+          "detail": "demux, protocol=file",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "out.mkv",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -157,7 +188,12 @@
           "to": "out.mkv",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

@@ -6,25 +6,27 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
-// FlushDownstream drains every buffered queue downstream of the named source,
-// shedding queued packet/frame messages (recorded under DropFlush) and keeping
-// queued events in order — an EndOfStream or Discontinuity sitting in a queue
-// is lifecycle, not stale media. From the first queued av.EventDiscontinuity
-// on, everything is preserved wholesale: the discontinuity is the reposition
-// marker a ControllableSource emits at its new position, so what follows it is
-// post-seek media, never backlog.
+// FlushDownstream drains buffered queues exclusively downstream of the named
+// source, shedding queued packet/frame messages (recorded under DropFlush) and
+// keeping queued events in order. From the first queued av.EventDiscontinuity
+// on, everything is preserved: the marker starts the source's new position.
 //
-// This is the flush half of an accurate seek: the caller delivers the
-// reposition control to the source first (so it is recorded), then flushes the
-// source's downstream closure. The capability is structural — asserted as
-// interface{ FlushDownstream(NodeRef) error }, like a source's
-// UseClock(av.Clock) — and deliberately not part of Graph: the direct runner
-// queues nothing, so a seek there has nothing to flush.
+// A queue reached by an unrelated upstream is shared. It and its downstream
+// queues are preserved, because their media cannot be attributed to the seeking
+// source without inspecting arbitrary component behavior. A same-source fork
+// and rejoin remains exclusive. Shared queues can therefore deliver a bounded
+// admitted pre-seek tail before the source's discontinuity, while retaining
+// the other sources' media. Per-arm join state handles that discontinuity.
 //
-// The closure is computed from the live routing table at call time, so nodes
-// attached at runtime are flushed too. A message already handed to a worker or
-// sink cannot be recalled; it was emitted before the reposition applied and is
-// delivered before the discontinuity, so order is preserved.
+// The caller probes the source's control capability, flushes, then delivers the
+// reposition control, so this operation cannot discard media emitted after
+// that control. The capability is structural — asserted as
+// interface{ FlushDownstream(NodeRef) error } — and deliberately not part of
+// Graph: the direct runner queues nothing.
+//
+// Ownership is computed from the live routes at call time, including attached
+// nodes. A message already handed to a worker or sink cannot be recalled; it
+// precedes the discontinuity on that path.
 func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 	g.mu.RLock()
 	if g.closed {
@@ -41,7 +43,6 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 	visited := make([]bool, len(g.nodes))
 	visited[start] = true
 	frontier := []int{start}
-	var targets []*bufferedNode
 	for len(frontier) > 0 {
 		from := frontier[0]
 		frontier = frontier[1:]
@@ -57,10 +58,44 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 					continue
 				}
 				frontier = append(frontier, to)
-				if next.kind != nodeSource && next.opened {
-					targets = append(targets, next)
+			}
+		}
+	}
+	// Mark every entry from outside this closure, then propagate that shared
+	// ownership through its descendants. Computing the full closure first
+	// makes this independent of traversal order: a fork from this source can
+	// rejoin exclusively, while an external arm contaminates every downstream
+	// queue even if another path from this source reaches it first.
+	shared := make([]bool, len(g.nodes))
+	for from, node := range g.nodes {
+		if !node.active || visited[from] {
+			continue
+		}
+		for _, route := range node.routes {
+			for _, to := range route.to {
+				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].active {
+					shared[to] = true
+					frontier = append(frontier, to)
 				}
 			}
+		}
+	}
+	for len(frontier) > 0 {
+		from := frontier[0]
+		frontier = frontier[1:]
+		for _, route := range g.nodes[from].routes {
+			for _, to := range route.to {
+				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].active {
+					shared[to] = true
+					frontier = append(frontier, to)
+				}
+			}
+		}
+	}
+	var targets []*bufferedNode
+	for i, node := range g.nodes {
+		if i != start && visited[i] && !shared[i] && node.active && node.kind != nodeSource && node.opened {
+			targets = append(targets, node)
 		}
 	}
 	// Release g.mu before draining: flushNodeQueue serializes against producers

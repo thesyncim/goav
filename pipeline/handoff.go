@@ -132,7 +132,7 @@ type waiterQueue = mpscQueue[directWaiter, *directWaiter]
 // deliver hands msg to dst once and reports whether Handle ran. The lone
 // producer path is one CAS, Handle, and one CAS.
 func (g *directRunner) deliver(ctx context.Context, from *directEmitter, dst *directNode, msg *Message) (bool, error) {
-	if dst.paused.Load() {
+	if dst.paused.Load() || dst.faulted() {
 		// Branch paused: skip this node; the source and siblings keep flowing.
 		return false, nil
 	}
@@ -275,12 +275,19 @@ func wakeServed(woken []*directWaiter, served *int) {
 
 // handle runs one message through dst. The caller owns dst.
 func (g *directRunner) handle(ctx context.Context, dst *directNode, msg *Message) (bool, error) {
+	if dst.faulted() {
+		return false, nil
+	}
+	parent := ctx
+	ctx, releaseContext := dst.handlerContext(ctx)
+	if releaseContext != nil {
+		defer releaseContext()
+	}
 	observeIn(dst.counters, msg, &g.cold)
 	switch dst.kind {
 	case nodeStage:
 		if err := dst.stage.Handle(ctx, msg, &dst.emitter); err != nil {
-			g.fail.report(err)
-			return false, err
+			return false, g.nodeError(parent, &dst.nodeBase, err)
 		}
 		return true, nil
 	case nodeSink:
@@ -288,8 +295,7 @@ func (g *directRunner) handle(ctx context.Context, dst *directNode, msg *Message
 			g.noteSinkMedia(&dst.sawMedia)
 		}
 		if err := dst.sink.Handle(ctx, msg); err != nil {
-			g.fail.report(err)
-			return false, err
+			return false, g.nodeError(parent, &dst.nodeBase, err)
 		}
 		return true, nil
 	default:

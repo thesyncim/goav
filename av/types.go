@@ -476,6 +476,9 @@ const (
 	// EventBranchAttached reports that task.Attach added a runtime branch
 	// group. Metadata carries MetadataAttachmentID and MetadataAttachmentName.
 	EventBranchAttached EventType = "branch_attached"
+	// EventBranchFailed reports the first returned handler error in an
+	// isolated branch. The durable branch snapshot retains Cause.
+	EventBranchFailed EventType = "branch_failed"
 	// EventBranchDetached reports that task.Detach removed a runtime branch
 	// group. Metadata carries MetadataAttachmentID, MetadataAttachmentName, and
 	// MetadataDetachDisposition.
@@ -486,6 +489,9 @@ const (
 	// EventDestinationAborted reports that a task or runtime branch destination
 	// was aborted.
 	EventDestinationAborted EventType = "destination_aborted"
+	// EventDestinationClosed reports a closed nontransactional destination
+	// whose processing was abandoned. Partial external output may remain.
+	EventDestinationClosed EventType = "destination_closed"
 	// EventDestinationCommitError reports a failed destination finalization.
 	EventDestinationCommitError EventType = "destination_commit_error"
 	// EventCleanupError reports a node's failed finalization after its caller

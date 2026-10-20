@@ -5,26 +5,44 @@
       {
         "name": "audio-1",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "audio-2",
         "kind": "source",
-        "detail": "custom source, domain=frame, media=audio"
+        "detail": "custom source, domain=frame, media=audio",
+        "execution": {
+          "kind": "source"
+        }
       },
       {
         "name": "mix",
-        "kind": "stage"
+        "kind": "stage",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "encode-mix",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       },
       {
         "name": "mix.webm",
         "kind": "stage",
-        "detail": "mux, protocol=file"
+        "detail": "mux, protocol=file",
+        "execution": {
+          "kind": "inline",
+          "blocksProducer": true
+        }
       }
     ],
     "edges": [
@@ -48,7 +66,12 @@
         "to": "mix.webm",
         "policy": "all"
       }
-    ]
+    ],
+    "execution": {
+      "admission": "arrival",
+      "mode": "direct",
+      "fanout": "shared_producer"
+    }
   },
   "explain": {
     "summary": "mix 2 inputs to mix.webm",
@@ -221,6 +244,20 @@
         ]
       }
     ],
+    "decisions": [
+      {
+        "code": "execution_mode",
+        "message": "direct: serial_no_parallel_ladder"
+      },
+      {
+        "code": "serial_execution",
+        "message": "serial_no_parallel_ladder; handlers execute inline and pace their shared producer"
+      },
+      {
+        "code": "branch_coupling",
+        "message": "inline work and full blocking queues stop the shared producer, delaying its siblings; failure isolation does not isolate stalls"
+      }
+    ],
     "requiredAdapters": [
       {
         "kind": "muxer",
@@ -267,26 +304,44 @@
         {
           "name": "audio-1",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "audio-2",
           "kind": "source",
-          "detail": "custom source, domain=frame, media=audio"
+          "detail": "custom source, domain=frame, media=audio",
+          "execution": {
+            "kind": "source"
+          }
         },
         {
           "name": "mix",
-          "kind": "stage"
+          "kind": "stage",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "encode-mix",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         },
         {
           "name": "mix.webm",
           "kind": "stage",
-          "detail": "mux, protocol=file"
+          "detail": "mux, protocol=file",
+          "execution": {
+            "kind": "inline",
+            "blocksProducer": true
+          }
         }
       ],
       "edges": [
@@ -310,7 +365,12 @@
           "to": "mix.webm",
           "policy": "all"
         }
-      ]
+      ],
+      "execution": {
+        "admission": "arrival",
+        "mode": "direct",
+        "fanout": "shared_producer"
+      }
     }
   }
 }

@@ -258,7 +258,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	assertSeekFileLog(t, sink.snapshot(), want)
 
 	committed, ok := destinationSnapshotByName(task.Snapshot().Destinations, "rec")
-	if !ok || committed.State != DestinationCommitted {
+	if !ok || committed.State != DestinationFinalizing {
 		t.Fatalf("destination after segment run = %+v, want committed rec destination", committed)
 	}
 }

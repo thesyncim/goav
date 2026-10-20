@@ -10,6 +10,21 @@ replacement RTP/RTCP/WebRTC structs: `rtpav` consumes `pion/rtp.Packet` and
 `pion/rtcp.Packet`; `webrtcav` consumes `pion/webrtc/v4` `PeerConnection`,
 `TrackRemote`, `RTPReceiver`, and `RTPCodecParameters`.
 
+## Atomic reader contract
+
+`PacketReader.ReadRTP` returns `(packet, event, immutablePayloadMap, error)`.
+Configuration events and event-only records use this operation, so decorators
+cannot silently hide a codec change behind an optional interface. Migrate both
+two-result readers and `ReadRTPWithConfig` implementations; fixed legacy readers
+can use `rtpav.Static`, while wrappers can use `rtpav.DecorateReader`.
+
+Maps tagged with `PayloadCodec.StreamID` preserve independent per-track epochs,
+even for tracks sharing a payload type and codec. Untagged maps use session-wide
+epochs and must distinguish streams by codec. WHEP aggregates ordered records
+through a bounded queue, including configuration and terminal errors. See
+[Runtime contracts](RUNTIME_CONTRACTS.md#rtp-reader-migration) for event ordering,
+removal/re-addition, borrowed-memory lifetime, and epoch rules.
+
 ## Receive path
 
 ```text

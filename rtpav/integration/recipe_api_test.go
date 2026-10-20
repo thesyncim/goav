@@ -58,8 +58,8 @@ func (recipeAPIRTPReader) PayloadMap() rtpav.PayloadMap {
 	return nil
 }
 
-func (recipeAPIRTPReader) ReadRTP(context.Context) (*rtp.Packet, error) {
-	return nil, io.EOF
+func (recipeAPIRTPReader) ReadRTP(context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	return nil, nil, nil, io.EOF
 }
 
 func (recipeAPIRTPReader) Events() <-chan av.Event {
