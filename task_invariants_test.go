@@ -280,7 +280,8 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 
 type finalizeHeldStage struct{ entered, release chan struct{} }
 
-func (*finalizeHeldStage) Name() string { return "held" }
+func (*finalizeHeldStage) Name() string         { return "held" }
+func (*finalizeHeldStage) FrameOnlyInput() bool { return false }
 func (s *finalizeHeldStage) Handle(context.Context, *pipeline.Message, pipeline.Emitter) error {
 	close(s.entered)
 	<-s.release
