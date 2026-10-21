@@ -99,7 +99,22 @@ subject to the operating system's own completion behavior.
 Capture is video-only. Fractional frame-rate selection and native compressed
 camera formats are not yet part of this API.
 
-Build the CLI with cgo disabled, then package it on macOS:
+For development on macOS, run from `cmd/goav` with the execution helper so the
+permission request has the required app metadata:
+
+```sh
+cd cmd/goav
+CGO_ENABLED=0 GOEXPERIMENT=simd go run -exec ../../scripts/camera/go-run-macos.sh . cameras --request-access
+CGO_ENABLED=0 GOEXPERIMENT=simd go run -exec ../../scripts/camera/go-run-macos.sh . run 'uri "camera://default" ! video ! encode vp8 ! file camera.webm'
+```
+
+Press Ctrl-C to stop and finalize the video. The helper reuses a cached,
+ad-hoc-signed app for the same executable and metadata; macOS may ask for
+permission again after a rebuild. Plain `go run` cannot supply this bundle
+metadata.
+
+Alternatively, build the CLI with cgo disabled, then package it from the
+repository root on macOS:
 
 ```sh
 scripts/camera/package-macos.sh /path/to/goav /new/path/GoAV.app
