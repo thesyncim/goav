@@ -6,8 +6,8 @@ toolchain go1.27.2
 
 require (
 	github.com/ebitengine/oto/v3 v3.5.1
-	github.com/ebitengine/purego v0.11.0
-	github.com/hajimehoshi/ebiten/v2 v2.10.5
+	github.com/ebitengine/purego v0.11.3
+	github.com/hajimehoshi/ebiten/v2 v2.10.6
 	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
 )
 
