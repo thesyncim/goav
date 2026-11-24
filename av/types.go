@@ -121,9 +121,9 @@ const MetadataDestinationName = "destination_name"
 // Sample and pixel format names used in CodecParameters, AudioFrame, and
 // VideoFrame. Open strings: adapters may introduce more.
 const (
-	SampleFormatS16    = "s16"
-	SampleFormatF32    = "f32"
-	PixelFormatGray8   = "gray8"
+	SampleFormatS16  = "s16"
+	SampleFormatF32  = "f32"
+	PixelFormatGray8 = "gray8"
 	// Planar 8-bit YUV formats. PixelFormatYUV420P, PixelFormatYUV422P, and
 	// PixelFormatYUV444P alias the canonical I420/I422/I444 names (identical
 	// 3-plane Y, U, V memory layout).
