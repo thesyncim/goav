@@ -2,7 +2,7 @@ module github.com/thesyncim/goav/examples/control-plane-host
 
 go 1.27.4
 
-require github.com/thesyncim/goav v0.0.0-20261124150225-d83521f85587
+require github.com/thesyncim/goav v0.0.0-20261124164349-bccbd6b0efad
 
 require (
 	github.com/thesyncim/goav1 v0.0.0-20261124140820-93c8fb491899 // indirect
