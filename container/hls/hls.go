@@ -580,11 +580,26 @@ func (w *writer) announceEnded() {
 	}
 }
 
+// boxPayload returns the child payload of a top-level MP4 box, handling both
+// 32-bit (8-byte header) and 64-bit extended (16-byte header) boxes.
+func boxPayload(b []byte) []byte {
+	if len(b) < 8 {
+		return nil
+	}
+	if binary.BigEndian.Uint32(b) == 1 {
+		if len(b) < 16 {
+			return nil
+		}
+		return b[16:]
+	}
+	return b[8:]
+}
+
 // readTracks reads each track's id, timescale, and handler from the moov.
 func (w *writer) readTracks(moov []byte) {
 	w.anchor = 0
 	video := false
-	forBoxes(moov[8:], func(typ string, trak []byte) {
+	forBoxes(boxPayload(moov), func(typ string, trak []byte) {
 		if typ != "trak" {
 			return
 		}
@@ -638,7 +653,7 @@ func fullBoxField(b []byte, v0, v1 int) uint32 {
 // fragmentTimes reads where a fragment starts and ends, in seconds, from
 // the anchor track's run, or the first run when the anchor has none.
 func (w *writer) fragmentTimes(moof []byte) (start, end float64, independent, ok bool) {
-	forBoxes(moof[8:], func(typ string, traf []byte) {
+	forBoxes(boxPayload(moof), func(typ string, traf []byte) {
 		if typ != "traf" {
 			return
 		}
