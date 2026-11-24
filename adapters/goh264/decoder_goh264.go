@@ -41,6 +41,7 @@ type Decoder struct {
 	decoder          *goh264lib.Decoder
 	stream           av.Stream
 	video            av.VideoFrame
+	videoMeta        []av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
 	dropUntilSync    bool
@@ -273,14 +274,18 @@ func (d *Decoder) appendDecodedFrame(timing *frameTiming, src *goh264lib.Frame, 
 	out.Frames = out.Frames[:index+1]
 	frame := &out.Frames[index]
 	frame.Reset()
-	if err := d.fillDecodedFrame(timing, src, frame); err != nil {
+	if cap(d.videoMeta) < cap(out.Frames) {
+		d.videoMeta = make([]av.VideoFrame, cap(out.Frames))
+	}
+	d.videoMeta = d.videoMeta[:cap(out.Frames)]
+	if err := d.fillDecodedFrame(timing, src, frame, &d.videoMeta[index]); err != nil {
 		out.Frames = out.Frames[:index]
 		return err
 	}
 	return nil
 }
 
-func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, frame *av.Frame) error {
+func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, frame *av.Frame, videoOut *av.VideoFrame) error {
 	if src.BitDepthLuma != 8 || src.BitDepthChroma != 8 {
 		return codec.ErrUnsupportedFormat
 	}
@@ -315,11 +320,12 @@ func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, fr
 	d.video.Width = src.Width
 	d.video.Height = src.Height
 	d.video.PixelFormat = pixelFormat
+	*videoOut = d.video
 
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
 	frame.Type = av.MediaVideo
-	frame.Video = &d.video
+	frame.Video = videoOut
 	if timing != nil {
 		if timing.streamID != "" {
 			frame.StreamID = timing.streamID

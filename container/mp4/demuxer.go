@@ -236,8 +236,12 @@ func applyEdits(tracks []*track) {
 	if minNS >= 0 {
 		return
 	}
+	negMinNS := -minNS
+	if minNS == math.MinInt64 {
+		negMinNS = math.MaxInt64
+	}
 	for _, tr := range tracks {
-		lift := ceilTicks(-minNS, tr.timescale)
+		lift := ceilTicks(negMinNS, tr.timescale)
 		for i := range tr.samples {
 			tr.samples[i].dts += lift
 			tr.samples[i].cts += lift

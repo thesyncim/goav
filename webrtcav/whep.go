@@ -381,9 +381,6 @@ func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
 func (s *whepSession) pump(reader TrackReader) {
 	for {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
-		if packet != nil {
-			packet = packet.Clone()
-		}
 		event = cloneReadEvent(event)
 		select {
 		case s.records <- whepRecord{packet: packet, event: event, payloads: payloads, err: err}:

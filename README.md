@@ -41,6 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer src.Close()
 	dst, err := os.Create("out.webm")
 	if err != nil {
 		log.Fatal(err)

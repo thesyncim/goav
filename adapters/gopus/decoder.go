@@ -58,6 +58,7 @@ type Decoder struct {
 	sampleRate int
 	channels   int
 	audio      av.AudioFrame
+	audioMeta  []av.AudioFrame
 	pendingPLC int
 
 	// Pre-skip (RFC 7845 §4.2): the first samples a stream decodes are encoder
@@ -238,12 +239,17 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 	plane.Stride = d.channels * 2
 
 	d.audio.Samples = samples
+	if cap(d.audioMeta) < cap(out.Frames) {
+		d.audioMeta = make([]av.AudioFrame, cap(out.Frames))
+	}
+	d.audioMeta = d.audioMeta[:cap(out.Frames)]
+	d.audioMeta[index] = d.audio
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
 	frame.Type = av.MediaAudio
 	frame.PTS = pts
 	frame.Duration = av.SamplesDuration(samples, d.sampleRate)
-	frame.Audio = &d.audio
+	frame.Audio = &d.audioMeta[index]
 	return nil
 }
 

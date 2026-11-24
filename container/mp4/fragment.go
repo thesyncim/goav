@@ -1,6 +1,16 @@
 package mp4
 
-import "io"
+import (
+	"io"
+	"math"
+)
+
+func addInt64Checked(a, b int64) (int64, bool) {
+	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
+		return 0, false
+	}
+	return a + b, true
+}
 
 // trexDefaults holds a track's movie-extends defaults, applied to trun samples
 // that omit a per-sample duration, size, or flags.
@@ -79,7 +89,11 @@ func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]
 			_, flags := p.fullBox()
 			tr = byID[p.u32()]
 			if flags&tfhdBaseDataOffset != 0 {
-				baseOffset = int64(p.u64())
+				raw := p.u64()
+				if raw > uint64(math.MaxInt64) {
+					return ErrInvalidData
+				}
+				baseOffset = int64(raw)
 			}
 			if flags&tfhdSampleDescIndex != 0 {
 				p.u32()
@@ -179,7 +193,10 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 	if !budget.claim(count, sizeEach) {
 		return dts, ErrInvalidData
 	}
-	offset := baseOffset + dataOffset
+	offset, ok := addInt64Checked(baseOffset, dataOffset)
+	if !ok || offset < 0 {
+		return dts, ErrInvalidData
+	}
 	for i := range count {
 		d := defDur
 		if flags&trunSampleDuration != 0 {
@@ -204,15 +221,27 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 				comp = int32(p.u32())
 			}
 		}
+		cts, ok := addInt64Checked(dts, int64(comp))
+		if !ok {
+			return dts, ErrInvalidData
+		}
 		tr.samples = append(tr.samples, sample{
 			offset:   offset,
 			size:     int(s),
 			dts:      dts,
-			cts:      dts + int64(comp),
+			cts:      cts,
 			keyframe: sflags&sampleNonSync == 0,
 		})
-		offset += int64(s)
-		dts += int64(d)
+		nextOffset, ok := addInt64Checked(offset, int64(s))
+		if !ok {
+			return dts, ErrInvalidData
+		}
+		nextDTS, ok := addInt64Checked(dts, int64(d))
+		if !ok {
+			return dts, ErrInvalidData
+		}
+		offset = nextOffset
+		dts = nextDTS
 	}
 	if p.err() != nil {
 		return dts, ErrInvalidData

@@ -70,11 +70,20 @@ func (s *Server) Remove(name string) error {
 
 type serverFile struct {
 	bytes.Buffer
-	server *Server
-	name   string
+	server  *Server
+	name    string
+	aborted bool
+}
+
+func (f *serverFile) abort() {
+	f.aborted = true
+	f.Reset()
 }
 
 func (f *serverFile) Close() error {
+	if f.aborted {
+		return nil
+	}
 	f.server.mu.Lock()
 	f.server.files[f.name] = f.Bytes()
 	f.server.wakeLocked(f.name)
@@ -119,21 +128,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-	query := r.URL.Query()
-	ready, err := s.blockingRequest(name, query)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	var query map[string][]string
+	var ready func() bool
+	hasMSN := false
+	delta := false
+	if r.URL.RawQuery != "" {
+		q := r.URL.Query()
+		query = q
+		hasMSN = q.Has("_HLS_msn")
+		delta = wantsDelta(q)
+		var err error
+		ready, err = s.blockingRequest(name, query)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
-	limit := 3 * s.targetFor(name)
-	timer := time.NewTimer(limit)
-	defer timer.Stop()
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
 		s.mu.Lock()
 		data, have := s.files[name]
-		ok := have && ready()
-		if e := s.edges[name]; ok && wantsDelta(query) && e.delta != nil {
-			data = e.delta
+		ok := have && (ready == nil || ready())
+		if ok && delta {
+			if e := s.edges[name]; e.delta != nil {
+				data = e.delta
+			}
 		}
 		pending := !ok && s.pendingLocked(name)
 		var wait chan struct{}
@@ -142,12 +166,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.Unlock()
 		if ok {
-			s.write(w, r, name, data, query.Has("_HLS_msn"))
+			s.write(w, r, name, data, hasMSN)
 			return
 		}
 		if !pending {
 			http.NotFound(w, r)
 			return
+		}
+		if timer == nil {
+			timer = time.NewTimer(3 * s.targetFor(name))
 		}
 		select {
 		case <-wait:

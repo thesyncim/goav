@@ -198,3 +198,26 @@ func TestMatrixFor(t *testing.T) {
 		t.Fatal("matrix selection by height is wrong")
 	}
 }
+
+func TestConvertRGBAAllocs(t *testing.T) {
+	// 1280x720 exercises the multi-band worker pool path (>= 262,144 px).
+	const w, h = 1280, 720
+	f := planarFrame(av.PixelFormatI420, w, h,
+		func(x, y int) byte { return byte(16 + (x+y)%200) },
+		func(x, y int) byte { return 128 },
+		func(x, y int) byte { return 128 },
+	)
+	dst := make([]byte, 4*w*h)
+	// Warm up the worker pool once.
+	if err := ConvertRGBA(dst, f, BT709); err != nil {
+		t.Fatal(err)
+	}
+	allocs := testing.AllocsPerRun(20, func() {
+		if err := ConvertRGBA(dst, f, BT709); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("ConvertRGBA 720p allocs = %v, want 0", allocs)
+	}
+}

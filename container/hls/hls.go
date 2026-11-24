@@ -210,7 +210,11 @@ func (w *writer) Write(p []byte) (int, error) {
 	}
 	w.buf = append(w.buf, p...)
 	for {
-		box, size, ok := nextBox(w.buf)
+		box, size, ok, err := nextBox(w.buf)
+		if err != nil {
+			w.err = err
+			return 0, err
+		}
 		if !ok {
 			break
 		}
@@ -224,21 +228,26 @@ func (w *writer) Write(p []byte) (int, error) {
 }
 
 // nextBox returns the first whole box in b, with its size.
-func nextBox(b []byte) ([]byte, int, bool) {
+func nextBox(b []byte) ([]byte, int, bool, error) {
 	if len(b) < 8 {
-		return nil, 0, false
+		return nil, 0, false, nil
 	}
 	size := uint64(binary.BigEndian.Uint32(b))
+	headerSize := uint64(8)
 	if size == 1 {
 		if len(b) < 16 {
-			return nil, 0, false
+			return nil, 0, false, nil
 		}
 		size = binary.BigEndian.Uint64(b[8:])
+		headerSize = 16
 	}
-	if size < 8 || size > uint64(len(b)) {
-		return nil, 0, false
+	if size < headerSize {
+		return nil, 0, false, errors.New("hls: invalid mp4 box size")
 	}
-	return b[:size], int(size), true
+	if size > uint64(len(b)) {
+		return nil, 0, false, nil
+	}
+	return b[:size], int(size), true, nil
 }
 
 func (w *writer) handle(box []byte) error {
@@ -525,6 +534,10 @@ func (w *writer) edgeState(end bool) edge {
 	return e
 }
 
+type aborter interface {
+	abort()
+}
+
 // publishFile publishes name, a URI relative to the playlist, to the store.
 func (w *writer) publishFile(name string, data []byte) error {
 	f, err := w.store.Create(w.dir + name)
@@ -532,7 +545,11 @@ func (w *writer) publishFile(name string, data []byte) error {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		if a, ok := f.(aborter); ok {
+			a.abort()
+		} else {
+			_ = f.Close()
+		}
 		return err
 	}
 	return f.Close()
@@ -541,17 +558,26 @@ func (w *writer) publishFile(name string, data []byte) error {
 // Close ends the last segment and publishes the finished playlist.
 func (w *writer) Close() error {
 	if w.err != nil {
+		w.announceEnded()
 		return w.err
 	}
 	if w.open != nil {
 		if err := w.finishSegment(); err != nil {
+			w.announceEnded()
 			return err
 		}
 	}
 	if w.init == nil {
+		w.announceEnded()
 		return nil
 	}
 	return w.publishPlaylist(true)
+}
+
+func (w *writer) announceEnded() {
+	if a, ok := w.store.(announcer); ok {
+		a.announce(w.playlist, w.edgeState(true))
+	}
 }
 
 // readTracks reads each track's id, timescale, and handler from the moov.
@@ -734,18 +760,39 @@ func (d dirStore) Remove(name string) error {
 
 type publishing struct {
 	*os.File
-	final string
+	final   string
+	aborted bool
+}
+
+func (p *publishing) abort() {
+	if p.aborted {
+		return
+	}
+	p.aborted = true
+	name := p.File.Name()
+	_ = p.File.Close()
+	_ = os.Remove(name)
 }
 
 func (p *publishing) Close() error {
+	if p.aborted {
+		return nil
+	}
+	name := p.File.Name()
 	if err := p.File.Chmod(0o644); err != nil {
-		p.File.Close()
+		_ = p.File.Close()
+		_ = os.Remove(name)
 		return err
 	}
 	if err := p.File.Close(); err != nil {
+		_ = os.Remove(name)
 		return err
 	}
-	return os.Rename(p.File.Name(), p.final)
+	if err := os.Rename(name, p.final); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return nil
 }
 
 // readSampleEntry reads a track's codec, as an RFC 6381 codecs string, and

@@ -137,6 +137,9 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if next, ok := d.demuxer.nextTrack(); ok && next < len(d.avccLength) {
 		length = d.avccLength[next]
 	}
+	// Reset before writing into Payload.Bytes so any pooled Owner is released
+	// prior to reusing the slice rather than after filling it.
+	out.Packet.Reset()
 	if length == 0 {
 		if err := d.demuxer.ReadInto(out.Packet.Payload.Bytes[:0], &sample); err != nil {
 			return err
@@ -156,7 +159,6 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 		return ErrInvalidData
 	}
 	stream := d.streams[sample.TrackIndex]
-	out.Packet.Reset()
 	out.Packet.StreamID = stream.ID
 	out.Packet.Type = stream.Type
 	out.Packet.Payload.Bytes = sample.Data

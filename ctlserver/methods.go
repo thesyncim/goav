@@ -310,9 +310,20 @@ func watch(_ context.Context, s *Server, sess *session, p watchParams) (any, err
 		sub.Close()
 		return nil, errors.New("watch: the connection closed")
 	}
+	if len(sess.watches) >= maxWatchesPerSession {
+		sess.mu.Unlock()
+		sub.Close()
+		return nil, errors.New("watch: too many active subscriptions on this connection")
+	}
 	sess.watches[id] = sub
+	if sess.wg != nil {
+		sess.wg.Add(1)
+	}
 	sess.mu.Unlock()
 	go func() {
+		if sess.wg != nil {
+			defer sess.wg.Done()
+		}
 		for event := range sub.Events() {
 			sess.send(notification{JSONRPC: "2.0", Method: "event", Params: eventParams{Subscription: id, Event: wireEvent(event)}})
 		}

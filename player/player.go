@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/player/internal/engine"
+	"github.com/thesyncim/goav/runconfig"
 )
 
 // Window is a playback window and the speaker it plays through. Its
@@ -104,6 +105,15 @@ func (w *Window) Element() launch.Element {
 		}
 		return w.Destination(), nil
 	})
+}
+
+// RuntimeOptions returns the runtime options needed to pace a task against
+// this window's hardware speaker clock in realtime mode.
+func (w *Window) RuntimeOptions() []runconfig.Option {
+	return []runconfig.Option{
+		runconfig.WithClock(w.Clock()),
+		runconfig.WithRealtime(true),
+	}
 }
 
 // Stats is a point-in-time view of playback.
