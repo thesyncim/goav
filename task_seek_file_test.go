@@ -168,7 +168,7 @@ func repeatSleeps(d time.Duration, count int) []time.Duration {
 	return out
 }
 
-func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ...Option) LiveTask {
+func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ...Option) Task {
 	t.Helper()
 	task, err := mustNew(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...).Build(context.Background(), FileInput("seek.mkv", reader).
 		Audio().

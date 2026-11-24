@@ -229,7 +229,7 @@ func (d writerDestination) Contract() provider.Contract {
 	return contract
 }
 
-func (d writerDestination) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+func (d writerDestination) Open(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
 	if d.open == nil {
 		return nil, errNilWriter
 	}
@@ -407,7 +407,7 @@ func (s destinationSpec) Contract() provider.Contract {
 	return contract
 }
 
-func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+func (s destinationSpec) Open(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

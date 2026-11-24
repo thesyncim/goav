@@ -61,8 +61,7 @@ seek that flushes the stale downstream backlog
 (`TestSeekFlushesInFlightMedia`); QoS lateness reports with an opt-in
 corrective policy (`TestQoSReportsLateness`); and a declared per-path latency
 budget in `Explain` (`TestExplainReportsPathLatency`). Contract prose:
-`docs/FLOW_CONTROL.md`; the program record is
-`docs/history/TIME_DOMAIN_PLAN.md`. The one intentionally deferred gap is
+`docs/FLOW_CONTROL.md`. The one intentionally deferred gap is
 pull scheduling.
 
 ## What goav deliberately does not have

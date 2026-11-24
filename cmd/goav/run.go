@@ -296,7 +296,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 // control directory, and the summary lists what they write. A tcp address
 // must be loopback unless --control-remote, and clients authenticate with a
 // token written owner-only to the token file.
-func runServed(ctx context.Context, task goav.LiveTask, runTask func(context.Context) error, control controlFlags, files *cliFiles, stderr io.Writer) error {
+func runServed(ctx context.Context, task goav.Task, runTask func(context.Context) error, control controlFlags, files *cliFiles, stderr io.Writer) error {
 	attached, err := files.within(cmp.Or(control.dir, "."))
 	if err != nil {
 		return err
@@ -464,7 +464,7 @@ var cliURIs = launch.URIs("camera", "http", "https", "whep", "whep+http", "whip"
 func withCLISchemes(options ...runconfig.Option) []runconfig.Option {
 	whep, whip := webrtcav.WHEP(), webrtcav.WHIP()
 	return append(options,
-		runconfig.Scheme("camera", cameraav.Scheme{}),
-		runconfig.Scheme("whep", whep), runconfig.Scheme("whep+http", whep),
-		runconfig.Scheme("whip", whip), runconfig.Scheme("whips", whip), runconfig.Scheme("whip+http", whip))
+		runconfig.WithScheme("camera", cameraav.Scheme()),
+		runconfig.WithScheme("whep", whep), runconfig.WithScheme("whep+http", whep),
+		runconfig.WithScheme("whip", whip), runconfig.WithScheme("whips", whip), runconfig.WithScheme("whip+http", whip))
 }

@@ -38,8 +38,3 @@ matches your work. Each topic has one owning doc.
 - [`ROADMAP.md`](ROADMAP.md): to see what is stable, experimental, planned, or a non-goal, and the gates before v1.
 - [`RELEASING.md`](RELEASING.md): when cutting a tag, for the checklist, gate matrix, automation, and repository trust posture.
 - [`GSTREAMER_ALTERNATIVE.md`](GSTREAMER_ALTERNATIVE.md): when choosing between goav and GStreamer.
-
-## History
-
-Finished campaign artifacts live in [`history/`](history/). They are kept for
-context; forward-looking work updates the living docs above.

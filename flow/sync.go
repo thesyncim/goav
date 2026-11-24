@@ -17,7 +17,6 @@ type SyncPolicy struct {
 	tolerance time.Duration
 	mode      syncMode
 	scheduler *syncScheduler
-	flags     syncPolicyFlags
 }
 
 type syncMode uint8
@@ -27,46 +26,31 @@ const (
 	syncDropLate
 )
 
-type syncPolicyFlags uint8
-
-const (
-	syncPolicyHasTolerance syncPolicyFlags = 1 << iota
-	syncPolicyHasMode
-)
-
 // Sync creates a shared media timeline policy. The default holds early media
-// until slower streams catch up; use SyncDropLate for preview-style branches
+// until slower streams catch up; call WithDropLate for preview-style branches
 // that should shed stale media instead.
-func Sync(name string, opts ...SyncPolicy) SyncPolicy {
-	policy := SyncPolicy{
+func Sync(name string) SyncPolicy {
+	return SyncPolicy{
 		name:      firstNonEmpty(strings.TrimSpace(name), "sync"),
 		mode:      syncHoldLate,
 		scheduler: newSyncScheduler(),
 	}
-	for i := range opts {
-		if opts[i].flags&syncPolicyHasTolerance != 0 {
-			policy.tolerance = opts[i].tolerance
-		}
-		if opts[i].flags&syncPolicyHasMode != 0 {
-			policy.mode = opts[i].mode
-		}
-	}
-	return policy
 }
 
-// SyncTolerance sets the allowed media-time skew before a sync gate holds or
+// WithTolerance sets the allowed media-time skew before a sync gate holds or
 // drops a message.
-func SyncTolerance(tolerance time.Duration) SyncPolicy {
-	if tolerance <= 0 {
-		return SyncPolicy{}
+func (p SyncPolicy) WithTolerance(tolerance time.Duration) SyncPolicy {
+	if tolerance > 0 {
+		p.tolerance = tolerance
 	}
-	return SyncPolicy{tolerance: tolerance, flags: syncPolicyHasTolerance}
+	return p
 }
 
-// SyncDropLate makes a sync gate drop messages that arrive behind the shared
+// WithDropLate makes a sync gate drop messages that arrive behind the shared
 // timeline by more than the tolerance.
-func SyncDropLate() SyncPolicy {
-	return SyncPolicy{mode: syncDropLate, flags: syncPolicyHasMode}
+func (p SyncPolicy) WithDropLate() SyncPolicy {
+	p.mode = syncDropLate
+	return p
 }
 
 // Normalize fills the default name and scheduler used by a zero SyncPolicy.

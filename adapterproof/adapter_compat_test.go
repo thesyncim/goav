@@ -595,7 +595,7 @@ func (d *toyDestination) Contract() provider.Contract {
 	}
 }
 
-func (d *toyDestination) Open(_ context.Context, info provider.Info) (provider.Writer, error) {
+func (d *toyDestination) Open(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 	d.mu.Lock()
 	d.info = info
 	d.mu.Unlock()

@@ -7,7 +7,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
+func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 	runtime := runtimeForGraphExecution(gp.runtime)
 	// One shared timeline per task: the runtime clone carries it as the clock
 	// every lowering step threads to paced sources, so a task-wide rate change

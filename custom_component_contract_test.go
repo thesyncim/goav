@@ -438,7 +438,7 @@ func (w *componentWriteCloser) Close() error {
 type componentDestination struct {
 	name     string
 	contract provider.Contract
-	writer   provider.Writer
+	writer   io.WriteCloser
 	info     provider.Info
 	opens    int
 	err      error
@@ -448,7 +448,7 @@ func (d *componentDestination) Name() string { return d.name }
 
 func (d *componentDestination) Contract() provider.Contract { return d.contract }
 
-func (d *componentDestination) Open(_ context.Context, info provider.Info) (provider.Writer, error) {
+func (d *componentDestination) Open(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 	d.opens++
 	d.info = info
 	if d.err != nil {

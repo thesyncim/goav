@@ -90,7 +90,7 @@ func (recipeAPICustomDestination) Contract() provider.Contract {
 	}
 }
 
-func (recipeAPICustomDestination) Open(context.Context, provider.Info) (provider.Writer, error) {
+func (recipeAPICustomDestination) Open(context.Context, provider.Info) (io.WriteCloser, error) {
 	return recipeAPICustomWriter{}, nil
 }
 

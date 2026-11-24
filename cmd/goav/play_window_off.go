@@ -27,5 +27,5 @@ func (noWindow) Element() launch.Element {
 
 func (noWindow) Used() bool                               { return false }
 func (noWindow) Clock() av.Clock                          { return av.MonotonicClock() }
-func (noWindow) Run(context.Context, goav.LiveTask) error { return errNoPlay }
+func (noWindow) Run(context.Context, goav.Task) error { return errNoPlay }
 func (noWindow) summary() *playStats                      { return nil }

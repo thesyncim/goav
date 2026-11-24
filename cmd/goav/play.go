@@ -57,7 +57,7 @@ type window interface {
 	Element() launch.Element
 	Used() bool
 	Clock() av.Clock
-	Run(context.Context, goav.LiveTask) error
+	Run(context.Context, goav.Task) error
 	summary() *playStats
 }
 

@@ -3,7 +3,7 @@
 // paths, and HTTP for http and https. bundle.Schemes registers them on a
 // runtime; registering one yourself replaces it there, last wins:
 //
-//	rt, err := bundle.New(runconfig.Scheme("https", scheme.HTTP(scheme.Client(myClient))))
+//	rt, err := bundle.New(runconfig.WithScheme("https", scheme.HTTP(scheme.Client(myClient))))
 //
 // Both use the standard library only. Transports with dependencies live in
 // nested modules and export their schemes the same way (webrtcav.WHEP); a
@@ -115,7 +115,7 @@ func (fileDestination) Contract() provider.Contract {
 	return provider.Contract{ByteStream: true, Seekable: true, Protocol: av.ProtocolFile}
 }
 
-func (f fileDestination) Open(ctx context.Context, _ provider.Info) (provider.Writer, error) {
+func (f fileDestination) Open(ctx context.Context, _ provider.Info) (io.WriteCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

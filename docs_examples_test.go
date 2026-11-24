@@ -60,7 +60,7 @@ var docSnippetPackages = map[string]string{
 const docSnippetPrelude = `
 	var ctx context.Context
 	var rt *goav.Runtime
-	var task goav.LiveTask
+	var task goav.Task
 	var input goav.InputSpec
 	_, _, _, _ = ctx, rt, task, input
 `

@@ -295,7 +295,7 @@ func TestHTTPStatusAndRedirects(t *testing.T) {
 		http.Redirect(w, r, target, http.StatusFound)
 	}))
 	defer front.Close()
-	rt := bundle.MustNew(runconfig.Scheme("http", scheme.HTTP(scheme.Header("X-Api-Key", "k1"))))
+	rt := bundle.MustNew(runconfig.WithScheme("http", scheme.HTTP(scheme.Header("X-Api-Key", "k1"))))
 	if _, err := digest(t, rt, goav.URIInput(front.URL+"/movie.mp4")); err != nil {
 		t.Fatal(err)
 	}

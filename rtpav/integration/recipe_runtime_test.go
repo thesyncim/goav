@@ -881,7 +881,7 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 		}
 		return nil
 	}))
-	policy := flow.Sync("rtp-room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("rtp-room").WithTolerance(5 * time.Millisecond).WithDropLate()
 	in := goav.Input(rtpav.Receive(receiver,
 		rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(audio), rtpav.NewVP8Depacketizer(video)),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}),

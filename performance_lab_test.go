@@ -129,7 +129,7 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 	var latencyIndex atomic.Int64
 	var sourceDrops atomic.Uint64
 	sink := &liveRoomSyncSink{}
-	policy := flow.Sync("live-room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("live-room").WithTolerance(20 * time.Millisecond).WithDropLate()
 
 	ctx := context.Background()
 	task, err := benchRuntime().Build(ctx,
@@ -178,7 +178,7 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 	var latencyIndex atomic.Int64
 	var sourceDrops atomic.Uint64
 	sink := &liveRoomSyncSink{}
-	policy := flow.Sync("live-room-churn", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("live-room-churn").WithTolerance(20 * time.Millisecond).WithDropLate()
 
 	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
 		Capacity: 4,
@@ -320,7 +320,7 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 	var latencyIndex atomic.Int64
 	var sourceDrops atomic.Uint64
 	sink := &liveRoomSyncSink{}
-	policy := flow.Sync("live-room-churn-wall", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("live-room-churn-wall").WithTolerance(20 * time.Millisecond).WithDropLate()
 
 	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
 		Capacity: 4,

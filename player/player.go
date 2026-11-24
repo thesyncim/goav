@@ -150,7 +150,7 @@ func (w *Window) Stats() Stats {
 //
 // Run must be called from the main goroutine (the windowing systems require
 // it) and at most once per process (one audio device context per process).
-func (w *Window) Run(ctx context.Context, task goav.LiveTask) error {
+func (w *Window) Run(ctx context.Context, task goav.Task) error {
 	if task == nil {
 		return errors.New("player: Run needs a task")
 	}

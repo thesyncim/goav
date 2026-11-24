@@ -420,7 +420,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 	}))
 	report, err := rt.Explain(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0).
 		Video().
-		Sync(flow.Sync("room", flow.SyncTolerance(40*time.Millisecond))).
+		Sync(flow.Sync("room").WithTolerance(40 * time.Millisecond)).
 		Playout(flow.Playout("preview").WithOffset(200*time.Millisecond)).
 		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))))
 	if err != nil {

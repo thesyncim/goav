@@ -208,7 +208,7 @@ func TestWHIPPublishesToAServer(t *testing.T) {
 		if trickle {
 			scheme.config.gather = 0
 		}
-		rt := bundle.MustNew(runconfig.Scheme("whip+http", scheme))
+		rt := bundle.MustNew(runconfig.WithScheme("whip+http", scheme))
 		dest := goav.URI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live?token=SECRET")
 		out := pacedVideo("cam").Video().Encode(codec.VP8(codec.KeyframeInterval(100000))).To(dest)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -287,7 +287,7 @@ func TestWHIPEncodesFramesAndBoundsTheEstimate(t *testing.T) {
 	scheme := WHIP().(whipScheme)
 	settings := loopbackSettings()
 	scheme.settings = &settings
-	rt := bundle.MustNew(runconfig.Scheme("whip+http", scheme))
+	rt := bundle.MustNew(runconfig.WithScheme("whip+http", scheme))
 	url := "whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"
 	spec, err := rt.Describe(pacedVideo("cam").Video().To(goav.URI(url)))
 	if err != nil {
@@ -362,7 +362,7 @@ func (c controlTap) UseControl(fn func(context.Context, control.Control) error) 
 // scheme), a server that rejects the offer (a *StatusError, without the
 // URL's secrets), and a server that refuses the stream's codec.
 func TestWHIPRefusals(t *testing.T) {
-	rt := bundle.MustNew(runconfig.Scheme("whip", WHIP()))
+	rt := bundle.MustNew(runconfig.WithScheme("whip", WHIP()))
 	if _, err := rt.Describe(goav.URIInput("whip://media.example/live").Video().To(goavtest.NewCollector().Sink())); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("input err = %v", err)
 	}
@@ -371,7 +371,7 @@ func TestWHIPRefusals(t *testing.T) {
 	server.status = http.StatusUnauthorized
 	srv := httptest.NewServer(server)
 	defer srv.Close()
-	rt = bundle.MustNew(runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
+	rt = bundle.MustNew(runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	host := strings.TrimPrefix(srv.URL, "http://")
 	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/whip/live?token=SECRET")))
 	var status *StatusError
@@ -409,7 +409,7 @@ func TestWHEPToWHIPRelay(t *testing.T) {
 	whipSrv := httptest.NewServer(whip)
 	defer whipSrv.Close()
 	session := WithSession(SessionConfig{API: loopbackAPI()})
-	rt := bundle.MustNew(runconfig.Scheme("whep+http", WHEP(session)), runconfig.Scheme("whip+http", WHIP(session)))
+	rt := bundle.MustNew(runconfig.WithScheme("whep+http", WHEP(session)), runconfig.WithScheme("whip+http", WHIP(session)))
 	in := goav.URIInput("whep+http://" + strings.TrimPrefix(whepSrv.URL, "http://") + "/whep/cam")
 	out := goav.URI("whip+http://" + strings.TrimPrefix(whipSrv.URL, "http://") + "/whip/live")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -647,7 +647,7 @@ func TestWHIPPacesAFile(t *testing.T) {
 	server := newWHIPServer(t)
 	srv := httptest.NewServer(server)
 	defer srv.Close()
-	rt := bundle.MustNew(runconfig.WithRealtime(false), runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
+	rt := bundle.MustNew(runconfig.WithRealtime(false), runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	out := goav.FileInput("in.mp4", bytes.NewReader(data)).Video().To(goav.URI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -700,7 +700,7 @@ func TestWHIPRedirects(t *testing.T) {
 	mux.Handle("/found", http.RedirectHandler("/whip/live", http.StatusFound))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
-	rt := bundle.MustNew(runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
+	rt := bundle.MustNew(runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	host := strings.TrimPrefix(srv.URL, "http://")
 
 	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/found")))

@@ -76,7 +76,7 @@ type ByteSource interface {
 }
 
 // Scheme is the provider of one URL scheme (file, https, whep, ...) that
-// runconfig.Scheme registers for goav.URIInput and goav.URI: an InputScheme,
+// runconfig.WithScheme registers for goav.URIInput and goav.URI: an InputScheme,
 // a DestinationScheme, or both, so a scheme implements only the directions
 // it serves; goav refuses the other with errors.ErrUnsupported. Binding is
 // pure — it validates the URL and performs no I/O, because Describe and
@@ -131,19 +131,13 @@ type Destination interface {
 	Contract() Contract
 	// Open opens the destination writer once goav has resolved the output
 	// format and streams.
-	Open(context.Context, Info) (Writer, error)
-}
-
-// Writer is the byte writer returned by custom byte destinations.
-type Writer interface {
-	io.Writer
-	Close() error
+	Open(context.Context, Info) (io.WriteCloser, error)
 }
 
 // TransactionalWriter may be returned by destinations that need an explicit
 // upload commit or abort boundary.
 type TransactionalWriter interface {
-	Writer
+	io.WriteCloser
 	Commit(context.Context) error
 	Abort(context.Context) error
 }

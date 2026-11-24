@@ -99,7 +99,7 @@ func mustNew(options ...runconfig.Option) *Runtime {
 // the codec, format, and filter registries, the buffer and pool settings, and
 // the clock that tasks run with. Build it with New, or import
 // github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
-// run Outputs on it with Run (one shot) or Build (a LiveTask), and inspect
+// run Outputs on it with Run (one shot) or Build (a Task), and inspect
 // them without opening anything with Describe and Explain. Its fields are
 // unexported: construction and adapter registration go through runconfig
 // options.
@@ -123,7 +123,7 @@ type Runtime struct {
 	// controls is the per-task control seam media sinks bind at lowering
 	// time (UseControl); nil like qos.
 	controls *taskControls
-	// schemes resolve URIInput and URI values (runconfig.Scheme).
+	// schemes resolve URIInput and URI values (runconfig.WithScheme).
 	schemes map[string]provider.Scheme
 }
 
@@ -193,7 +193,7 @@ func (b *builder) Routes(routes ...pipeline.Route) *builder {
 	return b
 }
 
-func (b *builder) Build(ctx context.Context) (LiveTask, error) {
+func (b *builder) Build(ctx context.Context) (Task, error) {
 	b.destinationTxs = nil
 	b.requireRunOK = true
 	graph, err := b.newGraph(ctx)

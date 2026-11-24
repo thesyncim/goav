@@ -118,7 +118,7 @@ func (p *packager) Contract() provider.Contract {
 	return provider.Contract{ByteStream: true, Formats: []av.FormatID{av.FormatMP4}, Fragment: p.parts}
 }
 
-func (p *packager) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+func (p *packager) Open(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

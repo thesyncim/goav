@@ -33,7 +33,7 @@ var (
 // https, whip+http://host/path over plain http. Register it under each name
 // used:
 //
-//	runconfig.Scheme("whip", webrtcav.WHIP(webrtcav.WithToken(token)))
+//	runconfig.WithScheme("whip", webrtcav.WHIP(webrtcav.WithToken(token)))
 //
 // The destination takes Opus, VP8, H264, VP9, and AV1 packets, so the
 // planner encodes frames to the first of their media it can encode. When

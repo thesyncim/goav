@@ -34,7 +34,7 @@ func TestAttachResolvesURIThroughTheRuntimeSchemes(t *testing.T) {
 			return nil
 		})
 	main := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
-	task, err := testBundleRuntime(runconfig.Scheme("file", scheme.File())).Build(ctx, in.Video().Tap("live").To(main))
+	task, err := testBundleRuntime(runconfig.WithScheme("file", scheme.File())).Build(ctx, in.Video().Tap("live").To(main))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -195,7 +195,7 @@ func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.Graph
 
 func (t *controlCaptureTask) Close() error { return nil }
 
-var _ goav.LiveTask = (*controlCaptureTask)(nil)
+var _ goav.Task = (*controlCaptureTask)(nil)
 
 func awaitState(t *testing.T, updates <-chan stateResponse) stateResponse {
 	t.Helper()

@@ -8,12 +8,12 @@ import (
 )
 
 // EventFilter reports whether a watcher wants an event. Filters passed to
-// LiveTask.Watch AND together: an event is delivered when every filter
+// Task.Watch AND together: an event is delivered when every filter
 // matches. A watch with zero filters receives every event. Any predicate
 // works; WatchTypes and WatchStream cover the common cases.
 type EventFilter func(av.Event) bool
 
-// Subscription is a disposable event subscription returned by LiveTask.Watch.
+// Subscription is a disposable event subscription returned by Task.Watch.
 // Events is closed when the task ends or Close unsubscribes the watcher. Close
 // is idempotent.
 type Subscription interface {
@@ -46,7 +46,7 @@ func WatchStream(id av.StreamID) EventFilter {
 const defaultWatchCapacity = 256
 
 // Watch returns an independent, filtered subscription to the task's event
-// stream. See LiveTask.Watch for the delivery, overflow, and closure contract.
+// stream. See Task.Watch for the delivery, overflow, and closure contract.
 func (t *task) Watch(filters ...EventFilter) Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }

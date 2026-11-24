@@ -4,9 +4,7 @@ goav is pre-v1. This page owns the release promise: what a v1 tag keeps
 stable, what ships today but stays governed pre-v1, the compatibility rules
 every tag follows, and the note a maintainer fills in before cutting one. It
 is the line reviewers hold new work against. [`ROADMAP.md`](ROADMAP.md)
-records when governed features might graduate, and
-[`history/SIMPLIFICATION_TARGET.md`](history/SIMPLIFICATION_TARGET.md) records
-why the surface was trimmed.
+records when governed features might graduate.
 
 ## v1 scope
 
@@ -55,7 +53,7 @@ These invariants hold across the v1 surface and are enforced by tests:
    second path ([composition laws](OPERATIONS.md#composition-laws)).
 4. **`rt.Run` is the narrow front door**: it runs Outputs to completion.
    Inspection, events, live control, and runtime mutation are opt-in through
-   `rt.Build` / `LiveTask`.
+   `rt.Build` / `Task`.
 5. **Structured errors.** Every user-actionable failure is a
    `*goav.BuildError` with stable `Family`/`Code`, an explicit `Phase`,
    operation/node context, machine-readable details, and concrete fixes.
@@ -79,7 +77,7 @@ retain, not as an automatic v1 promise.
 | Feature | Lives in | Why it is not yet frozen |
 | --- | --- | --- |
 | Expert graph | [`expert`](API_SURFACE.md) (tier C), `graphrender` | Handle-based graph escape hatch off the grammar; not needed for the normal path. |
-| Runtime Attach / Detach / Rebranch, raw controls, advanced observation | [`OPERATIONS.md`](OPERATIONS.md), `LiveTask` | Live graph mutation and control; they depend on the `LiveTask` from `rt.Build`, outside the `rt.Run` front door. |
+| Runtime Attach / Detach / Rebranch, raw controls, advanced observation | [`OPERATIONS.md`](OPERATIONS.md), `Task` | Live graph mutation and control; they depend on the `Task` from `rt.Build`, outside the `rt.Run` front door. |
 | Control-plane socket host | [`CONTROL_PLANE.md`](CONTROL_PLANE.md), `ctlserver` | Out-of-band live control over a socket or HTTP; an application-hosting concern. |
 | Broad `OnStream` dynamic rules | [`USE_CASES.md`](USE_CASES.md) | Only identity stream-rule cases are v1; broader dynamic breadth stays governed. |
 | `Mix` / `Composite` / `Select` / custom `Join` | [`MULTI_INPUT.md`](MULTI_INPUT.md), [`OPERATIONS.md`](OPERATIONS.md) | N-to-1 convergence; powerful but not a beginner workflow. |
@@ -120,9 +118,7 @@ decision rather than deferral:
   `bundle` carries only `thesyncim/*` backends.
 
 The root module therefore still requires the bundled backends. The decision is
-revisited only if SBOM or scanner pressure demands module-level isolation; see
-[`history/API_INVENTORY.md`](history/API_INVENTORY.md) for the dependency
-baseline.
+revisited only if SBOM or scanner pressure demands module-level isolation.
 
 ## Compatibility rules
 
@@ -171,7 +167,7 @@ Module scope:
 API surface:
 - Added exported symbols: `BuildError` helper methods, the value grammar
   (`Stream`, `Output`, `JoinArg`, `At`, `ByPTS`,
-  `Runtime.Run`/`Build`/`Describe`/`Explain`, `LiveTask.Spec`/`Tap`/`Track`/
+  `Runtime.Run`/`Build`/`Describe`/`Explain`, `Task.Spec`/`Tap`/`Track`/
   `Attach`), task capability vocabulary (snapshots, states, watch filters, and
   detach/rebranch policies, all in the root), `Write(name, writer)`,
   `bundle.Describe`, sync policy
@@ -184,12 +180,11 @@ API surface:
   `BuildError.Suggestions`, `codec.CodecSpec` (now `codec.Spec`), path-style
   writer destinations, same-handle destination grouping, and
   graph-node-prefix tap fallback.
-- API-restraint links for additions: `docs/API_SURFACE.md`,
-  `docs/history/SIMPLIFICATION_TARGET.md`, and `docs/history/V1_CREDIBILITY_AUDIT.md`.
+- API-restraint reference: `docs/API_SURFACE.md`.
 
 Behavior changes:
 - `rt.Run(ctx, outputs...)` runs a recipe to completion; `rt.Build` returns a
-  `LiveTask` for inspection, watches, controls, or runtime mutation.
+  `Task` for inspection, watches, controls, or runtime mutation.
 - Streams require explicit `.Decode()` before frame-domain consumers; a stream
   routed without `.Decode()` copies, keeping packet-domain recipes packet preserving.
 - A reused destination handle is the shared output: one value passed to
@@ -212,7 +207,7 @@ Adapter and extension changes:
 
 Migration notes:
 - Replace root lifecycle/control interfaces with local structural interfaces
-  or the explicit `LiveTask` capabilities `rt.Build` returns.
+  or the explicit `Task` capabilities `rt.Build` returns.
 - Replace builder chains (`goav.From(in)...To(out).Run(ctx)`, `.Branches(...)`)
   with Stream values: `rt.Run(ctx, in.Video()...To(out))`, forks by reuse and `.As(name)`.
 - Replace `Writer`/path-style output spelling with `Write(name, writer)` or
@@ -307,7 +302,6 @@ Do not cut v1 just because docs and pins are green. Cut it only when the
 release candidate meets the v1 scope above or records a maintainer decision
 for every retained governed-pre-v1 exception, the compatibility note is filled
 for the tag, the release workflow has validated the signed tag, the release
-decision item in [`ROADMAP.md`](ROADMAP.md) is closed by the maintainer, and
-every exception to `docs/history/SIMPLIFICATION_TARGET.md` is written down.
+decision item in [`ROADMAP.md`](ROADMAP.md) is closed by the maintainer.
 The maintainer's `v0.1.0` tag is the final scope-freeze action; it does not
 itself claim v1 stability.

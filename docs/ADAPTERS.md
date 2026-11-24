@@ -164,7 +164,7 @@ refused AAC decode names both options.
 ## URL schemes
 
 `goav.URIInput(url)` and `goav.URI(url)` resolve through schemes registered per runtime
-with `runconfig.Scheme` (last wins, never in `init()`): a `provider.InputScheme` binds a
+with `runconfig.WithScheme` (last wins, never in `init()`): a `provider.InputScheme` binds a
 URL without I/O to a `Source` or a `ByteSource`, a `provider.DestinationScheme` to a
 `Destination` (bytes) or a `pipeline.Sink` (media: WHIP, RTP out). Refusals name the
 registered schemes and the module, reports redact URLs, and `goav.Live`/`Reconnect` serve
@@ -176,7 +176,7 @@ live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 | `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
 | `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WithToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
 | `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.WithToken(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
-| `camera` | `cameraav.Scheme{}` | live in: cgo-free local camera capture (`cameraav`) with bounded zero-allocation frame delivery |
+| `camera` | `cameraav.Scheme()` | live in: cgo-free local camera capture (`cameraav`) with bounded zero-allocation frame delivery |
 
 WHEP and WHIP share `WithToken`, `WithHTTPClient`, and `WithSession`; a refused request is a
 `*webrtcav.StatusError`, which names no URL, and only 307/308 redirects are followed.

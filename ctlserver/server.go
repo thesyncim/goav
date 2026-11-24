@@ -29,7 +29,7 @@ import (
 // and a watch is an inspect subscription that sheds events rather than
 // block media when its client falls behind.
 type Server struct {
-	task     goav.LiveTask
+	task     goav.Task
 	files    launch.FileSystem
 	token    string
 	elements []launch.Element
@@ -51,7 +51,7 @@ type method struct {
 type Option func(*Server) error
 
 // New builds a server for a running task.
-func New(task goav.LiveTask, options ...Option) (*Server, error) {
+func New(task goav.Task, options ...Option) (*Server, error) {
 	if task == nil {
 		return nil, errors.New("ctlserver: no task to serve")
 	}
@@ -101,7 +101,7 @@ func Elements(elements ...launch.Element) Option {
 // Method adds a host method. Its params are T's fields, named by their json
 // tags; `ctl:"required"` marks a required one and `help:"..."` describes it.
 // A client's call runs fn and returns its result as JSON.
-func Method[T any](name, summary string, fn func(context.Context, goav.LiveTask, T) (any, error)) Option {
+func Method[T any](name, summary string, fn func(context.Context, goav.Task, T) (any, error)) Option {
 	return func(s *Server) error {
 		if name == "" || strings.ContainsAny(name, " \t\n") {
 			return fmt.Errorf("ctlserver: method name %q is not one word", name)

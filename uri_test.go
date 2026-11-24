@@ -93,12 +93,12 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 	if !strings.Contains(registered, "file") || !strings.Contains(registered, "https") {
 		t.Fatalf("registered_schemes = %q", registered)
 	}
-	if fixes := strings.Join(buildErr.FixLines(), "\n"); !strings.Contains(fixes, `runconfig.Scheme("whep", webrtcav.WHEP())`) ||
+	if fixes := strings.Join(buildErr.FixLines(), "\n"); !strings.Contains(fixes, `runconfig.WithScheme("whep", webrtcav.WHEP())`) ||
 		!strings.Contains(fixes, "github.com/thesyncim/goav/webrtcav") {
 		t.Fatalf("fixes do not name the whep provider:\n%s", fixes)
 	}
 	_, err = bundle.Describe(goavtest.Video(16, 16, 1).Video().To(goav.URI("whips://media.example/live")))
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" || !strings.Contains(strings.Join(buildErr.FixLines(), "\n"), `runconfig.Scheme("whips", webrtcav.WHIP())`) {
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" || !strings.Contains(strings.Join(buildErr.FixLines(), "\n"), `runconfig.WithScheme("whips", webrtcav.WHIP())`) {
 		t.Fatalf("whips err = %v, want the fix naming the WHIP client", err)
 	}
 
@@ -117,7 +117,7 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 // TestURISchemeDirectionRefusal pins a one-direction scheme: an InputScheme
 // alone implements no Destination, and that end refuses with the fix.
 func TestURISchemeDirectionRefusal(t *testing.T) {
-	rt := bundle.MustNew(runconfig.Scheme("tape", &testScheme{}))
+	rt := bundle.MustNew(runconfig.WithScheme("tape", &testScheme{}))
 	_, err := rt.Describe(goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).To(goav.URI("tape://deck/out.ivf")))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" ||
@@ -125,7 +125,7 @@ func TestURISchemeDirectionRefusal(t *testing.T) {
 		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), "on the end its scheme serves") {
 		t.Fatalf("err = %v, want the direction refusal", err)
 	}
-	if _, err := goav.New(runconfig.Scheme("nothing", struct{}{})); err == nil {
+	if _, err := goav.New(runconfig.WithScheme("nothing", struct{}{})); err == nil {
 		t.Fatal("a scheme serving no direction registered")
 	}
 }
@@ -134,7 +134,7 @@ func TestURISchemeDirectionRefusal(t *testing.T) {
 // pipeline.Sink: the URL is a media destination, fed packets, not bytes.
 func TestURIMediaDestination(t *testing.T) {
 	scheme := &sinkScheme{}
-	rt := bundle.MustNew(runconfig.Scheme("rtp", scheme))
+	rt := bundle.MustNew(runconfig.WithScheme("rtp", scheme))
 	if err := rt.Run(context.Background(), goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).Video().To(goav.URI("rtp://239.0.0.1:5004"))); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func (s *sinkScheme) Destination(*url.URL) (provider.Output, error) {
 // TestURISchemeLastRegistrationWins replaces a bundled scheme.
 func TestURISchemeLastRegistrationWins(t *testing.T) {
 	custom := &testScheme{data: tinyIVF()}
-	rt := bundle.MustNew(runconfig.Scheme("FILE", custom))
+	rt := bundle.MustNew(runconfig.WithScheme("FILE", custom))
 	sink := goavtest.NewCollector()
 	if err := rt.Run(context.Background(), goav.URIInput("file:///nowhere/clip.ivf").Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestURISchemeLastRegistrationWins(t *testing.T) {
 	if custom.opened != 1 || len(sink.Packets()) != 1 {
 		t.Fatalf("opened = %d packets = %d, want the replacement scheme", custom.opened, len(sink.Packets()))
 	}
-	if _, err := goav.New(runconfig.Scheme("not a scheme", custom)); err == nil {
+	if _, err := goav.New(runconfig.WithScheme("not a scheme", custom)); err == nil {
 		t.Fatal("an invalid scheme name registered")
 	}
 }
@@ -175,7 +175,7 @@ func TestURISchemeLastRegistrationWins(t *testing.T) {
 // the scheme sees the URL verbatim and probes the container from its path.
 func TestURIRedactsCredentials(t *testing.T) {
 	custom := &testScheme{data: tinyIVF(), live: true, breakFirst: true}
-	rt := bundle.MustNew(runconfig.Scheme("vault", custom))
+	rt := bundle.MustNew(runconfig.WithScheme("vault", custom))
 	const raw = "vault://alice:hunter2@media.example/clips/movie.ivf?token=SECRET1&quality=hd&X-Amz-Signature=SECRET2"
 	sink := goavtest.NewCollector()
 	out := fileURL(filepath.Join(t.TempDir(), "out.ivf")) + "?sig=SECRET3"

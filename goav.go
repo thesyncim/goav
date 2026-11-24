@@ -8,7 +8,7 @@
 // Streams into one, Tap names attach points, and .To(destinations...) routes a
 // Stream to destinations built by Write, URI, Writer, Custom, or Sink, making
 // an Output. A runtime runs Outputs together: rt.Run(ctx, outputs...), or
-// rt.Build for a LiveTask with events, snapshots, runtime Attach/Detach, and
+// rt.Build for a Task with events, snapshots, runtime Attach/Detach, and
 // live controls.
 //
 // New(opts...) builds a bare runtime and returns option/configuration errors.
@@ -27,8 +27,9 @@ import (
 	"github.com/thesyncim/goav/plan"
 )
 
-// Task is the minimal runnable media composition accepted by code that only
-// needs lifecycle control.
+// Task is a built media composition produced by Runtime.Build: it runs and
+// closes the graph, reports plans/specs/snapshots/stats, and supports live
+// branch attach/detach, out-of-band controls, pause/resume, and event watches.
 type Task interface {
 	// Run drives the graph until every source ends or ctx is done. It returns
 	// the first fatal node error; otherwise nil when every source ended, or
@@ -39,13 +40,6 @@ type Task interface {
 	// idempotent and safe to call while Run is still in flight. Finalization
 	// errors are retained and returned by subsequent Close calls.
 	Close() error
-}
-
-// LiveTask is the full task capability set produced by the built-in runtime:
-// Runtime.Build returns it for inspection, runtime mutation, controls, and
-// event watches. Code that only runs and closes a task can accept Task.
-type LiveTask interface {
-	Task
 	// Explain reports the planned workflow before any resource opens: inputs,
 	// branches, destinations, taps, shapes, planner decisions, and warnings.
 	Explain(context.Context) (plan.Report, error)

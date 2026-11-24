@@ -82,10 +82,10 @@ type streamOp struct {
 	encode       codec.Spec
 	width        int
 	height       int
-	resize       []resizeOption
+	resize       []ResizeOption
 	rate         int
 	channels     int
-	audio        []audioOption
+	audio        []ResampleOption
 	stages       []pipeline.Stage
 	playout      flow.PlayoutPolicy
 	sync         flow.SyncPolicy
@@ -148,13 +148,13 @@ func (s Stream) Encode(spec codec.Spec) Stream {
 }
 
 // Resize scales decoded video frames to width x height.
-func (s Stream) Resize(width int, height int, options ...resizeOption) Stream {
-	return s.then(streamOp{kind: streamOpResize, width: width, height: height, resize: append([]resizeOption(nil), options...)})
+func (s Stream) Resize(width int, height int, options ...ResizeOption) Stream {
+	return s.then(streamOp{kind: streamOpResize, width: width, height: height, resize: append([]ResizeOption(nil), options...)})
 }
 
 // Resample converts decoded audio to sampleRate and channels.
-func (s Stream) Resample(sampleRate int, channels int, options ...audioOption) Stream {
-	return s.then(streamOp{kind: streamOpResample, rate: sampleRate, channels: channels, audio: append([]audioOption(nil), options...)})
+func (s Stream) Resample(sampleRate int, channels int, options ...ResampleOption) Stream {
+	return s.then(streamOp{kind: streamOpResample, rate: sampleRate, channels: channels, audio: append([]ResampleOption(nil), options...)})
 }
 
 // Do runs custom stages on the stream: frame stages on decoded frames, packet

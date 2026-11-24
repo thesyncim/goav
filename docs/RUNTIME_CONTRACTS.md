@@ -2,7 +2,7 @@
 
 Execution, resource finalization, branch failure, and RTP configuration have
 separate observable outcomes. These contracts apply to recipes built with
-`Runtime.Build` and to outputs added through `LiveTask.Attach`.
+`Runtime.Build` and to outputs added through `Task.Attach`.
 
 ## Completion and finalization
 

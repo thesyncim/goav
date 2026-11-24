@@ -85,7 +85,7 @@ tests reach the few internals they pin through `export_test.go`.
 Advanced governed vocabulary lives in the focused docs where it is needed:
 `control`, `ctlserver`, `plan`, `flow`, and `runconfig`.
 
-The live-task vocabulary is root, beside the `LiveTask` and `Attachment` that
+The live-task vocabulary is root, beside the `Task` and `Attachment` that
 return and take it (governed pre-v1 with runtime `Attach`/`Detach`/`Rebranch`):
 the following concepts, each sealed where it is an argument.
 
@@ -181,7 +181,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   `webrtcav.LocalTrack`; reuse one destination value when several Outputs
   should share one mux/sink.
 - **URL schemes**: `goav.URIInput`/`URI`/`Live`/`Reconnect` (`av.EventReconnect`); `provider.Scheme`/`InputScheme`/`DestinationScheme`/`Input`/`Output`/`ByteSource`;
-  `runconfig.Scheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
+  `runconfig.WithScheme` (`Config.Schemes`); `bundle.Schemes`; `scheme` (`File`, `HTTP`, `HTTPOption`, `Client`, `Header`, `ErrChanged`);
   `webrtcav.WHEP`, `WHIP` (`Option`, `WithToken`, `WithHTTPClient`, `WithSession`, `StatusError`, `ErrWHEPDisconnected`, `ErrWHIPDisconnected`, `ErrWHIPCodecRefused`); `launch.URIs`: [`ADAPTERS.md`](ADAPTERS.md#url-schemes).
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
@@ -375,7 +375,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   commit or abort; `Attachment.Rebranch(ctx, outputs..., options...)` takes the same
   Outputs and is attach-new-then-detach-old, with lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
-- **Sync**: `flow.Sync(name, flow.SyncTolerance(...), flow.SyncDropLate())`
+- **Sync**: `flow.Sync(name).WithTolerance(...).WithDropLate()`
   returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video
   streams; `.Sync(policy)` inserts a packet/frame gate that can hold early
   media or drop late media and reports sync drops through normal branch stats.
@@ -409,7 +409,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   gates and `MaxLatency` queues (`av.QoSMetadata`/`av.EventQoSReport`);
   `runconfig.WithQoSPolicy` maps reports to controls the task issues to
   itself. Contract prose: `docs/FLOW_CONTROL.md`.
-- **Pause/Resume vs Rate** (governed pre-v1, `LiveTask` methods):
+- **Pause/Resume vs Rate** (governed pre-v1, `Task` methods):
   `Pause(ctx)`/`Resume(ctx)` freeze/continue the shared task timeline that
   `control.Rate` scales; nothing-paced tasks refuse like Rate.
   `goav.TaskSnapshot.Paused` reports the fact; `av.EventTaskReady` on `Watch` is

@@ -65,7 +65,7 @@ func Run(ctx context.Context, outs ...goav.Output) error {
 }
 
 // Build builds outs with the default bundled runtime without starting them.
-func Build(ctx context.Context, outs ...goav.Output) (goav.LiveTask, error) {
+func Build(ctx context.Context, outs ...goav.Output) (goav.Task, error) {
 	return Default().Build(ctx, outs...)
 }
 
@@ -80,6 +80,12 @@ func Describe(outs ...goav.Output) (pipeline.Spec, error) {
 func Explain(ctx context.Context, outs ...goav.Output) (plan.Report, error) {
 	return Default().Explain(ctx, outs...)
 }
+
+// All returns one runtime option registering all bundled formats, codecs,
+// filters, and URL schemes:
+//
+//	rt, err := goav.New(bundle.All(), myOption)
+func All() runconfig.Option { return group(Options()) }
 
 // Options returns fresh runtime options for all bundled formats, codecs,
 // filters, and URL schemes. The returned slice is safe for callers to append
@@ -108,7 +114,7 @@ func Filters() runconfig.Option { return group(filterOptions) }
 
 // Schemes registers the URL schemes goav.URIInput and goav.URI resolve
 // through: file, http, and https (package scheme). Add others, or replace
-// these, with runconfig.Scheme.
+// these, with runconfig.WithScheme.
 func Schemes() runconfig.Option { return group(schemeOptions) }
 
 func group(options []runconfig.Option) runconfig.Option {
@@ -150,7 +156,7 @@ func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconf
 }
 
 var schemeOptions = []runconfig.Option{
-	runconfig.Scheme("file", scheme.File()),
-	runconfig.Scheme("http", scheme.HTTP()),
-	runconfig.Scheme("https", scheme.HTTP()),
+	runconfig.WithScheme("file", scheme.File()),
+	runconfig.WithScheme("http", scheme.HTTP()),
+	runconfig.WithScheme("https", scheme.HTTP()),
 }

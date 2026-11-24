@@ -12,7 +12,7 @@ import (
 // AttachPlannedForTest attaches outs to a running task as Attach does and
 // returns, beside the attachment, the graph patch the attach planned before
 // it touched the graph: the attach twin of Describe.
-func AttachPlannedForTest(ctx context.Context, live LiveTask, outs ...Output) (pipeline.Spec, Attachment, error) {
+func AttachPlannedForTest(ctx context.Context, live Task, outs ...Output) (pipeline.Spec, Attachment, error) {
 	t := live.(*task)
 	branches, err := t.attachBranches(outs)
 	if err != nil {
@@ -27,7 +27,7 @@ func AttachPlannedForTest(ctx context.Context, live LiveTask, outs ...Output) (p
 
 // RebranchPlannedForTest plans and attaches the replacements a Rebranch with
 // args attaches, leaving the replaced branch in place.
-func RebranchPlannedForTest(ctx context.Context, live LiveTask, args ...RebranchArg) (pipeline.Spec, Attachment, error) {
+func RebranchPlannedForTest(ctx context.Context, live Task, args ...RebranchArg) (pipeline.Spec, Attachment, error) {
 	t := live.(*task)
 	args, err := t.rebranchArgs(args)
 	if err != nil {

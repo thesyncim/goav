@@ -17,7 +17,6 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 		"[`ROADMAP.md`](ROADMAP.md)",
 		"[`CLI.md`](CLI.md)",
 		"[`CONTROL_PLANE.md`](CONTROL_PLANE.md)",
-		"[`history/`](history/)",
 	} {
 		if !strings.Contains(indexText, fragment) {
 			t.Fatalf("docs/README.md missing %q", fragment)
@@ -49,8 +48,8 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 		lines := strings.Split(string(data), "\n")
 		for lineNo, line := range lines {
 			for _, name := range historical {
-				if strings.Contains(line, name) && !strings.Contains(line, "history/"+name) {
-					t.Fatalf("%s:%d references historical %s without history/ path: %s", path, lineNo+1, name, line)
+				if strings.Contains(line, name) {
+					t.Fatalf("%s:%d references removed historical doc %s: %s", path, lineNo+1, name, line)
 				}
 			}
 		}

@@ -20,7 +20,7 @@ var rates = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4}
 // the display refresh, draws the overlay, and turns keys into task controls.
 type game struct {
 	w     *Window
-	task  goav.LiveTask
+	task  goav.Task
 	title string
 	sized bool
 	done  <-chan error
@@ -45,7 +45,7 @@ type game struct {
 	ended    bool
 }
 
-func newGame(w *Window, task goav.LiveTask, title string, width, height int, notice string, done <-chan error) *game {
+func newGame(w *Window, task goav.Task, title string, width, height int, notice string, done <-chan error) *game {
 	g := &game{w: w, task: task, title: title, done: done, controls: make(chan func(), 16), rate: 3}
 	if width > 0 && height > 0 {
 		ebiten.SetWindowSize(width, height)

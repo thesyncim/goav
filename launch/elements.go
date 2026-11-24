@@ -141,7 +141,7 @@ type config struct {
 	files FileSystem
 	// uris is the schemes URIs grants; nil grants none and "" grants all.
 	uris     map[string]bool
-	task     goav.LiveTask
+	task     goav.Task
 	hls      *hls.Server
 	elements map[string]*element
 	err      error
@@ -193,7 +193,7 @@ func (c *config) grants(scheme string) bool {
 
 // Task compiles a program against a running task, for task.Attach: a
 // pipeline may start at one of its taps, tap live ! encode vp8 ! file p.webm.
-func Task(task goav.LiveTask) Option {
+func Task(task goav.Task) Option {
 	return func(c *config) { c.task = task }
 }
 
@@ -371,7 +371,7 @@ func (f fileDestination) Contract() provider.Contract {
 	return provider.Contract{ByteStream: true, Protocol: av.ProtocolFile}
 }
 
-func (f fileDestination) Open(ctx context.Context, _ provider.Info) (provider.Writer, error) {
+func (f fileDestination) Open(ctx context.Context, _ provider.Info) (io.WriteCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -380,7 +380,7 @@ func (f fileDestination) Open(ctx context.Context, _ provider.Info) (provider.Wr
 		return nil, err
 	}
 	switch w := w.(type) {
-	case provider.Writer:
+	case io.WriteCloser:
 		return w, nil
 	case io.WriteSeeker:
 		return nopWriteSeekCloser{w}, nil

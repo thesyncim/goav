@@ -25,7 +25,7 @@ match a 30 fps request. Unsupported modes fail explicitly. The provider opens at
 Build time and begins capture when its source starts. Describe and Explain do
 not enumerate devices, prompt for access, or activate the camera.
 
-Register `runconfig.Scheme("camera", cameraav.Scheme{})` for URL inputs. The CLI
+Register `runconfig.WithScheme("camera", cameraav.Scheme())` for URL inputs. The CLI
 registers it automatically:
 
 ```sh

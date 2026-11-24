@@ -23,6 +23,16 @@
   all avoidable non-FFI `unsafe` from `cameraav/pool.go`, `gplcodec`, and
   `libcodec/kit` using reusable scratch buffers and `encoding/binary` (zero
   allocations in steady state).
-- Add `codec.AAC(...)` constructor matching `codec.Opus(...)`, `Window.RuntimeOptions()`
-  in `player`, fix the README quick-start file leak, and polish `README.md`, `docs/`,
-  and stale code comments to reflect current modules, codecs, and Go 1.27.4.
+- Pre-v1 API unification for one coherent way to do each thing:
+  - Collapse `goav.LiveTask` into a single `goav.Task` interface.
+  - Remove duplicate `component.New*`/`Must*` wrappers (keep `PacketFunc`,
+    `FrameFunc`, `EventFunc`, `SinkFunc`).
+  - Export `goav.ResizeOption` and `goav.ResampleOption` on `Stream.Resize` /
+    `Stream.Resample`.
+  - Replace `provider.Writer` with standard `io.WriteCloser`.
+  - Unify `flow.Sync` with `flow.Playout`'s fluent style
+    (`flow.Sync(name).WithTolerance(d).WithDropLate()`), rename
+    `runconfig.Scheme` → `runconfig.WithScheme`, make `cameraav.Scheme()` a
+    constructor function, and add `bundle.All() runconfig.Option`.
+- Remove archived planning docs under `docs/history/` (~130 KB) and align
+  `README.md`, `docs/`, and code comments with the current API and Go 1.27.4.

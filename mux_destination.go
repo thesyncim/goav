@@ -28,7 +28,7 @@ func (b *builder) openMuxDestinationStage(ctx context.Context, destination desti
 	return stage, nil
 }
 
-func (b *builder) openDestinationOutput(ctx context.Context, destination destinationSpec, streams []av.Stream, formatID av.FormatID) (format.Output, provider.Writer, error) {
+func (b *builder) openDestinationOutput(ctx context.Context, destination destinationSpec, streams []av.Stream, formatID av.FormatID) (format.Output, io.WriteCloser, error) {
 	output := destination.output
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
@@ -68,7 +68,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 	return output, writer, nil
 }
 
-func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer provider.Writer) (*format.MuxStage, error) {
+func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer io.WriteCloser) (*format.MuxStage, error) {
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
 		if err != nil {
@@ -116,7 +116,7 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 
 type destinationWriterMuxer struct {
 	format.Muxer
-	writer      provider.Writer
+	writer      io.WriteCloser
 	transaction *destinationTransaction
 	failed      atomic.Bool
 }
@@ -169,7 +169,7 @@ func (m *destinationWriterMuxer) Close() error {
 	return err
 }
 
-func closeDestinationWriterAfterFailure(writer provider.Writer) {
+func closeDestinationWriterAfterFailure(writer io.WriteCloser) {
 	if writer == nil {
 		return
 	}

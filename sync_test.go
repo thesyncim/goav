@@ -36,7 +36,7 @@ type syncNoopEmitter struct{}
 func (syncNoopEmitter) Emit(context.Context, *pipeline.Message) error { return nil }
 
 func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("room").WithTolerance(10 * time.Millisecond).WithDropLate()
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -56,7 +56,7 @@ func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
 }
 
 func TestSyncDropLateNormalizesMultipleTimebases(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("room").WithTolerance(5 * time.Millisecond).WithDropLate()
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -79,7 +79,7 @@ func TestSyncDropLateNormalizesMultipleTimebases(t *testing.T) {
 }
 
 func TestSyncDiscontinuityResetsTimeline(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond), flow.SyncDropLate())
+	policy := flow.Sync("room").WithTolerance(10 * time.Millisecond).WithDropLate()
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -108,7 +108,7 @@ func TestSyncDiscontinuityResetsTimeline(t *testing.T) {
 }
 
 func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
+	policy := flow.Sync("room").WithTolerance(10 * time.Millisecond)
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -142,7 +142,7 @@ func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 }
 
 func TestSyncHoldLateHonorsContextWhileWaiting(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
+	policy := flow.Sync("room").WithTolerance(10 * time.Millisecond)
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -159,7 +159,7 @@ func TestSyncHoldLateHonorsContextWhileWaiting(t *testing.T) {
 }
 
 func TestSyncHoldLateDoesNotWaitAfterSlowStreamCatchesUp(t *testing.T) {
-	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
+	policy := flow.Sync("room").WithTolerance(10 * time.Millisecond)
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -204,7 +204,7 @@ func TestSyncGateRequiresValidMediaTimebase(t *testing.T) {
 }
 
 func TestSyncGateSteadyStateAllocs(t *testing.T) {
-	gate := newSyncGate(flow.Sync("room", flow.SyncDropLate()))
+	gate := newSyncGate(flow.Sync("room").WithDropLate())
 	msg := syncPacketMessage("a", 100*time.Millisecond)
 	emit := syncNoopEmitter{}
 	if err := gate.Handle(context.Background(), msg, emit); err != nil {

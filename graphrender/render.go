@@ -1,5 +1,5 @@
 // Package graphrender renders a pipeline.Spec — the graph Runtime.Describe
-// plans and LiveTask.Spec reports once built — as human-readable text,
+// plans and Task.Spec reports once built — as human-readable text,
 // Graphviz DOT, or Mermaid, and annotates goav.TaskSnapshot and
 // goav.BranchSnapshot views with branch and tap labels. It is diagnostics
 // outside the goav core: the root package never imports it, so any graph a

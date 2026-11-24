@@ -28,7 +28,7 @@ func (r *Runtime) Run(ctx context.Context, outs ...Output) error {
 }
 
 // Build builds the Outputs into one task without starting it.
-func (r *Runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
+func (r *Runtime) Build(ctx context.Context, outs ...Output) (Task, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	return r.graphPlan.Describe()
 }
 
-func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
+func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if !r.graphPlan.ready() {
 		return nil, publicError(compile.RecipeGraphUnsupportedRecipeError("build recipe", r.recipe))
 	}

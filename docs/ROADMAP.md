@@ -10,9 +10,7 @@ that backs it, or is marked **roadmap**.
 The nearby docs split the work by reader need: `docs/COMPATIBILITY.md` names the
 release scope, `docs/RELEASING.md` records the release process and repository
 trust posture, and `docs/GSTREAMER_ALTERNATIVE.md` explains how goav
-relates to GStreamer. Earlier planning artifacts live in `docs/history/`.
-`docs/NORTH_STAR.md` was folded into this document (2026-07-13); its numbered
-evidence map continues below unchanged.
+relates to GStreamer.
 
 ## The design contract
 
@@ -102,12 +100,11 @@ constructed same-name handles are refused, so sharing stays explicit
 (`TestSameHandleSharesOneMux`, `TestWithKeepsHandleIdentity`,
 `TestDistinctHandlesWithOneNameAreRefused`).
 
-The time domain is settled too (landed 2026-07-13): one shared timeline per
+The time domain is settled too: one shared timeline per
 task with task-wide `control.Rate`, synchronized sink playout, task
 Pause/Resume with readiness, seek with flush, QoS feedback, and declared
 per-path latency budgets in `Explain`. Contract prose lives in
-`docs/FLOW_CONTROL.md`; the slice-by-slice record is
-`docs/history/TIME_DOMAIN_PLAN.md`.
+`docs/FLOW_CONTROL.md`.
 
 ## Governed pre-v1 surface
 
@@ -269,9 +266,7 @@ this list:
 ## V1 freeze criteria
 
 These checks prove the current surface is governed. They do not, by
-themselves, mean the current surface is the v1 target. The release candidate
-must also satisfy `docs/history/SIMPLIFICATION_TARGET.md`, or explicitly document every
-retained exception.
+themselves, mean the current surface is the v1 target.
 
 The checklist below gates the tag. Each item names its current evidence.
 
@@ -336,8 +331,7 @@ The checklist below gates the tag. Each item names its current evidence.
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
-- [ ] **Release decision**: confirm the `go 1.27.0` directive in `go.mod` is the
-  intended minimum supported Go, close or explicitly waive every item in
-  `docs/history/SIMPLIFICATION_TARGET.md`, fill the compatibility note template in
+- [ ] **Release decision**: confirm the `go 1.27.4` directive in `go.mod` is the
+  intended minimum supported Go, fill the compatibility note template in
   `docs/COMPATIBILITY.md`, and cut v1. Not done; this is a maintainer product
   decision plus any remaining simplification work.

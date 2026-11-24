@@ -122,7 +122,7 @@ func TestReconnectGivesUpAndRefusesFiles(t *testing.T) {
 // reader breaks is opened again through its scheme and demuxed afresh.
 func TestReconnectReopensALiveByteInput(t *testing.T) {
 	custom := &testScheme{data: tinyIVF(), live: true, breakFirst: true}
-	rt := bundle.MustNew(runconfig.Scheme("cam", custom))
+	rt := bundle.MustNew(runconfig.WithScheme("cam", custom))
 	sink := goavtest.NewCollector()
 	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestLiveMarksAnInputLive(t *testing.T) {
 		t.Fatalf("report = %+v err = %v, want a live input", report.Inputs, err)
 	}
 	custom := &testScheme{data: tinyIVF(), breakFirst: true}
-	rt := bundle.MustNew(runconfig.Scheme("cam", custom))
+	rt := bundle.MustNew(runconfig.WithScheme("cam", custom))
 	sink := goavtest.NewCollector()
 	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Live(), goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)

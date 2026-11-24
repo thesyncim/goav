@@ -105,7 +105,7 @@ func BenchmarkCameraNV12(b *testing.B) {
 func TestSchemeIsPureAndStrict(t *testing.T) {
 	for _, raw := range []string{"camera://default", "camera://default?device=%2Fdev%2Fvideo0&width=1280&height=720&fps=30&queue=3"} {
 		u, _ := url.Parse(raw)
-		in, err := (Scheme{}).Input(u)
+		in, err := Scheme().Input(u)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +115,7 @@ func TestSchemeIsPureAndStrict(t *testing.T) {
 	}
 	for _, raw := range []string{"camera://oops", "camera://default?width=-1", "camera://default?width=3", "camera://default?fps=30&fps=60", "camera://default?typo=1", "camera://default?width=8192&height=8192&queue=16"} {
 		u, _ := url.Parse(raw)
-		if _, err := (Scheme{}).Input(u); err == nil {
+		if _, err := Scheme().Input(u); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
