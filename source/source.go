@@ -40,6 +40,7 @@ type Push struct {
 	ctx     context.Context
 	emitter pipeline.Emitter
 	stream  av.StreamID
+	msg     pipeline.Message
 }
 
 // NewPush binds a pipeline emitter to one source stream. Runtime code uses it
@@ -57,8 +58,8 @@ func (p *Push) Packet(packet *av.Packet) (Result, error) {
 	if packet.StreamID == "" {
 		packet.StreamID = p.stream
 	}
-	msg := packetMessage(packet)
-	return p.emitDelivery(&msg)
+	p.msg = pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}
+	return p.emitDelivery(&p.msg)
 }
 
 // Frame delivers one decoded frame. Nil is a no-op. If frame.StreamID is empty,
@@ -70,8 +71,8 @@ func (p *Push) Frame(frame *av.Frame) (Result, error) {
 	if frame.StreamID == "" {
 		frame.StreamID = p.stream
 	}
-	msg := frameMessage(frame)
-	return p.emitDelivery(&msg)
+	p.msg = pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
+	return p.emitDelivery(&p.msg)
 }
 
 // Event delivers one out-of-band event. It is also the dynamic stream announce
@@ -87,8 +88,8 @@ func (p *Push) Event(event av.Event) (Result, error) {
 	if event.StreamID == "" {
 		event.StreamID = p.stream
 	}
-	msg := eventMessage(event)
-	return p.emitDelivery(&msg)
+	p.msg = pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+	return p.emitDelivery(&p.msg)
 }
 
 // EOS ends the given streams (or the source's declared stream when none are
@@ -118,18 +119,6 @@ func (p *Push) emitDelivery(msg *pipeline.Message) (Result, error) {
 }
 
 func (p *Push) eventOnly(event av.Event) error {
-	msg := eventMessage(event)
-	return p.emitter.Emit(p.ctx, &msg)
-}
-
-func packetMessage(packet *av.Packet) pipeline.Message {
-	return pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}
-}
-
-func frameMessage(frame *av.Frame) pipeline.Message {
-	return pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
-}
-
-func eventMessage(event av.Event) pipeline.Message {
-	return pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+	p.msg = pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+	return p.emitter.Emit(p.ctx, &p.msg)
 }
