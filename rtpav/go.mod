@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/rtp v1.10.5
-	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
+	github.com/thesyncim/goav v0.0.0-20261124150225-d83521f85587
 	github.com/thesyncim/goav1 v0.0.0-20261124140820-93c8fb491899
 )
 

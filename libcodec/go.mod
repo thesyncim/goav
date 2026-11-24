@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/ebitengine/purego v0.11.0
-	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
+	github.com/thesyncim/goav v0.0.0-20261124150225-d83521f85587
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4
 )
 

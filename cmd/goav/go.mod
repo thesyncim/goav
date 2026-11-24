@@ -1,14 +1,12 @@
 module github.com/thesyncim/goav/cmd/goav
 
-go 1.27.0
-
-toolchain go1.27.2
+go 1.27.4
 
 require (
-	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc
-	github.com/thesyncim/goav/cameraav v0.0.0-20261020203422-726a0aae6204
-	github.com/thesyncim/goav/player v0.0.0-20261020183009-ea6589a0aecc
-	github.com/thesyncim/goav/webrtcav v0.0.0-20261020183009-ea6589a0aecc
+	github.com/thesyncim/goav v0.0.0-20261124150225-d83521f85587
+	github.com/thesyncim/goav/cameraav v0.0.0-20261124150225-d83521f85587
+	github.com/thesyncim/goav/player v0.0.0-20261124150225-d83521f85587
+	github.com/thesyncim/goav/webrtcav v0.0.0-20261124150225-d83521f85587
 )
 
 require (
@@ -35,11 +33,11 @@ require (
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/pion/turn/v5 v5.1.2 // indirect
 	github.com/pion/webrtc/v4 v4.2.24 // indirect
-	github.com/thesyncim/goav/rtpav v0.0.0-20261020183009-ea6589a0aecc // indirect
-	github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c // indirect
+	github.com/thesyncim/goav/rtpav v0.0.0-20261124150225-d83521f85587 // indirect
+	github.com/thesyncim/goav1 v0.0.0-20261124140820-93c8fb491899 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
-	github.com/thesyncim/gopus v0.2.3-0.20261017175526-c210548e8a92 // indirect
-	github.com/thesyncim/govpx v0.0.0-20261017170224-928b4e082477 // indirect
+	github.com/thesyncim/gopus v0.2.7 // indirect
+	github.com/thesyncim/govpx v0.0.0-20261018202535-159dce5b931a // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
