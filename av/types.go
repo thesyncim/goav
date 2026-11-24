@@ -2,6 +2,7 @@ package av
 
 import (
 	"math"
+	"math/bits"
 	"time"
 )
 
@@ -277,15 +278,24 @@ func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
 	reducePair(&c, &d)
 	reducePair(&c, &e)
 
-	numerator, ok := checkedMul(a, b)
-	if !ok {
+	abHi, abLo := bits.Mul64(uint64(a), uint64(b))
+	h0, p0 := bits.Mul64(abLo, uint64(c))
+	p2, p1 := bits.Mul64(abHi, uint64(c))
+	var carry uint64
+	p1, carry = bits.Add64(p1, h0, 0)
+	p2 += carry
+
+	q2, rem := bits.Div64(0, p2, uint64(d))
+	q1, rem := bits.Div64(rem, p1, uint64(d))
+	q0, _ := bits.Div64(rem, p0, uint64(d))
+
+	f2, rem := bits.Div64(0, q2, uint64(e))
+	f1, rem := bits.Div64(rem, q1, uint64(e))
+	f0, _ := bits.Div64(rem, q0, uint64(e))
+	if f2 != 0 || f1 != 0 || f0 > uint64(maxInt64) {
 		return 0, false
 	}
-	numerator, ok = checkedMul(numerator, c)
-	if !ok {
-		return 0, false
-	}
-	value = numerator / d / e
+	value = int64(f0)
 	if negative {
 		value = -value
 	}
@@ -624,16 +634,6 @@ func gcdInt64(a int64, b int64) int64 {
 		return -a
 	}
 	return a
-}
-
-func checkedMul(a int64, b int64) (int64, bool) {
-	if a == 0 || b == 0 {
-		return 0, true
-	}
-	if a > maxInt64/b {
-		return 0, false
-	}
-	return a * b, true
 }
 
 func checkedSub(a int64, b int64) (int64, bool) {

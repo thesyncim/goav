@@ -1,0 +1,6 @@
+- Fix `flow.Sync` hold-late deadlock when one stream ends earlier (`EventEndOfStream` now removes the finished stream from `syncScheduler.latest`) and remove dead `closed` field.
+- Fix `join_sync.go` premature EOS on stream-less/unknown `EventEndOfStream` and recycle unknown-stream frames instead of leaking pooled buffers; fix `audio_mix.go` ignoring input `Plane.Offset` and copying it onto 0-offset mixed buffers.
+- Fix `format.StaticProber` checking MIME before magic bytes and `DemuxSource.Start` leaking pooled packet payloads on early return.
+- Use exact 192-bit unsigned intermediate arithmetic (`math/bits`) in `av.RescaleValue` so valid large timestamp conversions don't overflow prematurely.
+- Fix `goavtest.TestSource` reuse after `Close()` and backpressure busy-spin on close, and include `av.CodecHEVC` in `goavtest.Runtime()`.
+- Repin nested module `go.mod` files to `v0.1.0-alpha.4`.

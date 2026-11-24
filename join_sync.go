@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -192,14 +193,28 @@ func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.Strea
 	}
 }
 
-// buffer queues one arm frame (already cloned by the stage).
+// buffer queues one arm frame (already cloned by the stage), recycling frames
+// whose StreamID does not belong to any declared arm.
 func (s *joinSyncState) buffer(frame *av.Frame) {
+	if !slices.Contains(s.inputs, frame.StreamID) {
+		s.recycleFrame(frame)
+		return
+	}
 	s.pending[frame.StreamID] = append(s.pending[frame.StreamID], frame)
 }
 
 // markEOS records an arm's end of stream and reports whether every arm ended.
+// A stream-less EOS marks every declared arm ended; unknown stream IDs are ignored.
 func (s *joinSyncState) markEOS(id av.StreamID) bool {
-	s.eos[id] = struct{}{}
+	if id == "" {
+		for _, arm := range s.inputs {
+			s.eos[arm] = struct{}{}
+		}
+		return true
+	}
+	if slices.Contains(s.inputs, id) {
+		s.eos[id] = struct{}{}
+	}
 	return len(s.eos) >= len(s.inputs)
 }
 
