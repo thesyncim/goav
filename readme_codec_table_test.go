@@ -24,7 +24,7 @@ func TestReadmeCodecTableMatchesBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := runconfig.NewConfig(bundle.Options()...)
+	config, err := runconfig.NewConfig(bundle.All())
 	if err != nil {
 		t.Fatal(err)
 	}

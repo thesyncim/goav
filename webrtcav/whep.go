@@ -30,7 +30,7 @@ var ErrWHEPDisconnected = errors.New("webrtcav: whep session disconnected")
 
 // WHEP is the whep scheme, a WebRTC-HTTP Egress Protocol client
 // (draft-ietf-wish-whep, over the HTTP mechanics of WHIP, RFC 9725), for
-// goav.URIInput: whep://host/path plays over https, whep+http://host/path
+// goav.FromURI: whep://host/path plays over https, whep+http://host/path
 // over plain http. Register it under each name used:
 //
 //	runconfig.WithScheme("whep", webrtcav.WHEP(webrtcav.WithToken(token)))
@@ -375,7 +375,8 @@ func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
 			return ErrClosed
 		}
 	}
-	go s.pump(reader)
+	s.activeTracks.Add(1)
+	go s.pumpTracked(reader, true)
 	return nil
 }
 
@@ -383,7 +384,13 @@ func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
 // multi-track session hits io.EOF, it emits EventStreamRemoved so sibling
 // tracks keep playing instead of tearing down the whole session.
 func (s *whepSession) pump(reader TrackReader) {
-	s.activeTracks.Add(1)
+	s.pumpTracked(reader, false)
+}
+
+func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
+	if !preCounted {
+		s.activeTracks.Add(1)
+	}
 	for {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
 		if err != nil {

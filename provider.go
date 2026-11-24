@@ -24,14 +24,14 @@ type (
 	}
 )
 
-// Input adapts a provider input into a recipe input: a provider.Source,
+// From adapts a provider input into a recipe input: a provider.Source,
 // whose media the provider produces, or a provider.ByteSource, whose
 // container bytes the runtime probes (from goav.Name, goav.MIME, or
 // SourceShape().Format) and demuxes. The declared shape seeds the input's
 // codec intent and realtime policy, so the recipe planner can select streams
 // and pick decoders before the input is opened:
 //
-//	in := goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))
+//	in := goav.From(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))
 //	err := rt.Run(ctx, in.Audio().To(out))
 func From(src provider.Input, opts ...InputOption) Input {
 	return applyInputOptions(inputSpecHandle(Input{}.withProvider(src)), opts)

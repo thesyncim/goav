@@ -472,7 +472,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		writer: &componentWriteCloser{},
 	}
 
-	spec := Custom("", custom).spec
+	spec := Custom(custom).spec
 	if spec.Name() != "custom-writer" || spec.output.Name != "custom-writer" || spec.output.URI != "custom-writer" {
 		t.Fatalf("custom fallback naming = name:%q output:%q uri:%q", spec.Name(), spec.output.Name, spec.output.URI)
 	}
@@ -483,7 +483,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		!reflect.DeepEqual(contract.MIMETypes, []string{"video/ivf"}) {
 		t.Fatalf("custom contract = %+v", contract)
 	}
-	overridden := Custom("archive.ogg", custom, Format(av.FormatOgg), MIME("audio/ogg")).spec.Contract()
+	overridden := Custom(custom, Name("archive.ogg"), Format(av.FormatOgg), MIME("audio/ogg")).spec.Contract()
 	if !reflect.DeepEqual(overridden.Formats, []av.FormatID{av.FormatOgg}) ||
 		!reflect.DeepEqual(overridden.MIMETypes, []string{"audio/ogg"}) ||
 		overridden.Protocol != av.ProtocolCustom ||
@@ -491,7 +491,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		!overridden.Realtime {
 		t.Fatalf("overridden custom contract = %+v", overridden)
 	}
-	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilDestinationProvider) || errors.Is(err, errNilWriter) {
+	if err := customDestination(nil).validate("record", "fallback"); !errors.Is(err, errNilDestinationProvider) || errors.Is(err, errNilWriter) {
 		t.Fatalf("nil custom validate err = %v, want errNilDestinationProvider only", err)
 	}
 	if err := WriteFunc("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
@@ -621,7 +621,7 @@ func TestDestinationOriginContracts(t *testing.T) {
 		"write":  Write("out.ogg", io.Discard),
 		"uri":    ToURI("file:///tmp/out.ogg"),
 		"sink":   Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
-		"custom": Custom("custom", custom),
+		"custom": Custom(custom, Name("custom")),
 		"writer": WriteFunc("writer.ogg", writer),
 	} {
 		if destination.origin != destinationOriginConstructed {
@@ -667,7 +667,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 		})),
 	)
 	output, opened, err := builder.openDestinationOutput(ctx,
-		Custom("mem://object.ogg", custom, MIME("audio/ogg"), Metadata(metadata)).spec,
+		Custom(custom, Name("mem://object.ogg"), MIME("audio/ogg"), Metadata(metadata)).spec,
 		streams,
 		"",
 	)
@@ -728,11 +728,11 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 
 	openErr := errors.New("destination open failed")
 	errorDestination := &componentDestination{err: openErr}
-	if _, _, err := builder.openDestinationOutput(ctx, Custom("err.ogg", errorDestination).spec, nil, av.FormatOgg); !errors.Is(err, openErr) {
+	if _, _, err := builder.openDestinationOutput(ctx, Custom(errorDestination, Name("err.ogg")).spec, nil, av.FormatOgg); !errors.Is(err, openErr) {
 		t.Fatalf("custom open err = %v, want openErr", err)
 	}
 	nilDestination := &componentDestination{}
-	if _, _, err := builder.openDestinationOutput(ctx, Custom("nil.ogg", nilDestination).spec, nil, av.FormatOgg); !errors.Is(err, errNilWriter) {
+	if _, _, err := builder.openDestinationOutput(ctx, Custom(nilDestination, Name("nil.ogg")).spec, nil, av.FormatOgg); !errors.Is(err, errNilWriter) {
 		t.Fatalf("custom nil writer err = %v, want errNilWriter", err)
 	}
 }

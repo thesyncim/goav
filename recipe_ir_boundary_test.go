@@ -271,7 +271,7 @@ var compileBoundary = map[string][]string{
 	"PlannedNode":                  {"runtime_plan.go"},
 	"RealtimeRecipeBufferCapacity": {"buffer_policy.go"},
 	"SelectBufferCapacity":         {"join_lower.go"},
-	"TapRef":                       {"attach_plan.go", "tap_ref.go"},
+	"TapRef":                       {"attach_plan.go"},
 	"TransformResample":            {"join_arm_file.go"},
 	"TransformResize":              {"join_arm_file.go"},
 	// node names and describe details the build and the plan share
@@ -318,8 +318,8 @@ var compileBoundary = map[string][]string{
 	"MediaAllowed":                {"recipe_explain.go"},
 	"MergeStringList":             {"recipe_explain.go"},
 	"MuxCompatibilityDiagnostics": {"recipe_explain.go"},
-	"MuxCompatibilityIssue":       {"recipe_mux_compat.go", "runtime_attach.go"},
-	"MuxCompatibilityIssues":      {"recipe_mux_compat.go"},
+	"MuxCompatibilityIssue":       {"runtime_attach.go"},
+	"MuxCompatibilityIssues":      {"recipe_explain.go"},
 	"MuxStreamTimeBase":           {"runtime_attach.go"},
 	"PlannedMuxStream":            {"runtime_attach.go"},
 	// stream, codec, and shape helpers
@@ -330,7 +330,7 @@ var compileBoundary = map[string][]string{
 	"CodecAdapterRequest":                    {"recipe_explain.go", "runtime_encode.go"},
 	"CodecMedia":                             {"attach_plan.go", "runtime_attach.go"},
 	"CodecSpecHasParameters":                 {"runtime_decode.go"},
-	"ComponentValidator":                     {"functions.go"},
+	"ComponentValidator":                     {"destination.go"},
 	"DecodeAdapterRequestFromStream":         {"attach_plan.go", "runtime_decode.go"},
 	"EncodeAdapterRequestFromPreparedStream": {"attach_plan.go", "recipe_explain.go", "runtime_encode.go"},
 	"FirstNonEmptyCodec":                     {"attach_plan.go"},

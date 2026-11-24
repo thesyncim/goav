@@ -67,6 +67,9 @@ func codecSpecHasDecodeIntent(spec codec.Spec) bool {
 		spec.Settings.KeyframeInterval != 0 ||
 		spec.Settings.Profile != "" ||
 		spec.Settings.Level != "" ||
+		spec.Settings.Backend != "" ||
+		spec.Settings.BitDepth != 0 ||
+		len(spec.Settings.Custom) != 0 ||
 		spec.Settings.Control != nil
 }
 

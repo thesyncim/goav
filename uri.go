@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/provider"
 )
 
-// URIInput declares an input read from a URL: goav.URIInput("https://cdn.example/a.mp4").
+// FromURI declares an input read from a URL: goav.FromURI("https://cdn.example/a.mp4").
 // The runtime resolves it while planning through the scheme registered for
 // the URL's scheme (runconfig.WithScheme; bundle registers file, http, and
 // https), and a bare path is a file. The scheme decides what the input is —
@@ -36,8 +36,8 @@ func FromURI(uri string, opts ...InputOption) Input {
 	return applyInputOptions(inputSpecHandle(spec), opts)
 }
 
-// URI declares a destination written to a URL — goav.URI("file:///srv/out.mp4") —
-// resolved like URIInput through the runtime's schemes, which open the bytes
+// ToURI declares a destination written to a URL — goav.ToURI("file:///srv/out.mp4") —
+// resolved like FromURI through the runtime's schemes, which open the bytes
 // goav muxes once the format and streams are known. The container comes
 // from the URL's extension, Format, MIME, or the scheme's contract.
 func ToURI(uri string, opts ...DestinationOption) Destination {

@@ -289,7 +289,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 
 func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	dest := recipeAPICustomDestination{}
-	target := goav.Custom("custom", dest)
+	target := goav.Custom(dest, goav.Name("custom"))
 
 	out := goav.From(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))).
 		Video().

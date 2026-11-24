@@ -80,7 +80,7 @@ var extinf = regexp.MustCompile(`#EXTINF:([0-9.]+),\n(\S+)`)
 // media that decodes whole when a player joins the segments.
 func TestOnDemandPlaylist(t *testing.T) {
 	store := &memStore{files: map[string][]byte{}}
-	packageProgram(t, av3s, goav.Custom("vod", hls.New("vod.m3u8", store, hls.SegmentDuration(2*time.Second))))
+	packageProgram(t, av3s, goav.Custom(hls.New("vod.m3u8", store, hls.SegmentDuration(2*time.Second))))
 
 	playlist := string(store.files["vod.m3u8"])
 	for _, line := range []string{"#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:2", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-MEDIA-SEQUENCE:0", `#EXT-X-MAP:URI="vod-init.mp4"`, "#EXT-X-ENDLIST"} {
@@ -127,7 +127,7 @@ func TestOnDemandPlaylist(t *testing.T) {
 func TestLiveWindow(t *testing.T) {
 	store := &memStore{files: map[string][]byte{}}
 	packageProgram(t, `testsrc video size=64x48 fps=25 frames=125 ! encode vp8 keyframe_interval=25 ! out`,
-		goav.Custom("live", hls.New("live.m3u8", store, hls.SegmentDuration(time.Second), hls.Window(2))))
+		goav.Custom(hls.New("live.m3u8", store, hls.SegmentDuration(time.Second), hls.Window(2))))
 	playlist := string(store.files["live.m3u8"])
 	segments := extinf.FindAllStringSubmatch(playlist, -1)
 	if !strings.Contains(playlist, "#EXT-X-MEDIA-SEQUENCE:3\n") || strings.Contains(playlist, "PLAYLIST-TYPE") || len(segments) != 2 || segments[1][2] != "live-00004.m4s" {
@@ -146,7 +146,7 @@ func TestLiveWindow(t *testing.T) {
 func TestDirPublishesWhole(t *testing.T) {
 	dir := t.TempDir()
 	packageProgram(t, `testsrc video size=64x48 fps=25 frames=50 ! encode vp8 keyframe_interval=25 ! out`,
-		goav.Custom("dir", hls.New("d.m3u8", hls.Dir(dir), hls.SegmentDuration(time.Second))))
+		goav.Custom(hls.New("d.m3u8", hls.Dir(dir), hls.SegmentDuration(time.Second))))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -190,8 +190,8 @@ func ffmpegPlays(t *testing.T, store *memStore) {
 func TestLadder(t *testing.T) {
 	store := &memStore{files: map[string][]byte{}}
 	ladder := hls.NewLadder("master.m3u8", store)
-	hd := goav.Custom("hd", ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second)))
-	sd := goav.Custom("sd", ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second)))
+	hd := goav.Custom(ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second)))
+	sd := goav.Custom(ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second)))
 	sink := func(name string, d goav.Destination) launch.Element {
 		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
 	}
@@ -259,8 +259,8 @@ func atoi(t *testing.T, s string) int {
 func TestLadderInDirectories(t *testing.T) {
 	dir := t.TempDir()
 	ladder := hls.NewLadder("master.m3u8", hls.Dir(dir))
-	hd := goav.Custom("hd", ladder.Variant("hd/index.m3u8", hls.SegmentDuration(time.Second)))
-	sd := goav.Custom("sd", ladder.Variant("sd/index.m3u8", hls.SegmentDuration(time.Second)))
+	hd := goav.Custom(ladder.Variant("hd/index.m3u8", hls.SegmentDuration(time.Second)))
+	sd := goav.Custom(ladder.Variant("sd/index.m3u8", hls.SegmentDuration(time.Second)))
 	sink := func(name string, d goav.Destination) launch.Element {
 		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
 	}

@@ -17,8 +17,8 @@ import (
 // that changes.
 //
 //	ladder := hls.NewLadder("master.m3u8", hls.Dir("/srv/hls"))
-//	hd := goav.Custom("hd", ladder.Variant("hd.m3u8", hls.Window(6)))
-//	sd := goav.Custom("sd", ladder.Variant("sd.m3u8", hls.Window(6)))
+//	hd := goav.Custom(ladder.Variant("hd.m3u8", hls.Window(6)))
+//	sd := goav.Custom(ladder.Variant("sd.m3u8", hls.Window(6)))
 //
 // It publishes the multivariant playlist once every variant has a segment,
 // and again when a variant's peak bandwidth rises.

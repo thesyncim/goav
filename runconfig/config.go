@@ -38,8 +38,8 @@ type Config struct {
 	MediaPools       bool
 	ShapeDeltas      []ShapeDeltaContributor
 	QoSPolicy        func(av.Event) []control.Control
-	// Schemes maps lower-case URL schemes to the providers goav.URIInput
-	// and goav.URI resolve through (see WithScheme and provider.Scheme).
+	// Schemes maps lower-case URL schemes to the providers goav.FromURI
+	// and goav.ToURI resolve through (see WithScheme and provider.Scheme).
 	Schemes map[string]provider.Scheme
 }
 
@@ -163,84 +163,76 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 // so capability checks (Explain, validation) recognize the codec even when
 // encode/decode factories come from elsewhere.
 func WithCodecDescriptor(desc codec.Descriptor) Option {
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterDescriptor(desc)
-	})
+	return func(config *Config) error {
+		config.Codecs.RegisterDescriptor(desc)
+		return nil
+	}
 }
 
-// WithDecoder adds one decoder factory by descriptor, passing the
-// implementation directly instead of touching a registry.
+// WithDecoder adds one decoder factory by descriptor.
 func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if factory == nil {
 			return errors.New("decoder factory is nil")
 		}
+		config.Codecs.RegisterDecoder(desc, factory)
+		return nil
 	}
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterDecoder(desc, factory)
-	})
 }
 
-// WithEncoder adds one encoder factory by descriptor, passing the
-// implementation directly instead of touching a registry.
+// WithEncoder adds one encoder factory by descriptor.
 func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if factory == nil {
 			return errors.New("encoder factory is nil")
 		}
+		config.Codecs.RegisterEncoder(desc, factory)
+		return nil
 	}
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterEncoder(desc, factory)
-	})
 }
 
-// WithFilter adds one filter factory by descriptor, mirroring WithDecoder and
-// WithEncoder.
+// WithFilter adds one filter factory by descriptor.
 func WithFilter(desc filter.Descriptor, factory filter.Factory) Option {
-	if factory == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if factory == nil {
 			return errors.New("filter factory is nil")
 		}
+		config.Filters.RegisterFactory(desc, factory)
+		return nil
 	}
-	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
-		registry.RegisterFactory(desc, factory)
-	})
 }
 
 // WithMuxer adds one muxer factory for a container format.
 func WithMuxer(id av.FormatID, factory format.MuxerFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if factory == nil {
 			return errors.New("muxer factory is nil")
 		}
+		config.Formats.RegisterMuxer(id, factory)
+		return nil
 	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterMuxer(id, factory)
-	})
 }
 
 // WithDemuxer adds one demuxer factory for a container format.
 func WithDemuxer(id av.FormatID, factory format.DemuxerFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if factory == nil {
 			return errors.New("demuxer factory is nil")
 		}
+		config.Formats.RegisterDemuxer(id, factory)
+		return nil
 	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterDemuxer(id, factory)
-	})
 }
 
 // WithProber adds one format prober for content sniffing.
 func WithProber(prober format.Prober) Option {
-	if prober == nil {
-		return func(*Config) error {
+	return func(config *Config) error {
+		if prober == nil {
 			return errors.New("format prober is nil")
 		}
+		config.Formats.RegisterProber(prober)
+		return nil
 	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterProber(prober)
-	})
 }
 
 // WithFormatAdapter registers a whole container-format bundle at once: the
@@ -366,7 +358,7 @@ func WithClock(clock av.Clock) Option {
 	}
 }
 
-// WithScheme registers the provider goav.URIInput and goav.URI resolve URLs of
+// WithScheme registers the provider goav.FromURI and goav.ToURI resolve URLs of
 // one scheme through (a provider.InputScheme, a provider.DestinationScheme,
 // or both), per runtime: runconfig.WithScheme("whep", webrtcav.WHEP()).
 // Names are case-insensitive RFC 3986 schemes, and the last registration of

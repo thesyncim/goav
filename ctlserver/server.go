@@ -31,6 +31,7 @@ import (
 type Server struct {
 	task     goav.Task
 	files    launch.FileSystem
+	uris     []string
 	token    string
 	elements []launch.Element
 	methods  map[string]*method
@@ -76,6 +77,15 @@ func New(task goav.Task, options ...Option) (*Server, error) {
 // untrusted clients grants a launch.Dir.
 func Files(fs launch.FileSystem) Option {
 	return func(s *Server) error { s.files = fs; return nil }
+}
+
+// URIs grants URL schemes (such as "https", "whep", "whip", "camera") to
+// programs attached through the server, mirroring launch.URIs.
+func URIs(schemes ...string) Option {
+	return func(s *Server) error {
+		s.uris = append(s.uris, schemes...)
+		return nil
+	}
 }
 
 // Token makes every client authenticate with token before its first call:

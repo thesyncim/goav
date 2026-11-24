@@ -59,9 +59,10 @@ var (
 )
 
 // New builds a bare runtime: per-runtime registries with no adapters beyond
-// content sniffing, realtime pacing on. Import github.com/thesyncim/goav/bundle
-// for a runtime with the bundled adapters already registered. Runtime options
-// live in github.com/thesyncim/goav/runconfig.
+// content sniffing, realtime pacing off (live inputs pace automatically; see
+// runconfig.WithRealtime). Import github.com/thesyncim/goav/bundle for a
+// runtime with the bundled adapters already registered. Runtime options live
+// in github.com/thesyncim/goav/runconfig.
 func New(options ...runconfig.Option) (*Runtime, error) {
 	config, err := runconfig.NewConfig(options...)
 	if err != nil {

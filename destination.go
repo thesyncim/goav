@@ -153,17 +153,31 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
 
-// Custom wraps a reusable provider.Destination as a destination value: the
-// provider owns naming, contract, and opening, while the returned Destination
-// stays the stable routing handle branches share.
-func Custom(name string, dest provider.Destination, opts ...DestinationOption) Destination {
-	return destinationHandle(applyDestinationOptions(customDestination(name, dest), opts))
+func validateSinkComponent(sink pipeline.Sink) error {
+	if sink == nil {
+		return errNilSink
+	}
+	if validator, ok := sink.(compile.ComponentValidator); ok {
+		if err := validator.ValidateComponent(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func customDestination(name string, dest provider.Destination) destinationSpec {
+// Custom wraps a reusable provider.Destination as a destination value: the
+// provider owns naming, contract, and opening, while the returned Destination
+// stays the stable routing handle branches share. Override its name with
+// goav.Name(...).
+func Custom(dest provider.Destination, opts ...DestinationOption) Destination {
+	return destinationHandle(applyDestinationOptions(customDestination(dest), opts))
+}
+
+func customDestination(dest provider.Destination) destinationSpec {
 	if dest == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), name: name, err: errNilDestinationProvider}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilDestinationProvider}
 	}
+	name := dest.Name()
 	contract := dest.Contract()
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
@@ -175,11 +189,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 			Realtime: contract.Realtime,
 			Fragment: contract.Fragment,
 		},
-		name: firstNonEmpty(name, dest.Name()),
-	}
-	if spec.output.Name == "" {
-		spec.output.Name = spec.name
-		spec.output.URI = spec.name
+		name: name,
 	}
 	if len(contract.Formats) != 0 {
 		spec.format = contract.Formats[0]
@@ -190,7 +200,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 	return spec
 }
 
-// Writer creates a byte destination opened on demand: the callback runs after
+// WriteFunc creates a byte destination opened on demand: the callback runs after
 // goav has selected the format and streams, so the writer sees the final
 // destination metadata (provider.Info). The writer closes exactly once. When
 // the returned writer also implements provider.TransactionalWriter, Commit
@@ -463,7 +473,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 		}
 		if errors.Is(s.err, errNilDestinationProvider) {
 			suggestions = []string{
-				"pass a non-nil provider.Destination to goav.Custom(name, destination)",
+				"pass a non-nil provider.Destination to goav.Custom(destination)",
 				"use goav.Write(...), goav.WriteFunc(...), goav.ToURI(...), or goav.Sink(...) for built-in destinations",
 			}
 		}

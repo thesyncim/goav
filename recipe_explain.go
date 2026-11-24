@@ -38,7 +38,7 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	report.Decisions = append(report.Decisions, explainExecutionDecisions(resolved)...)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
-	report.Warnings = appendPlanDiagnostics(report.Warnings, compile.MuxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
+	report.Warnings = appendPlanDiagnostics(report.Warnings, compile.MuxCompatibilityDiagnostics(compile.MuxCompatibilityIssues(resolved.workIR(), resolved.inputProbes, resolved.runtime.compileEnv()))...)
 	report.Summary = explainSummary(resolved.name, report)
 	return report, nil
 }

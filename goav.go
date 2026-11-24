@@ -6,7 +6,7 @@
 // .Resize(), .Encode(codec.VP9(...))), so a Stream used twice fans out and the
 // work before the fork runs once. Mix, Composite, Select, and Join converge
 // Streams into one, Tap names attach points, and .To(destinations...) routes a
-// Stream to destinations built by Write, URI, Writer, Custom, or Sink, making
+// Stream to destinations built by Write, ToURI, WriteFunc, Custom, or Sink, making
 // an Output. A runtime runs Outputs together: rt.Run(ctx, outputs...), or
 // rt.Build for a Task with events, snapshots, runtime Attach/Detach, and
 // live controls.

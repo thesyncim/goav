@@ -388,7 +388,7 @@ muxer finalizes, then `Commit` (run succeeded or drained detach) or `Abort`
 (run failed, mux write/close error, or build teardown), then `Close`; each
 exactly once. `goav.WriteFunc(name, openFn)` is the contract-free shortcut;
 `goav.Write` wraps an open writer (closed once iff it implements `io.Closer`).
-Use via `.To(goav.Custom(name, p))`; the `Destination` value is the
+Use via `.To(goav.Custom(p))`; the `Destination` value is the
 routing handle branches share.
 
 ## Checklist

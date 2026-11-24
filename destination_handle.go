@@ -29,7 +29,7 @@ func destinationShareKey(dest destinationSpec) string {
 // several streams or branches and they feed one mux or sink (With keeps that
 // identity); separately constructed handles are separate outputs. The zero
 // value is intentionally not a valid destination; construct handles with
-// Write, URI, Sink, Writer, or Custom.
+// Write, ToURI, Sink, WriteFunc, or Custom.
 type Destination struct {
 	origin destinationOrigin
 	spec   destinationSpec
@@ -42,11 +42,11 @@ const (
 	destinationOriginConstructed
 )
 
-// DestinationOption configures a destination value ([Write], [URI], [Writer],
-// [Custom], [Sink], or [Destination.With]). Build one with [Format], which pins
-// the container, or with [Name], [MIME], or [Metadata], the
-// direction-agnostic [MediaOption] constructors. It is sealed: only goav option
-// constructors implement it.
+// DestinationOption configures a destination value ([Write], [ToURI],
+// [WriteFunc], [Custom], [Sink], or [Destination.With]). Build one with
+// [Format], which pins the container, or with [Name], [MIME], or [Metadata],
+// the direction-agnostic [MediaOption] constructors. It is sealed: only goav
+// option constructors implement it.
 type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }

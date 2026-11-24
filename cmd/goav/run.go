@@ -67,14 +67,14 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 			return args, true, nil
 		case name == "--runtime":
 			args.runtime, err = take()
-		case name == "--control" && verb == "run":
+		case name == "--control" && (verb == "run" || verb == "play"):
 			args.control.address, err = take()
 			args.control.address = controlAddress(args.control.address)
-		case name == "--control-token" && verb == "run":
+		case name == "--control-token" && (verb == "run" || verb == "play"):
 			args.control.tokenFile, err = take()
-		case name == "--control-dir" && verb == "run":
+		case name == "--control-dir" && (verb == "run" || verb == "play"):
 			args.control.dir, err = take()
-		case arg == "--control-remote" && verb == "run":
+		case arg == "--control-remote" && (verb == "run" || verb == "play"):
 			args.control.remote = true
 		case name == "--serve" && verb == "run":
 			args.serve, err = take()
@@ -237,9 +237,11 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		printErr(stderr, err)
 		return 2
 	}
-	rt, err := runtimeNamed(args.runtime)
+	var rt *goav.Runtime
 	if win.Used() {
 		rt, err = playRuntime(args.runtime, win)
+	} else {
+		rt, err = runtimeNamed(args.runtime)
 	}
 	if err != nil {
 		printErr(stderr, err)

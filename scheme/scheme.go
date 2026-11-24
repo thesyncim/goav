@@ -1,5 +1,5 @@
 // Package scheme holds goav's built-in URL schemes, the providers
-// goav.URIInput and goav.URI resolve through: File for file URLs and bare
+// goav.FromURI and goav.ToURI resolve through: File for file URLs and bare
 // paths, and HTTP for http and https. bundle.Schemes registers them on a
 // runtime; registering one yourself replaces it there, last wins:
 //
@@ -28,7 +28,7 @@ import (
 )
 
 // File is the file scheme: file:///abs/path.mp4, a relative file:path.mp4,
-// or a bare path given to goav.URIInput or goav.URI. Inputs open
+// or a bare path given to goav.FromURI or goav.ToURI. Inputs open
 // random-access (MP4 with its index at the end seeks); destinations create
 // the file and its parent directories when the run opens them. It is an
 // InputScheme and a DestinationScheme.

@@ -34,7 +34,7 @@
 //
 // uri names a URL the same way, and a quoted URL alone is one:
 // "https://cdn.example/in.mp4" ! video ! .... The runtime's schemes resolve it
-// (goav.URIInput), and only for the schemes URIs grants; a file URL is a
+// (goav.FromURI), and only for the schemes URIs grants; a file URL is a
 // file, opened through Files.
 //
 // # Elements
@@ -56,7 +56,7 @@
 // Each input is a pipeline yielding a stream. Mix and composite take
 // sync=arrival|pts (sync=pts is goav.ByPTS()): mix(a, b, sync=pts).
 //
-// Destinations: file PATH [format=], uri URL [format=], null.
+// Destinations: file PATH [format=], uri URL [format=], hls PATH [segment=] [window=] [parts=], null.
 //
 // Use adds a host's own sources, stages, encoders, sinks, and joins, with
 // typed settings; Elements lists the vocabulary for help and discovery.

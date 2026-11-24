@@ -118,9 +118,9 @@ func TestErrorAcceptanceNilFileInputReader(t *testing.T) {
 func TestErrorAcceptanceNilCustomDestinationProvider(t *testing.T) {
 	_, err := mustRuntime().Describe(opusPacketInput().
 		Audio().
-		To(goav.Custom("out.ogg", nil)))
+		To(goav.Custom(nil, goav.Name("out.ogg"))))
 	buildErr := requireBuildError(t, err, errcode.Code("output_invalid"), "build job", "out.ogg",
-		"pass a non-nil provider.Destination to goav.Custom(name, destination)",
+		"pass a non-nil provider.Destination to goav.Custom(destination)",
 	)
 	if !strings.Contains(buildErr.Reason, "nil destination provider") {
 		t.Fatalf("reason = %q, want nil destination provider", buildErr.Reason)

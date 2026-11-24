@@ -3,38 +3,8 @@ package goav
 import (
 	"testing"
 
-	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/shape"
 )
-
-func TestTapNameAndDomainHelperContracts(t *testing.T) {
-	if got := defaultDecodedTapName(""); got != "decoded" {
-		t.Fatalf("defaultDecodedTapName(empty) = %q, want decoded", got)
-	}
-	if got := defaultDecodedTapName(av.MediaAudio); got != "audio.decoded" {
-		t.Fatalf("defaultDecodedTapName(audio) = %q", got)
-	}
-	if got := defaultPacketTapName(av.MediaVideo, 99); got != "video.packets" {
-		t.Fatalf("defaultPacketTapName(video) = %q", got)
-	}
-	if got := defaultPacketTapName("", 0); got != "packets" {
-		t.Fatalf("defaultPacketTapName(empty,0) = %q", got)
-	}
-	if got := defaultPacketTapName("", 2); got != "packets-2" {
-		t.Fatalf("defaultPacketTapName(empty,2) = %q", got)
-	}
-
-	inferred := tapWithDomain(compile.TapRef{Name: "mid"}, shape.DomainFrame)
-	if inferred.Name != "mid" || inferred.Domain != shape.DomainFrame {
-		t.Fatalf("internal tap default = %s/%s", inferred.Name, inferred.Domain)
-	}
-	explicit := tapWithDomain(packetTapRef("encoded"), shape.DomainFrame)
-	if explicit.Name != "encoded" || explicit.Domain != shape.DomainPacket {
-		t.Fatalf("explicit tap = %s/%s, want packet domain preserved", explicit.Name, explicit.Domain)
-	}
-}
 
 func TestTaskTapsDoNotInferFromGraphNodePrefixes(t *testing.T) {
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "tap-prefix-regression"})

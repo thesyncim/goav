@@ -54,7 +54,7 @@ func hlsElement() *element {
 		if a.Parts > 0 {
 			options = append(options, hls.Parts(a.Parts))
 		}
-		d := goav.Custom(a.Path, hls.New(a.Path, store, options...))
+		d := goav.Custom(hls.New(a.Path, store, options...))
 		c.dests[key] = d
 		return value{kind: kindDest, dest: d}, nil
 	}
@@ -135,5 +135,11 @@ func (f *hlsFile) Close() error {
 		}
 		return closeErr
 	}
-	return f.publish()
+	if err := f.publish(); err != nil {
+		if f.cleanup != nil {
+			f.cleanup()
+		}
+		return err
+	}
+	return nil
 }

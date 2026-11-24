@@ -32,7 +32,10 @@ import (
 // schemes already registered, then applies opts on top. Registration is
 // last-wins, so opts can add or override bundled implementations.
 func New(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(append(Options(), opts...)...)
+	all := make([]runconfig.Option, 0, 1+len(opts))
+	all = append(all, All())
+	all = append(all, opts...)
+	return goav.New(all...)
 }
 
 // MustNew is New for package-level setup and tests.
@@ -89,13 +92,8 @@ func Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult
 // filters, and URL schemes:
 //
 //	rt, err := goav.New(bundle.All(), myOption)
-func All() runconfig.Option { return group(Options()) }
-
-// Options returns fresh runtime options for all bundled formats, codecs,
-// filters, and URL schemes. The returned slice is safe for callers to append
-// to.
-func Options() []runconfig.Option {
-	return []runconfig.Option{Formats(), Codecs(), Filters(), Schemes()}
+func All() runconfig.Option {
+	return group([]runconfig.Option{Formats(), Codecs(), Filters(), Schemes()})
 }
 
 // Formats, Codecs, Filters, and Schemes are each one runtime option
@@ -116,7 +114,7 @@ func Codecs() runconfig.Option { return group(codecOptions) }
 // Filters registers the frame filters: resample and resize.
 func Filters() runconfig.Option { return group(filterOptions) }
 
-// Schemes registers the URL schemes goav.URIInput and goav.URI resolve
+// Schemes registers the URL schemes goav.FromURI and goav.ToURI resolve
 // through: file, http, and https (package scheme). Add others, or replace
 // these, with runconfig.WithScheme.
 func Schemes() runconfig.Option { return group(schemeOptions) }

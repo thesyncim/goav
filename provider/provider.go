@@ -1,10 +1,10 @@
 // Package provider declares the contracts external transports and
 // destinations satisfy to plug into goav with zero goav changes: Source and
-// ByteSource are the inputs goav.Input adapts into a recipe input,
+// ByteSource are the inputs goav.From adapts into a recipe input,
 // Destination (with Contract, Info, TransactionalWriter, and
-// OpenFunc) is the seam goav.Custom and goav.Writer wrap behind destination
+// OpenFunc) is the seam goav.Custom and goav.WriteFunc wrap behind destination
 // handles, and InputScheme and DestinationScheme bind URLs to them, for
-// goav.URIInput and goav.URI. Implementations live outside goav —
+// goav.FromURI and goav.ToURI. Implementations live outside goav —
 // rtpav.Receive and webrtcav.Track are Sources, webrtcav.WHEP is an
 // InputScheme; an S3 uploader returning a TransactionalWriter is a
 // Destination.
@@ -51,7 +51,7 @@ type Source interface {
 // produces itself, or a ByteSource, whose container bytes the runtime probes
 // and demuxes with its registered formats. Either declares its shape before
 // it opens; SourceShape().Realtime marks a live input, which planning,
-// Explain, and goav.Reconnect read. goav.Input refuses an Input that is
+// Explain, and goav.Reconnect read. goav.From refuses an Input that is
 // neither.
 type Input interface {
 	SourceShape() shape.Spec
@@ -76,7 +76,7 @@ type ByteSource interface {
 }
 
 // Scheme is the provider of one URL scheme (file, https, whep, ...) that
-// runconfig.WithScheme registers for goav.URIInput and goav.URI: an InputScheme,
+// runconfig.WithScheme registers for goav.FromURI and goav.ToURI: an InputScheme,
 // a DestinationScheme, or both, so a scheme implements only the directions
 // it serves; goav refuses the other with errors.ErrUnsupported. Binding is
 // pure — it validates the URL and performs no I/O, because Describe and
@@ -87,12 +87,12 @@ type ByteSource interface {
 // redacted form goav reports (the input's node name, Info.Name).
 type Scheme any
 
-// InputScheme binds URLs to inputs, for goav.URIInput.
+// InputScheme binds URLs to inputs, for goav.FromURI.
 type InputScheme interface {
 	Input(u *url.URL) (Input, error)
 }
 
-// DestinationScheme binds URLs to destinations, for goav.URI.
+// DestinationScheme binds URLs to destinations, for goav.ToURI.
 type DestinationScheme interface {
 	Destination(u *url.URL) (Output, error)
 }
@@ -169,7 +169,7 @@ type Info struct {
 	Realtime bool
 }
 
-// OpenFunc opens the byte writer behind a goav.Writer destination once goav
+// OpenFunc opens the byte writer behind a goav.WriteFunc destination once goav
 // has resolved the output format and streams (the Info). A returned writer
 // that also implements TransactionalWriter gets Commit after success, Abort
 // after failure, Close exactly once either way.

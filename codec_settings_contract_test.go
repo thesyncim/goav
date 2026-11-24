@@ -17,6 +17,9 @@ func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 		KeyframeInterval: 24,
 		Profile:          "base",
 		Level:            "1.0",
+		Backend:          "govpx",
+		BitDepth:         8,
+		Custom:           av.Metadata{"cpu-used": "4", "lag": "0"},
 		Channels:         codec.Mono,
 		SampleRate:       44_100,
 		ClockRate:        44_100,
@@ -37,6 +40,9 @@ func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 		KeyframeInterval: 60,
 		Profile:          "high",
 		Level:            "3.1",
+		Backend:          "videotoolbox",
+		BitDepth:         10,
+		Custom:           av.Metadata{"cpu-used": "8", "aq": "1"},
 		Channels:         codec.Stereo,
 		SampleRate:       48_000,
 		ClockRate:        90_000,
@@ -54,6 +60,11 @@ func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 		got.KeyframeInterval != 60 ||
 		got.Profile != "high" ||
 		got.Level != "3.1" ||
+		got.Backend != "videotoolbox" ||
+		got.BitDepth != 10 ||
+		got.Custom["cpu-used"] != "8" ||
+		got.Custom["lag"] != "0" ||
+		got.Custom["aq"] != "1" ||
 		got.Channels != codec.Stereo ||
 		got.SampleRate != 48_000 ||
 		got.ClockRate != 90_000 ||
