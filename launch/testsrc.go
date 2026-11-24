@@ -109,9 +109,15 @@ func newTestSource(a testsrcArgs) (testSource, error) {
 			return s, &Error{Pos: -1, Msg: "rate, channels, and tone set testsrc audio", Hint: "drop them from testsrc video"}
 		}
 	case "audio":
+		if a.Rate < 0 || a.Channels < 0 || a.Tone < 0 {
+			return s, &Error{Pos: -1, Msg: "rate, channels, and tone must be positive"}
+		}
 		s.rate, s.channels, s.tone = 48_000, 2, 440
 		if a.Rate > 0 {
 			s.rate = a.Rate
+		}
+		if s.rate*audioFrameMS/1000 <= 0 {
+			return s, &Error{Pos: -1, Msg: "rate must be at least 50 Hz"}
 		}
 		if a.Channels > 0 {
 			s.channels = a.Channels
@@ -125,6 +131,9 @@ func newTestSource(a testsrcArgs) (testSource, error) {
 		}
 	default:
 		return s, &Error{Pos: -1, Msg: "testsrc makes video or audio, not " + quote(a.Kind), Hint: "write testsrc video or testsrc audio"}
+	}
+	if a.Frames < 0 || a.Duration < 0 {
+		return s, &Error{Pos: -1, Msg: "frames and duration must be positive"}
 	}
 	switch {
 	case a.Frames > 0 && a.Duration > 0:

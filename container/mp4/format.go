@@ -232,7 +232,12 @@ func sizeOf(declared int64, v any) int64 {
 		return declared
 	}
 	if seeker, ok := v.(io.Seeker); ok {
-		if n, err := seeker.Seek(0, io.SeekEnd); err == nil && n > 0 {
+		cur, curErr := seeker.Seek(0, io.SeekCurrent)
+		n, err := seeker.Seek(0, io.SeekEnd)
+		if curErr == nil {
+			_, _ = seeker.Seek(cur, io.SeekStart)
+		}
+		if err == nil && n > 0 {
 			return n
 		}
 	}

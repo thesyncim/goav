@@ -374,13 +374,17 @@ func parseRate(s string) (rate, bool) {
 		return reduced(rate{num, den}), true
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f <= 0 || math.IsInf(f, 0) {
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f <= 0 || f > float64(math.MaxInt32)/1000 {
 		return rate{}, false
 	}
 	if f == math.Trunc(f) {
 		return rate{int(f), 1}, true
 	}
-	return reduced(rate{int(math.Round(f * 1000)), 1000}), true
+	num := int(math.Round(f * 1000))
+	if num <= 0 {
+		return rate{}, false
+	}
+	return reduced(rate{num, 1000}), true
 }
 
 func reduced(r rate) rate {

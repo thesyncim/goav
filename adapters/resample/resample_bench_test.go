@@ -1,8 +1,12 @@
 package resample
 
 import (
+	"context"
 	"fmt"
 	"testing"
+
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/filter"
 )
 
 func BenchmarkResampleS16Kernel(b *testing.B) {
@@ -20,13 +24,54 @@ func BenchmarkResampleS16Kernel(b *testing.B) {
 		{name: "mono48000_to_stereo48000/20ms", inputRate: 48_000, outputRate: 48_000, inputChannels: 1, outputChannels: 2, inputSamples: 960},
 	} {
 		b.Run(tt.name, func(b *testing.B) {
+			ctx := context.Background()
+			f := &Filter{}
+			if err := f.Open(ctx, filter.Config{
+				Stream: av.Stream{
+					Type: av.MediaAudio,
+					Codec: av.CodecParameters{
+						Type:         av.MediaAudio,
+						SampleRate:   tt.inputRate,
+						Channels:     tt.inputChannels,
+						SampleFormat: av.SampleFormatS16,
+					},
+				},
+				Audio: &filter.ResampleConfig{
+					SampleRate:   tt.outputRate,
+					Channels:     tt.outputChannels,
+					SampleFormat: av.SampleFormatS16,
+				},
+			}); err != nil {
+				b.Fatal(err)
+			}
 			src := resampleBenchS16Payload(tt.inputSamples, tt.inputChannels)
-			outputSamples := resampledSampleCount(tt.inputSamples, tt.inputRate, tt.outputRate)
-			dst := make([]byte, outputSamples*tt.outputChannels*2)
+			frame := &av.Frame{
+				Type: av.MediaAudio,
+				PTS:  av.Timestamp{Base: av.TimeBase{Num: 1, Den: int64(tt.inputRate)}},
+				Audio: &av.AudioFrame{
+					SampleRate:   tt.inputRate,
+					Channels:     tt.inputChannels,
+					SampleFormat: av.SampleFormatS16,
+					Samples:      tt.inputSamples,
+				},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: src}}},
+			}
+			out := filter.Result{Frames: []av.Frame{preallocAudioFrame((tt.inputSamples*tt.outputRate/tt.inputRate + 2) * tt.outputChannels * 2)}[:0]}
+			if err := f.FilterInto(ctx, frame, &out); err != nil {
+				b.Fatal(err)
+			}
+			outBytes := 0
+			if len(out.Frames) > 0 && len(out.Frames[0].Planes) > 0 {
+				outBytes = len(out.Frames[0].Planes[0].Buffer.Bytes)
+			}
 			b.ReportAllocs()
-			b.SetBytes(int64(len(src) + len(dst)))
-			for i := 0; i < b.N; i++ {
-				resampleS16(dst, src, tt.inputSamples, tt.inputRate, tt.inputChannels, outputSamples, tt.outputRate, tt.outputChannels)
+			b.SetBytes(int64(len(src) + outBytes))
+			b.ResetTimer()
+			for b.Loop() {
+				out.Reset()
+				if err := f.FilterInto(ctx, frame, &out); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
@@ -36,12 +81,11 @@ func BenchmarkResampleS16KernelDurations(b *testing.B) {
 	for _, samples := range []int{160, 960, 1920} {
 		b.Run(fmt.Sprintf("stereo_to_mono/samples=%d", samples), func(b *testing.B) {
 			src := resampleBenchS16Payload(samples, 2)
-			outputSamples := resampledSampleCount(samples, 48_000, 48_000)
-			dst := make([]byte, outputSamples*2)
+			dst := make([]byte, samples*2)
 			b.ReportAllocs()
 			b.SetBytes(int64(len(src) + len(dst)))
-			for i := 0; i < b.N; i++ {
-				resampleS16(dst, src, samples, 48_000, 2, outputSamples, 48_000, 1)
+			for b.Loop() {
+				remapS16Channels(dst, src, samples, 2, 1)
 			}
 		})
 	}

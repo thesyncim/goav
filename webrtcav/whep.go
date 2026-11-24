@@ -491,8 +491,8 @@ func (s *whepSession) isClosed() bool {
 	return s.closed
 }
 
-// Close ends the session: DELETE its resource, then close the peer
-// connection and the tracks.
+// Close ends the session: stop local readers and peer connection, then DELETE
+// its resource.
 func (s *whepSession) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
@@ -501,13 +501,13 @@ func (s *whepSession) Close() error {
 		readers := append([]TrackReader(nil), s.readers...)
 		close(s.events)
 		s.mu.Unlock()
-		err = s.sig.close()
 		s.cancel()
 		for _, reader := range readers {
 			reader.Close()
 		}
-		if closeErr := s.pc.Close(); err == nil {
-			err = closeErr
+		err = s.pc.Close()
+		if sigErr := s.sig.close(); err == nil {
+			err = sigErr
 		}
 	})
 	return err

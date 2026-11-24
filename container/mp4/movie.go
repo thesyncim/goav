@@ -428,9 +428,11 @@ func parseStz2(payload []byte, budget *sampleBudget) []uint32 {
 	p.skip(3) // reserved
 	fieldSize := int(p.u8())
 	count := p.u32()
-	// The packed entries must come from the payload, like fits for whole-byte
-	// tables; an unsupported field size is refused by the switch below.
-	if fieldSize > 0 && int64(count)*int64(fieldSize) > 8*int64(p.remaining()) {
+	if fieldSize != 4 && fieldSize != 8 && fieldSize != 16 {
+		return nil
+	}
+	// The packed entries must come from the payload, like fits for whole-byte tables.
+	if int64(count)*int64(fieldSize) > 8*int64(p.remaining()) {
 		return nil
 	}
 	if !budget.claim(count, 0) {
@@ -454,8 +456,6 @@ func parseStz2(payload []byte, budget *sampleBudget) []uint32 {
 				out = append(out, uint32(b&0x0f))
 			}
 		}
-	default:
-		return nil
 	}
 	if p.err() != nil {
 		return nil
@@ -489,7 +489,11 @@ func parseCo64(payload []byte) []int64 {
 	}
 	out := make([]int64, 0, count)
 	for range count {
-		out = append(out, int64(p.u64()))
+		raw := p.u64()
+		if raw > uint64(math.MaxInt64) {
+			return nil
+		}
+		out = append(out, int64(raw))
 	}
 	if p.err() != nil {
 		return nil
