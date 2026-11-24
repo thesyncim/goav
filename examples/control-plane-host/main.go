@@ -70,7 +70,7 @@ func (h *host) serve(ctx context.Context, address, dir string) error {
 		return err
 	}
 	display := component.SinkFunc("display", func(context.Context, component.Message) error { return nil })
-	task, err := rt.Build(ctx, goav.Input(h.player).Video().Tap("live").To(goav.Sink(display)))
+	task, err := rt.Build(ctx, goav.From(h.player).Video().Tap("live").To(goav.Sink(display)))
 	if err != nil {
 		return err
 	}

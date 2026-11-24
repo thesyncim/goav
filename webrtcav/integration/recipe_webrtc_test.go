@@ -35,7 +35,7 @@ func specText(spec pipeline.Spec) string {
 // webRTCRemote adapts a fixture RemoteTrack into a provider input the way an
 // application would: adapt the track, read its streams, and declare the
 // stream's codec as receive intent.
-func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
+func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.Input {
 	t.Helper()
 	reader, err := webrtcav.NewTrackRemoteAdapter().AdaptTrack(context.Background(), remote)
 	if err != nil {
@@ -71,7 +71,7 @@ func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
 		}
 		options = append(options, rtpav.WithCodec(spec))
 	}
-	return goav.Input(rtpav.Receive(reader, options...))
+	return goav.From(rtpav.Receive(reader, options...))
 }
 
 func webRTCTestRuntime() *goav.Runtime {
@@ -219,7 +219,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 	// Track adaptation errors are the provider's: they surface when the
 	// source opens at build time.
-	_, err := webRTCTestRuntime().Build(context.Background(), goav.Input(webrtcav.Track(nil)).
+	_, err := webRTCTestRuntime().Build(context.Background(), goav.From(webrtcav.Track(nil)).
 		To(goav.Write("recording.ivf", io.Discard)))
 	if !errors.Is(err, webrtcav.ErrNilTrack) {
 		t.Fatalf("err = %v, want webrtcav.ErrNilTrack", err)

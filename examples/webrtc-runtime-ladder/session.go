@@ -64,7 +64,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Video().
 		Decode().
 		Tap(videoTapName).
@@ -101,7 +101,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Audio().
 		Decode().
 		Tap(audioTapName).

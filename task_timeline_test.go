@@ -171,8 +171,8 @@ func TestTaskTimelineRateReanchorsAllSources(t *testing.T) {
 	audio := &countingPacketSink{}
 
 	task, err := mustNew(WithClock(clock)).Build(ctx,
-		Input(&timelinePacedProvider{source: cam}).Video().To(Sink(SinkFunc("video", video.record))),
-		Input(&timelinePacedProvider{source: mic}).Audio().To(Sink(SinkFunc("audio", audio.record))))
+		From(&timelinePacedProvider{source: cam}).Video().To(Sink(SinkFunc("video", video.record))),
+		From(&timelinePacedProvider{source: mic}).Audio().To(Sink(SinkFunc("audio", audio.record))))
 	if err != nil {
 		t.Fatal(err)
 	}

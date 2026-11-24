@@ -211,7 +211,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 
 	task, err := rt.Build(ctx,
 		Mix(
-			Input(&crossSeekArmProvider{source: seekable, codec: pcm}).Audio().Decode(),
+			From(&crossSeekArmProvider{source: seekable, codec: pcm}).Audio().Decode(),
 			mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}}).Audio(),
 			ByPTS(),
 		).
@@ -415,7 +415,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	defer cancel()
 	source := &crossSegmentGatedSource{stream: "audio", ready: make(chan struct{}), resume: make(chan struct{})}
 	task, err := mustNew().Build(ctx,
-		Input(&crossSegmentGatedProvider{source: source}).
+		From(&crossSegmentGatedProvider{source: source}).
 			Audio().
 			Tap("audio.packets").
 			To(lifecycleTestSink("base")),
@@ -469,7 +469,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 // --- Rebranch on a join tap ---
 
 // crossGatedFrameSource pushes one mono S16 frame per release and ends.
-func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]int16) InputSpec {
+func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(sctx context.Context, push SourcePush) error {
@@ -496,7 +496,7 @@ func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]in
 		})
 }
 
-func crossSignaledFrameSource(id av.StreamID, queued chan<- struct{}, samples ...int16) InputSpec {
+func crossSignaledFrameSource(id av.StreamID, queued chan<- struct{}, samples ...int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {

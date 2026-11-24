@@ -26,7 +26,7 @@ func TestSeekOnAContainerThatCannotSeekIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := goavtest.NewCollector()
-	task, err := offlineRuntime().Build(ctx, goav.FileInput("in.ivf", bytes.NewReader(ivf.Bytes())).To(out.Sink()))
+	task, err := offlineRuntime().Build(ctx, goav.Read("in.ivf", bytes.NewReader(ivf.Bytes())).To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

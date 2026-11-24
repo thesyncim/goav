@@ -26,8 +26,8 @@ import (
 // Describe, Explain, errors, events, and snapshots show the URL redacted:
 // no userinfo, and secret query values (token, key, password, signature)
 // replaced; only the scheme sees it verbatim.
-func URIInput(uri string, opts ...InputOption) InputSpec {
-	spec := InputSpec{}
+func FromURI(uri string, opts ...InputOption) Input {
+	spec := Input{}
 	if ref := parseURIRef(uri); ref != nil {
 		spec.uri = ref
 		spec.name = ref.name
@@ -40,7 +40,7 @@ func URIInput(uri string, opts ...InputOption) InputSpec {
 // resolved like URIInput through the runtime's schemes, which open the bytes
 // goav muxes once the format and streams are known. The container comes
 // from the URL's extension, Format, MIME, or the scheme's contract.
-func URI(uri string, opts ...DestinationOption) Destination {
+func ToURI(uri string, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(uriDestination(uri), opts))
 }
 
@@ -108,11 +108,11 @@ func (g *recipeGraph) bindSchemes(rt *Runtime) {
 	}
 }
 
-func (s InputSpec) uriBound() bool {
+func (s Input) uriBound() bool {
 	return s.provider != nil || s.bytes != nil || s.err != nil
 }
 
-func (r *Runtime) bindURIInput(spec InputSpec) InputSpec {
+func (r *Runtime) bindURIInput(spec Input) Input {
 	ref := spec.uri
 	node := spec.inputName(ref.name)
 	if ref.err != nil {

@@ -79,7 +79,7 @@ func (s *flakySession) Close() error { return nil }
 func TestReconnectReopensALiveInput(t *testing.T) {
 	live := &flakyLive{fails: 2}
 	sink := goavtest.NewCollector()
-	task, err := bundle.Build(context.Background(), goav.Input(live, goav.Reconnect(3, time.Millisecond)).Audio().To(sink.Sink()))
+	task, err := bundle.Build(context.Background(), goav.From(live, goav.Reconnect(3, time.Millisecond)).Audio().To(sink.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +106,12 @@ func TestReconnectReopensALiveInput(t *testing.T) {
 // live inputs take a reconnect policy.
 func TestReconnectGivesUpAndRefusesFiles(t *testing.T) {
 	live := &flakyLive{fails: 100, silent: true}
-	err := bundle.Run(context.Background(), goav.Input(live, goav.Reconnect(2, time.Millisecond)).Audio().To(goavtest.NewCollector().Sink()))
+	err := bundle.Run(context.Background(), goav.From(live, goav.Reconnect(2, time.Millisecond)).Audio().To(goavtest.NewCollector().Sink()))
 	if !errors.Is(err, errDropped) || !strings.Contains(err.Error(), "gave up after 2 reconnect attempts") {
 		t.Fatalf("err = %v, want the attempt cap", err)
 	}
 
-	_, err = bundle.Describe(goav.FileInput("in.ivf", bytes.NewReader(tinyIVF()), goav.Reconnect(1, 0)).Video().To(goavtest.NewCollector().Sink()))
+	_, err = bundle.Describe(goav.Read("in.ivf", bytes.NewReader(tinyIVF()), goav.Reconnect(1, 0)).Video().To(goavtest.NewCollector().Sink()))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !strings.Contains(buildErr.Reason, "applies to live inputs") {
 		t.Fatalf("err = %v, want the live-only refusal", err)
@@ -124,7 +124,7 @@ func TestReconnectReopensALiveByteInput(t *testing.T) {
 	custom := &testScheme{data: tinyIVF(), live: true, breakFirst: true}
 	rt := bundle.MustNew(runconfig.WithScheme("cam", custom))
 	sink := goavtest.NewCollector()
-	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
+	if err := rt.Run(context.Background(), goav.FromURI("cam://door/feed.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	if custom.opened != 2 || len(sink.Packets()) != 2 {
@@ -135,14 +135,14 @@ func TestReconnectReopensALiveByteInput(t *testing.T) {
 // TestLiveMarksAnInputLive pins goav.Live: the input plans live before it
 // opens, and a URI input marked live takes a reconnect policy.
 func TestLiveMarksAnInputLive(t *testing.T) {
-	report, err := bundle.Explain(context.Background(), goav.FileInput("pipe.ivf", bytes.NewReader(tinyIVF()), goav.Live()).Video().To(goavtest.NewCollector().Sink()))
+	report, err := bundle.Explain(context.Background(), goav.Read("pipe.ivf", bytes.NewReader(tinyIVF()), goav.Live()).Video().To(goavtest.NewCollector().Sink()))
 	if err != nil || len(report.Inputs) != 1 || !report.Inputs[0].Realtime {
 		t.Fatalf("report = %+v err = %v, want a live input", report.Inputs, err)
 	}
 	custom := &testScheme{data: tinyIVF(), breakFirst: true}
 	rt := bundle.MustNew(runconfig.WithScheme("cam", custom))
 	sink := goavtest.NewCollector()
-	if err := rt.Run(context.Background(), goav.URIInput("cam://door/feed.ivf", goav.Live(), goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
+	if err := rt.Run(context.Background(), goav.FromURI("cam://door/feed.ivf", goav.Live(), goav.Reconnect(1, time.Millisecond)).Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	if custom.opened != 2 {
@@ -156,7 +156,7 @@ func TestLiveMarksAnInputLive(t *testing.T) {
 func TestReconnectKeepsStreamIDs(t *testing.T) {
 	live := &flakyLive{fails: 1, renamed: true}
 	sink := goavtest.NewCollector()
-	task, err := bundle.Build(context.Background(), goav.Input(live, goav.Reconnect(2, time.Millisecond)).Audio().To(sink.Sink()))
+	task, err := bundle.Build(context.Background(), goav.From(live, goav.Reconnect(2, time.Millisecond)).Audio().To(sink.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

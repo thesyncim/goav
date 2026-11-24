@@ -163,7 +163,7 @@ func (t *controlCaptureTask) Attach(context.Context, ...goav.Output) (goav.Attac
 
 func (t *controlCaptureTask) Tap(string) goav.Stream { return goav.Stream{} }
 
-func (t *controlCaptureTask) Track(goav.InputSpec, av.Stream) goav.Stream { return goav.Stream{} }
+func (t *controlCaptureTask) Track(goav.Input, av.Stream) goav.Stream { return goav.Stream{} }
 
 func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
 	return nil

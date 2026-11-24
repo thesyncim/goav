@@ -96,7 +96,7 @@ testsrc audio duration=1s ! encode opus ! file out.mp4`, launch.Files(files))
 				t.Fatalf("fragmented = %v, want %v", fragmented, tc.pipe)
 			}
 			var frames, samples atomic.Int64
-			in := goav.FileInput("out.mp4", bytes.NewReader(data))
+			in := goav.Read("out.mp4", bytes.NewReader(data))
 			err = bundle.Run(context.Background(),
 				in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", func(_ context.Context, m component.Message) error {
 					if m.Frame != nil {

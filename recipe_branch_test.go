@@ -20,7 +20,7 @@ import (
 
 func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 	web := goav.Write("out.webm", io.Discard)
-	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	job := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("v360").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(web).
 		Audio("a96").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web)
 
@@ -49,7 +49,7 @@ func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 
 func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
 	preview := goav.Write("preview.webm", io.Discard)
-	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	job := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(preview)
 
@@ -66,7 +66,7 @@ func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
 func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 	web := goav.Write("web.webm", io.Discard)
 	web2 := goav.Write("web.webm", io.Discard)
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).To(web2).
 		BuildLive(context.Background())
@@ -83,7 +83,7 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 
 func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 	web := goav.Write("web.webm", io.Discard)
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web, web).
 		BuildLive(context.Background())
 
@@ -101,7 +101,7 @@ func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
 	archive := goav.Write("archive.webm", io.Discard)
 	preview := goav.Write("preview.webm", io.Discard)
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(archive).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(1_000_000))).To(preview).
 		BuildLive(context.Background())
@@ -117,7 +117,7 @@ func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.Write("preview.webm", nil)).
 		BuildLive(context.Background())
@@ -129,7 +129,7 @@ func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 }
 
 func TestBranchCompositionAcceptsSinkAfterResize(t *testing.T) {
-	job := goav.FileInput("input.webm", strings.NewReader("")).
+	job := goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(320, 180).
@@ -155,7 +155,7 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
-	in := goav.FileInput("input.webm", strings.NewReader(""))
+	in := goav.Read("input.webm", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode().
@@ -228,7 +228,7 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
-	in := goav.FileInput("input.ogg", strings.NewReader(""))
+	in := goav.Read("input.ogg", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode().
@@ -281,7 +281,7 @@ func TestBranchCompositionSharesCustomStageCurrentPoint(t *testing.T) {
 	preview := goav.Sink(component.SinkFunc("preview", func(context.Context, component.Message) error {
 		return nil
 	}))
-	in := goav.FileInput("input.webm", strings.NewReader(""))
+	in := goav.Read("input.webm", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode().
@@ -341,7 +341,7 @@ func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Audio("bad").Resample(0, codec.Mono).Encode(codec.Opus(codec.Bitrate(64_000))).
 		To(goav.Write("bad.ogg", io.Discard)).
 		BuildLive(context.Background())
@@ -357,7 +357,7 @@ func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.webm", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Tap("video.decoded").
@@ -378,7 +378,7 @@ func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.webm", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Tap("video.decoded").
@@ -399,7 +399,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	_, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("bad").Encode(codec.VP9(codec.Bitrate(-1))).
 		To(goav.Write("bad.webm", io.Discard)).
 		BuildLive(context.Background())
@@ -415,7 +415,7 @@ func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 }
 
 func TestBranchRecipeDescribesTransformChain(t *testing.T) {
-	spec, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	spec, err := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(1280, 720).Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.Write("preview.webm", io.Discard)).
 		Describe()

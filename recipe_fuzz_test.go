@@ -87,7 +87,7 @@ func FuzzRecipe(f *testing.F) {
 type recipeGen struct {
 	data    []byte
 	streams []goav.Stream
-	inputs  []goav.InputSpec
+	inputs  []goav.Input
 	dests   []goav.Destination
 	outs    []goav.Output
 	names   int
@@ -130,8 +130,8 @@ func (g *recipeGen) name(prefix string) string {
 	return prefix + strconv.Itoa(g.names)
 }
 
-func (g *recipeGen) input(b byte) goav.InputSpec {
-	var in goav.InputSpec
+func (g *recipeGen) input(b byte) goav.Input {
+	var in goav.Input
 	switch b % 4 {
 	case 0:
 		in = goavtest.Audio(48_000, 1, make([]int16, 960))

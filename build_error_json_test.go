@@ -39,10 +39,10 @@ func commonBuildErrorCases() []commonBuildError {
 	}
 	return []commonBuildError{
 		{"zero-stream", build(Stream{}.To(sink()))},
-		{"input-missing", describe(InputSpec{}.Video().To(Write("out.ivf", out())))},
-		{"encode-missing", describe(FileInput("in.ivf", reader()).Video().Decode().To(Write("out.mp4", out())))},
-		{"resize-on-packets", describe(FileInput("in.ivf", reader()).Video().Resize(1280, 720).As("thumb").To(sink()))},
-		{"runtime-missing", build(FileInput("in.ogg", reader()).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
+		{"input-missing", describe(Input{}.Video().To(Write("out.ivf", out())))},
+		{"encode-missing", describe(Read("in.ivf", reader()).Video().Decode().To(Write("out.mp4", out())))},
+		{"resize-on-packets", describe(Read("in.ivf", reader()).Video().Resize(1280, 720).As("thumb").To(sink()))},
+		{"runtime-missing", build(Read("in.ogg", reader()).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
 	}
 }
 

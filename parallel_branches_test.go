@@ -120,7 +120,7 @@ func TestParallelLadderMatchesSerialRungs(t *testing.T) {
 	}
 	rungs := []rung{{"full", 0, 0}, {"half", 32, 24}, {"quarter", 16, 12}}
 	ladder := make([]bytes.Buffer, len(rungs))
-	decoded := goav.FileInput("in.webm", bytes.NewReader(input)).Video().Decode()
+	decoded := goav.Read("in.webm", bytes.NewReader(input)).Video().Decode()
 	outs := make([]goav.Output, len(rungs))
 	for i, r := range rungs {
 		rendition := decoded
@@ -134,7 +134,7 @@ func TestParallelLadderMatchesSerialRungs(t *testing.T) {
 	}
 	for i, r := range rungs {
 		var serial bytes.Buffer
-		chain := goav.FileInput("in.webm", bytes.NewReader(input)).Video().Decode()
+		chain := goav.Read("in.webm", bytes.NewReader(input)).Video().Decode()
 		if r.width != 0 {
 			chain = chain.Resize(r.width, r.height)
 		}
@@ -157,7 +157,7 @@ func TestParallelLadderMatchesSerialRungs(t *testing.T) {
 func encodedFrames(t *testing.T, webm []byte) [][]byte {
 	t.Helper()
 	out := goavtest.NewCollector()
-	if err := bundle.Run(context.Background(), goav.FileInput("out.webm", bytes.NewReader(webm)).Video().To(out.Sink())); err != nil {
+	if err := bundle.Run(context.Background(), goav.Read("out.webm", bytes.NewReader(webm)).Video().To(out.Sink())); err != nil {
 		t.Fatalf("demux: %v", err)
 	}
 	frames := make([][]byte, 0, len(out.Packets()))

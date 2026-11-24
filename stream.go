@@ -36,7 +36,7 @@ type streamNode struct {
 }
 
 type streamRoot struct {
-	input   InputSpec
+	input   Input
 	media   av.MediaType
 	options []StreamOption
 	join    *streamJoin
@@ -97,13 +97,13 @@ type streamOp struct {
 
 // Video selects the input's video stream; with several, StreamID or
 // StreamIndex narrows the choice.
-func (s InputSpec) Video(options ...StreamOption) Stream {
+func (s Input) Video(options ...StreamOption) Stream {
 	return s.selectStream(av.MediaVideo, options)
 }
 
 // Audio selects the input's audio stream; with several, StreamID or
 // StreamIndex narrows the choice.
-func (s InputSpec) Audio(options ...StreamOption) Stream {
+func (s Input) Audio(options ...StreamOption) Stream {
 	return s.selectStream(av.MediaAudio, options)
 }
 
@@ -115,17 +115,17 @@ func (s InputSpec) Audio(options ...StreamOption) Stream {
 // receives the stream from its first packet. A rule destination's Open
 // therefore runs on the source's goroutine, bounded by the task's context;
 // keep it fast or hand slow setup to a goroutine of its own.
-func (s InputSpec) OnStream(match sourcepkg.StreamMatch) Stream {
+func (s Input) OnStream(match sourcepkg.StreamMatch) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{input: s, rule: &match}}}
 }
 
 // Stream selects one stream of any media kind, narrowed by StreamID or
 // StreamIndex when the input carries several.
-func (s InputSpec) Stream(options ...StreamOption) Stream {
+func (s Input) Stream(options ...StreamOption) Stream {
 	return s.selectStream(av.MediaUnknown, options)
 }
 
-func (s InputSpec) selectStream(media av.MediaType, options []StreamOption) Stream {
+func (s Input) selectStream(media av.MediaType, options []StreamOption) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{
 		input:   s,
 		media:   media,
@@ -312,7 +312,7 @@ func newJoinStream(kind string, name string, stage pipeline.Stage, args []JoinAr
 type Output struct {
 	stream Stream
 	// remux is the input every stream of which copies to the destinations.
-	remux   *InputSpec
+	remux   *Input
 	dests   []Destination
 	failure BranchFailurePolicy
 }
@@ -340,7 +340,7 @@ func (s Stream) To(destinations ...Destination) Output {
 }
 
 // To copies every stream of the input, without decoding, into destinations.
-func (s InputSpec) To(destinations ...Destination) Output {
+func (s Input) To(destinations ...Destination) Output {
 	input := s
 	return Output{remux: &input, dests: append([]Destination(nil), destinations...)}
 }

@@ -45,7 +45,7 @@ func TestAttachResolvesURIThroughTheRuntimeSchemes(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "attached.ivf")
 	var attachment Attachment
 	waitForCondition(t, "file branch attached", func() bool {
-		attachment, err = task.Attach(ctx, task.Tap("live").As("record").To(URI(attachFileURL(out))))
+		attachment, err = task.Attach(ctx, task.Tap("live").As("record").To(ToURI(attachFileURL(out))))
 		return err == nil
 	})
 	waitForCondition(t, "file written", func() bool {

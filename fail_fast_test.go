@@ -123,7 +123,7 @@ func TestLiveTaskFailsFastOnDestinationError(t *testing.T) {
 // pushes frames until the task stops it, so only a fail-fast runner can end
 // the run, and offline keeps the ladder's buffering down to the compiler's
 // rung promotion alone.
-func endlessVideo(name string, width, height int) goav.InputSpec {
+func endlessVideo(name string, width, height int) goav.Input {
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
 		func(ctx context.Context, push source.Push) error {

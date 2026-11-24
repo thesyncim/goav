@@ -37,7 +37,7 @@ func mfWebM(t *testing.T, width, height, frames, rate, channels, audioFrames int
 }
 
 // mfTone is a 440 Hz S16 tone in 20 ms frames.
-func mfTone(rate, channels, frames int) goav.InputSpec {
+func mfTone(rate, channels, frames int) goav.Input {
 	perFrame := rate / 50
 	samples := make([][]int16, frames)
 	for f := range samples {
@@ -73,7 +73,7 @@ func mfTracks(t *testing.T, data []byte) []webm.Track {
 // mfDecoded decodes one stream of a WebM through the bundled decoders.
 func mfDecoded(t *testing.T, data []byte, media av.MediaType, options ...goav.StreamOption) []*av.Frame {
 	t.Helper()
-	in := goav.FileInput("out.webm", bytes.NewReader(data))
+	in := goav.Read("out.webm", bytes.NewReader(data))
 	stream := in.Video(options...)
 	if media == av.MediaAudio {
 		stream = in.Audio(options...)
@@ -118,8 +118,8 @@ func mfAssertVideo(t *testing.T, label string, frames []*av.Frame, count, width,
 // TestSeveralFileInputsTranscodeInOneRun runs two files in one task, each
 // select fed by its own file: neither output sees the other file's track 1.
 func TestSeveralFileInputsTranscodeInOneRun(t *testing.T) {
-	a := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 10, 0, 0, 0)))
-	b := goav.FileInput("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 6, 0, 0, 0)))
+	a := goav.Read("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 10, 0, 0, 0)))
+	b := goav.Read("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 6, 0, 0, 0)))
 	var x, y bytes.Buffer
 	mfRun(t,
 		a.Video().Decode().Encode(codec.VP9()).To(goav.Write("x.webm", &x)),
@@ -135,8 +135,8 @@ func TestSeveralFileInputsTranscodeInOneRun(t *testing.T) {
 func TestCopyFromTwoFilesIntoOneMux(t *testing.T) {
 	aData := mfWebM(t, 64, 48, 10, 48_000, 2, 10)
 	bData := mfWebM(t, 32, 24, 6, 24_000, 1, 8)
-	a := goav.FileInput("a.webm", bytes.NewReader(aData))
-	b := goav.FileInput("b.webm", bytes.NewReader(bData))
+	a := goav.Read("a.webm", bytes.NewReader(aData))
+	b := goav.Read("b.webm", bytes.NewReader(bData))
 	var m bytes.Buffer
 	out := goav.Write("m.webm", &m)
 	mfRun(t, a.Video().To(out), b.Video().To(out), b.Audio().To(out))
@@ -160,8 +160,8 @@ func TestRemuxTwoFilesIntoOneFile(t *testing.T) {
 	var r bytes.Buffer
 	out := goav.Write("r.webm", &r)
 	mfRun(t,
-		goav.FileInput("a.webm", bytes.NewReader(aData)).To(out),
-		goav.FileInput("b.webm", bytes.NewReader(bData)).To(out),
+		goav.Read("a.webm", bytes.NewReader(aData)).To(out),
+		goav.Read("b.webm", bytes.NewReader(bData)).To(out),
 	)
 	if tracks := mfTracks(t, r.Bytes()); len(tracks) != 4 {
 		t.Fatalf("r.webm tracks = %+v, want both files' video and audio", tracks)
@@ -172,7 +172,7 @@ func TestRemuxTwoFilesIntoOneFile(t *testing.T) {
 // TestFileAndCustomSourceInputsShareOneRun keeps mixed input kinds working: a
 // file's video and an application source's audio into one WebM.
 func TestFileAndCustomSourceInputsShareOneRun(t *testing.T) {
-	file := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 10, 0, 0, 0)))
+	file := goav.Read("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 10, 0, 0, 0)))
 	var o bytes.Buffer
 	out := goav.Write("o.webm", &o)
 	mfRun(t,
@@ -195,7 +195,7 @@ func TestMixFilesOfDifferentFormats(t *testing.T) {
 	stereo := mfWebM(t, 0, 0, 0, 48_000, 2, 10)
 	mono := mfWebM(t, 0, 0, 0, 24_000, 1, 10)
 	file := func(name string, data []byte) goav.Stream {
-		return goav.FileInput(name, bytes.NewReader(data)).Audio().Decode()
+		return goav.Read(name, bytes.NewReader(data)).Audio().Decode()
 	}
 	for _, tc := range []struct {
 		name           string
@@ -226,8 +226,8 @@ func TestMixFilesOfDifferentFormats(t *testing.T) {
 // one placed at (40, 30): the canvas is their bounding box, known only once
 // the files open.
 func TestCompositeFilesOfDifferentSizes(t *testing.T) {
-	big := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 6, 0, 0, 0)))
-	small := goav.FileInput("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 6, 0, 0, 0)))
+	big := goav.Read("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 6, 0, 0, 0)))
+	small := goav.Read("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 6, 0, 0, 0)))
 	pip := goav.Composite(big.Video().Decode(), goav.At(small.Video().Decode(), 40, 30))
 	var out bytes.Buffer
 	mfRun(t, pip.Encode(codec.VP8()).To(goav.Write("pip.webm", &out)))
@@ -237,8 +237,8 @@ func TestCompositeFilesOfDifferentSizes(t *testing.T) {
 // TestDescribeFileJoinOpensNothing pins that a join over files describes its
 // whole graph, each arm's bind, decode, and conversion, without reading them.
 func TestDescribeFileJoinOpensNothing(t *testing.T) {
-	a := goav.FileInput("a.webm", failingReader{t})
-	b := goav.FileInput("b.webm", failingReader{t})
+	a := goav.Read("a.webm", failingReader{t})
+	b := goav.Read("b.webm", failingReader{t})
 	spec, err := bundle.Describe(goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(goav.Write("m.webm", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestFileMixFeedsForksAndNests(t *testing.T) {
 	stereo := mfWebM(t, 0, 0, 0, 48_000, 2, 10)
 	mono := mfWebM(t, 0, 0, 0, 24_000, 1, 10)
 	file := func(name string, data []byte) goav.Stream {
-		return goav.FileInput(name, bytes.NewReader(data)).Audio().Decode()
+		return goav.Read(name, bytes.NewReader(data)).Audio().Decode()
 	}
 	check := func(label string, data []byte, rate, channels int) {
 		t.Helper()
@@ -306,8 +306,8 @@ func TestSeveralFileInputsInterleaveDeterministically(t *testing.T) {
 	aData := mfWebM(t, 64, 48, 10, 0, 0, 0)
 	bData := mfWebM(t, 0, 0, 0, 24_000, 1, 8)
 	cData := mfWebM(t, 48, 32, 8, 0, 0, 0)
-	in := func(name string, data []byte) goav.InputSpec {
-		return goav.FileInput(name, bytes.NewReader(data))
+	in := func(name string, data []byte) goav.Input {
+		return goav.Read(name, bytes.NewReader(data))
 	}
 	for _, tc := range []struct {
 		name string

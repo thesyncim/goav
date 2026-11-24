@@ -104,11 +104,11 @@ func (recipeAPICustomWriter) Close() error {
 	return nil
 }
 
-func recordOutput(input goav.InputSpec, outputs ...goav.Destination) goav.Output {
+func recordOutput(input goav.Input, outputs ...goav.Destination) goav.Output {
 	return input.To(outputs...)
 }
 
-func decodeOutput(input goav.InputSpec, output goav.Destination) goav.Output {
+func decodeOutput(input goav.Input, output goav.Destination) goav.Output {
 	return input.Stream().Decode().To(output)
 }
 
@@ -195,7 +195,7 @@ func equalStrings(a []string, b []string) bool {
 
 func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	out := recordOutput(
-		goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
+		goav.From(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
 		goav.Write("recording.ivf", io.Discard),
 	)
 	report, err := bundle.Explain(context.Background(), out)
@@ -250,7 +250,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
 
-	report, err := rt.Explain(context.Background(), goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	report, err := rt.Explain(context.Background(), goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		Audio().
 		Decode().
 		Tap("audio.decoded").
@@ -291,7 +291,7 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	dest := recipeAPICustomDestination{}
 	target := goav.Custom("custom", dest)
 
-	out := goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))).
+	out := goav.From(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))).
 		Video().
 		To(target)
 
@@ -321,7 +321,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 	voiceOut := goav.Write("voice.ogg", io.Discard)
 	archiveOut := goav.Write("archive.ogg", io.Discard)
 
-	decoded := goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	decoded := goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		Audio().
 		Decode()
 
@@ -349,7 +349,7 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 		return nil
 	})
 	out := decodeOutput(
-		goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithCodec(codec.Opus()))),
+		goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithCodec(codec.Opus()))),
 		goav.Sink(sink),
 	)
 
@@ -373,8 +373,8 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 }
 
 func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
-	audio := goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.Opus())))
-	video := goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.VP8())))
+	audio := goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.Opus())))
+	video := goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.VP8())))
 	recording := goav.Write("recording.webm", io.Discard)
 	_, err := mustGoAVRuntime().Build(context.Background(), audio.Audio().To(recording), video.Video().To(recording))
 
@@ -390,7 +390,7 @@ func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 }
 
 func TestPacketCopyRecipeAcceptsSinkDestination(t *testing.T) {
-	spec, err := mustGoAVRuntime().Describe(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	spec, err := mustGoAVRuntime().Describe(goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		To(goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 			return nil
 		}))))
@@ -407,7 +407,7 @@ func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
 	// Provider inputs validate themselves: a nil reader is the provider's
 	// error, surfaced when the source opens at build time.
 	_, err := bundle.Build(context.Background(), recordOutput(
-		goav.Input(rtpav.Receive(nil, rtpav.WithName("audio"))),
+		goav.From(rtpav.Receive(nil, rtpav.WithName("audio"))),
 		goav.Write("recording.ivf", io.Discard),
 	))
 	if !errors.Is(err, rtpav.ErrNilReceiver) {
@@ -430,7 +430,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 			},
 		})
 	}))
-	_, err := rt.Build(context.Background(), goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.H264()))).
+	_, err := rt.Build(context.Background(), goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.H264()))).
 		Video().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -449,7 +449,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 }
 
 func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
-	decoded := goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	decoded := goav.From(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		Audio().
 		Decode().
 		Tap("audio.decoded")

@@ -330,7 +330,7 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 // resolution against the branch.
 func TestPreferWorksInBranches(t *testing.T) {
 	pcm := av.CodecID("x_pcm_s16")
-	source := func() InputSpec {
+	source := func() Input {
 		return Source("mic",
 			shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
 			func(_ context.Context, push SourcePush) error {

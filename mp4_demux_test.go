@@ -38,7 +38,7 @@ func TestMP4DemuxesAndDecodesVideoThroughGrammar(t *testing.T) {
 
 	rt := mustRuntime(bundle.Formats(), goavtest.Codec(av.CodecH264), runconfig.WithRealtime(false))
 	out := goavtest.NewCollector()
-	if err := rt.Run(ctx, goav.FileInput("h264_aac.mp4", file).
+	if err := rt.Run(ctx, goav.Read("h264_aac.mp4", file).
 		Video().
 		Decode().
 		To(out.Sink())); err != nil {

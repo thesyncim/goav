@@ -76,11 +76,11 @@ func detailsContain(details []string, fragment string) bool {
 	return false
 }
 
-func opusPacketInput() goav.InputSpec {
+func opusPacketInput() goav.Input {
 	return goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})
 }
 
-func audioFrameInput() goav.InputSpec {
+func audioFrameInput() goav.Input {
 	return goav.Source("audio",
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16), shape.Stream("audio")),
 		func(context.Context, source.Push) error {
@@ -89,27 +89,27 @@ func audioFrameInput() goav.InputSpec {
 }
 
 // TestErrorAcceptanceNilProviderInput is snippet 0a: a nil source provider
-// handed to goav.Input(...). The refusal keeps the public input constructor
+// handed to goav.From(...). The refusal keeps the public input constructor
 // vocabulary in the suggestions.
 func TestErrorAcceptanceNilProviderInput(t *testing.T) {
-	_, err := mustRuntime().Describe(goav.Input(nil).
+	_, err := mustRuntime().Describe(goav.From(nil).
 		Audio().
 		Decode().
 		To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("input_invalid"), "build input", "input",
 		"check the input constructor arguments",
-		"pass a non-nil provider to goav.Input(provider)",
+		"pass a non-nil provider to goav.From(provider)",
 	)
 }
 
 // TestErrorAcceptanceNilFileInputReader is snippet 0aa: FileInput needs a
 // real reader, so a filename alone cannot masquerade as an open input.
 func TestErrorAcceptanceNilFileInputReader(t *testing.T) {
-	_, err := mustRuntime().Describe(goav.FileInput("input.ogg", nil).
+	_, err := mustRuntime().Describe(goav.Read("input.ogg", nil).
 		Audio().
 		To(goav.Write("out.ogg", io.Discard)))
 	requireBuildError(t, err, errcode.Code("input_invalid"), "build input", "input.ogg",
-		"pass a non-nil io.Reader to goav.FileInput(name, reader)",
+		"pass a non-nil io.Reader to goav.Read(name, reader)",
 	)
 }
 
@@ -141,7 +141,7 @@ func TestErrorAcceptanceNilWriter(t *testing.T) {
 // TestErrorAcceptanceMissingInput is snippet 0b: a stream of an input that
 // was never constructed. The fix is to start from a real input constructor.
 func TestErrorAcceptanceMissingInput(t *testing.T) {
-	_, err := mustRuntime().Describe(goav.InputSpec{}.Audio().To(goav.Write("out.ogg", io.Discard)))
+	_, err := mustRuntime().Describe(goav.Input{}.Audio().To(goav.Write("out.ogg", io.Discard)))
 	requireBuildError(t, err, errcode.Code("stream_invalid"), "build recipe", "",
 		"start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
 	)
@@ -156,7 +156,7 @@ func TestErrorAcceptanceCustomSourceMissingCallback(t *testing.T) {
 		To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("source_callback_missing"), "build input", "mic",
 		"pass a non-nil callback to goav.Source(name, shape, fn)",
-		"use goav.FileInput or goav.Input(provider)",
+		"use goav.Read or goav.From(provider)",
 	)
 }
 
@@ -387,7 +387,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 // an input carries two audio streams and an unnarrowed .Audio() matches both.
 // The refusal lists every candidate and suggests the exact narrowing options.
 func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
-	two := goav.FileInput("two.webm", bytes.NewReader(oracleTwoAudioWebM(t)))
+	two := goav.Read("two.webm", bytes.NewReader(oracleTwoAudioWebM(t)))
 	_, err := offlineRuntime().Build(context.Background(), two.Audio().Decode().To(goavtest.NewCollector().Sink()))
 
 	var buildErr *goav.BuildError
@@ -483,7 +483,7 @@ func TestErrorAcceptanceStreamMissing(t *testing.T) {
 // its bytes or its name, is refused when it opens.
 func TestErrorAcceptanceInputFormatUnknown(t *testing.T) {
 	_, err := mustRuntime().Build(context.Background(),
-		goav.FileInput("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
+		goav.Read("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("input_format_unknown"), "open input", "in.unknown",
 		"its first bytes and its name, URI, and MIME type matched none",
 	)

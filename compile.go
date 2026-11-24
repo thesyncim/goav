@@ -96,7 +96,7 @@ type recipeResolved struct {
 	recipe            recipeir.Recipe
 	runtime           *Runtime
 	graphPlan         graphPlan
-	inputAttachments  []InputSpec
+	inputAttachments  []Input
 	outputAttachments []destinationSpec
 	inputProbes       []format.ProbeResult
 	outputFormats     map[string]av.FormatID
@@ -171,7 +171,7 @@ func (g *recipeGraph) compileRuntime(rt *Runtime) *Runtime {
 }
 
 // inputsAreLive reports whether any input delivers on its own clock.
-func inputsAreLive(inputs []InputSpec) bool {
+func inputsAreLive(inputs []Input) bool {
 	for i := range inputs {
 		if inputs[i].realtime || inputs[i].input.Realtime {
 			return true

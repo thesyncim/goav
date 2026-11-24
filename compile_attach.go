@@ -216,7 +216,7 @@ func (t *task) Tap(name string) Stream {
 }
 
 // Track is a stream one of the task's inputs produces.
-func (t *task) Track(input InputSpec, stream av.Stream) Stream {
+func (t *task) Track(input Input, stream av.Stream) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{input: input, track: &stream}}}
 }
 

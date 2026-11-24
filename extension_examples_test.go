@@ -96,7 +96,7 @@ func ExampleWriter_transactionalUpload() {
 	upload := &exampleUpload{}
 	var opened provider.Info
 
-	target := goav.Writer("mem://voice.ogg",
+	target := goav.WriteFunc("mem://voice.ogg",
 		func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 			opened = info
 			return upload, nil

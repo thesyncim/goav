@@ -17,7 +17,7 @@ import (
 
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	job := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Write("recording.ogg", io.Discard),
 	)
 
@@ -32,7 +32,7 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 
 func TestReadmeRecordFanoutRecipeIsSmall(t *testing.T) {
 	job := recordJob(
-		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.Read("input.ivf", strings.NewReader("")),
 		goav.Write("archive.ivf", io.Discard),
 		goav.Write("preview.ivf", io.Discard),
 	)
@@ -52,7 +52,7 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	sink := component.SinkFunc("frames", func(context.Context, component.Message) error {
 		return nil
 	})
-	job := recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(sink)))
@@ -77,7 +77,7 @@ func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 		return nil
 	})
 
-	job := recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Do(meter).
@@ -98,7 +98,7 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 	meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
 		return emit.Frame(frame)
 	})
-	job := goav.FileInput("input.ogg", strings.NewReader("")).
+	job := goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Do(meter).
@@ -118,7 +118,7 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 }
 
 func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
-	job := recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -139,7 +139,7 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 }
 
 func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
-	job := recipeOf(goav.FileInput("input.webm", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(1280, 720).
@@ -161,7 +161,7 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	var out bytes.Buffer
 	if err := recordJob(
-		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.Read("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("preview.ivf", &out),
 	).UseRuntime(bundle.MustNew()).Run(context.Background()); err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	var out bytes.Buffer
 	job := recordJob(
-		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.Read("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("preview.ivf", &out),
 	).UseRuntime(bundle.MustNew())
 
@@ -196,7 +196,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 	var recording bytes.Buffer
 	var preview bytes.Buffer
-	if err := bundle.MustNew().Run(context.Background(), goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).To(goav.Write("recording.ivf", &recording), goav.Write("preview.ivf", &preview))); err != nil {
+	if err := bundle.MustNew().Run(context.Background(), goav.Read("input.ivf", bytes.NewReader(tinyIVF())).To(goav.Write("recording.ivf", &recording), goav.Write("preview.ivf", &preview))); err != nil {
 		t.Fatal(err)
 	}
 	if recording.Len() == 0 || preview.Len() == 0 {
@@ -208,7 +208,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	var recording bytes.Buffer
 	var preview bytes.Buffer
 	rt := bundle.MustNew()
-	job := goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).To(goav.Write("recording.ivf", &recording), goav.Write("preview.ivf", &preview))
+	job := goav.Read("input.ivf", bytes.NewReader(tinyIVF())).To(goav.Write("recording.ivf", &recording), goav.Write("preview.ivf", &preview))
 
 	planned, err := rt.Describe(job)
 	if err != nil {
@@ -228,7 +228,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	var out bytes.Buffer
 	job := recordJob(
-		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.Read("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("", &out, goav.Format(av.FormatIVF)),
 	).UseRuntime(bundle.MustNew())
 
@@ -260,7 +260,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 	web := goav.Write("web.webm", io.Discard)
 	preview := goav.Write("preview.webm", io.Discard)
-	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
+	job := branchJob(goav.Read("input.webm", strings.NewReader(""))).
 		Video("720p").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Video("360p").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(preview)
 

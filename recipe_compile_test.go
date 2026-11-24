@@ -24,7 +24,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 		),
 	)...)
 	outs := []Output{
-		Input(&liveTestProvider{
+		From(&liveTestProvider{
 			name:    "audio",
 			media:   av.MediaAudio,
 			codecID: av.CodecOpus,
@@ -66,7 +66,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	web := destinationHandle(fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
 	outs := []Output{
-		FileInput("input.ivf", strings.NewReader("")).
+		Read("input.ivf", strings.NewReader("")).
 			Video().
 			Decode().
 			Tap("video.decoded").
@@ -118,7 +118,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 
 func TestGraphPlanViewsAreImmutable(t *testing.T) {
 	outs := []Output{
-		FileInput("input.ivf", strings.NewReader("")).
+		Read("input.ivf", strings.NewReader("")).
 			To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF))),
 	}
 
@@ -181,7 +181,7 @@ func graphPlanOperationTargetPresent(operations []compile.WorkOperation, target 
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	voice := destinationHandle(fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
 	archive := destinationHandle(fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
-	fork := Input(liveAudioOpusProvider("audio")).Audio()
+	fork := From(liveAudioOpusProvider("audio")).Audio()
 	outs := []Output{
 		fork.Decode().
 			Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
@@ -228,7 +228,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 		),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -260,7 +260,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
 	}))
-	fork := FileInput("input.ivf", strings.NewReader("")).Video().Decode().Resize(1280, 720).Tap("video.720p.frames")
+	fork := Read("input.ivf", strings.NewReader("")).Video().Decode().Resize(1280, 720).Tap("video.720p.frames")
 	outs := []Output{
 		fork.Encode(codec.VP9(codec.Bitrate(2_000_000))).As("web").To(web),
 		fork.Resize(320, 180).As("thumb").To(thumbnail),
@@ -286,7 +286,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	rt := testBundleRuntime()
 	outs := []Output{
-		Input(liveVideoVP8Provider("video")).
+		From(liveVideoVP8Provider("video")).
 			To(destinationHandle(fileDestination("recording.ivf", io.Discard))),
 	}
 
@@ -322,7 +322,7 @@ func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) 
 		),
 	)
 	task, err := runtime.Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			To(destinationHandle(fileDestination("recording.ogg", io.Discard))),
 	)
 	if err != nil {
@@ -347,7 +347,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			To(Sink(&runtimeTestSink{name: "frames"})),
@@ -383,7 +383,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Do(&runtimeTestStage{name: "meter"}).
@@ -408,7 +408,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	runtime := mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
-	outs := []Output{Input(liveAudioOpusProvider("audio")).Audio().Decode().To(Sink(&runtimeTestSink{name: "frames"}))}
+	outs := []Output{From(liveAudioOpusProvider("audio")).Audio().Decode().To(Sink(&runtimeTestSink{name: "frames"}))}
 
 	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
@@ -438,7 +438,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		),
 	)
-	outs := []Output{FileInput("input.ogg", strings.NewReader("")).Audio().To(Sink(&runtimeTestSink{name: "packets"}))}
+	outs := []Output{Read("input.ogg", strings.NewReader("")).Audio().To(Sink(&runtimeTestSink{name: "packets"}))}
 
 	resolved, err := compileOutputs(runtime, buildCompileOptions(ctx), outs...)
 	if err != nil {
@@ -474,7 +474,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 		),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Do(&runtimeTestStage{name: "meter"}).
@@ -519,7 +519,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 		),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -564,7 +564,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 		),
 	)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -606,7 +606,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 		),
 	)
 	outs := []Output{
-		Input(liveAudioOpusProvider("audio")).
+		From(liveAudioOpusProvider("audio")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).

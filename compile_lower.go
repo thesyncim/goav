@@ -37,7 +37,7 @@ type recipeLowerer struct {
 	joinOrder []recipeir.NodeID
 	graph     compile.ComposeGraph
 	// inputs and outputs are the handles the plan's nodes index.
-	inputs    []InputSpec
+	inputs    []Input
 	outputs   []destinationSpec
 	isolation []isolationPlan
 }

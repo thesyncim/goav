@@ -41,7 +41,7 @@ func readmeTextBlock(t *testing.T, prefix string) []string {
 // goav prints: the quick start's graph is the head of its real rendering, and
 // every line of the sample refusal appears, in order, in the real error.
 func TestReadmeOutputBlocksMatchReality(t *testing.T) {
-	in := goav.FileInput("in.webm", bytes.NewReader(nil))
+	in := goav.Read("in.webm", bytes.NewReader(nil))
 	video := in.Video().Decode().Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000)))
 	spec, err := bundle.Describe(video.To(goav.Write("out.webm", io.Discard)))
 	if err != nil {
@@ -58,7 +58,7 @@ func TestReadmeOutputBlocksMatchReality(t *testing.T) {
 		}
 	}
 
-	_, err = bundle.Describe(goav.FileInput("in.webm", bytes.NewReader(nil)).Video().Decode().To(goav.Write("out.webm", io.Discard)))
+	_, err = bundle.Describe(goav.Read("in.webm", bytes.NewReader(nil)).Video().Decode().To(goav.Write("out.webm", io.Discard)))
 	if err == nil {
 		t.Fatal("decoded frames into a container built; the README refusal no longer happens")
 	}
@@ -91,7 +91,7 @@ func TestReadmeFanoutRuns(t *testing.T) {
 	var hdFile, sdFile bytes.Buffer
 
 	// The README block, verbatim.
-	in := goav.FileInput("in.webm", src)
+	in := goav.Read("in.webm", src)
 	video := in.Video().Decode()
 	audio := in.Audio().Decode().Encode(codec.Opus())
 	hd, sd := goav.Write("hd.webm", &hdFile), goav.Write("sd.webm", &sdFile)

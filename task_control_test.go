@@ -428,7 +428,7 @@ func TestTaskControlRejectsConflictingExplicitTargets(t *testing.T) {
 
 // controlLiveAudioSource is a recipe-level frame source that emits audio frames
 // until the task stops, so a control can land while the graph is live.
-func controlLiveAudioSource(id av.StreamID) InputSpec {
+func controlLiveAudioSource(id av.StreamID) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(ctx context.Context, push SourcePush) error {

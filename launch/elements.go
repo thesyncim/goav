@@ -70,7 +70,7 @@ func define[T any](name, summary, kind string) *element {
 // Source defines an element that starts a pipeline with an input. Its
 // settings are T's fields tagged `launch:"name"` (see Size for the value
 // forms); open runs once, when the program compiles.
-func Source[T any](name, summary string, open func(T) (goav.InputSpec, error)) Element {
+func Source[T any](name, summary string, open func(T) (goav.Input, error)) Element {
 	el := define[T](name, summary, "source")
 	el.start = func(_ *compiler, args reflect.Value) (value, error) {
 		in, err := open(argsOf[T](args))

@@ -511,7 +511,7 @@ func (s *liveRoomSyncSink) snapshot() (uint64, time.Duration) {
 	return s.delivered, s.maxDrift
 }
 
-func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.InputSpec {
+func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.Input {
 	payload := bytes.Repeat([]byte{0x33}, benchPacketBytes)
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420)),
@@ -535,7 +535,7 @@ func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *ato
 		})
 }
 
-func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.InputSpec {
+func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.Input {
 	payload := bytes.Repeat([]byte{0x55}, benchPacketBytes/8)
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
@@ -575,7 +575,7 @@ func benchLiveRoomPushPacket(push source.Push, packet *av.Packet, latencies []in
 	return nil
 }
 
-func benchLiveRoomChurnVideoPackets(name string, ticks <-chan int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.InputSpec {
+func benchLiveRoomChurnVideoPackets(name string, ticks <-chan int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.Input {
 	payload := bytes.Repeat([]byte{0x33}, benchPacketBytes)
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420), shape.Realtime(true)),
@@ -602,7 +602,7 @@ func benchLiveRoomChurnVideoPackets(name string, ticks <-chan int, latencies []i
 		})
 }
 
-func benchLiveRoomChurnAudioPackets(name string, ticks <-chan int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.InputSpec {
+func benchLiveRoomChurnAudioPackets(name string, ticks <-chan int, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) goav.Input {
 	payload := bytes.Repeat([]byte{0x55}, benchPacketBytes/8)
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16), shape.Realtime(true)),

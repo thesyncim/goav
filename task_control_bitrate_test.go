@@ -225,13 +225,13 @@ func (e *controlRecordingEncoder) waitForEvent(ctx context.Context, eventType av
 }
 
 // controlLiveVideoSource is a live (Realtime) push video source.
-func controlLiveVideoSource(id av.StreamID) InputSpec {
+func controlLiveVideoSource(id av.StreamID) Input {
 	return controlVideoSource(id, true)
 }
 
 // controlVideoSource is a push video source; live sources declare Realtime,
 // which makes their jobs realtime without a runtime option.
-func controlVideoSource(id av.StreamID, live bool) InputSpec {
+func controlVideoSource(id av.StreamID, live bool) Input {
 	const (
 		width  = 16
 		height = 16

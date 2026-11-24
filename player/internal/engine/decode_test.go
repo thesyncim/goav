@@ -56,7 +56,7 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	go RunNullDevice(ctx, e)
 
 	rt := bundle.MustNew(runconfig.WithRealtime(true), runconfig.WithClock(e.Clock()))
-	in := goav.FileInput(path, f)
+	in := goav.Read(path, f)
 	dest := goav.Sink(Sink{Engine: e})
 	task, err := rt.Build(ctx,
 		in.Video().Decode().To(dest),

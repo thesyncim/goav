@@ -39,7 +39,7 @@ func TestInputFormatIsDetectedFromContent(t *testing.T) {
 				reader = struct{ io.Reader }{reader}
 			}
 			var out bytes.Buffer
-			if err := offlineRuntime().Run(context.Background(), goav.FileInput(tc.name, reader).To(goav.Write("out.mkv", &out))); err != nil {
+			if err := offlineRuntime().Run(context.Background(), goav.Read(tc.name, reader).To(goav.Write("out.mkv", &out))); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			if got := matroskaTracks(t, out.Bytes()); got != tc.tracks {
@@ -54,7 +54,7 @@ func TestInputFormatIsDetectedFromContent(t *testing.T) {
 // file is called.
 func TestInputDetectedWithoutDemuxerIsNamed(t *testing.T) {
 	mp3 := append([]byte("ID3\x04\x00\x00\x00\x00\x00\x00"), make([]byte, 64)...)
-	err := offlineRuntime().Run(context.Background(), goav.FileInput("song.webm", bytes.NewReader(mp3)).To(goavtest.NewCollector().Sink()))
+	err := offlineRuntime().Run(context.Background(), goav.Read("song.webm", bytes.NewReader(mp3)).To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("input_demuxer_missing"), "open input", "song.webm", "mp3 demuxer")
 	if !strings.Contains(err.Error(), `"mp3"`) {
 		t.Fatalf("refusal does not name the detected format:\n%v", err)
@@ -75,7 +75,7 @@ func TestUnreadableInputIsRefusedWithItsName(t *testing.T) {
 		{"cut.webm", webm[:40], "it is truncated or still being written"},
 		{"noise.webm", append([]byte{0x1a, 0x45, 0xdf, 0xa3}, bytes.Repeat([]byte{0x99, 0x13}, 300)...), "is not a valid matroska stream"},
 	} {
-		err := offlineRuntime().Run(context.Background(), goav.FileInput(tc.name, bytes.NewReader(tc.data)).Audio().Decode().To(goavtest.NewCollector().Sink()))
+		err := offlineRuntime().Run(context.Background(), goav.Read(tc.name, bytes.NewReader(tc.data)).Audio().Decode().To(goavtest.NewCollector().Sink()))
 		requireBuildError(t, err, errcode.Code("input_invalid"), "open input", tc.name)
 		if !strings.Contains(err.Error(), tc.reason) {
 			t.Errorf("%s: refusal does not say %q:\n%v", tc.name, tc.reason, err)

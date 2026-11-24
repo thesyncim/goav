@@ -58,7 +58,7 @@ func benchSink(name string) goav.Destination {
 
 // benchVideoPackets pushes n VP8-tagged packets (1200B shared immutable
 // payload, 30fps timestamps, a keyframe every 30th) and ends the stream.
-func benchVideoPackets(name string, n int) goav.InputSpec {
+func benchVideoPackets(name string, n int) goav.Input {
 	payload := bytes.Repeat([]byte{0x5a}, benchPacketBytes)
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420)),
@@ -83,7 +83,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 
 // benchAudioPackets pushes n copies of the given encoded payloads in order
 // (cycling), stamped as 20ms opus-tagged packets.
-func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
+func benchAudioPackets(name string, n int, payload []byte) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
 		func(_ context.Context, push source.Push) error {
@@ -107,7 +107,7 @@ func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
 
 // benchAudioFrames pushes n S16 interleaved audio frames over one shared
 // immutable payload, PTS-stamped in sample time.
-func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel int) goav.InputSpec {
+func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel int) goav.Input {
 	payload := make([]byte, samplesPerChannel*channels*2)
 	for i := 0; i+1 < len(payload); i += 2 {
 		binary.LittleEndian.PutUint16(payload[i:], uint16(int16(i%2048-1024)))
@@ -138,7 +138,7 @@ func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel in
 }
 
 // benchVideoFrames pushes n I420 frames over shared immutable planes at 30fps.
-func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
+func benchVideoFrames(name string, n, width, height int) goav.Input {
 	chromaW, chromaH := (width+1)/2, (height+1)/2
 	luma := bytes.Repeat([]byte{0x80}, width*height)
 	cb := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
@@ -230,7 +230,7 @@ func BenchmarkRemuxPackets(b *testing.B) {
 		b.Fatal(err)
 	}
 	runBenchTask(b, benchRuntime(),
-		goav.FileInput("in.mp4", bytes.NewReader(input.Bytes())).
+		goav.Read("in.mp4", bytes.NewReader(input.Bytes())).
 			Video().
 			To(goav.Write("out.mp4", io.Discard)))
 }
@@ -458,7 +458,7 @@ func newBenchAttachLoad(sampleRate, samples int) *benchAttachLoad {
 	}
 }
 
-func (l *benchAttachLoad) input() goav.InputSpec {
+func (l *benchAttachLoad) input() goav.Input {
 	payload := make([]byte, l.samples*2)
 	return goav.Source("live",
 		shape.Frame(av.MediaAudio, shape.Audio(l.sampleRate, 1, av.SampleFormatS16), shape.Realtime(true)),
@@ -568,7 +568,7 @@ func passthroughI420Payload(b *testing.B, width, height int) []byte {
 
 // benchVideoPacketsSized pushes n VP8-tagged keyframes of one shared payload
 // for a width x height stream at 30fps.
-func benchVideoPacketsSized(name string, n, width, height int, payload []byte) goav.InputSpec {
+func benchVideoPacketsSized(name string, n, width, height int, payload []byte) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
 		func(_ context.Context, push source.Push) error {

@@ -180,7 +180,7 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	}
 
 	out := goavtest.NewCollector()
-	err = goavtest.Runtime(runconfig.WithRealtime(false)).Run(ctx, goav.FileInput("roundtrip.ogg", bytes.NewReader(file.Bytes())).
+	err = goavtest.Runtime(runconfig.WithRealtime(false)).Run(ctx, goav.Read("roundtrip.ogg", bytes.NewReader(file.Bytes())).
 		Audio().
 		Decode().
 		To(out.Sink()))
@@ -256,7 +256,7 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 
 	clock := goavtest.NewClock()
 	out := goavtest.NewCollector()
-	err = goavtest.Runtime(runconfig.WithRealtime(true), runconfig.WithClock(clock)).Run(ctx, goav.FileInput("paced.ogg", bytes.NewReader(file.Bytes())).
+	err = goavtest.Runtime(runconfig.WithRealtime(true), runconfig.WithClock(clock)).Run(ctx, goav.Read("paced.ogg", bytes.NewReader(file.Bytes())).
 		Audio().
 		To(out.Sink()))
 	if err != nil {

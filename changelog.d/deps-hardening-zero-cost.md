@@ -25,6 +25,13 @@
   allocations in steady state).
 - Pre-v1 API unification for one coherent way to do each thing:
   - Collapse `goav.LiveTask` into a single `goav.Task` interface.
+  - Make root input & destination constructors symmetric: `goav.Input` (was
+    `InputSpec`), `goav.Read`/`goav.Write` (was `FileInput`/`Write`),
+    `goav.FromURI`/`goav.ToURI` (was `URIInput`/`URI`), `goav.From` (was
+    `Input(...)`), `goav.WriteFunc` (was `Writer`), and method `Input.Wrap`
+    (was `WrapSource`).
+  - Canonicalize `av.PixelFormatYUV420P`/`YUV422P`/`YUV444P` to
+    `av.PixelFormatI420`/`I422`/`I444`.
   - Remove duplicate `component.New*`/`Must*` wrappers (keep `PacketFunc`,
     `FrameFunc`, `EventFunc`, `SinkFunc`).
   - Export `goav.ResizeOption` and `goav.ResampleOption` on `Stream.Resize` /
@@ -36,6 +43,10 @@
     constructor function, rename `codec.CodecSettings` → `codec.Settings` and
     `codec.Codec` → `codec.New`, remove dead `codec.Auto`/`codec.Copy`
     constructors, and add `bundle.All()` and `bundle.Probe(...)`.
+- Optimize `adapters/resample` with zero-division incremental stepping and Q16
+  fixed-point interpolation (plus mono/stereo fast paths), and handle
+  single-track `io.EOF` in `webrtcav` WHEP sessions with `av.EventStreamRemoved`
+  instead of tearing down sibling tracks.
 - Remove archived planning docs (`docs/history/`) and redundant/stale governance
   docs (`API_SURFACE.md`, `COMPATIBILITY.md`, `GSTREAMER_ALTERNATIVE.md`,
   `RUNTIME_CONTRACTS.md`), slim `ROADMAP.md`, and align `README.md`, `docs/`,

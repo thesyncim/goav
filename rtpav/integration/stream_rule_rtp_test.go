@@ -119,7 +119,7 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 		return nil
 	}))
 
-	in := goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
+	in := goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
 	task, err := mustGoAVRuntime().Build(ctx, in.OnStream(source.MatchMedia(av.MediaVideo)).
 		As("cam-watch").
 		To(monitor), in.

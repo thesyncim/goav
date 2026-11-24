@@ -137,7 +137,7 @@ func (s *whipServer) peer() *webrtc.PeerConnection {
 }
 
 // pacedVideo is a live I420 source paced at 50 frames a second.
-func pacedVideo(name string) goav.InputSpec {
+func pacedVideo(name string) goav.Input {
 	return goav.Source(name, shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {
 			tick := time.NewTicker(20 * time.Millisecond)
@@ -172,7 +172,7 @@ func pacedVideo(name string) goav.InputSpec {
 func receive(t *testing.T, ctx context.Context, track *webrtc.TrackRemote) (packets, frames *goavtest.Collector, stop func()) {
 	t.Helper()
 	packets, frames = goavtest.NewCollector(), goavtest.NewCollector()
-	in := goav.Input(Track(track)).Video()
+	in := goav.From(Track(track)).Video()
 	task, err := bundle.MustNew().Build(ctx, in.To(packets.Sink()), in.Decode().To(frames.Sink()))
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +209,7 @@ func TestWHIPPublishesToAServer(t *testing.T) {
 			scheme.config.gather = 0
 		}
 		rt := bundle.MustNew(runconfig.WithScheme("whip+http", scheme))
-		dest := goav.URI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live?token=SECRET")
+		dest := goav.ToURI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live?token=SECRET")
 		out := pacedVideo("cam").Video().Encode(codec.VP8(codec.KeyframeInterval(100000))).To(dest)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		task, err := rt.Build(ctx, out)
@@ -289,7 +289,7 @@ func TestWHIPEncodesFramesAndBoundsTheEstimate(t *testing.T) {
 	scheme.settings = &settings
 	rt := bundle.MustNew(runconfig.WithScheme("whip+http", scheme))
 	url := "whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"
-	spec, err := rt.Describe(pacedVideo("cam").Video().To(goav.URI(url)))
+	spec, err := rt.Describe(pacedVideo("cam").Video().To(goav.ToURI(url)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func (c controlTap) UseControl(fn func(context.Context, control.Control) error) 
 // URL's secrets), and a server that refuses the stream's codec.
 func TestWHIPRefusals(t *testing.T) {
 	rt := bundle.MustNew(runconfig.WithScheme("whip", WHIP()))
-	if _, err := rt.Describe(goav.URIInput("whip://media.example/live").Video().To(goavtest.NewCollector().Sink())); !errors.Is(err, errors.ErrUnsupported) {
+	if _, err := rt.Describe(goav.FromURI("whip://media.example/live").Video().To(goavtest.NewCollector().Sink())); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("input err = %v", err)
 	}
 
@@ -373,7 +373,7 @@ func TestWHIPRefusals(t *testing.T) {
 	defer srv.Close()
 	rt = bundle.MustNew(runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	host := strings.TrimPrefix(srv.URL, "http://")
-	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/whip/live?token=SECRET")))
+	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.ToURI("whip+http://"+host+"/whip/live?token=SECRET")))
 	var status *StatusError
 	if !errors.As(err, &status) || status.StatusCode != http.StatusUnauthorized || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("err = %v, want a redacted 401 StatusError", err)
@@ -386,7 +386,7 @@ func TestWHIPRefusals(t *testing.T) {
 	server.status = 0
 	settings := loopbackSettings()
 	server.api = webrtc.NewAPI(webrtc.WithSettingEngine(settings), webrtc.WithMediaEngine(h264Only))
-	_, err = rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/whip/live")))
+	_, err = rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.ToURI("whip+http://"+host+"/whip/live")))
 	if !errors.Is(err, ErrWHIPCodecRefused) {
 		t.Fatalf("err = %v, want ErrWHIPCodecRefused", err)
 	}
@@ -410,8 +410,8 @@ func TestWHEPToWHIPRelay(t *testing.T) {
 	defer whipSrv.Close()
 	session := WithSession(SessionConfig{API: loopbackAPI()})
 	rt := bundle.MustNew(runconfig.WithScheme("whep+http", WHEP(session)), runconfig.WithScheme("whip+http", WHIP(session)))
-	in := goav.URIInput("whep+http://" + strings.TrimPrefix(whepSrv.URL, "http://") + "/whep/cam")
-	out := goav.URI("whip+http://" + strings.TrimPrefix(whipSrv.URL, "http://") + "/whip/live")
+	in := goav.FromURI("whep+http://" + strings.TrimPrefix(whepSrv.URL, "http://") + "/whep/cam")
+	out := goav.ToURI("whip+http://" + strings.TrimPrefix(whipSrv.URL, "http://") + "/whip/live")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	task, err := rt.Build(ctx, in.Video().To(out), in.Audio().To(out))
@@ -648,7 +648,7 @@ func TestWHIPPacesAFile(t *testing.T) {
 	srv := httptest.NewServer(server)
 	defer srv.Close()
 	rt := bundle.MustNew(runconfig.WithRealtime(false), runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
-	out := goav.FileInput("in.mp4", bytes.NewReader(data)).Video().To(goav.URI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"))
+	out := goav.Read("in.mp4", bytes.NewReader(data)).Video().To(goav.ToURI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	task, err := rt.Build(ctx, out)
@@ -703,7 +703,7 @@ func TestWHIPRedirects(t *testing.T) {
 	rt := bundle.MustNew(runconfig.WithScheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	host := strings.TrimPrefix(srv.URL, "http://")
 
-	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/found")))
+	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.ToURI("whip+http://"+host+"/found")))
 	var status *StatusError
 	if !errors.As(err, &status) || status.StatusCode != http.StatusFound {
 		t.Fatalf("302: err = %v, want the redirect refused as a StatusError", err)
@@ -711,7 +711,7 @@ func TestWHIPRedirects(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	task, err := rt.Build(ctx, pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/temporary")))
+	task, err := rt.Build(ctx, pacedVideo("cam").Video().To(goav.ToURI("whip+http://"+host+"/temporary")))
 	if err != nil {
 		t.Fatalf("307: %v", err)
 	}

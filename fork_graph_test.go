@@ -25,7 +25,7 @@ func TestForkGraphs(t *testing.T) {
 	meter := component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 		return emit.Frame(frame)
 	})
-	file := func(name string) goav.InputSpec { return goav.FileInput(name, strings.NewReader("")) }
+	file := func(name string) goav.Input { return goav.Read(name, strings.NewReader("")) }
 	for _, tt := range []struct {
 		name    string
 		outs    func() []goav.Output
@@ -138,7 +138,7 @@ func TestForkGraphs(t *testing.T) {
 // TestTapAfterEncodeIsAPacketTap pins that a tap's domain follows its
 // position: after the encoder it taps packets.
 func TestTapAfterEncodeIsAPacketTap(t *testing.T) {
-	report, err := mustRuntime().Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := mustRuntime().Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Tap("audio.decoded").

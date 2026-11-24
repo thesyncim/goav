@@ -32,7 +32,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 	}{
 		{
 			name: "custom stage",
-			job: recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 				Audio().
 				Do(meter).
 				To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil })))),
@@ -40,7 +40,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 		},
 		{
 			name: "resize",
-			job: recipeOf(goav.FileInput("input.webm", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.webm", strings.NewReader("")).
 				Video().
 				Resize(1280, 720).
 				To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil })))),
@@ -48,7 +48,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 		},
 		{
 			name: "resample",
-			job: recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 				Audio().
 				Resample(16_000, codec.Mono).
 				To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil })))),
@@ -70,7 +70,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio(goav.StreamIndex(-1)).
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -88,7 +88,7 @@ func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
-	_, err := recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Do(nil).
@@ -107,7 +107,7 @@ func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 }
 
 func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Do(component.PacketFunc("packets", nil)).
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -128,7 +128,7 @@ func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
 
 func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 	_, err := decodeJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("frames", nil)),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -147,7 +147,7 @@ func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 // TestStreamRecipeRejectsWrongMediaTransform pins the one media check every
 // recipe form and runtime attach share: the shape solver's.
 func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
-	_, err := goavtest.Runtime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := goavtest.Runtime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resize(320, 180).
@@ -161,7 +161,7 @@ func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.webm", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(0, 720).
@@ -179,7 +179,7 @@ func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
 }
 
 func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(48_000, codec.Stereo).
@@ -191,7 +191,7 @@ func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -223,7 +223,7 @@ func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 		}),
 	)
 
-	spec, err := rt.Describe(goav.FileInput("input.ogg", strings.NewReader("")).
+	spec, err := rt.Describe(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -245,7 +245,7 @@ func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -264,7 +264,7 @@ func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -315,7 +315,7 @@ func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
 	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 	}))
-	_, err := rt.Build(context.Background(), goav.FileInput("input.wav", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.wav", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.New("pcm", av.MediaAudio)).
@@ -331,7 +331,7 @@ func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(-1))).
@@ -354,7 +354,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 	}{
 		{
 			name: "fps",
-			job: recipeOf(goav.FileInput("input.webm", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.webm", strings.NewReader("")).
 				Video().
 				Decode().
 				Encode(codec.VP9(codec.FPS(0))).
@@ -363,7 +363,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 		},
 		{
 			name: "keyframe interval",
-			job: recipeOf(goav.FileInput("input.webm", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.webm", strings.NewReader("")).
 				Video().
 				Decode().
 				Encode(codec.VP9(codec.KeyframeInterval(-1))).
@@ -386,7 +386,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.SampleRate(0))).
@@ -402,7 +402,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
-	_, err := mustRuntime(bundle.Formats()).Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime(bundle.Formats()).Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -442,7 +442,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
 
-	_, err := rt.Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -476,7 +476,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
 
-	_, err := rt.Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -498,7 +498,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 }
 
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
-	_, err := mustRuntime(bundle.Codecs()).Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime(bundle.Codecs()).Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -541,7 +541,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 			}, recipeAPIFilterFactory{})
 		}),
 	)
-	_, err := rt.Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -573,7 +573,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+			_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 				Audio().
 				Decode().
 				Encode(tt.spec).

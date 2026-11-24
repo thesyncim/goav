@@ -1,6 +1,6 @@
 # Custom destination
 
-This module shows the plain byte-destination seam: `goav.Writer` opens after
+This module shows the plain byte-destination seam: `goav.WriteFunc` opens after
 goav has selected the output format and streams, so the callback can validate
 `provider.Info` before accepting bytes.
 

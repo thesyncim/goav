@@ -63,7 +63,7 @@ type Task interface {
 	Tap(name string) Stream
 	// Track is a stream one of the task's inputs produces or will produce, for
 	// Outputs Attach adds before that stream's first media arrives.
-	Track(input InputSpec, stream av.Stream) Stream
+	Track(input Input, stream av.Stream) Stream
 	// Route is the stream a graph route carries, for Outputs Attach anchors on
 	// an expert graph node: task.Route(node.Out().Route()).
 	Route(route pipeline.Route) Stream

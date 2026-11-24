@@ -22,7 +22,7 @@ import (
 // push returns only after the frame cleared the playout gate and reached the
 // sink, so tests step delivery deterministically. A nil release pushes every
 // frame back to back.
-func playoutFrameSource(id av.StreamID, media av.MediaType, release chan struct{}, pts ...time.Duration) InputSpec {
+func playoutFrameSource(id av.StreamID, media av.MediaType, release chan struct{}, pts ...time.Duration) Input {
 	return Source(string(id),
 		shape.Frame(media, shape.Stream(id)),
 		func(sctx context.Context, push SourcePush) error {

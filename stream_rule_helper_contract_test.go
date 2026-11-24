@@ -115,7 +115,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 	noopSource := func(context.Context, SourcePush) error { return nil }
 	for _, tt := range []struct {
 		name string
-		in   InputSpec
+		in   Input
 		want shape.MediaDomain
 	}{
 		{
@@ -133,7 +133,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 		},
 		{
 			name: "provider frame source",
-			in: Input(&componentSourceProvider{
+			in: From(&componentSourceProvider{
 				source: &componentControllableSource{name: "provider"},
 				spec:   shape.Frame(av.MediaVideo, shape.Video(640, 360, av.PixelFormatI420)),
 			}),
@@ -141,7 +141,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 		},
 		{
 			name: "provider event source",
-			in: Input(&componentSourceProvider{
+			in: From(&componentSourceProvider{
 				source: &componentControllableSource{name: "events"},
 				spec:   shape.Event(shape.Stream("events")),
 			}),
@@ -149,7 +149,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 		},
 		{
 			name: "provider without domain",
-			in: Input(&componentSourceProvider{
+			in: From(&componentSourceProvider{
 				source: &componentControllableSource{name: "provider"},
 				spec:   shape.New(shape.Media(av.MediaAudio)),
 			}),
@@ -157,7 +157,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 		},
 		{
 			name: "plain input",
-			in:   FileInput("input.ogg", strings.NewReader("")),
+			in:   Read("input.ogg", strings.NewReader("")),
 			want: shape.DomainPacket,
 		},
 	} {

@@ -53,7 +53,7 @@ func (w *transactionalTestWriter) Commit(context.Context) error { w.commits++; r
 func (w *transactionalTestWriter) Abort(context.Context) error  { w.aborts++; return w.abortErr }
 
 func transactionalWriterDestination(writer io.WriteCloser) goav.Destination {
-	return goav.Writer("mem://upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
+	return goav.WriteFunc("mem://upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 		return writer, nil
 	}, goav.Format(av.FormatOgg))
 }

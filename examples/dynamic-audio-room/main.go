@@ -357,7 +357,7 @@ func NewRoom(name string, sampleRate int, channels int) *Room {
 	}
 }
 
-func (r *Room) Input() goav.InputSpec {
+func (r *Room) Input() goav.Input {
 	return goav.Source(r.name,
 		shape.Frame(av.MediaAudio,
 			shape.Audio(r.sampleRate, r.channels, av.SampleFormatS16),

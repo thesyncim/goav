@@ -55,7 +55,7 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err = rt.Run(ctx, goav.Input(webrtcav.Track(remote.Track)).To(goav.Write("recording.ivf", file)))
+err = rt.Run(ctx, goav.From(webrtcav.Track(remote.Track)).To(goav.Write("recording.ivf", file)))
 ```
 
 For multiple tracks, route each input's stream to one shared destination value;
@@ -67,8 +67,8 @@ audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
 rec := goav.Write("recording.webm", file)
 err = rt.Run(ctx,
-    goav.Input(rtpav.Receive(audio.Reader)).Audio().To(rec),
-    goav.Input(rtpav.Receive(video.Reader)).Video().To(rec),
+    goav.From(rtpav.Receive(audio.Reader)).Audio().To(rec),
+    goav.From(rtpav.Receive(video.Reader)).Video().To(rec),
 )
 ```
 
@@ -77,14 +77,14 @@ When a later accepted track has the same stream ID, `TrackSet` calls
 RTP sources observe the codec-change event without rebuilding the graph.
 
 The recipe layer also accepts raw RTP packet readers directly through the
-generic provider extension point: `goav.Input(provider)` adapts any source
+generic provider extension point: `goav.From(provider)` adapts any source
 provider. `rtpav.Receive`, `webrtcav.Track`, and the nested `playoutav` module
 use that seam; external transports (SRT, NDI, ...) plug in the same way with
 zero goav changes. Declare codec intent on the provider so it can choose the
 depacketizer:
 
 ```go
-in := goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))
+in := goav.From(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))
 err := rt.Run(ctx, in.To(goav.Write("recording.ivf", file)))
 ```
 
@@ -127,7 +127,7 @@ decoder factory; dynamic rebind is a future policy.
 Stream recipes use the supported live receive policy by default:
 
 ```go
-err := rt.Run(ctx, goav.Input(webrtcav.Track(track)).Video().
+err := rt.Run(ctx, goav.From(webrtcav.Track(track)).Video().
     Decode().
     To(goav.Sink(frames)))
 ```

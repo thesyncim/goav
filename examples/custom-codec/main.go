@@ -192,7 +192,7 @@ func (d *pcmDecoder) HandleEvent(context.Context, *av.Event) error { return nil 
 
 func (d *pcmDecoder) Close() error { return nil }
 
-func packetSource(name string, packets []*av.Packet) goav.InputSpec {
+func packetSource(name string, packets []*av.Packet) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, examplePCM, shape.Audio(8000, 1, av.SampleFormatS16)),
 		func(_ context.Context, push source.Push) error {

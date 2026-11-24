@@ -40,7 +40,7 @@ func TestURIFileRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "nested", "out.ivf")
-	recipe := goav.URIInput(fileURL(in)).To(goav.URI(fileURL(out)))
+	recipe := goav.FromURI(fileURL(in)).To(goav.ToURI(fileURL(out)))
 	spec, err := bundle.Describe(recipe)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestURIFileRoundTrip(t *testing.T) {
 		name = "100% bare#.ivf"
 	}
 	bare := filepath.Join(dir, name)
-	if err := bundle.Run(context.Background(), goav.URIInput(in).To(goav.URI(bare))); err != nil {
+	if err := bundle.Run(context.Background(), goav.FromURI(in).To(goav.ToURI(bare))); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(bare); err != nil {
@@ -84,7 +84,7 @@ func describeText(spec interface{}) string {
 // provides the missing one.
 func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 	sink := goavtest.NewCollector()
-	_, err := bundle.Describe(goav.URIInput("whep://media.example/live/cam").Video().To(sink.Sink()))
+	_, err := bundle.Describe(goav.FromURI("whep://media.example/live/cam").Video().To(sink.Sink()))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_scheme_unsupported" || buildErr.Family != errcode.FamilyInput {
 		t.Fatalf("err = %v, want input_scheme_unsupported", err)
@@ -97,7 +97,7 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 		!strings.Contains(fixes, "github.com/thesyncim/goav/webrtcav") {
 		t.Fatalf("fixes do not name the whep provider:\n%s", fixes)
 	}
-	_, err = bundle.Describe(goavtest.Video(16, 16, 1).Video().To(goav.URI("whips://media.example/live")))
+	_, err = bundle.Describe(goavtest.Video(16, 16, 1).Video().To(goav.ToURI("whips://media.example/live")))
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" || !strings.Contains(strings.Join(buildErr.FixLines(), "\n"), `runconfig.WithScheme("whips", webrtcav.WHIP())`) {
 		t.Fatalf("whips err = %v, want the fix naming the WHIP client", err)
 	}
@@ -107,7 +107,7 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = rt.Describe(goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).To(goav.URI("out.ivf")))
+	_, err = rt.Describe(goav.Read("in.ivf", bytes.NewReader(tinyIVF())).To(goav.ToURI("out.ivf")))
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" || buildErr.Family != errcode.FamilyDestination ||
 		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), "scheme.File()") {
 		t.Fatalf("err = %v, want output_scheme_unsupported naming scheme.File()", err)
@@ -118,7 +118,7 @@ func TestURIUnknownSchemeNamesTheProvider(t *testing.T) {
 // alone implements no Destination, and that end refuses with the fix.
 func TestURISchemeDirectionRefusal(t *testing.T) {
 	rt := bundle.MustNew(runconfig.WithScheme("tape", &testScheme{}))
-	_, err := rt.Describe(goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).To(goav.URI("tape://deck/out.ivf")))
+	_, err := rt.Describe(goav.Read("in.ivf", bytes.NewReader(tinyIVF())).To(goav.ToURI("tape://deck/out.ivf")))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scheme_unsupported" ||
 		!errors.Is(err, errors.ErrUnsupported) || !strings.Contains(buildErr.Reason, "the tape scheme writes no destinations") ||
@@ -135,7 +135,7 @@ func TestURISchemeDirectionRefusal(t *testing.T) {
 func TestURIMediaDestination(t *testing.T) {
 	scheme := &sinkScheme{}
 	rt := bundle.MustNew(runconfig.WithScheme("rtp", scheme))
-	if err := rt.Run(context.Background(), goav.FileInput("in.ivf", bytes.NewReader(tinyIVF())).Video().To(goav.URI("rtp://239.0.0.1:5004"))); err != nil {
+	if err := rt.Run(context.Background(), goav.Read("in.ivf", bytes.NewReader(tinyIVF())).Video().To(goav.ToURI("rtp://239.0.0.1:5004"))); err != nil {
 		t.Fatal(err)
 	}
 	if scheme.packets != 1 {
@@ -159,7 +159,7 @@ func TestURISchemeLastRegistrationWins(t *testing.T) {
 	custom := &testScheme{data: tinyIVF()}
 	rt := bundle.MustNew(runconfig.WithScheme("FILE", custom))
 	sink := goavtest.NewCollector()
-	if err := rt.Run(context.Background(), goav.URIInput("file:///nowhere/clip.ivf").Video().To(sink.Sink())); err != nil {
+	if err := rt.Run(context.Background(), goav.FromURI("file:///nowhere/clip.ivf").Video().To(sink.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	if custom.opened != 1 || len(sink.Packets()) != 1 {
@@ -179,8 +179,8 @@ func TestURIRedactsCredentials(t *testing.T) {
 	const raw = "vault://alice:hunter2@media.example/clips/movie.ivf?token=SECRET1&quality=hd&X-Amz-Signature=SECRET2"
 	sink := goavtest.NewCollector()
 	out := fileURL(filepath.Join(t.TempDir(), "out.ivf")) + "?sig=SECRET3"
-	in := goav.URIInput(raw, goav.Reconnect(1, time.Millisecond))
-	recipe := []goav.Output{in.Video().To(sink.Sink()), in.Video().To(goav.URI(out))}
+	in := goav.FromURI(raw, goav.Reconnect(1, time.Millisecond))
+	recipe := []goav.Output{in.Video().To(sink.Sink()), in.Video().To(goav.ToURI(out))}
 
 	spec, err := rt.Describe(recipe...)
 	if err != nil {
@@ -225,7 +225,7 @@ func TestURIRedactsCredentials(t *testing.T) {
 	}
 
 	// A refusal names the input redacted too.
-	_, refusal := rt.Describe(goav.URIInput(strings.Replace(raw, "vault:", "vaulted:", 1)).Video().To(sink.Sink()))
+	_, refusal := rt.Describe(goav.FromURI(strings.Replace(raw, "vault:", "vaulted:", 1)).Video().To(sink.Sink()))
 	for name, rendered := range map[string]string{
 		"describe": describeText(spec),
 		"explain":  describeText(report),

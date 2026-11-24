@@ -666,7 +666,7 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 	dest := &toyDestination{}
 	provider := newToyProvider([]int16{100, 200}, []int16{300, 400})
 
-	err := toyRuntime().Run(ctx, goav.Input(provider).
+	err := toyRuntime().Run(ctx, goav.From(provider).
 		Audio().
 		Decode().
 		Resample(16000, 1).
@@ -713,7 +713,7 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 		mu.Unlock()
 		return nil
 	})
-	err = toyRuntime().Run(ctx, goav.FileInput("roundtrip.toyfmt", bytes.NewReader(file)).
+	err = toyRuntime().Run(ctx, goav.Read("roundtrip.toyfmt", bytes.NewReader(file)).
 		Audio().
 		Decode().
 		To(goav.Sink(collect)))
@@ -740,7 +740,7 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 		return errors.New("adapterproof: induced failure")
 	})
 
-	err := toyRuntime().Run(ctx, goav.Input(provider).
+	err := toyRuntime().Run(ctx, goav.From(provider).
 		Audio().
 		Decode().
 		Do(failing).

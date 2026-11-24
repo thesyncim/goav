@@ -166,7 +166,7 @@ func TestWHEPPlaysAServerSession(t *testing.T) {
 			scheme.config.gather = 0
 		}
 		rt := bundle.MustNew(runconfig.WithScheme("whep+http", scheme))
-		in := goav.URIInput("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam?token=SECRET")
+		in := goav.FromURI("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam?token=SECRET")
 		video, audio := goavtest.NewCollector(), goavtest.NewCollector()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		task, err := rt.Build(ctx, in.Video().To(video.Sink()), in.Audio().To(audio.Sink()))
@@ -216,7 +216,7 @@ func TestWHEPPlaysAServerSession(t *testing.T) {
 func TestWHEPRefusals(t *testing.T) {
 	player := bundle.MustNew(runconfig.WithScheme("whep", WHEP()))
 	source := goav.Source("cam", shape.Packet(av.MediaVideo, av.CodecVP8), func(context.Context, source.Push) error { return nil })
-	if _, err := player.Describe(source.To(goav.URI("whep://media.example/live"))); !errors.Is(err, errors.ErrUnsupported) {
+	if _, err := player.Describe(source.To(goav.ToURI("whep://media.example/live"))); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("destination err = %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +224,7 @@ func TestWHEPRefusals(t *testing.T) {
 	}))
 	defer srv.Close()
 	rt := bundle.MustNew(runconfig.WithScheme("whep+http", WHEP(WithSession(SessionConfig{API: loopbackAPI()}))))
-	_, err := rt.Build(context.Background(), goav.URIInput("whep+http://"+strings.TrimPrefix(srv.URL, "http://")+"/live?token=SECRET").Video().To(goavtest.NewCollector().Sink()))
+	_, err := rt.Build(context.Background(), goav.FromURI("whep+http://"+strings.TrimPrefix(srv.URL, "http://")+"/live?token=SECRET").Video().To(goavtest.NewCollector().Sink()))
 	if err == nil || !strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("err = %v, want a redacted 401", err)
 	}
@@ -241,7 +241,7 @@ func TestWHEPStartsWithTheFirstTrack(t *testing.T) {
 	scheme := WHEP(WithSession(SessionConfig{API: loopbackAPI()})).(whepScheme)
 	scheme.config.connect = 300 * time.Millisecond
 	rt := bundle.MustNew(runconfig.WithScheme("whep+http", scheme))
-	in := goav.URIInput("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam")
+	in := goav.FromURI("whep+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whep/cam")
 	video, audio := goavtest.NewCollector(), goavtest.NewCollector()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -277,7 +277,7 @@ func TestWHEPUsesLinkedICEServers(t *testing.T) {
 	for session := 1; session <= 2; session++ {
 		video := goavtest.NewCollector()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		task, err := rt.Build(ctx, goav.URIInput("whep+http://"+host+"/whep/cam").Video().To(video.Sink()))
+		task, err := rt.Build(ctx, goav.FromURI("whep+http://"+host+"/whep/cam").Video().To(video.Sink()))
 		if err != nil {
 			t.Fatal(err)
 		}

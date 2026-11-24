@@ -163,7 +163,7 @@ refused AAC decode names both options.
 
 ## URL schemes
 
-`goav.URIInput(url)` and `goav.URI(url)` resolve through schemes registered per runtime
+`goav.FromURI(url)` and `goav.ToURI(url)` resolve through schemes registered per runtime
 with `runconfig.WithScheme` (last wins, never in `init()`): a `provider.InputScheme` binds a
 URL without I/O to a `Source` or a `ByteSource`, a `provider.DestinationScheme` to a
 `Destination` (bytes) or a `pipeline.Sink` (media: WHIP, RTP out). Refusals name the

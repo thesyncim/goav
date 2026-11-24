@@ -357,16 +357,16 @@ func (r *testRecipe) BuildLive(ctx context.Context) (goav.Task, error) { return 
 
 func (r *testRecipe) Run(ctx context.Context) error { return r.rt().Run(ctx, r.outs...) }
 
-func recordJob(input goav.InputSpec, outputs ...goav.Destination) *testRecipe {
+func recordJob(input goav.Input, outputs ...goav.Destination) *testRecipe {
 	return recipeOf(input.To(outputs...))
 }
 
-func decodeJob(input goav.InputSpec, output goav.Destination) *testRecipe {
+func decodeJob(input goav.Input, output goav.Destination) *testRecipe {
 	return recipeOf(input.Stream().Decode().To(output))
 }
 
 type testBranchJob struct {
-	input    goav.InputSpec
+	input    goav.Input
 	runtime  *goav.Runtime
 	set      bool
 	branches []testTranscodeBranch
@@ -394,7 +394,7 @@ type testTranscodeBranchBuilder struct {
 }
 
 // branchJob declares named decoded forks of one input, one per media call.
-func branchJob(input goav.InputSpec) *testBranchJob {
+func branchJob(input goav.Input) *testBranchJob {
 	return &testBranchJob{input: input}
 }
 
@@ -529,7 +529,7 @@ func TestExpertGraphRequiresRuntime(t *testing.T) {
 }
 
 func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
-	inputType := reflect.TypeFor[goav.InputSpec]()
+	inputType := reflect.TypeFor[goav.Input]()
 	if _, ok := inputType.MethodByName("Depacketize"); ok {
 		t.Fatal("InputSpec exposes manual depacketizer wiring; RTP recipes should use codec intent")
 	}

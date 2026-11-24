@@ -22,12 +22,12 @@ import (
 // the mux of any handle a fork also writes. Both orders used to drop the plain
 // stream silently: Describe and Run succeeded with no node for it.
 func TestPlainChainBesideBranchesIsBuilt(t *testing.T) {
-	for name, build := range map[string]func(in goav.InputSpec, a, b goav.Destination) []goav.Output{
-		"plain after forks": func(in goav.InputSpec, a, b goav.Destination) []goav.Output {
+	for name, build := range map[string]func(in goav.Input, a, b goav.Destination) []goav.Output{
+		"plain after forks": func(in goav.Input, a, b goav.Destination) []goav.Output {
 			v := in.Video()
 			return []goav.Output{v.As("a").To(a), v.As("b").To(b), in.Audio().To(a)}
 		},
-		"plain before forks": func(in goav.InputSpec, a, b goav.Destination) []goav.Output {
+		"plain before forks": func(in goav.Input, a, b goav.Destination) []goav.Output {
 			v := in.Video()
 			return []goav.Output{in.Audio().To(a), v.As("a").To(a), v.As("b").To(b)}
 		},
@@ -40,7 +40,7 @@ func TestPlainChainBesideBranchesIsBuilt(t *testing.T) {
 				t.Fatal(err)
 			}
 			var a, b bytes.Buffer
-			outs := build(goav.FileInput("in.mp4", bytes.NewReader(data)), goav.Write("a.mkv", &a), goav.Write("b.mkv", &b))
+			outs := build(goav.Read("in.mp4", bytes.NewReader(data)), goav.Write("a.mkv", &a), goav.Write("b.mkv", &b))
 			if err := offlineRuntime().Run(ctx, outs...); err != nil {
 				t.Fatalf("run: %v", err)
 			}
@@ -100,7 +100,7 @@ func TestCopiedPacketsPassAPlayoutGate(t *testing.T) {
 		}
 		return nil
 	}))
-	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
+	if err := offlineRuntime().Run(ctx, goav.Read("in.mp4", bytes.NewReader(data)).
 		Video().
 		Playout(flow.Playout("screen")).
 		To(sink)); err != nil {

@@ -97,7 +97,7 @@ func TestOnDemandPlaylist(t *testing.T) {
 		media = append(media, store.files[s[2]]...)
 	}
 	var frames, samples atomic.Int64
-	in := goav.FileInput("joined.mp4", bytes.NewReader(media))
+	in := goav.Read("joined.mp4", bytes.NewReader(media))
 	err := bundle.Run(context.Background(),
 		in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", func(_ context.Context, m component.Message) error {
 			if m.Frame != nil {

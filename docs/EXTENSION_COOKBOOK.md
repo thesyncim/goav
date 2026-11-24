@@ -31,8 +31,8 @@ stage concern.
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
 | Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(ctx, task.Track(input, track)...To(sink))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
-| Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
-| Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
+| Open a transport or live provider | `provider.Source` via `goav.From(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
+| Write bytes after format resolution | `goav.WriteFunc(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
 | Run app code on each packet, frame, or event | `.Do(component.FrameFunc(...))` or a `pipeline.Stage` | `components_test.go` | nil callback fails validation with `component.ErrNilStageCallback` |
 | Replace a frame transform | `filter.Factory` + `runconfig.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
@@ -78,7 +78,7 @@ Rules:
 
 When the source needs seek/segment control, late stream discovery, decode bounds,
 or a transport-owned open phase, implement `provider.Source` and pass it with
-`goav.Input(provider)`. The runnable module `examples/provider-source` verifies
+`goav.From(provider)`. The runnable module `examples/provider-source` verifies
 the provider-owned open phase, declared shape facts, stream discovery, a
 running `pipeline.Source`, and a nil-provider failure — the copyable module
 for transport packages such as SRT, NDI, RTP variants, or proprietary ingest.
@@ -133,13 +133,13 @@ application does not need a join-time first-frame boundary.
 
 ## Custom Destination
 
-Use `goav.Writer` for byte destinations that should open after the output
+Use `goav.WriteFunc` for byte destinations that should open after the output
 format and stream set are known. This keeps upload clients, memory buffers, and
 custom path schemes outside the media graph until the planner knows what bytes
 will be written.
 
 ```go
-dest := goav.Writer("mem://voice.webm",
+dest := goav.WriteFunc("mem://voice.webm",
     func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
         // info.Format, info.Streams, info.Metadata, and info.Realtime are final.
         return upload, nil

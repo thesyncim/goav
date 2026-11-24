@@ -46,7 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	video := goav.FileInput("in.webm", src).Video().
+	video := goav.Read("in.webm", src).Video().
 		Decode().
 		Resize(1280, 720).
 		Encode(codec.VP9(codec.Bitrate(2_000_000)))
@@ -56,7 +56,7 @@ func main() {
 }
 ```
 
-`goav.FileInput` takes any `io.Reader` and `goav.Write` any `io.Writer`; `bundle.Run` closes
+`goav.Read` takes any `io.Reader` and `goav.Write` any `io.Writer`; `bundle.Run` closes
 the writer when the run ends.
 
 <details>
@@ -77,7 +77,7 @@ before the fork runs once. Here one decode feeds two renditions, and one Opus en
 input's audio track is muxed into both files:
 
 ```go
-in := goav.FileInput("in.webm", src)
+in := goav.Read("in.webm", src)
 video := in.Video().Decode()
 audio := in.Audio().Decode().Encode(codec.Opus())
 hd, sd := goav.Write("hd.webm", hdFile), goav.Write("sd.webm", sdFile)

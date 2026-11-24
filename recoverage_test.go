@@ -34,7 +34,7 @@ func TestDecodePreflightDefersAmbiguousSelection(t *testing.T) {
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: &remuxTestDemuxer{streams: streams}}),
 	))
-	_, err := rt.Build(context.Background(), FileInput("in.ogg", strings.NewReader("")).Audio().Decode().To(discardSink("frames")))
+	_, err := rt.Build(context.Background(), Read("in.ogg", strings.NewReader("")).Audio().Decode().To(discardSink("frames")))
 	assertBuildErrorCode(t, err, streamAmbiguousCode)
 }
 
@@ -42,7 +42,7 @@ func TestDecodePreflightDefersAmbiguousSelection(t *testing.T) {
 // a branch that never decodes: a live packet input copies on a runtime with
 // no decoder for it.
 func TestPacketCopyOfALiveInputNeedsNoDecoder(t *testing.T) {
-	task, err := mustNew().Build(context.Background(), Input(liveVideoVP8Provider("video")).Video().To(discardSink("packets")))
+	task, err := mustNew().Build(context.Background(), From(liveVideoVP8Provider("video")).Video().To(discardSink("packets")))
 	if err != nil {
 		t.Fatalf("copy of a live input: %v", err)
 	}

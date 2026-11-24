@@ -59,7 +59,7 @@ func requireAudioToolbox(t *testing.T) {
 func demuxed(t *testing.T, data []byte) (video, audio []*av.Packet) {
 	t.Helper()
 	collector := goavtest.NewCollector()
-	if err := bundle.Run(context.Background(), goav.FileInput("out.mp4", bytes.NewReader(data)).To(collector.Sink())); err != nil {
+	if err := bundle.Run(context.Background(), goav.Read("out.mp4", bytes.NewReader(data)).To(collector.Sink())); err != nil {
 		t.Fatalf("demux: %v", err)
 	}
 	for _, p := range collector.Packets() {

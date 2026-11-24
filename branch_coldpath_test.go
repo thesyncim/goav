@@ -20,7 +20,7 @@ import (
 )
 
 // coldPathPacketSource pushes one opus packet per call and ends.
-func coldPathPacketSource(id av.StreamID, payloads ...[]byte) InputSpec {
+func coldPathPacketSource(id av.StreamID, payloads ...[]byte) Input {
 	return Source(string(id),
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {

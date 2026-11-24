@@ -68,7 +68,7 @@ func TestReadmeHeadlineRecipeRunsWithDefaults(t *testing.T) {
 
 	var out bytes.Buffer
 	start := time.Now()
-	err := bundle.Run(ctx, goav.FileInput("in.webm", bytes.NewReader(in)).
+	err := bundle.Run(ctx, goav.Read("in.webm", bytes.NewReader(in)).
 		Video().
 		Decode().
 		Resize(32, 24).
@@ -108,7 +108,7 @@ func TestResizeFitKeepsAspectRatio(t *testing.T) {
 	defer cancel()
 	in := encodeTestWebM(t, 3)
 	var out bytes.Buffer
-	if err := bundle.Run(ctx, goav.FileInput("in.webm", bytes.NewReader(in)).
+	if err := bundle.Run(ctx, goav.Read("in.webm", bytes.NewReader(in)).
 		Video().
 		Decode().
 		Resize(32, 32, filter.Fit).
@@ -137,7 +137,7 @@ func TestOneOutputHandleMuxesAudioAndVideo(t *testing.T) {
 	}
 	var file bytes.Buffer
 	out := goav.Write("out.mkv", &file)
-	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	in := goav.Read("in.mp4", bytes.NewReader(data))
 	if err := bundle.Run(ctx, in.Video().To(out), in.Audio().To(out)); err != nil {
 		t.Fatalf("remux: %v", err)
 	}

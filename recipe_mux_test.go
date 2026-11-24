@@ -34,7 +34,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	)
 
 	web := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
-	in := goav.FileInput("input.ogg", strings.NewReader(""))
+	in := goav.Read("input.ogg", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode()
@@ -87,7 +87,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 	)
 
 	target := goav.Write("out.mkv", io.Discard, goav.Format(av.FormatMatroska))
-	_, err := rt.Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
@@ -124,7 +124,7 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		}),
 	)
 
-	_, err := rt.Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := rt.Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
@@ -152,7 +152,7 @@ func TestWholeInputIntoSingleStreamContainerIsRefused(t *testing.T) {
 		goavtest.Audio(48000, 1, make([]int16, 960)).Audio().Encode(codec.Opus()).To(both)); err != nil {
 		t.Fatal(err)
 	}
-	in := func() goav.InputSpec { return goav.FileInput("av.webm", bytes.NewReader(source.Bytes())) }
+	in := func() goav.Input { return goav.Read("av.webm", bytes.NewReader(source.Bytes())) }
 	err := offlineRuntime().Run(ctx, in().To(goav.Write("whole.ivf", io.Discard)))
 	requireBuildError(t, err, errcode.Code("destination_mux_incompatible"), "open destination", "whole.ivf",
 		"route only the stream it carries: input.Video().To(destination)")

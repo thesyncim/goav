@@ -213,10 +213,10 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 	if err := nilSource.Start(context.Background(), &componentEmitter{}); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil callback Start err = %v, want errNilSource", err)
 	}
-	if _, _, err := newCustomSource(InputSpec{}); !errors.Is(err, errNilSource) {
+	if _, _, err := newCustomSource(Input{}); !errors.Is(err, errNilSource) {
 		t.Fatalf("empty custom source err = %v, want errNilSource", err)
 	}
-	if streams := customSourceStreams(InputSpec{}); streams != nil {
+	if streams := customSourceStreams(Input{}); streams != nil {
 		t.Fatalf("customSourceStreams(empty) = %+v, want nil", streams)
 	}
 	if got, ok := compileStateCustomSourceShape(nil); ok || got != (shape.Spec{}) {
@@ -240,7 +240,7 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 	if mismatched.Codec.ID != av.CodecOpus || mismatched.Codec.ClockRate != 0 {
 		t.Fatalf("mismatched codec facts changed stream: %+v", mismatched.Codec)
 	}
-	if got := customSourceNodeName(InputSpec{name: "named"}); got != "named" {
+	if got := customSourceNodeName(Input{name: "named"}); got != "named" {
 		t.Fatalf("customSourceNodeName without source = %q, want named", got)
 	}
 }
@@ -395,7 +395,7 @@ func TestCustomSourceValidationErrors(t *testing.T) {
 
 	for _, tt := range []struct {
 		name string
-		in   InputSpec
+		in   Input
 		code string
 	}{
 		{
@@ -494,7 +494,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilDestinationProvider) || errors.Is(err, errNilWriter) {
 		t.Fatalf("nil custom validate err = %v, want errNilDestinationProvider only", err)
 	}
-	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
+	if err := WriteFunc("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
 		t.Fatalf("nil writer validate err = %v, want errNilWriter", err)
 	}
 
@@ -538,11 +538,11 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		dest Destination
 		want error
 	}{
-		{name: "nil callback", dest: Writer("nil.ogg", nil), want: errNilWriter},
-		{name: "callback error", dest: Writer("err.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
+		{name: "nil callback", dest: WriteFunc("nil.ogg", nil), want: errNilWriter},
+		{name: "callback error", dest: WriteFunc("err.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, boom
 		}), want: boom},
-		{name: "nil writer", dest: Writer("nil-writer.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
+		{name: "nil writer", dest: WriteFunc("nil-writer.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, nil
 		}), want: errNilWriter},
 	}
@@ -555,7 +555,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	}
 
 	success := &componentWriteCloser{}
-	writerSpec := Writer("upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
+	writerSpec := WriteFunc("upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 		return success, nil
 	}, Format(av.FormatOgg), MIME("audio/ogg")).spec
 	if writerSpec.custom.Name() != "upload.ogg" {
@@ -619,10 +619,10 @@ func TestDestinationOriginContracts(t *testing.T) {
 	}
 	for name, destination := range map[string]Destination{
 		"write":  Write("out.ogg", io.Discard),
-		"uri":    URI("file:///tmp/out.ogg"),
+		"uri":    ToURI("file:///tmp/out.ogg"),
 		"sink":   Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 		"custom": Custom("custom", custom),
-		"writer": Writer("writer.ogg", writer),
+		"writer": WriteFunc("writer.ogg", writer),
 	} {
 		if destination.origin != destinationOriginConstructed {
 			t.Fatalf("%s destination origin = %v, want constructed", name, destination.origin)
@@ -722,7 +722,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 	}
 	// A URI resolves to a writer through a scheme; an unbound one has none,
 	// and no muxer is handed a nil writer.
-	if _, _, err := builder.openDestinationOutput(ctx, URI("mem://plain.ogg").spec, nil, av.FormatOgg); err == nil {
+	if _, _, err := builder.openDestinationOutput(ctx, ToURI("mem://plain.ogg").spec, nil, av.FormatOgg); err == nil {
 		t.Fatal("unbound URI destination opened without a writer")
 	}
 
@@ -858,7 +858,7 @@ func (w componentControlWrapper) Control(ctx context.Context, msg *pipeline.Mess
 
 func TestApplySourceWrapsPinsIdentityAndPreservesDelegatedControls(t *testing.T) {
 	source := &componentControllableSource{name: "source"}
-	input := InputSpec{wraps: []func(pipeline.Source) pipeline.Source{
+	input := Input{wraps: []func(pipeline.Source) pipeline.Source{
 		nil,
 		func(pipeline.Source) pipeline.Source { return nil },
 		func(pipeline.Source) pipeline.Source {
@@ -910,33 +910,33 @@ func (p *componentSourceProvider) DecodeBounds(av.StreamID) codec.DecodeBounds {
 }
 
 func TestInputAndProviderSourceContracts(t *testing.T) {
-	typ := reflect.TypeFor[InputSpec]()
+	typ := reflect.TypeFor[Input]()
 	for field := range typ.Fields() {
 		if field.IsExported() {
-			t.Fatalf("InputSpec field %s is exported; use constructors instead", field.Name)
+			t.Fatalf("Input field %s is exported; use constructors instead", field.Name)
 		}
 	}
 
-	var zero InputSpec
+	var zero Input
 	if zero.origin != inputSpecOriginZero {
-		t.Fatalf("zero InputSpec origin = %v, want zero", zero.origin)
+		t.Fatalf("zero Input origin = %v, want zero", zero.origin)
 	}
 	renamedZero := zero.With(Name("input"))
 	if renamedZero.origin != inputSpecOriginZero {
-		t.Fatalf("zero InputSpec.With origin = %v, want zero", renamedZero.origin)
+		t.Fatalf("zero Input.With origin = %v, want zero", renamedZero.origin)
 	}
 	if err := renamedZero.validate(); err == nil ||
 		!strings.Contains(err.Error(), "empty input spec") ||
-		!strings.Contains(err.Error(), "goav.FileInput") {
-		t.Fatalf("zero InputSpec.With error = %v, want constructor guidance", err)
+		!strings.Contains(err.Error(), "goav.Read") {
+		t.Fatalf("zero Input.With error = %v, want constructor guidance", err)
 	}
-	wrappedZero := WrapSource(zero, func(source pipeline.Source) pipeline.Source { return source })
+	wrappedZero := zero.Wrap(func(source pipeline.Source) pipeline.Source { return source })
 	if wrappedZero.origin != inputSpecOriginZero {
 		t.Fatalf("zero WrapSource origin = %v, want zero", wrappedZero.origin)
 	}
 
 	metadata := av.Metadata{"transport": "custom"}
-	file := FileInput("custom.ogg", strings.NewReader(""), MIME("application/x-custom"), Metadata(metadata))
+	file := Read("custom.ogg", strings.NewReader(""), MIME("application/x-custom"), Metadata(metadata))
 	if file.origin != inputSpecOriginConstructed {
 		t.Fatalf("FileInput origin = %v, want constructed", file.origin)
 	}
@@ -950,19 +950,19 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if file.input.Metadata["transport"] != "custom" {
 		t.Fatalf("FileInput metadata was not cloned: %+v", file.input.Metadata)
 	}
-	if wrapped := WrapSource(file, nil); len(wrapped.wraps) != 0 {
+	if wrapped := file.Wrap(nil); len(wrapped.wraps) != 0 {
 		t.Fatalf("WrapSource nil added wraps: %+v", wrapped.wraps)
 	}
-	for name, input := range map[string]InputSpec{
+	for name, input := range map[string]Input{
 		"file":     file,
 		"source":   Source("generated", shape.Packet(av.MediaAudio, av.CodecOpus), func(context.Context, sourcepkg.Push) error { return nil }),
-		"provider": Input(&componentSourceProvider{spec: shape.Packet(av.MediaAudio, av.CodecOpus)}),
+		"provider": From(&componentSourceProvider{spec: shape.Packet(av.MediaAudio, av.CodecOpus)}),
 	} {
 		if input.origin != inputSpecOriginConstructed {
 			t.Fatalf("%s input origin = %v, want constructed", name, input.origin)
 		}
 	}
-	nilProvider := Input(nil)
+	nilProvider := From(nil)
 	if nilProvider.origin != inputSpecOriginConstructed {
 		t.Fatalf("nil provider input origin = %v, want constructed", nilProvider.origin)
 	}

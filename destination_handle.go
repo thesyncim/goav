@@ -74,7 +74,7 @@ func newDirectDestinationRef(name string, dest destinationSpec) destinationRef {
 
 func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
 	if dest.origin != destinationOriginConstructed {
-		return destinationSpec{}, fmt.Errorf("destination is empty; construct it with goav.Write(...), goav.URI(...), goav.Sink(...), goav.Writer(...), or goav.Custom(...)")
+		return destinationSpec{}, fmt.Errorf("destination is empty; construct it with goav.Write(...), goav.ToURI(...), goav.Sink(...), goav.WriteFunc(...), or goav.Custom(...)")
 	}
 	if destinationSpecEmpty(dest.spec) {
 		return destinationSpec{}, fmt.Errorf("destination is empty")

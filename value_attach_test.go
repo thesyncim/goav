@@ -23,7 +23,7 @@ func TestValueOnStreamAttachesPerDiscoveredStream(t *testing.T) {
 	input := lateStreamSource(late, 0xA, stopLate, finish)
 	state := &syncObjectState{}
 	rt := mustNew(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
-	record := Writer("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
+	record := WriteFunc("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
 	var mainCount atomic.Int32
 	mainSink := Sink(SinkFunc("main", func(_ context.Context, msg Message) error {
 		if msg.Kind == pipeline.MessagePacket && msg.Packet.StreamID == "mic" {

@@ -17,7 +17,7 @@ import (
 
 // solverTestAudioSource declares an audio frame source with explicit format
 // facts and pushes one frame matching them.
-func solverTestAudioSource(id av.StreamID, rate int, channels int, sampleFormat string) InputSpec {
+func solverTestAudioSource(id av.StreamID, rate int, channels int, sampleFormat string) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(rate, channels, sampleFormat), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
