@@ -19,7 +19,7 @@ import (
 // request waits at most three target durations, then gets 503.
 //
 //	srv := hls.NewServer()
-//	live := goav.Custom("live", hls.New("live.m3u8", srv, hls.Parts(250*time.Millisecond), hls.Window(6)))
+//	live := goav.Custom(hls.New("live.m3u8", srv, hls.Parts(250*time.Millisecond), hls.Window(6)))
 //	http.Handle("/live/", http.StripPrefix("/live/", srv))
 type Server struct {
 	mu    sync.Mutex

@@ -271,7 +271,7 @@ var compileBoundary = map[string][]string{
 	"PlannedNode":                  {"runtime_plan.go"},
 	"RealtimeRecipeBufferCapacity": {"buffer_policy.go"},
 	"SelectBufferCapacity":         {"join_lower.go"},
-	"TapRef":                       {"attach_plan.go", "tap_ref.go"},
+	"TapRef":                       {"attach_plan.go"},
 	"TransformResample":            {"join_arm_file.go"},
 	"TransformResize":              {"join_arm_file.go"},
 	// node names and describe details the build and the plan share

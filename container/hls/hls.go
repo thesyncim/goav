@@ -9,7 +9,7 @@
 // a keyframe. After every segment it republishes the playlist; at the end it
 // marks the playlist complete.
 //
-//	live := goav.Custom("live", hls.New("live.m3u8", hls.Dir("/srv/hls"), hls.Window(6)))
+//	live := goav.Custom(hls.New("live.m3u8", hls.Dir("/srv/hls"), hls.Window(6)))
 //	err := bundle.Run(ctx, video.To(live), audio.To(live))
 //
 // With Window(n), a live playlist lists the last n segments and the

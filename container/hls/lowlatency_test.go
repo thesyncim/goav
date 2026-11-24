@@ -28,7 +28,7 @@ func TestLowLatency(t *testing.T) {
 	srv := hls.NewServer()
 	web := httptest.NewServer(srv)
 	defer web.Close()
-	dest := goav.Custom("ll", hls.New("ll.m3u8", srv, hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
+	dest := goav.Custom(hls.New("ll.m3u8", srv, hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
 	out := launch.Sink("out", "the packager", func(struct{}) (goav.Destination, error) { return dest, nil })
 	outs, err := launch.Compile(`testsrc video size=64x48 fps=25 duration=3s live ! encode vp8 keyframe_interval=25 ! out
 testsrc audio duration=3s live ! encode opus ! out`, launch.Use(out))
@@ -118,8 +118,8 @@ func TestLowLatencyLadder(t *testing.T) {
 	web := httptest.NewServer(srv)
 	defer web.Close()
 	ladder := hls.NewLadder("master.m3u8", srv)
-	hd := goav.Custom("hd", ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
-	sd := goav.Custom("sd", ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
+	hd := goav.Custom(ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
+	sd := goav.Custom(ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
 	sink := func(name string, d goav.Destination) launch.Element {
 		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
 	}

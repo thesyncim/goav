@@ -359,7 +359,7 @@ func (c *compiler) fileDestination(ref fileRef, t *termNode) (goav.Destination, 
 	}
 	d := goav.ToURI(ref.uri, opts...)
 	if ref.uri == "" {
-		d = goav.Custom(ref.path, fileDestination{fs: c.cfg.files, name: ref.path}, opts...)
+		d = goav.Custom(fileDestination{fs: c.cfg.files, name: ref.path}, opts...)
 	}
 	c.dests[ref.key()] = d
 	return d, nil

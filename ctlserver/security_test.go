@@ -29,3 +29,16 @@ func TestHTTPAuthorizationRequiresBearerPrefix(t *testing.T) {
 		t.Fatalf("Bearer token got 401, want authorized")
 	}
 }
+
+func TestURIsOptionGrantsSchemeToCompile(t *testing.T) {
+	s := &Server{methods: map[string]*method{}}
+	if err := URIs("https")(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.compile(`uri "https://example.invalid/clip.webm" ! video ! null`); err != nil {
+		t.Fatalf("compile with URIs(https) failed: %v", err)
+	}
+	if _, err := s.compile(`uri "http://example.invalid/clip.webm" ! video ! null`); err == nil {
+		t.Fatal("compile with ungranted http scheme succeeded, want error")
+	}
+}

@@ -99,7 +99,7 @@ func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
 	if !impl.Implements(providerType) {
 		t.Fatalf("%v should implement provider.Destination", impl)
 	}
-	destinationType := reflect.TypeOf(goav.Custom("custom", recipeAPICustomDestination{}))
+	destinationType := reflect.TypeOf(goav.Custom(recipeAPICustomDestination{}, goav.Name("custom")))
 	if destinationType.Name() != "Destination" || destinationType.Kind() != reflect.Struct {
 		t.Fatalf("Custom return type = %v, want concrete Destination handle", destinationType)
 	}

@@ -167,15 +167,17 @@ func validateSinkComponent(sink pipeline.Sink) error {
 
 // Custom wraps a reusable provider.Destination as a destination value: the
 // provider owns naming, contract, and opening, while the returned Destination
-// stays the stable routing handle branches share.
-func Custom(name string, dest provider.Destination, opts ...DestinationOption) Destination {
-	return destinationHandle(applyDestinationOptions(customDestination(name, dest), opts))
+// stays the stable routing handle branches share. Override its name with
+// goav.Name(...).
+func Custom(dest provider.Destination, opts ...DestinationOption) Destination {
+	return destinationHandle(applyDestinationOptions(customDestination(dest), opts))
 }
 
-func customDestination(name string, dest provider.Destination) destinationSpec {
+func customDestination(dest provider.Destination) destinationSpec {
 	if dest == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), name: name, err: errNilDestinationProvider}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilDestinationProvider}
 	}
+	name := dest.Name()
 	contract := dest.Contract()
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
@@ -187,11 +189,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 			Realtime: contract.Realtime,
 			Fragment: contract.Fragment,
 		},
-		name: firstNonEmpty(name, dest.Name()),
-	}
-	if spec.output.Name == "" {
-		spec.output.Name = spec.name
-		spec.output.URI = spec.name
+		name: name,
 	}
 	if len(contract.Formats) != 0 {
 		spec.format = contract.Formats[0]
@@ -475,7 +473,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 		}
 		if errors.Is(s.err, errNilDestinationProvider) {
 			suggestions = []string{
-				"pass a non-nil provider.Destination to goav.Custom(name, destination)",
+				"pass a non-nil provider.Destination to goav.Custom(destination)",
 				"use goav.Write(...), goav.WriteFunc(...), goav.ToURI(...), or goav.Sink(...) for built-in destinations",
 			}
 		}
