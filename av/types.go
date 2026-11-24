@@ -1,6 +1,9 @@
 package av
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // MediaType is the kind of media a stream, packet, or frame carries.
 type MediaType string
@@ -530,59 +533,27 @@ const (
 	// acknowledges by emitting EventDiscontinuity before the first message at
 	// the new position.
 	EventSeek EventType = "seek"
-	// EventRate carries a playback-rate change (1 = realtime, 2 = double
-	// speed, 0.5 = half; positive only). The rate rides Event.Metadata under
-	// MetadataRate — build it with RateMetadata, read it with EventRateValue.
-	// Rate is task-wide: control.Rate re-anchors the task's shared timeline
-	// (which every paced source sleeps on), so this event is the control
-	// wire form, not a per-source control — it is never delivered to a
-	// source's control seam or routed downstream. A rate change is pure
-	// pacing: sources keep delivering from their current position and no
-	// EventDiscontinuity is emitted.
+	// EventRate carries a task-wide playback-rate change (1 = realtime, 2 = 2x,
+	// 0.5 = half; positive only) in Event.Metadata[MetadataRate]. Build with
+	// RateMetadata and read with EventRateValue.
 	EventRate EventType = "rate"
-	// EventSegment asks a source to play one window [start, end) and then end
-	// its stream naturally. The start rides Event.Timestamp exactly like
-	// EventSeek; the exclusive end rides Event.Metadata under
-	// MetadataSegmentEnd — build it with SegmentEndMetadata, read it with
-	// EventSegmentEnd. The source acknowledges like a seek to start
-	// (EventDiscontinuity before the first message at start) and, on reaching
-	// end, ends exactly as at the end of the media (EventEndOfStream, Start
-	// loop returns) so downstream destinations finalize naturally.
+	// EventSegment asks a source to play [start, end) and end naturally. Start
+	// rides Event.Timestamp; exclusive end rides Event.Metadata[MetadataSegmentEnd]
+	// (SegmentEndMetadata / EventSegmentEnd).
 	EventSegment EventType = "segment"
-	// EventBitrateChanged asks the encoders on its path to retarget their
-	// bitrate without restarting the stream. The requested rate rides
-	// Event.Metadata under MetadataBitrate as a decimal string in bits per
-	// second. An encoder that cannot apply a live retarget must return an
-	// error from HandleEvent so the failure is visible, never silent.
+	// EventBitrateChanged asks encoders on its path to retarget bitrate without
+	// restarting (Event.Metadata[MetadataBitrate] in bits/sec).
 	EventBitrateChanged EventType = "bitrate_changed"
-	// EventQoS reports that media ran late at a delivery gate: a playout or
-	// sync gate admitted a message past due (delivered late or shed), or a
-	// buffered queue shed a message under BufferPolicy.MaxLatency. StreamID
-	// names the late stream, Reason the producing gate or node, and the
-	// lateness plus shed disposition ride Event.Metadata — build with
-	// QoSMetadata, read with EventQoSReport. Reports describe the sink/gate
-	// view (delivery lateness on the task timeline), not network conditions,
-	// and are rate-limited per producer so a persistently late stream reports
-	// about once per second. It never rides the data path: producers publish
-	// it straight on the observer stream tasks expose through Watch. A task
-	// whose QoS policy issued a control the task refused publishes EventQoS
-	// with the refusal on Cause and no lateness payload.
+	// EventQoS reports late or shed delivery at a playout, sync, or MaxLatency
+	// gate on the task observer stream (Watch). Build metadata with QoSMetadata
+	// and read with EventQoSReport; rate-limited per producer (~1/sec).
 	EventQoS EventType = "qos"
-	// EventTaskReady reports task readiness — the sane preroll analog: every
-	// sink that was present when the running graph started has received its
-	// first media message (packet or frame; events do not count). The graph
-	// emits it at most once, on the observer stream tasks expose through
-	// Watch — it never rides the data path. Scope is honest, not padded:
-	// sinks attached at runtime are not waited for, a task with no sinks
-	// never reports ready, and a sink whose stream never delivers media keeps
-	// the event from firing. A sink removed before its first media message
-	// stops gating readiness.
+	// EventTaskReady fires at most once on Watch when every initial sink has
+	// received its first media message (packet or frame). Sinks attached at
+	// runtime do not gate readiness.
 	EventTaskReady EventType = "task_ready"
-	// EventReconnect reports a live input reconnecting under goav.Reconnect:
-	// Cause is why it dropped, Reason names the attempt and the wait, and
-	// Metadata carries "attempt" and "delay" (Go durations), or "state" set
-	// to "reconnected" once the input is back, followed by an
-	// EventDiscontinuity on the data path.
+	// EventReconnect reports a live input reconnecting under goav.Reconnect.
+	// Metadata carries "attempt"/"delay", or "state":"reconnected" once back.
 	EventReconnect EventType = "reconnect"
 )
 
@@ -604,16 +575,7 @@ type Event struct {
 
 // Reset clears the event for reuse.
 func (e *Event) Reset() {
-	e.Type = ""
-	e.StreamID = ""
-	e.Epoch = 0
-	e.At = time.Time{}
-	e.Timestamp = Timestamp{}
-	e.Stream = nil
-	e.Codec = nil
-	e.Cause = nil
-	e.Reason = ""
-	e.Metadata = nil
+	*e = Event{}
 }
 
 // RTPTimeBase returns the timebase of an RTP clock rate (1/clockRate
@@ -641,8 +603,8 @@ func SamplesDuration(samples int, sampleRate int) Duration {
 }
 
 const (
-	maxInt64 = int64(^uint64(0) >> 1)
-	minInt64 = -maxInt64 - 1
+	maxInt64 = math.MaxInt64
+	minInt64 = math.MinInt64
 )
 
 func reducePair(a *int64, b *int64) {

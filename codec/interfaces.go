@@ -194,11 +194,8 @@ type Settings struct {
 	// while external adapters keep ownership of validation and interpretation.
 	Custom av.Metadata `json:"custom,omitempty"`
 	// Control is the raw escape hatch: at encoder/decoder open the adapter invokes
-	// it with its *concrete* native encoder/decoder (or, for construction-only
-	// knobs, its options builder — the adapter documents which), so the caller can
-	// type-assert to the real type and apply anything the library exposes. Nothing
-	// is ever unreachable. A non-nil error from Control fails the open. This single
-	// callback replaces a separate typed-config blob — it is strictly more capable.
+	// it with its concrete native encoder/decoder (or construction options), so
+	// callers can apply backend-specific settings directly. A non-nil error fails open.
 	Control func(any) error `json:"-"`
 }
 
@@ -287,9 +284,7 @@ type ControlRequest struct {
 
 // Reset clears the request for reuse.
 func (r *ControlRequest) Reset() {
-	r.Type = ""
-	r.StreamID = ""
-	r.Reason = ""
+	*r = ControlRequest{}
 }
 
 // ControlType names a decoder's upstream ask.

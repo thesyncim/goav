@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -51,8 +52,8 @@ func (t *task) Watch(filters ...EventFilter) Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }
 
-// watchCapacity sizes one watcher buffer, normalized exactly like the
-// pipeline's event channel: the runtime's configured capacity, or 16.
+// watchCapacity sizes one watcher buffer: the runtime's configured capacity,
+// or defaultWatchCapacity (256).
 func (t *task) watchCapacity() int {
 	if t.runtime != nil && t.runtime.eventCapacity >= 1 {
 		return t.runtime.eventCapacity
@@ -111,14 +112,8 @@ func (w *eventWatch) unsubscribe(watcher *eventWatcher) error {
 		return nil
 	}
 	w.mu.Lock()
-	for i := range w.watchers {
-		if w.watchers[i] != watcher {
-			continue
-		}
-		copy(w.watchers[i:], w.watchers[i+1:])
-		w.watchers[len(w.watchers)-1] = nil
-		w.watchers = w.watchers[:len(w.watchers)-1]
-		break
+	if i := slices.Index(w.watchers, watcher); i >= 0 {
+		w.watchers = slices.Delete(w.watchers, i, i+1)
 	}
 	w.mu.Unlock()
 	watcher.close()
@@ -153,19 +148,7 @@ func (w *eventWatch) publish(event av.Event) {
 // goroutine outlives the subscription set.
 func (w *eventWatch) distribute(source <-chan av.Event) {
 	for event := range source {
-		w.mu.Lock()
-		for _, watcher := range w.watchers {
-			if !watcher.matches(event) {
-				continue
-			}
-			select {
-			case watcher.events <- event:
-			default:
-				// Slow watcher: shed the event for this watcher only.
-				w.dropped.Add(1)
-			}
-		}
-		w.mu.Unlock()
+		w.publish(event)
 	}
 	w.mu.Lock()
 	w.done = true

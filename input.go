@@ -67,29 +67,11 @@ func inputSpecHandle(spec InputSpec) InputSpec {
 	return spec
 }
 
-// WrapSource returns a copy of the input whose opened source is decorated by
-// wrap — the decoration seam for inputs. Every input kind (file, URI, source
-// provider, custom Source) opens through one internal seam into a running
-// pipeline.Source; wrap intercepts that value right after it opens, so an
-// external decorator can observe or transform the message stream of any
-// built-in input without reimplementing it: delegate Name/Close, wrap Start,
-// and interpose on the pipeline.Emitter it is started with. Several wraps
-// compose in declaration order — the last one added is outermost (closest to
-// the graph). Planning is untouched: the input keeps its identity, probes,
-// declared shape, and codec intent, so stream selection and Describe() see
-// the original input.
-//
-// Node identity is pinned: after wrapping, the source's Name() and described
-// node detail are forced back to the opened source's values, so Describe() ≡
-// Build() holds no matter what the decorator reports — decorators decorate
-// behavior, not identity. Optional node capabilities (pipeline.
-// ControllableSource, DropReporter, ...) are visible only when the decorator
-// implements them by delegation; a decorator that hides ControllableSource
-// detaches the input from source controls such as Seek.
-//
-// Destinations need no analog: every destination constructor takes a
-// caller-held value (an io.Writer for Write, a provider.Destination for
-// Custom, a pipeline.Sink for Sink) that can be wrapped before it is passed.
+// WrapSource returns a copy of spec whose opened pipeline.Source is decorated
+// by wrap. Wraps compose in declaration order (last added is outermost).
+// Planning identity, probes, and Describe() node names remain pinned to the
+// underlying source; optional capabilities (such as pipeline.ControllableSource)
+// are visible only if the decorator delegates them.
 func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) InputSpec {
 	if wrap == nil {
 		return spec

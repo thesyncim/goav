@@ -13,8 +13,7 @@ const (
 	Stereo = 2
 )
 
-// Option configures encoder/decoder settings. Options live in the codec package
-// (not the goav root) so the grammar stays small; goav's codec constructors
+// Option configures encoder/decoder settings. This package's codec constructors
 // (Opus, VP9, …) accept them.
 type Option func(*Settings)
 

@@ -127,7 +127,7 @@ Results: `DecodeResult`/`EncodeResult` are caller-owned scratch sized from
 `DecodeBounds` (merged from stream facts and source-provider bounds). Slot
 exhausted -> `codec.ErrResultFull`; preallocated plane/payload too small ->
 `codec.ErrOutputBufferTooSmall`. Honor `DecodeConfig.Bounds` when sizing
-internal arenas. Read `CodecSettings` at open: typed fields such as bitrate,
+internal arenas. Read `codec.Settings` at open: typed fields such as bitrate,
 cadence, profile, audio shape overrides, and `Custom` adapter-owned keys all
 arrive through the same settings value. The pipeline language's `encode`
 binds the common settings and passes any other `key=value` through as

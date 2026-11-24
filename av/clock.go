@@ -5,13 +5,10 @@ import (
 	"time"
 )
 
-// Clock is the time source paced delivery runs on: a monotonic reading plus an
-// interruptible wait. It is deliberately tiny — the realtime demux pacer is its
-// first consumer, and a future pipeline-wide clock service can implement the
-// same contract without churn. Tests inject a fake so nothing sleeps for real.
+// Clock is the monotonic time source used by paced sources, playout gates, and
+// task timelines. Tests inject a fake so nothing sleeps for real.
 //
-// Implementations must be safe for concurrent use: a pacing loop reads the
-// clock while controls arrive from other goroutines.
+// Implementations must be safe for concurrent use.
 type Clock interface {
 	// Now reports the elapsed monotonic time since the clock's arbitrary,
 	// fixed origin. Only differences between readings are meaningful.

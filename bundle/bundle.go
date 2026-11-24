@@ -32,19 +32,16 @@ import (
 // schemes already registered, then applies opts on top. Registration is
 // last-wins, so opts can add or override bundled implementations.
 func New(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(appendOptions(Options(), opts...)...)
+	return goav.New(append(Options(), opts...)...)
 }
 
 // MustNew is New for package-level setup and tests.
 func MustNew(opts ...runconfig.Option) *goav.Runtime {
-	return mustRuntime(New(opts...))
-}
-
-func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
+	rt, err := New(opts...)
 	if err != nil {
 		panic(err)
 	}
-	return runtime
+	return rt
 }
 
 // Default is the process-wide bundled runtime: built with default options on
@@ -153,13 +150,6 @@ var codecOptions = []runconfig.Option{
 var filterOptions = []runconfig.Option{
 	runconfig.WithFilterAdapter(resampleadapter.Register),
 	runconfig.WithFilterAdapter(resizeadapter.Register),
-}
-
-func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconfig.Option {
-	options := make([]runconfig.Option, 0, len(base)+len(extra))
-	options = append(options, base...)
-	options = append(options, extra...)
-	return options
 }
 
 var schemeOptions = []runconfig.Option{

@@ -1,7 +1,7 @@
 // Package provider declares the contracts external transports and
 // destinations satisfy to plug into goav with zero goav changes: Source and
 // ByteSource are the inputs goav.Input adapts into a recipe input,
-// Destination (with Contract, Info, Writer, TransactionalWriter, and
+// Destination (with Contract, Info, TransactionalWriter, and
 // OpenFunc) is the seam goav.Custom and goav.Writer wrap behind destination
 // handles, and InputScheme and DestinationScheme bind URLs to them, for
 // goav.URIInput and goav.URI. Implementations live outside goav —

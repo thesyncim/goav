@@ -1,4 +1,4 @@
-// Codec spec handling: merging, cloning, and encode value validation.
+// Codec spec option extraction and merging.
 
 package goav
 

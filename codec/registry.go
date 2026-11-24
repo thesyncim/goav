@@ -50,7 +50,7 @@ func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
 // backend as a decoder for the codec, replacing a decoder registered under
 // the same backend name.
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
-	desc.Modes = mergeModes(desc.Modes, []Mode{ModeDecode})
+	desc.Modes = mergeUnique(desc.Modes, []Mode{ModeDecode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.addBackend(registered{desc: cloneDescriptor(desc), mode: ModeDecode, decoder: factory})
@@ -61,7 +61,7 @@ func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory
 // backend as an encoder for the codec, replacing an encoder registered under
 // the same backend name.
 func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
-	desc.Modes = mergeModes(desc.Modes, []Mode{ModeEncode})
+	desc.Modes = mergeUnique(desc.Modes, []Mode{ModeEncode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
 		r.addBackend(registered{desc: cloneDescriptor(desc), mode: ModeEncode, encoder: factory})
@@ -175,8 +175,8 @@ func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
 
 func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned := desc
-	cloned.Modes = append([]Mode(nil), desc.Modes...)
-	cloned.Profiles = append([]string(nil), desc.Profiles...)
+	cloned.Modes = slices.Clone(desc.Modes)
+	cloned.Profiles = slices.Clone(desc.Profiles)
 	cloned.Capabilities = cloneCapabilities(desc.Capabilities)
 	cloned.Knobs = slices.Clone(desc.Knobs)
 	cloned.RawKnobs = slices.Clone(desc.RawKnobs)
@@ -187,12 +187,12 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 // carried even before it gets a deep copy here.
 func cloneCapabilities(capabilities Capabilities) Capabilities {
 	cloned := capabilities
-	cloned.SampleFormats = append([]string(nil), capabilities.SampleFormats...)
-	cloned.PixelFormats = append([]string(nil), capabilities.PixelFormats...)
-	cloned.SampleRates = append([]int(nil), capabilities.SampleRates...)
-	cloned.BitDepths = append([]int(nil), capabilities.BitDepths...)
-	cloned.RTPPayloads = append([]string(nil), capabilities.RTPPayloads...)
-	cloned.BuildTags = append([]string(nil), capabilities.BuildTags...)
+	cloned.SampleFormats = slices.Clone(capabilities.SampleFormats)
+	cloned.PixelFormats = slices.Clone(capabilities.PixelFormats)
+	cloned.SampleRates = slices.Clone(capabilities.SampleRates)
+	cloned.BitDepths = slices.Clone(capabilities.BitDepths)
+	cloned.RTPPayloads = slices.Clone(capabilities.RTPPayloads)
+	cloned.BuildTags = slices.Clone(capabilities.BuildTags)
 	return cloned
 }
 
@@ -211,8 +211,8 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 	if next.Type != "" {
 		merged.Type = next.Type
 	}
-	merged.Modes = mergeModes(merged.Modes, next.Modes)
-	merged.Profiles = mergeStrings(merged.Profiles, next.Profiles)
+	merged.Modes = mergeUnique(merged.Modes, next.Modes)
+	merged.Profiles = mergeUnique(merged.Profiles, next.Profiles)
 	merged.Realtime = merged.Realtime || next.Realtime
 	merged.Experimental = merged.Experimental || next.Experimental
 	merged.Capabilities = mergeCapabilities(merged.Capabilities, next.Capabilities)
@@ -228,17 +228,17 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 
 func mergeCapabilities(existing Capabilities, next Capabilities) Capabilities {
 	merged := existing
-	merged.SampleFormats = mergeStrings(merged.SampleFormats, next.SampleFormats)
-	merged.PixelFormats = mergeStrings(merged.PixelFormats, next.PixelFormats)
-	merged.BitDepths = mergeInts(merged.BitDepths, next.BitDepths)
+	merged.SampleFormats = mergeUnique(merged.SampleFormats, next.SampleFormats)
+	merged.PixelFormats = mergeUnique(merged.PixelFormats, next.PixelFormats)
+	merged.BitDepths = mergeUnique(merged.BitDepths, next.BitDepths)
 	if next.MaxWidth != 0 {
 		merged.MaxWidth = next.MaxWidth
 	}
 	if next.MaxHeight != 0 {
 		merged.MaxHeight = next.MaxHeight
 	}
-	merged.RTPPayloads = mergeStrings(merged.RTPPayloads, next.RTPPayloads)
-	merged.BuildTags = mergeStrings(merged.BuildTags, next.BuildTags)
+	merged.RTPPayloads = mergeUnique(merged.RTPPayloads, next.RTPPayloads)
+	merged.BuildTags = mergeUnique(merged.BuildTags, next.BuildTags)
 	return merged
 }
 
@@ -266,27 +266,7 @@ func mergeBackend(existing BackendInfo, next BackendInfo) BackendInfo {
 	return merged
 }
 
-func mergeModes(existing []Mode, next []Mode) []Mode {
-	for _, candidate := range next {
-		found := slices.Contains(existing, candidate)
-		if !found {
-			existing = append(existing, candidate)
-		}
-	}
-	return existing
-}
-
-func mergeStrings(existing []string, next []string) []string {
-	for _, candidate := range next {
-		found := slices.Contains(existing, candidate)
-		if !found {
-			existing = append(existing, candidate)
-		}
-	}
-	return existing
-}
-
-func mergeInts(existing []int, next []int) []int {
+func mergeUnique[T comparable](existing []T, next []T) []T {
 	for _, candidate := range next {
 		if !slices.Contains(existing, candidate) {
 			existing = append(existing, candidate)

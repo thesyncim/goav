@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"sync"
@@ -31,7 +32,7 @@ const (
 // that should shed stale media instead.
 func Sync(name string) SyncPolicy {
 	return SyncPolicy{
-		name:      firstNonEmpty(strings.TrimSpace(name), "sync"),
+		name:      cmp.Or(strings.TrimSpace(name), "sync"),
 		mode:      syncHoldLate,
 		scheduler: newSyncScheduler(),
 	}
@@ -144,7 +145,7 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		return 0, false, nil
 	}
 	s.latest[stream] = pts
-	for s.tooEarlyLocked(stream, pts, tolerance) {
+	for s.tooEarlyLocked(pts, tolerance) {
 		if err := ctx.Err(); err != nil {
 			return 0, false, err
 		}
@@ -211,7 +212,7 @@ func (s *syncScheduler) minLocked() (time.Duration, bool) {
 	return min, true
 }
 
-func (s *syncScheduler) tooEarlyLocked(stream av.StreamID, pts time.Duration, tolerance time.Duration) bool {
+func (s *syncScheduler) tooEarlyLocked(pts time.Duration, tolerance time.Duration) bool {
 	if len(s.latest) <= 1 {
 		return false
 	}
@@ -220,13 +221,4 @@ func (s *syncScheduler) tooEarlyLocked(stream av.StreamID, pts time.Duration, to
 		return false
 	}
 	return pts > min+tolerance
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

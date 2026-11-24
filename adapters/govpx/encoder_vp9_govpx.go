@@ -180,7 +180,7 @@ func (e *VP9Encoder) resetEncoder() error {
 // low-latency CBR/realtime preset aligned with the govpx webrtc-vp9 reference
 // sample: tile-column multithreading sized to the frame, cpu-used 9, and a tight
 // quantizer floor. Otherwise the encoder keeps plain CBR. Bitrate, fps, and
-// keyframe cadence come from CodecSettings.
+// keyframe cadence come from codec.Settings.
 func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP9EncoderOptions {
 	options := govpxlib.VP9EncoderOptions{
 		Width:               width,
