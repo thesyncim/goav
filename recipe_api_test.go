@@ -1,11 +1,11 @@
 package goav_test
 
 import (
-	"io"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"reflect"
 	"testing"
 

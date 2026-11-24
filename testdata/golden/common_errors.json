@@ -20,7 +20,7 @@
       "family": "stream",
       "code": "stream_invalid",
       "operation": "build recipe",
-      "reason": "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source",
+      "reason": "the stream's input was not constructed: use goav.Read, goav.From, or goav.Source",
       "fixes": [
         "start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
         "route every stream with .To(destination) and pass the Outputs to rt.Run(ctx, outputs...)"

@@ -156,7 +156,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 		t.Fatalf("err = %v, want input_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "empty input spec") ||
-		!strings.Contains(err.Error(), "goav.FileInput") {
+		!strings.Contains(err.Error(), "goav.Read") {
 		t.Fatalf("err = %v, want input constructor guidance", err)
 	}
 }

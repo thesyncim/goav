@@ -151,10 +151,11 @@ func TestFillDecodedFrameAllocs(t *testing.T) {
 		duration: av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 	}
 	frame := av.Frame{Planes: make([]av.Plane, 3)}
+	var videoMeta av.VideoFrame
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		frame.Reset()
-		if err := decoder.fillDecodedFrame(&timing, src, &frame); err != nil {
+		if err := decoder.fillDecodedFrame(&timing, src, &frame, &videoMeta); err != nil {
 			t.Fatal(err)
 		}
 	}); allocs != 0 {
@@ -216,7 +217,8 @@ func TestCodecChangedUpdatesStreamIdentity(t *testing.T) {
 	}
 
 	frame := av.Frame{Planes: make([]av.Plane, 3)}
-	if err := decoder.fillDecodedFrame(nil, decodedH264TestFrame(t), &frame); err != nil {
+	var videoMeta av.VideoFrame
+	if err := decoder.fillDecodedFrame(nil, decodedH264TestFrame(t), &frame, &videoMeta); err != nil {
 		t.Fatal(err)
 	}
 	if frame.StreamID != "replacement" || frame.CodecEpoch != 7 {
