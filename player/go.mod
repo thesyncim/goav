@@ -13,10 +13,10 @@ require (
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect
-	github.com/thesyncim/goav1 v0.0.0-20261124211549-c9e69d7fdff6 // indirect
+	github.com/thesyncim/goav1 v0.0.0-20261124221443-8f29f0adb550 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
 	github.com/thesyncim/gopus v0.2.8 // indirect
-	github.com/thesyncim/govpx v0.1.1-0.20261124220323-9327953bd8dc // indirect
+	github.com/thesyncim/govpx v0.2.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
