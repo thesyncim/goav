@@ -228,6 +228,7 @@ func mergeDescriptors(existing Descriptor, next Descriptor) Descriptor {
 
 func mergeCapabilities(existing Capabilities, next Capabilities) Capabilities {
 	merged := existing
+	merged.SampleRates = mergeUnique(merged.SampleRates, next.SampleRates)
 	merged.SampleFormats = mergeUnique(merged.SampleFormats, next.SampleFormats)
 	merged.PixelFormats = mergeUnique(merged.PixelFormats, next.PixelFormats)
 	merged.BitDepths = mergeUnique(merged.BitDepths, next.BitDepths)

@@ -89,6 +89,7 @@ func (s *Stage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipel
 		}
 		s.result.Reset()
 		if err := s.filter.FilterInto(ctx, msg.Frame, &s.result); err != nil {
+			payload.DropFrames(s.result.Frames)
 			return err
 		}
 		return s.emitResult(ctx, emitter)
@@ -121,6 +122,7 @@ func (s *Stage) handleEvent(ctx context.Context, msg *pipeline.Message, emitter 
 	if msg.Event.Type == av.EventEndOfStream {
 		s.result.Reset()
 		if err := s.filter.FlushInto(ctx, &s.result); err != nil {
+			payload.DropFrames(s.result.Frames)
 			return err
 		}
 		if err := s.emitResult(ctx, emitter); err != nil {

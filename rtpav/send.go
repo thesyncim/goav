@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"sync"
@@ -464,12 +465,14 @@ func (s *sender) remb(ctx context.Context, remb *rtcp.ReceiverEstimatedMaximumBi
 			named = append(named, stream)
 		}
 	}
-	if len(named) == 0 || remb.Bitrate <= 0 {
+	rate := float64(remb.Bitrate)
+	if len(named) == 0 || math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 {
 		return
 	}
-	share := int(remb.Bitrate) / len(named)
+	shareFloat := rate / float64(len(named))
 	for _, stream := range named {
-		target := min(max(share, minEstimateBitrate), stream.maxBitrate)
+		clamped := min(max(shareFloat, float64(minEstimateBitrate)), float64(stream.maxBitrate))
+		target := int(clamped)
 		if stream.bitrate != 0 && abs(target-stream.bitrate)*10 < stream.bitrate {
 			continue
 		}

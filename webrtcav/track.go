@@ -304,7 +304,7 @@ func (r *trackReader) UpdateCodec(ctx context.Context, update TrackCodecUpdate) 
 	if !hasCodecUpdate(update) {
 		return ErrInvalidCodecUpdate
 	}
-	_, _, err := r.applyCodecUpdate(update, nil)
+	_, _, err := r.applyCodecUpdate(update, nil, nil)
 	return err
 }
 
@@ -329,15 +329,11 @@ func (r *trackReader) updateTrack(ctx context.Context, remote RemoteTrack, repla
 	if !hasCodecUpdate(update) && replacement == nil {
 		return ErrInvalidCodecUpdate
 	}
-	_, _, err := r.applyCodecUpdate(update, replacement)
-	if err != nil {
-		return err
-	}
-	r.mergeRemoteTrack(remote)
-	return nil
+	_, _, err := r.applyCodecUpdate(update, replacement, &remote)
+	return err
 }
 
-func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trackRTPReader) (av.Stream, rtpav.PayloadMap, error) {
+func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trackRTPReader, remote *RemoteTrack) (av.Stream, rtpav.PayloadMap, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -374,6 +370,9 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 	payloads = trackPayloadMap(next, payloads)
 	r.remote.Payloads = payloads
 	r.remote.Metadata = mergeMetadata(r.remote.Metadata, update.Metadata)
+	if remote != nil {
+		r.mergeRemoteTrackLocked(*remote)
+	}
 	r.streams = []av.Stream{next}
 	r.configGen++
 	// Commit state and its notification under one lock so concurrent updates
@@ -449,9 +448,7 @@ func normalizeRemoteTrack(remote RemoteTrack) RemoteTrack {
 	return remote
 }
 
-func (r *trackReader) mergeRemoteTrack(remote RemoteTrack) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *trackReader) mergeRemoteTrackLocked(remote RemoteTrack) {
 	if remote.Track != nil {
 		r.remote.Track = remote.Track
 	}

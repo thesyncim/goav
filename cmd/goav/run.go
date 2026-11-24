@@ -247,7 +247,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		printErr(stderr, err)
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals()...)
 	defer stop()
 	task, err := rt.Build(ctx, outs...)
 	if err != nil {
@@ -262,7 +262,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		runTask = func(ctx context.Context) error { return win.Run(ctx, task) }
 	}
 	if args.control.address != "" {
-		err = runServed(ctx, task, runTask, args.control, files, stderr)
+		err = runServed(ctx, task, runTask, &args.control, files, stderr)
 	} else {
 		err = runTask(ctx)
 	}
@@ -275,14 +275,17 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		printErr(stderr, err)
 		return 1
 	}
-	sort.Strings(files.written)
+	files.mu.Lock()
+	wrote := append([]string(nil), files.written...)
+	files.mu.Unlock()
+	sort.Strings(wrote)
 	summary := struct {
 		Runtime string     `json:"runtime"`
 		Wrote   []string   `json:"wrote"`
 		Played  *playStats `json:"played,omitempty"`
 		Control string     `json:"control,omitempty"`
 		Stopped bool       `json:"stopped,omitempty"`
-	}{Runtime: args.runtime, Wrote: files.written, Control: args.control.address, Stopped: errors.Is(err, context.Canceled)}
+	}{Runtime: args.runtime, Wrote: wrote, Control: args.control.address, Stopped: errors.Is(err, context.Canceled)}
 	if win.Used() {
 		summary.Played = win.summary()
 	}
@@ -298,7 +301,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 // control directory, and the summary lists what they write. A tcp address
 // must be loopback unless --control-remote, and clients authenticate with a
 // token written owner-only to the token file.
-func runServed(ctx context.Context, task goav.Task, runTask func(context.Context) error, control controlFlags, files *cliFiles, stderr io.Writer) error {
+func runServed(ctx context.Context, task goav.Task, runTask func(context.Context) error, control *controlFlags, files *cliFiles, stderr io.Writer) error {
 	attached, err := files.within(cmp.Or(control.dir, "."))
 	if err != nil {
 		return err
@@ -313,6 +316,7 @@ func runServed(ctx context.Context, task goav.Task, runTask func(context.Context
 			return err
 		}
 		defer listener.Close()
+		control.address = "tcp://" + listener.Addr().String()
 		token, path, err := control.issueToken()
 		if err != nil {
 			return err

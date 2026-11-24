@@ -225,15 +225,15 @@ func (s *whipSession) followEstimate(ctx context.Context, targets <-chan int, st
 	}
 }
 
-// Close DELETEs the session's resource and closes the peer connection;
-// the writer calls it when the sender closes.
+// Close stops local media and signaling loops, closes the peer connection,
+// and DELETEs the session's resource; the writer calls it when the sender closes.
 func (s *whipSession) Close() error {
 	s.closeOnce.Do(func() {
-		s.closeErr = s.sig.close()
 		s.cancel()
 		// Closing the peer connection stops its senders, which ends the
 		// writer's RTCP readers.
-		if err := s.pc.Close(); s.closeErr == nil {
+		s.closeErr = s.pc.Close()
+		if err := s.sig.close(); s.closeErr == nil {
 			s.closeErr = err
 		}
 	})

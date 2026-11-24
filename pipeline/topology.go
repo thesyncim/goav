@@ -318,6 +318,9 @@ func (t *topology[P]) Connect(route Route) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return ErrClosed
+	}
 	if err := t.strategy.mutable(false); err != nil {
 		return err
 	}
@@ -365,6 +368,9 @@ func (t *topology[P]) Disconnect(route Route) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return ErrClosed
+	}
 	if err := t.strategy.mutable(false); err != nil {
 		return err
 	}
@@ -627,6 +633,9 @@ func (t *topology[P]) Stats() GraphStats {
 func (t *topology[P]) SetNodePaused(ref NodeRef, paused bool) error {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	if t.closed {
+		return ErrClosed
+	}
 	index, ok := t.index[ref.String()]
 	if !ok || index < 0 || index >= len(t.nodes) || !t.nodes[index].base().active {
 		return ErrUnknownNode
@@ -634,6 +643,19 @@ func (t *topology[P]) SetNodePaused(ref NodeRef, paused bool) error {
 	t.nodes[index].base().paused.Store(paused)
 	return nil
 }
+
+// FinalizationError identifies one node's actual Close failure. ID distinguishes
+// successive nodes that reused a display name; errors.Is matches Cause.
+type FinalizationError struct {
+	ID    uint64
+	Node  NodeRef
+	Cause error
+}
+
+func (e *FinalizationError) Error() string {
+	return fmt.Sprintf("pipeline: cleanup of %q (#%d): %v", e.Node, e.ID, e.Cause)
+}
+func (e *FinalizationError) Unwrap() error { return e.Cause }
 
 func (t *topology[P]) Close() error {
 	return t.CloseContext(context.Background())

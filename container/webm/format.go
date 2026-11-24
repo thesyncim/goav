@@ -61,15 +61,15 @@ func (Prober) Probe(ctx context.Context, request format.ProbeRequest) (format.Pr
 	if err := ctx.Err(); err != nil {
 		return format.ProbeResult{}, err
 	}
+	if len(request.Header) >= 4 && bytes.Equal(request.Header[:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) &&
+		bytes.Contains(request.Header, []byte("webm")) {
+		return format.ProbeResult{Format: av.FormatWebM, Score: 110, Reason: "webm doctype"}, nil
+	}
 	if matchWebMMIME(request.MIMEType) || matchWebMMIME(request.Input.MIMEType) {
 		return format.ProbeResult{Format: av.FormatWebM, Score: 95, Reason: "webm mime type"}, nil
 	}
 	if hasWebMExtension(request.Name) || hasWebMExtension(request.Input.Name) || hasWebMExtension(request.Input.URI) {
 		return format.ProbeResult{Format: av.FormatWebM, Score: 90, Reason: "webm extension"}, nil
-	}
-	if len(request.Header) >= 4 && bytes.Equal(request.Header[:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) &&
-		bytes.Contains(request.Header, []byte("webm")) {
-		return format.ProbeResult{Format: av.FormatWebM, Score: 110, Reason: "webm doctype"}, nil
 	}
 	return format.ProbeResult{}, format.ErrNotFound
 }

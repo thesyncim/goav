@@ -691,6 +691,25 @@ func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolic
 	return policy
 }
 
+func realtimeRecipeBufferPolicy(runtimeBuffer pipeline.BufferPolicy) pipeline.BufferPolicy {
+	if !runtimeBuffer.IsDirect() {
+		return runtimeBuffer
+	}
+	return pipeline.BufferPolicy{
+		Capacity: compile.RealtimeRecipeBufferCapacity,
+		Drop:     pipeline.DropBlock,
+	}
+}
+
+// mergeBufferPolicy picks the queue a destination shared by several branches
+// runs behind: the first buffered policy among them.
+func mergeBufferPolicy(base pipeline.BufferPolicy, next pipeline.BufferPolicy) pipeline.BufferPolicy {
+	if base.IsDirect() && !next.IsDirect() {
+		return next
+	}
+	return base
+}
+
 func validateTapDomain(operation string, node string, tap compile.TapRef, actual shape.MediaDomain) error {
 	if tap.Domain == "" || actual == "" || tap.Domain == actual {
 		return nil

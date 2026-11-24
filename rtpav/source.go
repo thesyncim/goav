@@ -63,7 +63,7 @@ type Source struct {
 	eos              av.Event
 	event            av.Event
 	discontinuity    av.Event
-	closed           bool
+	closed           atomic.Bool
 	discardedPartial atomic.Uint64
 }
 
@@ -136,7 +136,7 @@ func (s *Source) DescribeNode() pipeline.NodeSpec {
 // Start announces the declared streams, then reads, reorders, and
 // depacketizes RTP until io.EOF, flushing partial state at end of stream.
 func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
-	if s.closed {
+	if s.closed.Load() {
 		return ErrClosed
 	}
 	for {
@@ -251,10 +251,9 @@ func isReadEOF(err error) bool {
 
 // Close closes the wrapped receiver once.
 func (s *Source) Close() error {
-	if s.closed {
+	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	s.closed = true
 	return s.receiver.Close()
 }
 

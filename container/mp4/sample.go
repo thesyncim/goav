@@ -66,7 +66,11 @@ func (t *sampleTables) build() ([]sample, error) {
 	for _, e := range t.stts {
 		for c := uint32(0); c < e.count && idx < n; c++ {
 			samples[idx].dts = dts
-			dts += int64(e.delta)
+			nextDTS, ok := addInt64Checked(dts, int64(e.delta))
+			if !ok {
+				return nil, ErrInvalidData
+			}
+			dts = nextDTS
 			idx++
 		}
 	}
@@ -76,7 +80,11 @@ func (t *sampleTables) build() ([]sample, error) {
 	idx = 0
 	for _, e := range t.ctts {
 		for c := uint32(0); c < e.count && idx < n; c++ {
-			samples[idx].cts = samples[idx].dts + int64(e.offset)
+			cts, ok := addInt64Checked(samples[idx].dts, int64(e.offset))
+			if !ok {
+				return nil, ErrInvalidData
+			}
+			samples[idx].cts = cts
 			idx++
 		}
 	}
@@ -107,9 +115,16 @@ func (t *sampleTables) assignOffsets(samples []sample) error {
 		}
 		perChunk := t.stsc[entry].samplesPerChunk
 		offset := t.chunkOffsets[chunk-1]
+		if offset < 0 {
+			return ErrInvalidData
+		}
 		for k := uint32(0); k < perChunk && sampleIdx < len(samples); k++ {
 			samples[sampleIdx].offset = offset
-			offset += int64(samples[sampleIdx].size)
+			nextOffset, ok := addInt64Checked(offset, int64(samples[sampleIdx].size))
+			if !ok {
+				return ErrInvalidData
+			}
+			offset = nextOffset
 			sampleIdx++
 		}
 	}

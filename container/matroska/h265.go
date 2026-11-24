@@ -345,6 +345,7 @@ func h265NALURBSP(nalu []byte) ([]byte, error) {
 			zeros := 0
 			for _, b := range payload {
 				if zeros >= 2 && b == 0x03 {
+					zeros = 0
 					continue
 				}
 				out = append(out, b)

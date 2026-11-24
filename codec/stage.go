@@ -183,6 +183,7 @@ func (s *DecoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitte
 		}
 		s.result.Reset()
 		if err := s.decoder.DecodeInto(ctx, msg.Packet, &s.result); err != nil {
+			payload.DropFrames(s.result.Frames)
 			return err
 		}
 		return s.emitResult(ctx, emitter)
@@ -214,6 +215,7 @@ func (s *EncoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitte
 		}
 		s.result.Reset()
 		if err := s.encoder.EncodeInto(ctx, msg.Frame, &s.result); err != nil {
+			payload.DropPackets(s.result.Packets)
 			return err
 		}
 		return s.emitResult(ctx, emitter)
@@ -258,6 +260,7 @@ func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 	if msg.Event.Type == av.EventEndOfStream {
 		s.result.Reset()
 		if err := s.decoder.FlushInto(ctx, &s.result); err != nil {
+			payload.DropFrames(s.result.Frames)
 			return err
 		}
 		if err := s.emitResult(ctx, emitter); err != nil {
@@ -275,6 +278,7 @@ func (s *DecoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 
 	s.result.Reset()
 	if err := s.decoder.DecodeInto(ctx, nil, &s.result); err != nil {
+		payload.DropFrames(s.result.Frames)
 		return err
 	}
 	return s.emitResult(ctx, emitter)
@@ -349,6 +353,7 @@ func (s *EncoderStage) handleEvent(ctx context.Context, msg *pipeline.Message, e
 	if msg.Event.Type == av.EventEndOfStream {
 		s.result.Reset()
 		if err := s.encoder.FlushInto(ctx, &s.result); err != nil {
+			payload.DropPackets(s.result.Packets)
 			return err
 		}
 		return s.emitResult(ctx, emitter)

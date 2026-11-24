@@ -171,8 +171,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 	if err != nil {
 		return err
 	}
-	m.muxer = muxer
-	m.tracks = m.tracks[:0]
+	tracks := make([]formatTrack, 0, len(streams))
 	for i := range streams {
 		track, err := trackFromAVStream(streams[i], uint32(i+1))
 		if err != nil {
@@ -186,8 +185,10 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 		if err != nil {
 			return err
 		}
-		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: codecDelayNS, opus: track.Codec == CodecOpus})
+		tracks = append(tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: codecDelayNS, opus: track.Codec == CodecOpus})
 	}
+	m.muxer = muxer
+	m.tracks = tracks
 	m.closed = false
 	return nil
 }

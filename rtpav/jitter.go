@@ -25,6 +25,7 @@ type JitterRing struct {
 	expected    uint16
 	// head is the slot holding expected; it moves only with expected.
 	head  int
+	count int
 	stats JitterStats
 }
 
@@ -53,6 +54,7 @@ func (b *JitterRing) Reset() {
 	b.ssrc = 0
 	b.expected = 0
 	b.head = 0
+	b.count = 0
 	b.stats = JitterStats{}
 }
 
@@ -98,6 +100,7 @@ func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterR
 	if slot.full {
 		b.stats.Reordered++
 	} else {
+		b.count++
 		b.stats.Buffered++
 	}
 	slot.seq = seq
@@ -134,6 +137,7 @@ func (b *JitterRing) PopInto(ctx context.Context, pkt *rtp.Packet) (bool, error)
 	*pkt = *slot.packet
 	slot.full = false
 	slot.packet = nil
+	b.count--
 	b.advance()
 	b.stats.Expected = b.expected
 	b.stats.Buffered = b.buffered()
@@ -157,6 +161,7 @@ func (b *JitterRing) FlushInto(ctx context.Context, out *JitterResult) error {
 		}
 		slot.full = false
 		slot.packet = nil
+		b.count--
 		remaining--
 	}
 	b.stats.Expected = b.expected
@@ -186,6 +191,7 @@ func (b *JitterRing) dropUntil(seq uint16) {
 	}
 	b.expected = seq
 	b.head = 0
+	b.count = 0
 	b.stats.Buffered = 0
 }
 
@@ -200,6 +206,7 @@ func (b *JitterRing) drainReady(out *JitterResult) error {
 		}
 		slot.full = false
 		slot.packet = nil
+		b.count--
 		b.advance()
 	}
 }
@@ -220,13 +227,7 @@ func (b *JitterRing) advance() {
 }
 
 func (b *JitterRing) buffered() int {
-	var count int
-	for i := range b.slots {
-		if b.slots[i].full {
-			count++
-		}
-	}
-	return count
+	return b.count
 }
 
 func appendReady(out *JitterResult, pkt *rtp.Packet) error {

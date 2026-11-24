@@ -187,7 +187,11 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 		if err != nil {
 			return err
 		}
-		resampleS16(dst, input, inputSamples, f.inputRate, f.inputChannels, inputSamples, f.outputRate, f.outputChannels)
+		if f.inputChannels == f.outputChannels {
+			copy(dst[:inputSamples*f.inputChannels*2], input[:inputSamples*f.inputChannels*2])
+		} else {
+			remapS16Channels(dst, input, inputSamples, f.inputChannels, f.outputChannels)
+		}
 		return nil
 	}
 
@@ -436,58 +440,12 @@ func inputSampleCount(frame *av.Frame, channels int) int {
 		available = len(frame.Planes[0].Buffer.Bytes) / (channels * 2)
 	}
 	if frame.Audio != nil && frame.Audio.Samples > 0 {
-		if available != 0 && frame.Audio.Samples > available {
+		if frame.Audio.Samples > available {
 			return available
 		}
 		return frame.Audio.Samples
 	}
 	return available
-}
-
-func resampledSampleCount(inputSamples int, inputRate int, outputRate int) int {
-	if inputSamples <= 0 || inputRate <= 0 || outputRate <= 0 {
-		return 0
-	}
-	return (inputSamples*outputRate + inputRate - 1) / inputRate
-}
-
-func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputChannels int, outputSamples int, outputRate int, outputChannels int) {
-	if inputRate == outputRate && inputSamples == outputSamples {
-		if inputChannels == outputChannels {
-			copy(dst[:inputSamples*inputChannels*2], src[:inputSamples*inputChannels*2])
-			return
-		}
-		remapS16Channels(dst, src, inputSamples, inputChannels, outputChannels)
-		return
-	}
-	step := inputRate / outputRate
-	rem := inputRate % outputRate
-	inv := (uint64(1)<<32 + uint64(outputRate)/2) / uint64(outputRate)
-	base, frac := 0, 0
-	for sample := range outputSamples {
-		next := base + 1
-		w := 0
-		if next >= inputSamples {
-			next = base
-		} else if frac != 0 {
-			w = int((uint64(frac) * inv) >> 16)
-		}
-		for channel := range outputChannels {
-			a := mixedSampleS16(src, base, inputChannels, channel, outputChannels)
-			value := a
-			if w != 0 {
-				b := mixedSampleS16(src, next, inputChannels, channel, outputChannels)
-				value = a + ((b-a)*w)>>16
-			}
-			putS16(dst, (sample*outputChannels+channel)*2, int16(value))
-		}
-		base += step
-		frac += rem
-		if frac >= outputRate {
-			frac -= outputRate
-			base++
-		}
-	}
 }
 
 func remapS16Channels(dst []byte, src []byte, samples int, inputChannels int, outputChannels int) {

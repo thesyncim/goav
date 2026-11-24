@@ -915,7 +915,7 @@ func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
 	return nil
 }
 
-func (d *Demuxer) ensurePacketIndex() error {
+func (d *Demuxer) ensurePacketIndex() (retErr error) {
 	if d.packetIndexBuilt {
 		if len(d.packetIndex) == 0 {
 			return ErrInvalidData
@@ -930,6 +930,12 @@ func (d *Demuxer) ensurePacketIndex() error {
 	if buildClusters {
 		d.clusterIndex = d.clusterIndex[:0]
 	}
+	saved := d.reader.Offset()
+	defer func() {
+		if retErr != nil {
+			_, _ = d.seeker.Seek(saved, io.SeekStart)
+		}
+	}()
 	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
 		return err
 	}
@@ -1361,7 +1367,7 @@ func (d *Demuxer) clusterForTime(timeNS int64) (clusterIndexEntry, error) {
 	return d.clusterIndex[index-1], nil
 }
 
-func (d *Demuxer) ensureClusterIndex() error {
+func (d *Demuxer) ensureClusterIndex() (retErr error) {
 	if d.clusterIndexBuilt {
 		if len(d.clusterIndex) == 0 {
 			return ErrInvalidData
@@ -1372,6 +1378,12 @@ func (d *Demuxer) ensureClusterIndex() error {
 		return ErrNonSeekableReader
 	}
 	d.clusterIndex = d.clusterIndex[:0]
+	saved := d.reader.Offset()
+	defer func() {
+		if retErr != nil {
+			_, _ = d.seeker.Seek(saved, io.SeekStart)
+		}
+	}()
 	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
 		return err
 	}

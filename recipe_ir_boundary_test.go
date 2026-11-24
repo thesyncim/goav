@@ -269,7 +269,7 @@ var compileBoundary = map[string][]string{
 	"JoinSyncPTS":                  {"join_sync.go"},
 	"MediaTransform":               {"join_arm_file.go", "media_transform.go"},
 	"PlannedNode":                  {"runtime_plan.go"},
-	"RealtimeRecipeBufferCapacity": {"buffer_policy.go"},
+	"RealtimeRecipeBufferCapacity": {"attach_plan.go"},
 	"SelectBufferCapacity":         {"join_lower.go"},
 	"TapRef":                       {"attach_plan.go"},
 	"TransformResample":            {"join_arm_file.go"},
