@@ -2,9 +2,9 @@ package gopus
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -51,6 +51,7 @@ type Encoder struct {
 	delay int
 	head  []byte
 	end   av.Timestamp
+	pcm   []int16
 }
 
 // opusDefaultFrameMS is the re-framing duration when the input frame size is
@@ -347,16 +348,23 @@ func (e *Encoder) pcmFromFrame(frame *av.Frame) ([]int16, int, error) {
 	if len(data)%2 != 0 {
 		return nil, 0, codec.ErrUnsupportedFormat
 	}
-	pcm := unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(data))), len(data)/2)
+	n := len(data) / 2
 	samples := frame.Audio.Samples
 	if samples == 0 {
-		if channels <= 0 || len(pcm)%channels != 0 {
+		if channels <= 0 || n%channels != 0 {
 			return nil, 0, codec.ErrUnsupportedFormat
 		}
-		samples = len(pcm) / channels
+		samples = n / channels
 	}
-	if len(pcm) != samples*channels {
+	if n != samples*channels {
 		return nil, 0, codec.ErrUnsupportedFormat
+	}
+	if cap(e.pcm) < n {
+		e.pcm = make([]int16, n)
+	}
+	pcm := e.pcm[:n]
+	for i := range n {
+		pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
 	}
 	return pcm, samples, nil
 }

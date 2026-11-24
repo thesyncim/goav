@@ -1,11 +1,13 @@
 package cameraav
 
 import (
+	"sync"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 )
+
+var frameSlots sync.Map // *av.Frame -> *frameSlot
 
 // Fixed storage makes the capture memory budget independent of GC, consumer
 // retention, and frame rate. A slot is reusable only after the producer has
@@ -18,7 +20,7 @@ type framePool struct {
 	evict   func() bool
 }
 type frameSlot struct {
-	frame          av.Frame // Must remain first: releaseFrame recovers the owning slot.
+	frame          av.Frame
 	video          av.VideoFrame
 	planes         [3]av.Plane
 	owners         [3]cameraPlaneOwner
@@ -28,10 +30,8 @@ type frameSlot struct {
 	planeTemplates [3]av.Plane
 }
 
-// Enforce the containing-slot conversion used by releaseFrame at compile time.
-var _ [0]byte = [unsafe.Offsetof(frameSlot{}.frame)]byte{}
-
 type cameraPlaneOwner struct {
+	slot *frameSlot
 	refs atomic.Int32
 }
 
@@ -56,6 +56,7 @@ func newFramePool(c Config) *framePool {
 		data := make([]byte, ysize*3/2)
 		spans := [][]byte{data[:ysize:ysize], data[ysize : ysize+ysize/4 : ysize+ysize/4], data[ysize+ysize/4:]}
 		for j := range s.owners {
+			s.owners[j].slot = s
 			s.owners[j].refs.Store(1)
 			s.planes[j] = av.Plane{Buffer: av.Buffer{Bytes: spans[j], Owner: &s.owners[j]}, Stride: c.Width}
 			if j != 0 {
@@ -63,6 +64,7 @@ func newFramePool(c Config) *framePool {
 			}
 		}
 		s.frameTemplate, s.videoTemplate, s.planeTemplates = s.frame, s.video, s.planes
+		frameSlots.Store(&s.frame, s)
 	}
 	return p
 }
@@ -101,11 +103,13 @@ func (p *framePool) takeAvailable(pts int64) *av.Frame {
 	return nil
 }
 
-// f is always the original borrowed frame produced by this pool, never a Ref.
-// The frame is the first struct member, so its address is the slot address.
-// This stays a Go pointer throughout; no uintptr or hidden GC reference is used.
+// releaseFrame returns a borrowed pool frame to its owning slot.
 func releaseFrame(f *av.Frame) {
-	slot := (*frameSlot)(unsafe.Pointer(f))
+	v, ok := frameSlots.Load(f)
+	if !ok {
+		return
+	}
+	slot := v.(*frameSlot)
 	for i := range slot.owners {
 		slot.owners[i].Release()
 	}
@@ -113,6 +117,7 @@ func releaseFrame(f *av.Frame) {
 }
 func (p *framePool) close() {
 	for i := range p.slots {
+		frameSlots.Delete(&p.slots[i].frame)
 		for j := range p.slots[i].owners {
 			p.slots[i].owners[j].Release()
 		}

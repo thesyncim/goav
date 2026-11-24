@@ -15,7 +15,7 @@ matches your work. Each topic has one owning doc.
 - [`FLOW_CONTROL.md`](FLOW_CONTROL.md): when a live branch cannot keep up and you must choose what blocks, drops, or buffers.
 - [`CONTROL_PLANE.md`](CONTROL_PLANE.md): when a running task must be inspected or steered from outside the process (`ctlserver`, `goav ctl`).
 - [`RTP_WEBRTC.md`](RTP_WEBRTC.md): when media arrives over RTP or WebRTC through Pion.
-- [`CLI.md`](CLI.md): the pipeline language and `goav run`, `describe`, `explain`, and `ctl`: recipes as text, for the command line, config files, and control sockets.
+- [`CLI.md`](CLI.md): the pipeline language and `goav run`, `describe`, `explain`, `play`, `cameras`, and `ctl`: recipes as text, for the command line, config files, and control sockets.
 
 ## Extending
 
@@ -29,6 +29,7 @@ matches your work. Each topic has one owning doc.
 - [`ERROR_CATALOG.md`](ERROR_CATALOG.md): to look up one error code, its fix, and the test that pins it.
 - [`API_SURFACE.md`](API_SURFACE.md): before adding an export, or to find the tier a symbol belongs to.
 - [`COMPATIBILITY.md`](COMPATIBILITY.md): to learn what v1 promises, what stays governed pre-v1, and what each tag must state.
+- [`RUNTIME_CONTRACTS.md`](RUNTIME_CONTRACTS.md): runtime lifecycle, transition outcomes, branch isolation, and deferred cleanup contracts.
 - [`PERFORMANCE.md`](PERFORMANCE.md): before trusting or making a performance claim; it separates proven, measured, and not proven.
 
 ## Project

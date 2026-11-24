@@ -137,16 +137,16 @@ baseline.
 - Extension seams stay documented and tested but may grow as new adapters need
   capability. Every new exported symbol needs the API-restraint checklist in
   [`API_SURFACE.md`](API_SURFACE.md).
-- Nested modules: `rtpav`, `webrtcav`, and `playoutav` tag independently as
-  `rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`, and `playoutav/vX.Y.Z`. A root release
-  does not freeze them, and a transport release names the root version it was
+- Nested modules: `rtpav`, `webrtcav`, `playoutav`, `player`, `cameraav`,
+  `libcodec`, `gplcodec`, `goavtest/expect`, and `cmd/goav` tag independently
+  with prefixed tags (e.g. `rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`). A root release
+  does not freeze them, and a nested release names the root version it was
   tested against.
 - Example modules: `examples/*` are copyable adoption artifacts, not imported
   library APIs. They keep building but promise nothing beyond the public APIs
   they demonstrate.
-- Minimum Go version: the module directive is `go 1.27.0`. First-party codec
-  backends (`goav1`, `gopus`) require Go 1.27, so the floor is a minor
-  version, not a patch-level toolchain pin. Before a tag, the maintainer
+- Minimum Go version: the module directive is `go 1.27.4`. First-party codec
+  backends (`goav1`, `gopus`) require Go 1.27. Before a tag, the maintainer
   confirms it is the intended minimum for every module being released.
 
 ## Draft compatibility note: root v0.1.0
@@ -154,8 +154,8 @@ baseline.
 Compatibility note for root v0.1.0
 
 Minimum Go version:
-- go 1.27.0. The root module, nested transport modules, and standalone example
-  modules use the 1.27 module floor as of 2026-10-17. The maintainer still
+- go 1.27.4. The root module, nested modules, and standalone example
+  modules use the 1.27.4 module floor. The maintainer still
   needs to confirm this floor before signing the tag. Release security evidence
   should use the latest Go 1.27 patch toolchain; the local govulncheck pass
   below used Go 1.27.2.
@@ -163,8 +163,9 @@ Minimum Go version:
 Module scope:
 - Root module tag: `v0.1.0`.
 - Nested modules are not included in the root tag. `rtpav`, `webrtcav`,
-  `playoutav`, `player`, `libcodec`, `gplcodec`, and `cmd/goav` require separate prefixed tags if released.
-- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`libcodec`/`gplcodec`,
+  `playoutav`, `player`, `cameraav`, `libcodec`, `gplcodec`, `goavtest/expect`,
+  and `cmd/goav` require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav`/`player`/`cameraav`/`libcodec`/`gplcodec`/`goavtest/expect`,
   then `cmd/goav`, as needed.
 
 API surface:

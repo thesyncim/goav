@@ -11,9 +11,9 @@ Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
 
 The root module requires only the four permissively licensed codec backends
 ([Licenses](#licenses)), pinned with their licenses by
-`TestRootModuleDependencyPurity`. `rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`,
-`gplcodec`, and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
-Pion dependency tree, the player Ebitengine and oto, library codecs purego,
+`TestRootModuleDependencyPurity`. `rtpav`, `webrtcav`, `playoutav`, `player`, `cameraav`,
+`libcodec`, `gplcodec`, `goavtest/expect`, and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
+Pion dependency tree, the player Ebitengine and oto, library codecs and macOS camera capture purego,
 while playout is dependency-light. Importing goav alone never pulls them in.
 Import paths are unchanged.
 
@@ -33,7 +33,7 @@ is `adapterproof/adapter_compat_test.go`.
   caller-owned result structs and preallocated output buffers.
 - Do not register encode/decode factories until the path is real. Optional
   modules stay behind build tags or compile-safe descriptor packages.
-- H.264 packets travel as Annex B inside goav: demuxers of length-prefixed
+- H.264 and HEVC packets travel as Annex B inside goav: demuxers of length-prefixed
   containers (MP4, Matroska) convert on read, their muxers convert back, and
   the Annex B muxer writes the avcC parameter sets ahead of keyframes.
 - A packet's PTS is the time of its first decoded sample, so codec delay shows
@@ -54,7 +54,7 @@ is `adapterproof/adapter_compat_test.go`.
   factories may implement `codec.DecodeStateFactory` so high-level runtimes can
   provision adapter state.
 
-For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
+For codecs outside the built-in Opus, AAC, VP8, VP9, H264, HEVC, and AV1 specs, use
 `codec.Codec(id, media, ...)` in recipes; the planner treats custom specs the
 same as built-ins.
 
@@ -156,7 +156,7 @@ keeps copyleft out of the default import graph.
 | `goh264` | LGPL-2.1 | only with `-tags goav_goh264`. A statically linked Go binary must let its users relink a modified goh264: ship your source or object files with it |
 | `goaac` (FAAD2) | GPL-2.0-or-later | only through `gplcodec.AAC()`; the binary must then be GPL (3.0 or later, the version compatible with Apache-2.0). It decodes on darwin/arm64 and linux/arm64 only (`unsupported-target` elsewhere, pinned by `TestDescriptorStatusMatchesBackendAvailability`) |
 | Pion (`rtpav`, `webrtcav`) | MIT | importing those modules |
-| Ebitengine, oto, purego (`player`, `libcodec`) | Apache-2.0 | importing those modules; libraries `libcodec` loads keep their own terms (table above) |
+| Ebitengine, oto, purego (`player`, `cameraav`, `libcodec`) | Apache-2.0 | importing those modules; libraries `libcodec` loads keep their own terms (table above) |
 
 Without `gplcodec`, AAC needs a library backend: `libcodec.AudioToolbox()` on macOS; elsewhere a
 refused AAC decode names both options.
@@ -176,6 +176,7 @@ live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 | `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
 | `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WithToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
 | `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.WithToken(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
+| `camera` | `cameraav.Scheme{}` | live in: cgo-free local camera capture (`cameraav`) with bounded zero-allocation frame delivery |
 
 WHEP and WHIP share `WithToken`, `WithHTTPClient`, and `WithSession`; a refused request is a
 `*webrtcav.StatusError`, which names no URL, and only 307/308 redirects are followed.

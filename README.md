@@ -174,8 +174,9 @@ your own sources, codecs, and sinks plug in through small interfaces
   See [Flow control](docs/FLOW_CONTROL.md).
 - **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
   over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
-- **Fast without assembly.** Graph, codec, and filter stages allocate nothing per message,
-  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths (faster in our 128x96 microbenchmarks on one machine; not a general claim).
+- **Fast without codec assembly or `unsafe`.** The root module uses no `unsafe`
+  and no assembly; graph, codec, and filter stages allocate nothing per message,
+  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths.
   See [Performance](docs/PERFORMANCE.md).
 
 ## Modules
@@ -190,7 +191,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/cameraav`](cameraav) | cgo-free camera capture with bounded zero-allocation frame delivery |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 | [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
-| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, ctl ([CLI](docs/CLI.md)) |
+| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, cameras, ctl ([CLI](docs/CLI.md)) |
 | [`goav/goavtest/expect`](goavtest/expect) | go-cmp assertions for pipeline tests |
 
 The core module never pulls in Pion.

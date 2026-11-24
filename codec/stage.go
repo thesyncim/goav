@@ -150,7 +150,6 @@ func (s *DecoderStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
-// DescribeNode reports the stage's spec entry for Describe.
 // OutputStreamID is the stream id the stage stamps on the packets it emits,
 // or empty when packets keep the encoder's own ids.
 func (s *EncoderStage) OutputStreamID() av.StreamID {
@@ -160,6 +159,7 @@ func (s *EncoderStage) OutputStreamID() av.StreamID {
 	return s.outputStreamID
 }
 
+// DescribeNode reports the stage's spec entry for Describe.
 func (s *EncoderStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }

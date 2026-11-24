@@ -19,6 +19,10 @@
   2×2 I420 blocks), skip per-request timer/query allocations in `hls.Server`, and
   remove per-message reflection and redundant fanout/depth work in `pipeline` and
   join stages.
+- Remove all remaining `unsafe` usage from the root module (`adapters/gopus`) and
+  all avoidable non-FFI `unsafe` from `cameraav/pool.go`, `gplcodec`, and
+  `libcodec/kit` using reusable scratch buffers and `encoding/binary` (zero
+  allocations in steady state).
 - Add `codec.AAC(...)` constructor matching `codec.Opus(...)`, `Window.RuntimeOptions()`
-  in `player`, fix the README quick-start file leak, and document `goav/cameraav` in
-  the module inventory.
+  in `player`, fix the README quick-start file leak, and polish `README.md`, `docs/`,
+  and stale code comments to reflect current modules, codecs, and Go 1.27.4.
