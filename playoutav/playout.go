@@ -230,18 +230,21 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			ended[message.Event.StreamID] = struct{}{}
 		}
 		msg := pipelineMessage(message)
-		if err := emit(ctx, emitter, &msg); err != nil {
+		if err := s.emit(ctx, emitter, &msg); err != nil {
 			return err
 		}
 	}
 	for i := range s.streams {
+		if s.closed.Load() || ctx.Err() != nil {
+			return nil
+		}
 		id := s.streams[i].ID
 		if _, ok := ended[id]; ok {
 			continue
 		}
 		event := av.Event{Type: av.EventEndOfStream, StreamID: id}
 		msg := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
-		if err := emit(ctx, emitter, &msg); err != nil {
+		if err := s.emit(ctx, emitter, &msg); err != nil {
 			return err
 		}
 	}
@@ -269,16 +272,17 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func emit(ctx context.Context, emitter pipeline.Emitter, msg *pipeline.Message) error {
+func (s *source) emit(ctx context.Context, emitter pipeline.Emitter, msg *pipeline.Message) error {
 	for {
 		err := emitter.Emit(ctx, msg)
 		if err == nil {
 			return nil
 		}
 		if errors.Is(err, pipeline.ErrBackpressure) {
-			if ctx.Err() != nil {
+			if s.closed.Load() || ctx.Err() != nil {
 				return nil
 			}
+			time.Sleep(time.Millisecond)
 			continue
 		}
 		if errors.Is(err, pipeline.ErrClosed) {
@@ -403,8 +407,8 @@ func normalizeMessages(streams []av.Stream, messages []Message) ([]Message, erro
 	return out, nil
 }
 
-func resolveStream(streams map[av.StreamID]av.Stream, streamCount int, id av.StreamID) (av.Stream, error) {
-	if id == "" && streamCount == 1 {
+func resolveStream(streams map[av.StreamID]av.Stream, _ int, id av.StreamID) (av.Stream, error) {
+	if id == "" && len(streams) == 1 {
 		for _, stream := range streams {
 			return stream, nil
 		}

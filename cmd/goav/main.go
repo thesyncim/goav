@@ -170,7 +170,10 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		switch {
-		case arg == "--control-token" && i+1 < len(argv):
+		case arg == "--control-token":
+			if i+1 >= len(argv) {
+				return "", nil, errors.New("goav ctl: --control-token needs a file path")
+			}
 			tokenFile = argv[i+1]
 			i++
 		case strings.HasPrefix(arg, "--control-token="):

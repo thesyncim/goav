@@ -108,7 +108,9 @@ func (g *directRunner) awaitStopped(ctx context.Context, n *directNode, timeout 
 }
 
 func (g *directRunner) Run(ctx context.Context) error {
-	g.startFaultDomains(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	g.mu.RLock()
 	if g.closed {
 		g.mu.RUnlock()
@@ -135,6 +137,7 @@ func (g *directRunner) Run(ctx context.Context) error {
 		// (keeping Run allocation-free); the record still makes the node's
 		// error the result when the source swallows it.
 		g.fail.reset(nil)
+		g.startFaultDomains(ctx)
 		run := sources[0]
 		g.fail.report(run.source.Start(ctx, run.emitter))
 		return g.fail.err()

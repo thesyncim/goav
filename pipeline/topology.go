@@ -318,6 +318,9 @@ func (t *topology[P]) Connect(route Route) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return ErrClosed
+	}
 	if err := t.strategy.mutable(false); err != nil {
 		return err
 	}
@@ -365,6 +368,9 @@ func (t *topology[P]) Disconnect(route Route) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return ErrClosed
+	}
 	if err := t.strategy.mutable(false); err != nil {
 		return err
 	}
@@ -627,6 +633,9 @@ func (t *topology[P]) Stats() GraphStats {
 func (t *topology[P]) SetNodePaused(ref NodeRef, paused bool) error {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	if t.closed {
+		return ErrClosed
+	}
 	index, ok := t.index[ref.String()]
 	if !ok || index < 0 || index >= len(t.nodes) || !t.nodes[index].base().active {
 		return ErrUnknownNode
