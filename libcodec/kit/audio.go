@@ -82,6 +82,10 @@ func (e *audioEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
+	if e.session != nil {
+		_ = e.Close()
+	}
+	e.closed = false
 	e.config = AudioConfig{SampleRate: rate, Channels: channels, Realtime: config.LowLatency || config.Realtime, Knobs: knobs}
 	params.ID, params.Type = e.c.ID, av.MediaAudio
 	params.SampleRate, params.ClockRate, params.Channels = rate, uint32(rate), channels
@@ -313,6 +317,10 @@ func (d *audioDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	if err != nil {
 		return err
 	}
+	if d.session != nil {
+		_ = d.Close()
+	}
+	d.closed = false
 	d.session = session
 	return nil
 }

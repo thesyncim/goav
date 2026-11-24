@@ -116,9 +116,13 @@ func (e *encoder) Encode(s *kit.Samples, emit func(*kit.Packet) error) error {
 	}
 	e.fifo = append(e.fifo, s.PCM...)
 	for len(e.fifo) >= frames*e.channels {
+		prevLen := len(e.fifo)
 		produced, err := e.pull(emit)
-		if err != nil || !produced {
+		if err != nil {
 			return err
+		}
+		if !produced && len(e.fifo) >= prevLen {
+			return nil
 		}
 	}
 	return nil
@@ -126,13 +130,16 @@ func (e *encoder) Encode(s *kit.Samples, emit func(*kit.Packet) error) error {
 
 func (e *encoder) Flush(emit func(*kit.Packet) error) error {
 	e.draining = true
-	for range 64 {
+	for {
+		prevLen := len(e.fifo)
 		produced, err := e.pull(emit)
-		if err != nil || !produced {
+		if err != nil {
 			return err
 		}
+		if !produced && (len(e.fifo) == 0 || len(e.fifo) >= prevLen) {
+			return nil
+		}
 	}
-	return nil
 }
 
 // pull asks the converter for one packet and emits it.

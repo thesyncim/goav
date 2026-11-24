@@ -436,7 +436,7 @@ func MuxCompatibilityDiagnostics(issues []MuxCompatibilityIssue) []plan.Diagnost
 
 func CodecMedia(codecID av.CodecID) av.MediaType {
 	switch codecID {
-	case av.CodecOpus, av.CodecPCM:
+	case av.CodecOpus, av.CodecPCM, av.CodecAAC, av.CodecVorbis, av.CodecFLAC:
 		return av.MediaAudio
 	case av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecHEVC, av.CodecAV1:
 		return av.MediaVideo

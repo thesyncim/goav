@@ -77,12 +77,15 @@ func (d *decoder) Decode(unit *kit.Packet, emit func(*kit.Picture) error) error 
 }
 
 func (d *decoder) output(emit func(*kit.Picture) error) error {
-	if d.info.BufferStatus != 1 || d.dst[0] == nil {
+	if d.info.BufferStatus != 1 || d.dst[0] == nil || d.dst[1] == nil || d.dst[2] == nil {
 		return nil
 	}
 	s := d.info.System
 	w, h := int(s.Width), int(s.Height)
 	ys, cs := int(s.Stride[0]), int(s.Stride[1])
+	if w <= 0 || h <= 0 || ys <= 0 || cs <= 0 {
+		return nil
+	}
 	ch := (h + 1) / 2
 	pic := kit.Picture{
 		Width:   w,

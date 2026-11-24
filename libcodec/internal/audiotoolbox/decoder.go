@@ -112,7 +112,14 @@ func (d *decoder) Close() error {
 // descriptor AudioToolbox reads as an AAC magic cookie.
 func esds(asc []byte) []byte {
 	descriptor := func(tag byte, body []byte) []byte {
-		out := []byte{tag, 0x80, 0x80, 0x80, byte(len(body))}
+		n := len(body)
+		out := []byte{
+			tag,
+			byte((n>>21)&0x7f | 0x80),
+			byte((n>>14)&0x7f | 0x80),
+			byte((n>>7)&0x7f | 0x80),
+			byte(n & 0x7f),
+		}
 		return append(out, body...)
 	}
 	specific := descriptor(0x05, asc)
