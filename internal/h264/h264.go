@@ -100,17 +100,18 @@ func AppendAnnexB(dst []byte, src []byte, lengthSize int) ([]byte, error) {
 		if pos+lengthSize > len(src) {
 			return dst, ErrInvalid
 		}
-		size := 0
+		var size uint64
 		for i := range lengthSize {
-			size = size<<8 | int(src[pos+i])
+			size = size<<8 | uint64(src[pos+i])
 		}
 		pos += lengthSize
-		if size == 0 || pos+size > len(src) {
+		if size == 0 || size > uint64(len(src)-pos) {
 			return dst, ErrInvalid
 		}
+		n := int(size)
 		dst = append(dst, StartCode[:]...)
-		dst = append(dst, src[pos:pos+size]...)
-		pos += size
+		dst = append(dst, src[pos:pos+n]...)
+		pos += n
 	}
 	return dst, nil
 }

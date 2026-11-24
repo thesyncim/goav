@@ -134,19 +134,40 @@ func readBinaryPayload(r io.Reader, size uint64) ([]byte, error) {
 	return readSizedPayload(r, size)
 }
 
+// maxPayloadReadSize bounds any single Matroska metadata, string, binary, or
+// unknown element payload read into memory so a crafted element header cannot
+// trigger an OOM allocation.
+const maxPayloadReadSize = 16 << 20
+
 func readSizedPayload(r io.Reader, size uint64) ([]byte, error) {
 	if err := validatePayloadReadSize(r, size); err != nil {
 		return nil, err
 	}
-	payload := make([]byte, int(size))
-	if _, err := io.ReadFull(r, payload); err != nil {
+	if size == 0 {
+		return []byte{}, nil
+	}
+	const directAllocCap = 64 << 10
+	if size <= directAllocCap {
+		payload := make([]byte, int(size))
+		if _, err := io.ReadFull(r, payload); err != nil {
+			return nil, err
+		}
+		return payload, nil
+	}
+	// Read large declared payloads incrementally so a truncated stream with a
+	// huge declared size fails at EOF without pre-allocating the full size.
+	payload, err := io.ReadAll(io.LimitReader(r, int64(size)))
+	if err != nil {
 		return nil, err
+	}
+	if uint64(len(payload)) != size {
+		return nil, io.ErrUnexpectedEOF
 	}
 	return payload, nil
 }
 
 func validatePayloadReadSize(r io.Reader, size uint64) error {
-	if size > maxIntValue {
+	if size > maxIntValue || size > maxPayloadReadSize {
 		return ErrInvalidData
 	}
 	reader, ok := r.(*ebml.Reader)
@@ -164,11 +185,17 @@ func readUnknownElementPayload(r *ebml.Reader, header ebml.Header) (UnknownEleme
 	if header.Size.Unknown {
 		return UnknownElement{}, ErrUnsupportedElement
 	}
-	if header.Size.Value > uint64(^uint(0)>>1) ||
-		uint64(header.HeaderSize) > uint64(^uint(0)>>1)-header.Size.Value {
+	if err := validatePayloadReadSize(r, header.Size.Value); err != nil {
+		return UnknownElement{}, err
+	}
+	if uint64(header.HeaderSize) > uint64(maxIntValue)-header.Size.Value {
 		return UnknownElement{}, ErrInvalidData
 	}
-	raw := make([]byte, int(uint64(header.HeaderSize)+header.Size.Value))
+	body, err := readSizedPayload(r, header.Size.Value)
+	if err != nil {
+		return UnknownElement{}, err
+	}
+	raw := make([]byte, header.HeaderSize+len(body))
 	idWidth, err := ebml.EncodeID(raw, header.ID)
 	if err != nil {
 		return UnknownElement{}, err
@@ -179,9 +206,7 @@ func readUnknownElementPayload(r *ebml.Reader, header ebml.Header) (UnknownEleme
 	if _, err := ebml.EncodeSizeVINTWidth(raw[idWidth:], header.Size.Value, header.Size.Width); err != nil {
 		return UnknownElement{}, err
 	}
-	if err := r.ReadFull(raw[header.HeaderSize:]); err != nil {
-		return UnknownElement{}, err
-	}
+	copy(raw[header.HeaderSize:], body)
 	return UnknownElement{ID: uint64(header.ID), Raw: raw}, nil
 }
 

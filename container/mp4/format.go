@@ -3,6 +3,7 @@ package mp4
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -211,9 +212,15 @@ func resolveReaderAt(input format.Input) (io.ReaderAt, int64, error) {
 	if reader, ok := input.Reader.(io.ReaderAt); ok {
 		return reader, sizeOf(input.Size, input.Reader), nil
 	}
-	buf, err := io.ReadAll(input.Reader)
+	// Cap in-memory buffering of non-ReaderAt streams so an unbounded stream
+	// cannot OOM the process.
+	const maxBufferedInput = 256 << 20
+	buf, err := io.ReadAll(io.LimitReader(input.Reader, maxBufferedInput+1))
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(buf) > maxBufferedInput {
+		return nil, 0, fmt.Errorf("%w: non-seekable input exceeds %d bytes", ErrInvalidData, maxBufferedInput)
 	}
 	return bytes.NewReader(buf), int64(len(buf)), nil
 }

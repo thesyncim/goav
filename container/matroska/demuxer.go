@@ -6048,8 +6048,10 @@ func (d *Demuxer) readPlainBlockFrame(track Track, frameSize int, headerStrip []
 	return d.finishTrackCodecPayload(track, dst)
 }
 
+const maxBlockFrameSize = 64 << 20
+
 func (d *Demuxer) readBlockFrameScratch(frameSize int) ([]byte, error) {
-	if frameSize < 0 {
+	if frameSize < 0 || frameSize > maxBlockFrameSize {
 		return nil, ErrInvalidData
 	}
 	if cap(d.contentBuffer) < frameSize {

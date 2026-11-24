@@ -287,6 +287,9 @@ func (s *testPipelineSource) DescribeNode() pipeline.NodeSpec {
 
 func (s *testPipelineSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
 		index, discontinuity, done := s.nextFrame()
 		if done {
 			event := av.Event{Type: av.EventEndOfStream, StreamID: av.StreamID(s.src.name)}
@@ -366,6 +369,13 @@ func (s *testPipelineSource) emit(ctx context.Context, emitter pipeline.Emitter,
 			if ctx.Err() != nil {
 				return nil
 			}
+			s.mu.Lock()
+			closed := s.closed
+			s.mu.Unlock()
+			if closed {
+				return nil
+			}
+			time.Sleep(time.Millisecond)
 		case errors.Is(err, pipeline.ErrClosed):
 			return nil
 		default:

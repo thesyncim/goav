@@ -32,9 +32,7 @@ func (t *muxTrack) configure() error {
 	case av.CodecH264:
 		switch {
 		case len(extra) > 4 && extra[0] == 1:
-			// Samples are written with 4-byte lengths, whatever the record said.
 			t.config = append([]byte(nil), extra...)
-			t.config[4] = 0xfc | 3
 		case h264.HasStartCode(extra):
 			if record, err := h264.ConfigFromAnnexB(extra); err == nil {
 				t.config = record
@@ -92,6 +90,9 @@ func (t *muxTrack) sampleData(payload []byte, keyframe bool) ([]byte, error) {
 			if record, err := h264.ConfigFromAnnexB(payload); err == nil {
 				t.config = record
 			}
+		} else if len(t.config) > 4 && t.config[0] == 1 {
+			// Annex B samples are rewritten with 4-byte NAL length prefixes.
+			t.config[4] = 0xfc | 3
 		}
 		var err error
 		t.scratch, err = h264.AppendAVC(t.scratch[:0], payload)

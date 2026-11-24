@@ -20,10 +20,13 @@ const maxRequestBytes = 1 << 20
 // request and receive its response; GET .../events streams the task's events
 // as server-sent events, filtered by ?types=a,b and ?stream=id.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.token != "" && !s.tokenMatches(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, "unauthorized: send Authorization: Bearer <token>", http.StatusUnauthorized)
-		return
+	if s.token != "" {
+		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || !s.tokenMatches(tok) {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "unauthorized: send Authorization: Bearer <token>", http.StatusUnauthorized)
+			return
+		}
 	}
 	switch {
 	case r.Method == http.MethodPost:
@@ -58,6 +61,12 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	if s.sseWatches.Add(1) > maxSSEWatches {
+		s.sseWatches.Add(-1)
+		http.Error(w, "too many concurrent event streams", http.StatusTooManyRequests)
+		return
+	}
+	defer s.sseWatches.Add(-1)
 	var filters []goav.EventFilter
 	if types := r.URL.Query().Get("types"); types != "" {
 		var ts []av.EventType

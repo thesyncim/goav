@@ -95,7 +95,11 @@ func (l *Ladder) segment(v *variant, codecs []string, width, height, bytes int, 
 		return err
 	}
 	if _, err := f.Write([]byte(text)); err != nil {
-		f.Close()
+		if a, ok := f.(aborter); ok {
+			a.abort()
+		} else {
+			_ = f.Close()
+		}
 		return err
 	}
 	if err := f.Close(); err != nil {

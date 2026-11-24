@@ -388,20 +388,29 @@ func (s *whepSession) pump(reader TrackReader) {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
 		if err != nil {
 			remaining := s.activeTracks.Add(-1)
-			if errors.Is(err, io.EOF) && !s.isClosed() && remaining > 0 {
+			if errors.Is(err, io.EOF) && remaining > 0 {
 				if streams, serr := reader.Streams(s.ctx); serr == nil && len(streams) > 0 {
 					stream := streams[0]
 					removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
-					select {
-					case s.events <- *cloneReadEvent(removed):
-					default:
+					s.mu.Lock()
+					closed := s.closed
+					if !closed {
+						select {
+						case s.events <- *cloneReadEvent(removed):
+						default:
+						}
 					}
-					select {
-					case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
-					case <-s.ctx.Done():
+					s.mu.Unlock()
+					if !closed {
+						select {
+						case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
+						case <-s.ctx.Done():
+						}
+						return
 					}
+				} else if !s.isClosed() {
+					return
 				}
-				return
 			}
 			select {
 			case s.records <- whepRecord{packet: packet, event: cloneReadEvent(event), payloads: payloads, err: err}:

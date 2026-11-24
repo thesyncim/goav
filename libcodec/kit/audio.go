@@ -208,7 +208,7 @@ func (e *audioEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if e.closed {
+	if e.closed || e.session == nil {
 		return codec.ErrClosed
 	}
 	switch event.Type {

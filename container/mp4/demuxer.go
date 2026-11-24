@@ -127,10 +127,10 @@ func (d *Demuxer) ReadInto(dst []byte, out *Sample) error {
 	item := d.order[d.pos]
 	tr := d.tracks[item.track]
 	s := tr.samples[item.sample]
-	// A sample cannot extend past the file; reject before allocating so a
-	// crafted sample size cannot exhaust memory. The comparison is written so
-	// it cannot overflow for an offset near MaxInt64.
-	if s.size < 0 || s.offset < 0 || s.offset > d.size || int64(s.size) > d.size-s.offset {
+	// A sample cannot extend past the file or exceed the per-sample safety cap;
+	// reject before allocating so a crafted sample size cannot exhaust memory.
+	const maxSampleSize = 64 << 20
+	if s.size < 0 || s.size > maxSampleSize || s.offset < 0 || s.offset > d.size || int64(s.size) > d.size-s.offset {
 		return ErrInvalidData
 	}
 	if cap(dst) < s.size {
