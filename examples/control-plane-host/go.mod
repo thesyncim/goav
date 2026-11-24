@@ -5,10 +5,10 @@ go 1.27.4
 require github.com/thesyncim/goav v0.1.0-alpha.1
 
 require (
-	github.com/thesyncim/goav1 v0.0.0-20261124192411-065c2686bf5f // indirect
+	github.com/thesyncim/goav1 v0.0.0-20261124211549-c9e69d7fdff6 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
-	github.com/thesyncim/gopus v0.2.7 // indirect
-	github.com/thesyncim/govpx v0.0.0-20261018202535-159dce5b931a // indirect
+	github.com/thesyncim/gopus v0.2.8 // indirect
+	github.com/thesyncim/govpx v0.1.0 // indirect
 )
 
 replace github.com/thesyncim/goav => ../..
