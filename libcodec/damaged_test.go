@@ -2,6 +2,7 @@ package libcodec_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -49,6 +50,9 @@ func TestDamagedUnitDecodesOn(t *testing.T) {
 			frames, after, requests := 0, 0, 0
 			for i := range packets {
 				if err := decoder.DecodeInto(context.Background(), &packets[i], &result); err != nil {
+					if errors.Is(err, codec.ErrUnavailable) {
+						t.Skip(err)
+					}
 					t.Fatalf("unit %d of %d (damaged %d): %v", i, len(packets), damaged, err)
 				}
 				frames += len(result.Frames)

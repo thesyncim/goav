@@ -78,7 +78,13 @@ func newDecoder(f *frameworks, id av.CodecID, config kit.VideoConfig) (kit.Video
 	d.record = callbackRecord{Callback: decodedCallback(), Refcon: d.handle}
 	if s := f.vt.decompressionCreate(0, d.format, spec, attributes, &d.record, &d.session); s != 0 {
 		d.Close()
-		return nil, &kit.Error{Backend: Name, Op: "open", Name: "VTDecompressionSessionCreate", Reason: "refused the stream (status " + status(s) + ")", Fix: "VideoToolbox decodes 8-bit 4:2:0 " + string(id) + " in hardware; use another backend for other formats"}
+		var cause error
+		switch s {
+		case -12906, -12913, -19092:
+			// Hardware decoder unavailable (e.g. paravirtualized macOS VM).
+			cause = kit.ErrUnavailable
+		}
+		return nil, &kit.Error{Backend: Name, Op: "open", Name: "VTDecompressionSessionCreate", Reason: "refused the stream (status " + status(s) + ")", Fix: "VideoToolbox decodes 8-bit 4:2:0 " + string(id) + " in hardware; use another backend for other formats", Err: cause}
 	}
 	return d, nil
 }
