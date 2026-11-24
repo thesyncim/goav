@@ -194,12 +194,13 @@ func (a *videoFrameAssembler) push(
 	if a.dropping {
 		return nil
 	}
-	if end && len(a.buffer) == 0 {
-		return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out)
-	}
 	if len(a.buffer)+len(frame) > cap(a.buffer) {
 		a.dropUntilSync()
 		return ErrFrameTooLarge
+	}
+	if end && len(a.buffer) == 0 {
+		a.started = false
+		return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out)
 	}
 	a.buffer = append(a.buffer, frame...)
 	if !end {

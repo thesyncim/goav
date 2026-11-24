@@ -56,10 +56,8 @@ func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	n := header&av1NMask != 0
 	count := int((header & av1WMask) >> 4)
 
-	if n || !z {
-		d.fragment = d.fragment[:0]
-	}
 	if d.assembler.dropping {
+		d.fragment = d.fragment[:0]
 		if !n || z {
 			d.assembler.requestSync = true
 			d.assembler.resetPartial()
@@ -70,13 +68,14 @@ func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 		d.assembler.dropping = false
 		d.assembler.requestSync = false
 	} else if !d.assembler.started {
+		d.fragment = d.fragment[:0]
 		if z {
 			d.assembler.dropUntilSync()
 			return d.assembler.emitPendingSync(out)
 		}
 		d.begin(pkt.Timestamp)
 		d.keyframe = n
-	} else if pkt.Timestamp != d.assembler.timestamp {
+	} else if pkt.Timestamp != d.assembler.timestamp || (len(d.fragment) > 0 && !z) || (len(d.fragment) == 0 && z) {
 		d.fragment = d.fragment[:0]
 		d.keyframe = false
 		d.assembler.dropUntilSync()
@@ -84,9 +83,9 @@ func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	}
 
 	if err := d.appendPayload(pkt.Payload, z, y, count); err != nil {
-		if err == ErrFrameTooLarge {
-			d.assembler.dropUntilSync()
-		}
+		d.fragment = d.fragment[:0]
+		d.keyframe = false
+		d.assembler.dropUntilSync()
 		return err
 	}
 	if !pkt.Marker || y || len(d.fragment) != 0 {
@@ -139,6 +138,7 @@ func (d *AV1Depacketizer) begin(timestamp uint32) {
 func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count int) error {
 	offset := 1
 	elementIndex := 0
+	elements := 0
 	for offset < len(payload) {
 		isFirst := elementIndex == 0
 		isLast := count != 0 && elementIndex == count-1
@@ -161,6 +161,7 @@ func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count in
 		}
 		element := payload[offset : offset+length]
 		offset += length
+		elements++
 
 		if isFirst && z {
 			if len(d.fragment) == 0 {
@@ -191,7 +192,7 @@ func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count in
 		}
 		elementIndex++
 	}
-	if count != 0 && elementIndex != count-1 {
+	if count != 0 && elements != count {
 		return ErrInvalidPayload
 	}
 	return nil

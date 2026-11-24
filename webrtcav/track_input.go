@@ -26,9 +26,11 @@ func Track(track *webrtc.TrackRemote, options ...rtpav.ReceiveOption) *rtpav.Inp
 func trackInput(reader TrackReader, options ...rtpav.ReceiveOption) *rtpav.Input {
 	streams, err := reader.Streams(context.Background())
 	if err != nil {
+		_ = reader.Close()
 		return failedInput(err, options...)
 	}
 	if len(streams) == 0 {
+		_ = reader.Close()
 		return failedInput(ErrUnknownStream, options...)
 	}
 	derived := trackReceiveOptions(streams[0])

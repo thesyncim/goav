@@ -1,8 +1,8 @@
-github.com/thesyncim/goav1 v0.0.0-20261124192411-065c2686bf5f h1:9Tj8uY4PVNi0PgTqVQsPgtN5nOqc4+n1+fL0c7Juaw0=
-github.com/thesyncim/goav1 v0.0.0-20261124192411-065c2686bf5f/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
+github.com/thesyncim/goav1 v0.0.0-20261124211549-c9e69d7fdff6 h1:Ef0EDht/vHdkvwxdP9g8EqoztIQ2CojQj2g5K5FvPWM=
+github.com/thesyncim/goav1 v0.0.0-20261124211549-c9e69d7fdff6/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
-github.com/thesyncim/gopus v0.2.7 h1:Q+Xqd8cTHonPpMrl5UAhTieDovGLPHzQwOFMXyANG4g=
-github.com/thesyncim/gopus v0.2.7/go.mod h1:8IrziSlWi6Mi3N/AyqaMJWdxs8Ph84M9/TYZuaxRge8=
-github.com/thesyncim/govpx v0.0.0-20261018202535-159dce5b931a h1:NIUp9Ir2/cvq/yY3XnNLQG68w4hxFoW2DnkBVu/lu8o=
-github.com/thesyncim/govpx v0.0.0-20261018202535-159dce5b931a/go.mod h1:bxZZI6FtuU7RhnMFkJifbnI46berKKUYFf5mC2k+984=
+github.com/thesyncim/gopus v0.2.8 h1:dfM1X3iBYDPYr585nIBh21mZB5N2oy4dZxuCOxqGroQ=
+github.com/thesyncim/gopus v0.2.8/go.mod h1:8IrziSlWi6Mi3N/AyqaMJWdxs8Ph84M9/TYZuaxRge8=
+github.com/thesyncim/govpx v0.1.0 h1:JwaZndDmA5qWYY7I98CuSI6vA9ZPjueNjI3ZBrdKljM=
+github.com/thesyncim/govpx v0.1.0/go.mod h1:ive9Rszl/n2QsDYJml2tvfx7FF1AZDrKQ57wycUQhno=

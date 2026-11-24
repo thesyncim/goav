@@ -39,7 +39,7 @@ func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pip
 	}
 	id, media := codecIDFromMIME(capability.MimeType)
 	// One sequence across the senders that feed the track, one per attach.
-	continued := &continuity{clock: max(capability.ClockRate, 1)}
+	continued := &continuity{clock: max(capability.ClockRate, 1), epoch: time.Now()}
 	continued.seq.Store(rand.Uint32())
 	return &egress{
 		name:    "webrtc-track",
@@ -156,6 +156,7 @@ type trackOut struct {
 	continuity *continuity
 	shift      uint32
 	shifted    bool
+	sent       rtp.Packet
 }
 
 // continuity is one local track's RTP sequence and timeline, kept across the
@@ -163,6 +164,7 @@ type trackOut struct {
 // the remote peer already plays instead of jumping to a new one.
 type continuity struct {
 	clock   uint32
+	epoch   time.Time
 	started atomic.Bool
 	seq     atomic.Uint32
 	lastTS  atomic.Uint32
@@ -175,22 +177,22 @@ func (out *trackOut) write(packet *rtp.Packet) error {
 	if c == nil {
 		return out.track.WriteRTP(packet)
 	}
-	now := time.Now()
+	nowMono := int64(time.Since(c.epoch))
 	if !out.shifted {
 		out.shifted = true
 		if c.started.Load() {
-			elapsed := max(now.Sub(time.Unix(0, c.lastAt.Load())), 0)
+			elapsed := time.Duration(max(nowMono-c.lastAt.Load(), 0))
 			next := c.lastTS.Load() + uint32(elapsed.Seconds()*float64(c.clock)) + 1
 			out.shift = next - packet.Timestamp
 		}
 	}
-	sent := *packet
-	sent.SequenceNumber = uint16(c.seq.Add(1))
-	sent.Timestamp += out.shift
-	c.lastTS.Store(sent.Timestamp)
-	c.lastAt.Store(now.UnixNano())
+	out.sent = *packet
+	out.sent.SequenceNumber = uint16(c.seq.Add(1))
+	out.sent.Timestamp += out.shift
+	c.lastTS.Store(out.sent.Timestamp)
+	c.lastAt.Store(nowMono)
 	c.started.Store(true)
-	return out.track.WriteRTP(&sent)
+	return out.track.WriteRTP(&out.sent)
 }
 
 func newTrackWriter(pc *webrtc.PeerConnection, failed <-chan struct{}) *trackWriter {
@@ -374,7 +376,7 @@ func h264ProfileLevelID(extra []byte) string {
 	case len(extra) >= 4 && extra[0] == 1:
 		return hex.EncodeToString(extra[1:4])
 	default:
-		for i := 0; i+7 < len(extra); i++ {
+		for i := 0; i+7 <= len(extra); i++ {
 			if extra[i] == 0 && extra[i+1] == 0 && extra[i+2] == 1 && extra[i+3]&0x1f == 7 {
 				return hex.EncodeToString(extra[i+4 : i+7])
 			}

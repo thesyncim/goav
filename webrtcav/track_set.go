@@ -2,6 +2,7 @@ package webrtcav
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/thesyncim/goav/av"
@@ -118,6 +119,18 @@ func (s *TrackSet) AcceptRemote(ctx context.Context, remote RemoteTrack) (TrackU
 	}
 	if err := s.addReader(stream.ID, reader); err != nil {
 		reader.Close()
+		if errors.Is(err, ErrStreamExists) {
+			if existing, ok := s.Reader(stream.ID); ok {
+				if err := existing.UpdateTrack(ctx, remote); err != nil {
+					return TrackUpdate{}, err
+				}
+				updated, err := firstReaderStream(ctx, existing)
+				if err != nil {
+					return TrackUpdate{}, err
+				}
+				return TrackUpdate{Kind: TrackReplaced, Reader: existing, Stream: updated}, nil
+			}
+		}
 		return TrackUpdate{}, err
 	}
 	return TrackUpdate{Kind: TrackAdded, Reader: reader, Stream: stream}, nil

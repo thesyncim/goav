@@ -64,7 +64,7 @@ func (d *SequenceDetector) Push(pkt *rtp.Packet, missing []uint16) SequenceState
 			missing = missing[:n+1]
 			missing[n] = cur
 		}
-		d.advanceNoCycle(seq)
+		d.advance(seq)
 	default:
 		// Late or reordered packet. Expected sequence remains unchanged.
 	}
@@ -86,9 +86,5 @@ func (d *SequenceDetector) advance(seq uint16) {
 	if seq == 0xffff {
 		d.cycles++
 	}
-	d.expected = seq + 1
-}
-
-func (d *SequenceDetector) advanceNoCycle(seq uint16) {
 	d.expected = seq + 1
 }

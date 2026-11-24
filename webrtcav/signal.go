@@ -59,6 +59,12 @@ func keepMethodOnRedirect(client *http.Client) *http.Client {
 		if req.Response != nil && req.Response.StatusCode != http.StatusTemporaryRedirect && req.Response.StatusCode != http.StatusPermanentRedirect {
 			return http.ErrUseLastResponse
 		}
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return errors.New("redirect to unsupported scheme " + req.URL.Scheme)
+		}
+		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("redirect downgrades https to " + req.URL.Scheme)
+		}
 		if check != nil {
 			return check(req, via)
 		}
@@ -265,7 +271,7 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 	s.mu.Lock()
 	s.resource = resolved
 	s.etag = resp.Header.Get("ETag")
-	s.patches = strings.Contains(resp.Header.Get("Accept-Patch"), "application/trickle-ice-sdpfrag")
+	s.patches = acceptsTricklePatch(resp.Header.Values("Accept-Patch"))
 	s.linked = linkedICEServers(resp.Header.Values("Link"))
 	s.posted = true
 	s.mu.Unlock()
@@ -382,6 +388,14 @@ func (s *signaling) patch(candidates []webrtc.ICECandidateInit, end bool) {
 		return
 	}
 	resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if newETag := resp.Header.Get("ETag"); newETag != "" {
+			s.mu.Lock()
+			s.etag = newETag
+			s.mu.Unlock()
+		}
+		return
+	}
 	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
 		s.mu.Lock()
 		s.patches = false
@@ -424,8 +438,18 @@ func (s *signaling) plainError(err error) error {
 	return err
 }
 
-// sdpFragment renders candidates as RFC 8840 SDP fragment lines for the
-// bundled first media section.
+func acceptsTricklePatch(values []string) bool {
+	for _, v := range values {
+		if strings.Contains(strings.ToLower(v), "application/trickle-ice-sdpfrag") {
+			return true
+		}
+	}
+	return false
+}
+
+// sdpFragment renders candidates as RFC 8840 SDP fragment lines grouped by
+// their target media section (SDPMid / SDPMLineIndex), skipping rejected
+// sections and empty candidates.
 func sdpFragment(local *webrtc.SessionDescription, candidates []webrtc.ICECandidateInit, end bool) ([]byte, error) {
 	if local == nil {
 		return nil, errors.New("no local description")
@@ -434,18 +458,88 @@ func sdpFragment(local *webrtc.SessionDescription, candidates []webrtc.ICECandid
 	if err != nil || len(parsed.MediaDescriptions) == 0 {
 		return nil, errors.New("no media section")
 	}
-	media := parsed.MediaDescriptions[0]
-	ufrag, _ := media.Attribute("ice-ufrag")
-	pwd, _ := media.Attribute("ice-pwd")
-	mid, _ := media.Attribute("mid")
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n", ufrag, pwd)
-	fmt.Fprintf(&b, "m=%s 9 %s %s\r\na=mid:%s\r\n", media.MediaName.Media, strings.Join(media.MediaName.Protos, "/"), strings.Join(media.MediaName.Formats, " "), mid)
-	for _, candidate := range candidates {
-		fmt.Fprintf(&b, "a=%s\r\n", candidate.Candidate)
+	sessionUfrag, _ := parsed.Attribute("ice-ufrag")
+	sessionPwd, _ := parsed.Attribute("ice-pwd")
+
+	defaultIdx := 0
+	for i, md := range parsed.MediaDescriptions {
+		if md.MediaName.Port.Value != 0 {
+			defaultIdx = i
+			break
+		}
 	}
-	if end {
-		b.WriteString("a=end-of-candidates\r\n")
+	grouped := make([][]string, len(parsed.MediaDescriptions))
+	used := make([]bool, len(parsed.MediaDescriptions))
+	for _, candidate := range candidates {
+		if candidate.Candidate == "" {
+			continue
+		}
+		idx := -1
+		if candidate.SDPMid != nil && *candidate.SDPMid != "" {
+			for i, md := range parsed.MediaDescriptions {
+				if mid, _ := md.Attribute("mid"); mid == *candidate.SDPMid {
+					idx = i
+					break
+				}
+			}
+		}
+		if idx < 0 && candidate.SDPMLineIndex != nil {
+			if i := int(*candidate.SDPMLineIndex); i >= 0 && i < len(parsed.MediaDescriptions) {
+				idx = i
+			}
+		}
+		if idx < 0 {
+			idx = defaultIdx
+		}
+		if parsed.MediaDescriptions[idx].MediaName.Port.Value == 0 {
+			continue
+		}
+		grouped[idx] = append(grouped[idx], candidate.Candidate)
+		used[idx] = true
+	}
+	anyUsed := false
+	for _, u := range used {
+		if u {
+			anyUsed = true
+			break
+		}
+	}
+	if !anyUsed {
+		if !end {
+			return nil, errors.New("no candidates")
+		}
+		used[defaultIdx] = true
+	}
+
+	var b bytes.Buffer
+	wroteHeader := false
+	for i, md := range parsed.MediaDescriptions {
+		if !used[i] {
+			continue
+		}
+		ufrag, _ := md.Attribute("ice-ufrag")
+		if ufrag == "" {
+			ufrag = sessionUfrag
+		}
+		pwd, _ := md.Attribute("ice-pwd")
+		if pwd == "" {
+			pwd = sessionPwd
+		}
+		if ufrag == "" || pwd == "" {
+			return nil, errors.New("missing ice credentials")
+		}
+		mid, _ := md.Attribute("mid")
+		if !wroteHeader {
+			fmt.Fprintf(&b, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n", ufrag, pwd)
+			wroteHeader = true
+		}
+		fmt.Fprintf(&b, "m=%s 9 %s %s\r\na=mid:%s\r\n", md.MediaName.Media, strings.Join(md.MediaName.Protos, "/"), strings.Join(md.MediaName.Formats, " "), mid)
+		for _, cand := range grouped[i] {
+			fmt.Fprintf(&b, "a=%s\r\n", cand)
+		}
+		if end {
+			b.WriteString("a=end-of-candidates\r\n")
+		}
 	}
 	return b.Bytes(), nil
 }
@@ -470,7 +564,7 @@ func linkedICEServers(values []string) []webrtc.ICEServer {
 				val = strings.Trim(strings.TrimSpace(val), `"`)
 				switch strings.ToLower(strings.TrimSpace(key)) {
 				case "rel":
-					ice = slices.Contains(strings.Fields(val), "ice-server")
+					ice = slices.Contains(strings.Fields(strings.ToLower(val)), "ice-server")
 				case "username":
 					server.Username = val
 				case "credential":
@@ -491,6 +585,8 @@ func splitOutsideQuotes(s string, sep byte) []string {
 	quoted, angled, start := false, false, 0
 	for i := 0; i < len(s); i++ {
 		switch c := s[i]; {
+		case c == '\\' && quoted && i+1 < len(s):
+			i++
 		case c == '"':
 			quoted = !quoted
 		case c == '<' && !quoted:

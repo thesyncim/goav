@@ -158,22 +158,12 @@ func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpa
 			return nil, nil, nil, err
 		}
 		packet, _, err := state.reader.ReadRTP()
-		replaced, stopped := r.endRead(ctx, &state, packet)
+		event, replaced, stopped := r.endRead(ctx, &state, packet, err)
 		if stopped != nil {
 			return nil, nil, nil, stopped
 		}
 		if replaced {
 			continue // an old packet or replacement wake-up cannot escape
-		}
-		var event *av.Event
-		if err == nil || errors.Is(err, io.EOF) {
-			r.mu.Lock()
-			if state.configGen != r.deliveredConfig {
-				e := trackCodecChangedEvent(state.stream)
-				event = &e
-				r.deliveredConfig = state.configGen
-			}
-			r.mu.Unlock()
 		}
 		if errors.Is(err, io.EOF) {
 			r.emit(av.Event{Type: av.EventEndOfStream, StreamID: state.stream.ID, Epoch: state.stream.Epoch})
@@ -218,8 +208,9 @@ func (r *trackReader) beginRead(ctx context.Context) (trackReadState, error) {
 	return trackReadState{r.reader, r.remote.Stream, r.remote.Payloads, r.readerGen, r.configGen}, nil
 }
 
-// endRead releases the read and reports why it was interrupted, if it was.
-func (r *trackReader) endRead(ctx context.Context, state *trackReadState, packet *rtp.Packet) (bool, error) {
+// endRead releases the read and reports why it was interrupted, if it was,
+// along with any pending codec-change event for this read's configuration.
+func (r *trackReader) endRead(ctx context.Context, state *trackReadState, packet *rtp.Packet, readErr error) (*av.Event, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	replaced := state.readerGen != r.readerGen
@@ -229,18 +220,30 @@ func (r *trackReader) endRead(ctx context.Context, state *trackReadState, packet
 	}
 	r.inflight = nil
 	if r.closed {
-		return false, ErrClosed
+		return nil, false, ErrClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, replaced, err
+	}
+	if replaced {
+		return nil, true, nil
 	}
 	// An unfamiliar payload type identifies a renegotiated packet returned
 	// by the old read. A type the captured map knows keeps the old generation.
-	if !replaced && packet != nil && state.payloads != nil && r.remote.Payloads != nil {
+	if packet != nil && state.payloads != nil && r.remote.Payloads != nil {
 		if _, old := state.payloads.Lookup(packet.PayloadType); !old {
 			if _, next := r.remote.Payloads.Lookup(packet.PayloadType); next {
 				state.stream, state.payloads, state.configGen = r.remote.Stream, r.remote.Payloads, r.configGen
 			}
 		}
 	}
-	return replaced, ctx.Err()
+	var event *av.Event
+	if (readErr == nil || errors.Is(readErr, io.EOF)) && state.configGen != r.deliveredConfig {
+		e := trackCodecChangedEvent(state.stream)
+		event = &e
+		r.deliveredConfig = state.configGen
+	}
+	return event, false, nil
 }
 
 // interrupt wakes the in-flight read for the context hook of generation gen;
@@ -363,6 +366,9 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 		r.remote.Codec = update.Codec
 	}
 	if replacement != nil {
+		if r.inflight == nil {
+			r.expired = nil
+		}
 		r.expireLocked()
 		r.readerGen++
 		r.reader = replacement
@@ -546,6 +552,13 @@ func mergeStream(base av.Stream, update av.Stream) av.Stream {
 }
 
 func mergeCodecParameters(base *av.CodecParameters, update av.CodecParameters) {
+	if update.ID != "" && base.ID != "" && update.ID != base.ID {
+		base.Profile = ""
+		base.Level = ""
+		base.ExtraData = av.Buffer{}
+		base.PixelFormat = ""
+		base.SampleFormat = ""
+	}
 	if update.ID != "" {
 		base.ID = update.ID
 	}
