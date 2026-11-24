@@ -44,9 +44,8 @@ repository page should say meanwhile.
    ```
 
 4. Confirm the minimum Go version in every module that will be tagged.
-5. Write the compatibility note using `docs/COMPATIBILITY.md`: public API
-   changes, behavior changes, adapter changes, performance methodology changes,
-   migration notes, and deferred claims.
+5. Write the release notes: public API changes, behavior changes, adapter
+   changes, and migration notes.
 
 ## Acceptance Gate Matrix
 
@@ -62,7 +61,7 @@ say why.
 | README and docs examples | `TestReadmeGoExamplesCompile`, the doc-citation pins in `docs_citation_contract_test.go`, package-doc smoke, and example-module tests pass. |
 | Error catalog | `TestErrorCatalogDocMatchesErrcodeCatalog` pins the catalog to every code a refusal can carry; the acceptance tests own the public constants. |
 | Hot-path allocations | Allocation guard tests and benchmark smoke pass without documented regressions. |
-| Public API restraint | `docs/API_SURFACE.md` (the reviewed approved list), the PR template, and CI package-doc smoke show no ungoverned public package or undocumented export. Any new export needs the API-restraint checklist. |
+| Public API restraint | CI package-doc smoke and `go vet ./...` show no undocumented or broken public exports. |
 | CI artifacts | Coverage, fuzz-smoke, benchmark/perf-lab, benchstat, CodeQL, govulncheck, and release artifacts are present for the release candidate. |
 | Performance claims | `docs/PERFORMANCE.md` classifies claims as proven, measured, experimental, or not proven; release notes avoid comparative leadership without reproducible numbers; any release performance claim cites a perf-lab manifest generated with `PERF_RELEASE_QUALITY=true`. |
 
@@ -193,6 +192,5 @@ The local trust files are part of the adoption surface and should agree with
 this page: [`README.md`](../README.md) (status, badges, doc links),
 `CHANGELOG.md` (release notes), [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 (workflow and changelog rules), [`SECURITY.md`](../SECURITY.md) (private
-vulnerability reporting), `SUPPORT.md` (pre-v1 support expectations),
-`.github/PULL_REQUEST_TEMPLATE.md` (reviewer evidence checklist), and
-[`COMPATIBILITY.md`](COMPATIBILITY.md) (the compatibility note).
+vulnerability reporting), `SUPPORT.md` (pre-v1 support expectations), and
+`.github/PULL_REQUEST_TEMPLATE.md` (reviewer evidence checklist).

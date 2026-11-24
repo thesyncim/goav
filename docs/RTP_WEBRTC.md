@@ -21,9 +21,7 @@ can use `rtpav.Static`, while wrappers can use `rtpav.DecorateReader`.
 Maps tagged with `PayloadCodec.StreamID` preserve independent per-track epochs,
 even for tracks sharing a payload type and codec. Untagged maps use session-wide
 epochs and must distinguish streams by codec. WHEP aggregates ordered records
-through a bounded queue, including configuration and terminal errors. See
-[Runtime contracts](RUNTIME_CONTRACTS.md#rtp-reader-migration) for event ordering,
-removal/re-addition, borrowed-memory lifetime, and epoch rules.
+through a bounded queue, including configuration and terminal errors.
 
 ## Receive path
 

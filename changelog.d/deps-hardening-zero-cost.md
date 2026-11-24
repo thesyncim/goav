@@ -33,6 +33,10 @@
   - Unify `flow.Sync` with `flow.Playout`'s fluent style
     (`flow.Sync(name).WithTolerance(d).WithDropLate()`), rename
     `runconfig.Scheme` → `runconfig.WithScheme`, make `cameraav.Scheme()` a
-    constructor function, and add `bundle.All() runconfig.Option`.
-- Remove archived planning docs under `docs/history/` (~130 KB) and align
-  `README.md`, `docs/`, and code comments with the current API and Go 1.27.4.
+    constructor function, rename `codec.CodecSettings` → `codec.Settings` and
+    `codec.Codec` → `codec.New`, remove dead `codec.Auto`/`codec.Copy`
+    constructors, and add `bundle.All()` and `bundle.Probe(...)`.
+- Remove archived planning docs (`docs/history/`) and redundant/stale governance
+  docs (`API_SURFACE.md`, `COMPATIBILITY.md`, `GSTREAMER_ALTERNATIVE.md`,
+  `RUNTIME_CONTRACTS.md`), slim `ROADMAP.md`, and align `README.md`, `docs/`,
+  and code comments with the current API and Go 1.27.4.

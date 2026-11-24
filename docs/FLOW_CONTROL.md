@@ -160,5 +160,4 @@ An Output may declare `.OnFailure(goav.IsolateBranch)`; the default is
 `goav.FailTask`. Returned handler errors retire only its validated exclusive
 suffix. This does not isolate stalls: a full blocking queue still paces its
 shared producer. Snapshots retain failed branch and destination outcomes;
-Detach joins pending retirement. See [Runtime contracts](RUNTIME_CONTRACTS.md)
-for topology refusals, finalization states, and all-outputs-isolated semantics.
+`Detach` joins pending retirement.

@@ -85,12 +85,9 @@ settings that change them. The adapter side of this contract is in
 
 ## Join Constructors
 
-> **Governed pre-v1.** `Mix`, `Composite`, `Select`, and custom `Join` are
-> implemented, tested, and governed, but they are not part of the v1 front-door
-> promise. See [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1). The same applies to runtime
-> `Attach`/`Detach`/`Rebranch` referenced in the "Runtime attach" column — that
-> column documents behaviour available through `rt.Build` and its `Task`,
-> which is advanced surface beyond the `rt.Run` front door.
+> **Pre-v1.** `Mix`, `Composite`, `Select`, custom `Join`, and runtime
+> `Attach`/`Detach`/`Rebranch` are implemented and tested, and may still evolve
+> before v1.
 
 Joins are the N-to-1 side of the same grammar: each constructor takes two or
 more Streams, lowers to one planned convergence node, and returns a Stream.
