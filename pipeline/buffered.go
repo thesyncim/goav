@@ -981,9 +981,6 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode) {
 
 // staleByLatency reports whether a queued message has waited longer than the
 // node's MaxLatency and should be shed instead of delivered late (realtime).
-
-// staleByLatency reports whether a queued message has waited longer than the
-// node's MaxLatency and should be shed instead of delivered late (realtime).
 func (g *bufferedRunner) staleByLatency(node *bufferedNode, msg *bufferedMessage) bool {
 	return node.policy.MaxLatency > 0 &&
 		!msg.enqueuedAt.IsZero() &&

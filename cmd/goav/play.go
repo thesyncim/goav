@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -75,19 +76,29 @@ func playCommand(argv []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, playUsage)
 		return 0
 	}
+	probeCtx, stopProbe := signal.NotifyContext(context.Background(), stopSignals()...)
+	defer stopProbe()
 	program := args.program
 	switch {
 	case isPlayURL(program):
-		if program, err = urlProgram(program); err != nil {
+		if program, err = urlProgram(probeCtx, program); err != nil {
 			printErr(stderr, err)
 			return 1
 		}
 	default:
-		if info, err := os.Stat(program); err == nil && !info.IsDir() {
-			if program, err = fileProgram(program); err != nil {
+		info, statErr := os.Stat(program)
+		if statErr == nil && !info.IsDir() {
+			if program, err = fileProgram(probeCtx, program); err != nil {
 				printErr(stderr, err)
 				return 1
 			}
+		} else if !strings.ContainsAny(program, " \t\n!") {
+			if statErr != nil {
+				printErr(stderr, fmt.Errorf("goav play: %w", statErr))
+			} else {
+				printErr(stderr, fmt.Errorf("goav play: %s is a directory", program))
+			}
+			return 1
 		}
 	}
 	rest := []string{"--runtime", args.runtime}
@@ -114,7 +125,7 @@ func isPlayURL(s string) bool {
 	return ok && len(scheme) > 0
 }
 
-func urlProgram(rawURL string) (string, error) {
+func urlProgram(ctx context.Context, rawURL string) (string, error) {
 	in := quote(rawURL)
 	title := quote(rawURL)
 	scheme, _, _ := strings.Cut(rawURL, "://")
@@ -125,9 +136,12 @@ func urlProgram(rawURL string) (string, error) {
 	audio := "uri " + in + " ! audio ! decode ! resample 48000 2 ! play title=" + title
 	var errs []error
 	for _, program := range []string{video + "\n" + audio, video, audio} {
-		err := buildsOn(program)
+		err := buildsOn(ctx, program)
 		if err == nil {
 			return program, nil
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
 		}
 		errs = append(errs, err)
 	}
@@ -137,23 +151,26 @@ func urlProgram(rawURL string) (string, error) {
 // fileProgram is the program that plays a file: its video and its audio,
 // whichever it carries, decoded to play. The streams are found by building
 // the candidates, which reads the container header but plays nothing.
-func fileProgram(path string) (string, error) {
+func fileProgram(ctx context.Context, path string) (string, error) {
 	in := quote(path)
 	title := quote(filepath.Base(path))
 	video := "file " + in + " ! video ! decode ! play title=" + title
 	audio := "file " + in + " ! audio ! decode ! resample 48000 2 ! play title=" + title
 	var errs []error
 	for _, program := range []string{video + "\n" + audio, video, audio} {
-		err := buildsOn(program)
+		err := buildsOn(ctx, program)
 		if err == nil {
 			return program, nil
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
 		}
 		errs = append(errs, err)
 	}
 	return "", fmt.Errorf("goav play: %s has no playable video or audio: %w", path, errs[0])
 }
 
-func buildsOn(program string) error {
+func buildsOn(ctx context.Context, program string) error {
 	files := &probeFiles{}
 	defer files.close()
 	outs, err := launch.Compile(program, launch.Files(files), cliURIs, launch.Use(newWindow().Element()))
@@ -164,7 +181,7 @@ func buildsOn(program string) error {
 	if err != nil {
 		return err
 	}
-	task, err := rt.Build(context.Background(), outs...)
+	task, err := rt.Build(ctx, outs...)
 	if err != nil {
 		return err
 	}

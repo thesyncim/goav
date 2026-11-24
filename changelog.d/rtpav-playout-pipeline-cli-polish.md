@@ -1,4 +1,4 @@
 - Fix `rtpav.Source.closed` data race (`atomic.Bool` + `CompareAndSwap` in `Close`), guard RTCP REMB `NaN`/`Inf`/`int64` overflow in `rtpav/send.go`, and maintain O(1) `JitterRing.count` instead of O(capacity) scanning per RTP packet.
 - Fix `playoutav` 100% CPU busy-spin on `ErrBackpressure`, check `closed`/`ctx.Err()` in trailing EOS emission, and check `len(streams) == 1` in `resolveStream` so adding a stream cannot pick a random stream for empty IDs.
 - Return `pipeline.ErrClosed` from `Connect`/`Disconnect`/`SetNodePaused` on closed graphs, and avoid double `startFaultDomains` setup in `directRunner.Run`.
-- Return an explicit flag error on trailing `--control-token` with no value in `goav ctl`.
+- Harden `cmd/goav`: handle `SIGTERM` alongside `SIGINT` for graceful muxer/HLS finalization, update `--control tcp://...:0` with the actual bound port, guard `files.written` under `files.mu`, report missing files directly in `goav play` with cancelable probing, and return an explicit error on trailing `--control-token` without a path value.

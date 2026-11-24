@@ -56,7 +56,7 @@ func TestPlayRefusesRuntimesWithTheirOwnClock(t *testing.T) {
 func TestPlayFileProgramPicksTheStreamsTheFileHas(t *testing.T) {
 	both := writeClip(t, `testsrc video size=32x24 frames=3 ! encode vp8 ! file clip.webm
 		testsrc audio duration=60ms ! encode opus ! file clip.webm`)
-	program, err := fileProgram(both)
+	program, err := fileProgram(t.Context(), both)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,13 +64,13 @@ func TestPlayFileProgramPicksTheStreamsTheFileHas(t *testing.T) {
 		t.Fatalf("audio+video clip program = %q", program)
 	}
 	videoOnly := writeClip(t, `testsrc video size=32x24 frames=3 ! encode vp8 ! file clip.webm`)
-	if program, err = fileProgram(videoOnly); err != nil {
+	if program, err = fileProgram(t.Context(), videoOnly); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(program, "! video !") || strings.Contains(program, "! audio !") {
 		t.Fatalf("video-only clip program = %q", program)
 	}
-	if _, err := fileProgram(filepath.Join(t.TempDir(), "missing.webm")); err == nil {
+	if _, err := fileProgram(t.Context(), filepath.Join(t.TempDir(), "missing.webm")); err == nil {
 		t.Fatal("missing file produced a program")
 	}
 }
