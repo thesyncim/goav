@@ -153,9 +153,6 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 		Realtime:      config.LowLatency || config.Realtime,
 		Knobs:         knobs,
 	}
-	if err := e.start(); err != nil {
-		return err
-	}
 	params.ID, params.Type = e.c.ID, av.MediaVideo
 	params.Width, params.Height = width, height
 	params.PixelFormat = ""
@@ -169,6 +166,9 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	e.stream = stream
 	e.forceKey = true
 	e.emitFn = e.emit
+	if err := e.start(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -368,7 +368,7 @@ func (e *videoEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if e.closed {
+	if e.closed || e.session == nil {
 		return codec.ErrClosed
 	}
 	switch event.Type {

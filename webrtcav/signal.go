@@ -186,9 +186,11 @@ type signaling struct {
 	ctx      context.Context
 	wake     chan struct{}
 
-	mu       sync.Mutex
-	resource *url.URL
-	etag     string
+	mu           sync.Mutex
+	originHost   string
+	originScheme string
+	resource     *url.URL
+	etag         string
 	// trickle holds candidates gathered after the offer went out, and
 	// trickleEnd the end of gathering, until the trickle loop PATCHes them.
 	trickle    []webrtc.ICECandidateInit
@@ -231,6 +233,8 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 	wait.Stop()
 	// The offer carries every candidate found so far; only later ones trickle.
 	s.mu.Lock()
+	s.originHost = endpoint.Host
+	s.originScheme = endpoint.Scheme
 	local := s.pc.LocalDescription().SDP
 	s.trickle, s.trickleEnd = nil, false
 	s.mu.Unlock()
@@ -251,8 +255,15 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 	if err != nil || resp.Header.Get("Location") == "" {
 		return "", errors.New(s.protocol + ": the answer names no session resource (Location)")
 	}
+	resolved := resp.Request.URL.ResolveReference(location)
+	if resolved.Scheme != "http" && resolved.Scheme != "https" {
+		return "", errors.New(s.protocol + ": session resource Location has unsupported scheme")
+	}
+	if endpoint.Scheme == "https" && resolved.Scheme != "https" {
+		return "", errors.New(s.protocol + ": session resource Location downgrades https to " + resolved.Scheme)
+	}
 	s.mu.Lock()
-	s.resource = resp.Request.URL.ResolveReference(location)
+	s.resource = resolved
 	s.etag = resp.Header.Get("ETag")
 	s.patches = strings.Contains(resp.Header.Get("Accept-Patch"), "application/trickle-ice-sdpfrag")
 	s.linked = linkedICEServers(resp.Header.Values("Link"))
@@ -390,7 +401,12 @@ func (s *signaling) request(ctx context.Context, method string, target *url.URL,
 		req.Header.Set("Content-Type", contentType)
 	}
 	if s.config.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.config.token)
+		s.mu.Lock()
+		originHost, originScheme := s.originHost, s.originScheme
+		s.mu.Unlock()
+		if originHost == "" || (target.Host == originHost && target.Scheme == originScheme) {
+			req.Header.Set("Authorization", "Bearer "+s.config.token)
+		}
 	}
 	resp, err := s.config.client.Do(req)
 	if err != nil {

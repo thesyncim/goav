@@ -739,8 +739,25 @@ func Dir(path string) Store { return dirStore(path) }
 
 type dirStore string
 
+// resolve confines name inside the store directory, rejecting absolute paths,
+// backslashes, and parent-directory traversal.
+func (d dirStore) resolve(name string) (string, error) {
+	if !fs.ValidPath(name) || name == "." || strings.Contains(name, "\\") {
+		return "", fmt.Errorf("hls: invalid store path %q", name)
+	}
+	base := filepath.Clean(string(d))
+	final := filepath.Join(base, filepath.FromSlash(name))
+	if back, err := filepath.Rel(base, final); err != nil || back == ".." || strings.HasPrefix(back, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("hls: path %q escapes directory", name)
+	}
+	return final, nil
+}
+
 func (d dirStore) Create(name string) (io.WriteCloser, error) {
-	final := filepath.Join(string(d), filepath.FromSlash(name))
+	final, err := d.resolve(name)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
 		return nil, err
 	}
@@ -752,7 +769,11 @@ func (d dirStore) Create(name string) (io.WriteCloser, error) {
 }
 
 func (d dirStore) Remove(name string) error {
-	if err := os.Remove(filepath.Join(string(d), filepath.FromSlash(name))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	final, err := d.resolve(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(final); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

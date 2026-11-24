@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -101,9 +102,12 @@ func redirectCapped(client *http.Client, headers http.Header) *http.Client {
 	}
 	own := capped.CheckRedirect
 	capped.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-			for key := range headers {
-				req.Header.Del(key)
+		if len(via) > 0 {
+			orig := via[0].URL
+			if req.URL.Host != orig.Host || (orig.Scheme == "https" && req.URL.Scheme != "https") {
+				for key := range headers {
+					req.Header.Del(key)
+				}
 			}
 		}
 		if own != nil {
@@ -202,8 +206,10 @@ type httpReader struct {
 
 	mu  sync.Mutex
 	url *url.URL
-	// origin is the host the caller named, the one header credentials go to.
-	origin string
+	// origin and originScheme record the caller's host and scheme so custom
+	// headers are never sent cross-origin or across an https->http downgrade.
+	origin       string
+	originScheme string
 	// size is the resource length, or -1 when the server does not say.
 	size   int64
 	ranges bool
@@ -240,7 +246,7 @@ type httpBody struct {
 
 func newHTTPReader(s httpScheme, u *url.URL) *httpReader {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &httpReader{client: s.client, headers: s.headers, ctx: ctx, cancel: cancel, url: u, origin: u.Host, size: -1, chunk: minChunk}
+	return &httpReader{client: s.client, headers: s.headers, ctx: ctx, cancel: cancel, url: u, origin: u.Host, originScheme: u.Scheme, size: -1, chunk: minChunk}
 }
 
 // open probes the resource with a first ranged GET: a 206 means ranges, a
@@ -289,8 +295,8 @@ func (r *httpReader) get(off, length int64, ifRange bool) (*http.Response, error
 	if err != nil {
 		return nil, plainError(err)
 	}
-	if r.url.Host == r.origin {
-		// Credentials go to the URL's host only, not to where it redirected.
+	if r.url.Host == r.origin && (r.originScheme != "https" || r.url.Scheme == "https") {
+		// Credentials go only to the original host and never across an https->http downgrade.
 		for key, values := range r.headers {
 			req.Header[key] = append([]string(nil), values...)
 		}
@@ -348,6 +354,9 @@ func (r *httpReader) Read(p []byte) (int, error) {
 
 // ReadAt reads len(p) bytes at off without moving the position.
 func (r *httpReader) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 {
+		return 0, errors.New("http: negative offset")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	total := 0
@@ -662,15 +671,15 @@ func contentRange(value string) (start, end, total int64, ok bool) {
 		return 0, 0, 0, false
 	}
 	var err error
-	if start, err = strconv.ParseInt(first, 10, 64); err != nil {
+	if start, err = strconv.ParseInt(first, 10, 64); err != nil || start < 0 {
 		return 0, 0, 0, false
 	}
-	if end, err = strconv.ParseInt(last, 10, 64); err != nil || end < start {
+	if end, err = strconv.ParseInt(last, 10, 64); err != nil || end < start || end == math.MaxInt64 {
 		return 0, 0, 0, false
 	}
 	total = -1
 	if size != "*" {
-		if total, err = strconv.ParseInt(size, 10, 64); err != nil {
+		if total, err = strconv.ParseInt(size, 10, 64); err != nil || total <= end {
 			return 0, 0, 0, false
 		}
 	}

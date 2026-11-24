@@ -84,12 +84,22 @@ func (s hlsStore) Create(name string) (io.WriteCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &hlsFile{w: w, publish: func() error {
-		if !renames {
-			return nil
-		}
-		return r.Rename(target, name)
-	}}, nil
+	return &hlsFile{
+		w: w,
+		publish: func() error {
+			if !renames {
+				return nil
+			}
+			return r.Rename(target, name)
+		},
+		cleanup: func() {
+			if renames {
+				if rem, ok := s.fs.(remover); ok {
+					_ = rem.Remove(target)
+				}
+			}
+		},
+	}, nil
 }
 
 func (s hlsStore) Remove(name string) error {
@@ -102,15 +112,28 @@ func (s hlsStore) Remove(name string) error {
 type hlsFile struct {
 	w       io.Writer
 	publish func() error
+	cleanup func()
+	failed  bool
 }
 
-func (f *hlsFile) Write(p []byte) (int, error) { return f.w.Write(p) }
+func (f *hlsFile) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	if err != nil {
+		f.failed = true
+	}
+	return n, err
+}
 
 func (f *hlsFile) Close() error {
+	var closeErr error
 	if c, ok := f.w.(io.Closer); ok {
-		if err := c.Close(); err != nil {
-			return err
+		closeErr = c.Close()
+	}
+	if f.failed || closeErr != nil {
+		if f.cleanup != nil {
+			f.cleanup()
 		}
+		return closeErr
 	}
 	return f.publish()
 }

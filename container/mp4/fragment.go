@@ -210,7 +210,7 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 		if flags&trunSampleFlags != 0 {
 			sflags = p.u32()
 		}
-		if i == 0 {
+		if i == 0 && flags&trunFirstSampleFlags != 0 {
 			sflags = firstFlags
 		}
 		var comp int32

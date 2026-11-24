@@ -200,6 +200,10 @@ func (g *game) setRate() {
 func (g *game) Draw(screen *ebiten.Image) {
 	if f := g.w.engine.NextVideo(g.w.engine.Clock().Now()); f != nil {
 		w, h := f.Video.Width, f.Video.Height
+		if w <= 0 || h <= 0 {
+			f.Release()
+			return
+		}
 		if g.image == nil || w != g.vw || h != g.vh {
 			if g.image != nil {
 				g.image.Deallocate()

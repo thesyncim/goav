@@ -38,6 +38,7 @@ type Server struct {
 	mu          sync.Mutex
 	attachments map[string]goav.Attachment
 	nextWatch   atomic.Uint64
+	sseWatches  atomic.Int32
 }
 
 type method struct {
@@ -224,6 +225,7 @@ func splitAddress(address string) (string, string, error) {
 // in flight, by id, for $/cancelRequest.
 type session struct {
 	mu       sync.Mutex
+	conn     net.Conn
 	enc      *json.Encoder
 	watches  map[string]goav.Subscription
 	inflight map[string]context.CancelFunc
@@ -233,7 +235,9 @@ type session struct {
 const (
 	maxBatchSize         = 64
 	maxWatchesPerSession = 16
+	maxSSEWatches        = 64
 	authTimeout          = 5 * time.Second
+	serverWriteTimeout   = 5 * time.Second
 )
 
 // cancelMethod is the notification a client sends to cancel a call in
@@ -280,7 +284,12 @@ func idKey(id json.RawMessage) string {
 func (sess *session) send(v any) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	_ = sess.enc.Encode(v)
+	if sess.conn != nil {
+		_ = sess.conn.SetWriteDeadline(time.Now().Add(serverWriteTimeout))
+	}
+	if err := sess.enc.Encode(v); err != nil && sess.conn != nil {
+		_ = sess.conn.Close()
+	}
 }
 
 func (sess *session) close() {
@@ -310,7 +319,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	})
 	defer stop()
 	var calls sync.WaitGroup
-	sess := &session{enc: json.NewEncoder(conn), watches: map[string]goav.Subscription{}, inflight: map[string]context.CancelFunc{}, wg: &calls}
+	sess := &session{conn: conn, enc: json.NewEncoder(conn), watches: map[string]goav.Subscription{}, inflight: map[string]context.CancelFunc{}, wg: &calls}
 	// LIFO teardown: cancel in-flight calls, close watch subscriptions so their
 	// pumps exit, wait for all call/watch goroutines, then close conn.
 	defer calls.Wait()
@@ -318,7 +327,8 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	// A client that hangs up cancels its calls in flight.
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	dec := json.NewDecoder(conn)
+	lr := &io.LimitedReader{R: conn, N: maxRequestBytes}
+	dec := json.NewDecoder(lr)
 	if s.token != "" {
 		_ = conn.SetReadDeadline(time.Now().Add(authTimeout))
 	}
@@ -333,6 +343,7 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	}
 	slots := make(chan struct{}, maxInFlight)
 	for {
+		lr.N = maxRequestBytes
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrDeadlineExceeded) && ctx.Err() == nil {

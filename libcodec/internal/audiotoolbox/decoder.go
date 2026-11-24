@@ -54,6 +54,9 @@ func newDecoder(sym *symbols, config kit.AudioConfig) (kit.AudioDecoder, error) 
 }
 
 func (d *decoder) Decode(p *kit.Packet, emit func(*kit.Samples) error) error {
+	if len(p.Data) == 0 {
+		return nil
+	}
 	d.packet = append(d.packet[:0], p.Data...)
 	d.pending = true
 	var pinner runtime.Pinner

@@ -494,6 +494,9 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 	if f.Video == nil {
 		return fmt.Errorf("player: video frame without a video header")
 	}
+	if f.Video.Width <= 0 || f.Video.Height <= 0 {
+		return fmt.Errorf("player: invalid video dimensions %dx%d", f.Video.Width, f.Video.Height)
+	}
 	if _, _, _, err := subsampling(f.Video.PixelFormat); err != nil {
 		return err
 	}
