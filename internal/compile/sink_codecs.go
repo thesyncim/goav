@@ -76,8 +76,11 @@ func (s *recipeState) planSinkEncodes() error {
 // destination node dest: the first packet codec of its media dest accepts
 // whose encoder the runtime has.
 func (s *recipeState) sinkEncode(dest recipeir.Node, from recipeir.NodeID) (codec.Spec, bool) {
+	if dest.Kind != recipeir.NodeOutput || dest.Output < 0 || dest.Output >= len(s.req.Dests) {
+		return codec.Spec{}, false
+	}
 	accepts := s.req.Dests[dest.Output].Accepts
-	if dest.Kind != recipeir.NodeOutput || !s.req.Dests[dest.Output].Sink || len(accepts) == 0 || acceptsDomain(accepts, shape.DomainFrame) {
+	if !s.req.Dests[dest.Output].Sink || len(accepts) == 0 || acceptsDomain(accepts, shape.DomainFrame) {
 		return codec.Spec{}, false
 	}
 	media := pathMedia(s.req, from)

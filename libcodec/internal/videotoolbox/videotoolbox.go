@@ -53,8 +53,6 @@ func status(s int32) string {
 // so a Mac without (a virtual machine, say) registers it unavailable and
 // selection uses another backend.
 func Codecs() []kit.Codec {
-	f := &frameworks{}
-	libraries := f.libraries()
 	var out []kit.Codec
 	for _, id := range []av.CodecID{av.CodecH264, hevc} {
 		base := kit.Codec{
@@ -71,19 +69,22 @@ func Codecs() []kit.Codec {
 			Realtime:  true,
 			Bitstream: kit.AVCC,
 			Reorder:   true,
-			Libraries: libraries,
 			License:   kit.License{Class: kit.LicenseSystem},
 		}
+		encF := &frameworks{}
 		encoder := base
+		encoder.Libraries = encF.libraries()
 		encoder.Knobs = encoderKnobs(id)
-		encoder.Version = func() (string, error) { return "", probe("encode", id, f.probeEncoder) }
+		encoder.Version = func() (string, error) { return "", probe("encode", id, encF.probeEncoder) }
 		encoder.NewVideoEncoder = func(config kit.VideoConfig) (kit.VideoEncoder, error) {
-			return newEncoder(f, id, config)
+			return newEncoder(encF, id, config)
 		}
+		decF := &frameworks{}
 		decoder := base
-		decoder.Version = func() (string, error) { return "", probe("decode", id, f.probeDecoder) }
+		decoder.Libraries = decF.libraries()
+		decoder.Version = func() (string, error) { return "", probe("decode", id, decF.probeDecoder) }
 		decoder.NewVideoDecoder = func(config kit.VideoConfig) (kit.VideoDecoder, error) {
-			return newDecoder(f, id, config)
+			return newDecoder(decF, id, config)
 		}
 		out = append(out, encoder, decoder)
 	}

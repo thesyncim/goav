@@ -48,6 +48,10 @@ func (d *videoDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	if err != nil {
 		return err
 	}
+	if d.session != nil {
+		_ = d.Close()
+	}
+	d.closed = false
 	stream := config.Stream
 	if !stream.TimeBase.Valid() {
 		stream.TimeBase = av.TimeBase{Num: 1, Den: 90000}

@@ -200,8 +200,12 @@ func parseConfig(asc []byte) (rate, channels int, err error) {
 	v := binary.BigEndian.Uint16(asc)
 	object, index, channelConfig := int(v>>11), int(v>>7)&15, int(v>>3)&15
 	rates := []int{96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350}
-	if object != aacLC || index >= len(rates) || channelConfig == 0 {
+	if object != aacLC || index >= len(rates) || channelConfig == 0 || channelConfig > 7 {
 		return 0, 0, fmt.Errorf("%w: aac audiotoolbox decodes AAC-LC with a sample-rate index and channel configuration (object %d, index %d, channels %d)", codec.ErrUnsupportedFormat, object, index, channelConfig)
 	}
-	return rates[index], channelConfig, nil
+	channels = channelConfig
+	if channelConfig == 7 {
+		channels = 8
+	}
+	return rates[index], channels, nil
 }

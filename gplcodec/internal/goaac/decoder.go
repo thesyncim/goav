@@ -73,7 +73,6 @@ type Decoder struct {
 	stream    av.Stream
 	settings  codec.Settings
 	transport aaclib.Transport
-	audio     av.AudioFrame
 	pcm       []int16
 	closed    bool
 }
@@ -92,7 +91,6 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	d.stream = state.stream
 	d.settings = cloneCodecSettings(config.Settings)
 	d.transport = state.transport
-	d.audio = audioFrameFromStream(state.stream, 0)
 	d.closed = false
 	return nil
 }
@@ -170,7 +168,7 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	d.stream.Codec.ClockRate = uint32(sampleRate)
 	d.stream.Codec.Channels = channels
 	d.stream.Codec.ChannelLayout = audioChannelLayout(channels)
-	d.audio = audioFrameFromStream(d.stream, samples)
+	audio := audioFrameFromStream(d.stream, samples)
 
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
@@ -183,7 +181,7 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if frame.Duration.Value == 0 {
 		frame.Duration = av.SamplesDuration(samples, sampleRate)
 	}
-	frame.Audio = &d.audio
+	frame.Audio = &audio
 	frame.Metadata = pkt.Metadata
 	return nil
 }
@@ -252,7 +250,6 @@ func (d *Decoder) reopen(ctx context.Context, stream av.Stream) error {
 	d.decoder = state.decoder
 	d.stream = state.stream
 	d.transport = state.transport
-	d.audio = audioFrameFromStream(state.stream, 0)
 	return nil
 }
 

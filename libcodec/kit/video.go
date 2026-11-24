@@ -143,6 +143,10 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
+	if e.session != nil {
+		_ = e.Close()
+	}
+	e.closed = false
 	e.settings = config.Settings
 	e.config = VideoConfig{
 		Width:         width,
