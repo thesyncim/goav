@@ -279,8 +279,7 @@
         "input": "video",
         "output": "video",
         "pixelFormats": [
-          "i420",
-          "yuv420p"
+          "i420"
         ],
         "resizeModes": [
           "exact",
@@ -293,7 +292,7 @@
         "metadata": {
           "backend": "resize",
           "modes": "exact,fit,fill,passthrough",
-          "pixel_formats": "i420,yuv420p"
+          "pixel_formats": "i420,i420"
         },
         "requiredBy": "video",
         "status": "available"
@@ -306,8 +305,7 @@
           "video"
         ],
         "pixelFormats": [
-          "i420",
-          "yuv420p"
+          "i420"
         ],
         "realtime": true,
         "requiredBy": "video",

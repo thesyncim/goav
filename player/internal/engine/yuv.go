@@ -41,11 +41,11 @@ var matrices = [...]coefficients{
 // luma only.
 func subsampling(format string) (xs, ys int, gray bool, err error) {
 	switch format {
-	case av.PixelFormatI420, av.PixelFormatYUV420P:
+	case av.PixelFormatI420:
 		return 1, 1, false, nil
-	case av.PixelFormatI422, av.PixelFormatYUV422P:
+	case av.PixelFormatI422:
 		return 1, 0, false, nil
-	case av.PixelFormatI444, av.PixelFormatYUV444P:
+	case av.PixelFormatI444:
 		return 0, 0, false, nil
 	case av.PixelFormatGray8:
 		return 0, 0, true, nil

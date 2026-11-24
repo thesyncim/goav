@@ -121,12 +121,15 @@ const (
 	SampleFormatS16    = "s16"
 	SampleFormatF32    = "f32"
 	PixelFormatGray8   = "gray8"
+	// Planar 8-bit YUV formats. PixelFormatYUV420P, PixelFormatYUV422P, and
+	// PixelFormatYUV444P alias the canonical I420/I422/I444 names (identical
+	// 3-plane Y, U, V memory layout).
 	PixelFormatI420    = "i420"
-	PixelFormatYUV420P = "yuv420p"
+	PixelFormatYUV420P = PixelFormatI420
 	PixelFormatI422    = "i422"
-	PixelFormatYUV422P = "yuv422p"
+	PixelFormatYUV422P = PixelFormatI422
 	PixelFormatI444    = "i444"
-	PixelFormatYUV444P = "yuv444p"
+	PixelFormatYUV444P = PixelFormatI444
 )
 
 // TimeBase is the rational unit (Num/Den seconds) timestamp and duration

@@ -21,7 +21,7 @@ func Descriptor() filter.Descriptor {
 		Name:         filter.FactoryResize,
 		Input:        av.MediaVideo,
 		Output:       av.MediaVideo,
-		PixelFormats: []string{av.PixelFormatI420, av.PixelFormatYUV420P},
+		PixelFormats: []string{av.PixelFormatI420},
 		ResizeModes: []filter.ResizeMode{
 			filter.ResizeExact,
 			filter.ResizeFit,
@@ -354,14 +354,10 @@ func normalizePixelFormat(format string) (string, bool) {
 		return "", true
 	case av.PixelFormatI420:
 		return av.PixelFormatI420, true
-	case av.PixelFormatYUV420P:
-		return av.PixelFormatYUV420P, true
 	}
 	switch strings.ToLower(format) {
-	case av.PixelFormatI420:
+	case av.PixelFormatI420, "yuv420p":
 		return av.PixelFormatI420, true
-	case av.PixelFormatYUV420P:
-		return av.PixelFormatYUV420P, true
 	default:
 		return "", false
 	}

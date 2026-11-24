@@ -318,7 +318,7 @@ func (c *Codec) descriptor(mode codec.Mode) codec.Descriptor {
 	r := c.registration()
 	capabilities := c.Capabilities
 	if c.Media == av.MediaVideo && capabilities.PixelFormats == nil {
-		capabilities.PixelFormats = []string{av.PixelFormatI420, av.PixelFormatYUV420P}
+		capabilities.PixelFormats = []string{av.PixelFormatI420}
 	}
 	if c.Media == av.MediaAudio && capabilities.SampleFormats == nil {
 		capabilities.SampleFormats = []string{av.SampleFormatS16}

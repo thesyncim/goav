@@ -28,9 +28,8 @@ func TestDescriptor(t *testing.T) {
 	if desc.Name != filter.FactoryResize || desc.Input != av.MediaVideo || desc.Output != av.MediaVideo {
 		t.Fatalf("descriptor = %+v", desc)
 	}
-	if len(desc.PixelFormats) != 2 ||
-		desc.PixelFormats[0] != av.PixelFormatI420 ||
-		desc.PixelFormats[1] != av.PixelFormatYUV420P {
+	if len(desc.PixelFormats) != 1 ||
+		desc.PixelFormats[0] != av.PixelFormatI420 {
 		t.Fatalf("pixel formats = %+v", desc.PixelFormats)
 	}
 	if len(desc.ResizeModes) != 4 ||

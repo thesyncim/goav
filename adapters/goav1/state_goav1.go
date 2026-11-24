@@ -87,15 +87,15 @@ func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (
 		return backend.FrameFormat{}, err
 	}
 	switch stream.Codec.PixelFormat {
-	case "", av.PixelFormatI420, av.PixelFormatYUV420P:
+	case "", av.PixelFormatI420:
 		format.MonoChrome = false
 		format.SubsamplingX = true
 		format.SubsamplingY = true
-	case av.PixelFormatI422, av.PixelFormatYUV422P:
+	case av.PixelFormatI422:
 		format.MonoChrome = false
 		format.SubsamplingX = true
 		format.SubsamplingY = false
-	case av.PixelFormatI444, av.PixelFormatYUV444P:
+	case av.PixelFormatI444:
 		format.MonoChrome = false
 		format.SubsamplingX = false
 		format.SubsamplingY = false

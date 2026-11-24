@@ -394,8 +394,7 @@
           "video"
         ],
         "pixelFormats": [
-          "i420",
-          "yuv420p"
+          "i420"
         ],
         "realtime": true,
         "requiredBy": "live",
@@ -411,8 +410,7 @@
           "video"
         ],
         "pixelFormats": [
-          "i420",
-          "yuv420p"
+          "i420"
         ],
         "realtime": true,
         "requiredBy": "archive",
