@@ -107,6 +107,15 @@ func newJoinStage(p *compile.JoinPlan, armIDs []av.StreamID, rt *Runtime) pipeli
 	}
 }
 
+const joinStagePreallocDepthLimit = 64
+
+func joinStagePreallocDepth(rt *Runtime) int {
+	if rt == nil || rt.buffer.IsDirect() {
+		return 1
+	}
+	return min(max(rt.buffer.Capacity, 1), joinStagePreallocDepthLimit)
+}
+
 // joinNodeBuffer preserves the selector's lossless control-plane queue even
 // when the graph default or an output queue is lossy.
 func joinNodeBuffer(p *compile.JoinPlan, fallback pipeline.BufferPolicy) pipeline.BufferPolicy {

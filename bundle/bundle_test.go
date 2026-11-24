@@ -42,22 +42,19 @@ func TestDescribeUsesBundledRuntimeForStructuralPlan(t *testing.T) {
 }
 
 // TestFamilyOptionsCompose pins the partial-runtime model: each family is one
-// option, they compose with goav.New and with each other, and Options is the
-// four together.
+// option, they compose with goav.New and with each other, and All is the four
+// together.
 func TestFamilyOptionsCompose(t *testing.T) {
 	for name, opts := range map[string][]runconfig.Option{
 		"formats":  {Formats()},
 		"codecs":   {Codecs()},
 		"filters":  {Filters()},
 		"schemes":  {Schemes()},
-		"all":      Options(),
+		"all":      {All()},
 		"repeated": {Filters(), Filters()},
 	} {
 		if _, err := goav.New(opts...); err != nil {
 			t.Fatalf("%s: goav.New: %v", name, err)
 		}
-	}
-	if got := len(Options()); got != 4 {
-		t.Fatalf("Options() = %d options, want the four families", got)
 	}
 }

@@ -345,6 +345,9 @@ func (s *Server) compile(program string) ([]goav.Output, error) {
 	if s.files != nil {
 		opts = append(opts, launch.Files(s.files))
 	}
+	if len(s.uris) > 0 {
+		opts = append(opts, launch.URIs(s.uris...))
+	}
 	return launch.Compile(program, opts...)
 }
 

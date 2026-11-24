@@ -21,12 +21,10 @@ import (
 
 // Input is one declared recipe input: a file-like reader, a URL, a custom
 // source, or a provider input, plus the optional name and MIME facts the
-// planner uses before opening it. Construct one with FileInput, URIInput,
-// Source, or Input; configure it with options (Name, MIME, Metadata,
-// Reconnect) and decorate the opened source with WrapSource. Packet/frame
-// codec facts come from a custom Source or provider SourceShape declaration.
-// The zero value is intentionally not a valid input; construct input specs
-// with FileInput, URIInput, Source, or Input.
+// planner uses before opening it. Construct one with Read, FromURI, Source, or
+// From; configure it with options (Name, MIME, Metadata, Reconnect) and
+// decorate the opened source with Wrap. The zero value is intentionally not a
+// valid input.
 type Input struct {
 	origin   inputSpecOrigin
 	input    format.Input
@@ -83,10 +81,9 @@ func (spec Input) Wrap(wrap func(pipeline.Source) pipeline.Source) Input {
 	return spec
 }
 
-// InputOption configures an input value ([FileInput], [Source], [Input], or
-// [Input.With]). Build one with [Name], [MIME], or [Metadata], the
-// direction-agnostic [MediaOption] constructors. It is sealed: only goav option
-// constructors implement it.
+// InputOption configures an input value ([Read], [FromURI], [Source], [From],
+// or [Input.With]). Build one with [Name], [MIME], [Metadata], or [Reconnect].
+// It is sealed: only goav option constructors implement it.
 type InputOption interface {
 	applyInput(*Input)
 }
@@ -109,9 +106,9 @@ func applyInputOptions(spec Input, opts []InputOption) Input {
 	return spec
 }
 
-// FileInput declares a file-like input read from reader. Its container is
-// detected from its first bytes when it opens; name (its extension) is the
-// hint used when the bytes match no format, and names the input.
+// Read declares a file-like input read from reader. Its container is detected
+// from its first bytes when it opens; name (its extension) is the hint used
+// when the bytes match no format, and names the input.
 func Read(name string, reader io.Reader, opts ...InputOption) Input {
 	spec := Input{
 		input: format.Input{

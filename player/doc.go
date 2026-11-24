@@ -8,7 +8,7 @@
 // seek, and rate are the task's own controls.
 //
 //	w := player.New(player.Title("demo"))
-//	rt := bundle.MustNew(runconfig.WithRealtime(true), runconfig.WithClock(w.Clock()))
+//	rt := bundle.MustNew(w.RuntimeOption())
 //	in := goav.Read("in.webm", f)
 //	task, err := rt.Build(ctx,
 //		in.Video().Decode().To(w.Destination()),

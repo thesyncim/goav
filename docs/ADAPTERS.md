@@ -96,7 +96,7 @@ pure-Go codecs' registry ([docs](https://pkg.go.dev/github.com/thesyncim/goav/li
 | `openh264` | h264 | lib | macOS, Linux, Windows | BSD-2. Cisco's binaries carry its H.264 patent license if the program shows "OpenH264 Video Codec provided by Cisco Systems, Inc.", reproduces [its terms](../libcodec/internal/openh264/BINARY_LICENSE.txt), and lets the user turn it off (`GOAV_LIBCODEC_DISABLE=openh264`) |
 
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
-The tables below mirror `bundle.Options()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
+The tables below mirror `bundle.All()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
 
 ### Container Formats
 

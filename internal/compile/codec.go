@@ -51,12 +51,15 @@ func codecSettingsEqual(a, b codec.Settings) bool {
 		a.KeyframeInterval == b.KeyframeInterval &&
 		a.Profile == b.Profile &&
 		a.Level == b.Level &&
+		a.Backend == b.Backend &&
+		a.BitDepth == b.BitDepth &&
 		a.Channels == b.Channels &&
 		a.SampleRate == b.SampleRate &&
 		a.ClockRate == b.ClockRate &&
 		a.ChannelLayout == b.ChannelLayout &&
 		a.ChannelsSet == b.ChannelsSet &&
 		a.SampleRateSet == b.SampleRateSet &&
+		metadataEqual(a.Custom, b.Custom) &&
 		a.Control == nil &&
 		b.Control == nil
 }
@@ -90,8 +93,9 @@ func metadataEqual(a, b av.Metadata) bool {
 }
 
 func CloneCodecSettings(settings codec.Settings) codec.Settings {
-	// Config (Tier 2) and control.Control (Tier 3) are reference values owned by the
-	// caller; copy the reference, not the target.
+	if settings.Custom != nil {
+		settings.Custom = CloneMetadata(settings.Custom)
+	}
 	return settings
 }
 

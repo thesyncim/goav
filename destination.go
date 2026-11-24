@@ -153,6 +153,18 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
 
+func validateSinkComponent(sink pipeline.Sink) error {
+	if sink == nil {
+		return errNilSink
+	}
+	if validator, ok := sink.(compile.ComponentValidator); ok {
+		if err := validator.ValidateComponent(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Custom wraps a reusable provider.Destination as a destination value: the
 // provider owns naming, contract, and opening, while the returned Destination
 // stays the stable routing handle branches share.
@@ -190,7 +202,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 	return spec
 }
 
-// Writer creates a byte destination opened on demand: the callback runs after
+// WriteFunc creates a byte destination opened on demand: the callback runs after
 // goav has selected the format and streams, so the writer sees the final
 // destination metadata (provider.Info). The writer closes exactly once. When
 // the returned writer also implements provider.TransactionalWriter, Commit

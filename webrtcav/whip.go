@@ -29,7 +29,7 @@ var (
 )
 
 // WHIP is the whip scheme, a WebRTC-HTTP Ingestion Protocol client (RFC
-// 9725), for goav.URI: whip://host/path and whips://host/path publish over
+// 9725), for goav.ToURI: whip://host/path and whips://host/path publish over
 // https, whip+http://host/path over plain http. Register it under each name
 // used:
 //

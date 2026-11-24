@@ -17,17 +17,19 @@ import (
 	"github.com/thesyncim/goav/runconfig"
 )
 
-const playUsage = `goav play [flags] FILE
+const playUsage = `goav play [flags] FILE|URL
 goav play [flags] '<program>'
 
-Plays a file's video and audio in a window: shorthand for goav run with the
-play destination. A program plays what it routes to play.
+Plays a file or URL's video and audio in a window: shorthand for goav run with
+the play destination. A program plays what it routes to play.
 
 keys: space pause, ←/→ seek 5s, ↓/↑ seek 30s, [ ] rate, f full screen,
       i overlay, q quit
 
 examples:
   goav play clip.webm
+  goav play https://example.com/clip.webm
+  goav play camera://default
   goav play 'testsrc video size=1280x720 live ! play; testsrc audio live ! play'
 `
 
@@ -74,17 +76,62 @@ func playCommand(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	program := args.program
-	if info, err := os.Stat(program); err == nil && !info.IsDir() {
-		if program, err = fileProgram(program); err != nil {
+	switch {
+	case isPlayURL(program):
+		if program, err = urlProgram(program); err != nil {
 			printErr(stderr, err)
 			return 1
+		}
+	default:
+		if info, err := os.Stat(program); err == nil && !info.IsDir() {
+			if program, err = fileProgram(program); err != nil {
+				printErr(stderr, err)
+				return 1
+			}
 		}
 	}
 	rest := []string{"--runtime", args.runtime}
 	if args.control.address != "" {
 		rest = append(rest, "--control", args.control.address)
 	}
+	if args.control.tokenFile != "" {
+		rest = append(rest, "--control-token", args.control.tokenFile)
+	}
+	if args.control.dir != "" {
+		rest = append(rest, "--control-dir", args.control.dir)
+	}
+	if args.control.remote {
+		rest = append(rest, "--control-remote")
+	}
 	return runCommand(append(rest, program), stdout, stderr)
+}
+
+func isPlayURL(s string) bool {
+	if !strings.Contains(s, "://") || strings.ContainsAny(s, " \t\n!") {
+		return false
+	}
+	scheme, _, ok := strings.Cut(s, "://")
+	return ok && len(scheme) > 0
+}
+
+func urlProgram(rawURL string) (string, error) {
+	in := quote(rawURL)
+	title := quote(rawURL)
+	scheme, _, _ := strings.Cut(rawURL, "://")
+	if strings.EqualFold(scheme, "camera") {
+		return "uri " + in + " ! video ! play title=" + title, nil
+	}
+	video := "uri " + in + " ! video ! decode ! play title=" + title
+	audio := "uri " + in + " ! audio ! decode ! resample 48000 2 ! play title=" + title
+	var errs []error
+	for _, program := range []string{video + "\n" + audio, video, audio} {
+		err := buildsOn(program)
+		if err == nil {
+			return program, nil
+		}
+		errs = append(errs, err)
+	}
+	return "", fmt.Errorf("goav play: %s has no playable video or audio: %w", rawURL, errs[0])
 }
 
 // fileProgram is the program that plays a file: its video and its audio,

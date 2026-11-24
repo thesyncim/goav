@@ -35,6 +35,22 @@ func mergeCodecSettings(base codec.Settings, override codec.Settings) codec.Sett
 	if override.Level != "" {
 		base.Level = override.Level
 	}
+	if override.Backend != "" {
+		base.Backend = override.Backend
+	}
+	if override.BitDepth != 0 {
+		base.BitDepth = override.BitDepth
+	}
+	if len(override.Custom) != 0 {
+		merged := make(av.Metadata, len(base.Custom)+len(override.Custom))
+		for k, v := range base.Custom {
+			merged[k] = v
+		}
+		for k, v := range override.Custom {
+			merged[k] = v
+		}
+		base.Custom = merged
+	}
 	if override.ChannelsSet {
 		base.Channels = override.Channels
 		base.ChannelLayout = override.ChannelLayout

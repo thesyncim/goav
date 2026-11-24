@@ -135,5 +135,11 @@ func (f *hlsFile) Close() error {
 		}
 		return closeErr
 	}
-	return f.publish()
+	if err := f.publish(); err != nil {
+		if f.cleanup != nil {
+			f.cleanup()
+		}
+		return err
+	}
+	return nil
 }

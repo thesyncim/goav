@@ -30,7 +30,7 @@ var ErrWHEPDisconnected = errors.New("webrtcav: whep session disconnected")
 
 // WHEP is the whep scheme, a WebRTC-HTTP Egress Protocol client
 // (draft-ietf-wish-whep, over the HTTP mechanics of WHIP, RFC 9725), for
-// goav.URIInput: whep://host/path plays over https, whep+http://host/path
+// goav.FromURI: whep://host/path plays over https, whep+http://host/path
 // over plain http. Register it under each name used:
 //
 //	runconfig.WithScheme("whep", webrtcav.WHEP(webrtcav.WithToken(token)))

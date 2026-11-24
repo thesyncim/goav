@@ -356,6 +356,11 @@ func (r *recipeLowerer) planExecution(gp graphPlan) (graphExecutionPlan, error) 
 	for i := range r.recipe.Streams {
 		declared = declared || !r.recipe.Streams[i].Buffer.PipelinePolicy().IsDirect()
 	}
+	// promotedGraphBufferCapacity is the trunk queue depth of a graph that runs
+	// buffered only because a branch declared .Buffer(...) or its encoders run in
+	// parallel.
+	const promotedGraphBufferCapacity = 4
+
 	if buffer.IsDirect() && (declared || r.runsParallel()) {
 		buffer = pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}
 		reason = "automatic_encode_ladder"

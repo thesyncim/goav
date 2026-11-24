@@ -107,12 +107,16 @@ func (w *Window) Element() launch.Element {
 	})
 }
 
-// RuntimeOptions returns the runtime options needed to pace a task against
-// this window's hardware speaker clock in realtime mode.
-func (w *Window) RuntimeOptions() []runconfig.Option {
-	return []runconfig.Option{
-		runconfig.WithClock(w.Clock()),
-		runconfig.WithRealtime(true),
+// RuntimeOption returns a single runtime option that paces a task against this
+// window's hardware speaker clock in realtime mode:
+//
+//	rt := bundle.MustNew(w.RuntimeOption())
+func (w *Window) RuntimeOption() runconfig.Option {
+	return func(c *runconfig.Config) error {
+		if err := runconfig.WithClock(w.Clock())(c); err != nil {
+			return err
+		}
+		return runconfig.WithRealtime(true)(c)
 	}
 }
 
