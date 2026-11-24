@@ -55,7 +55,7 @@ is `adapterproof/adapter_compat_test.go`.
   provision adapter state.
 
 For codecs outside the built-in Opus, AAC, VP8, VP9, H264, HEVC, and AV1 specs, use
-`codec.Codec(id, media, ...)` in recipes; the planner treats custom specs the
+`codec.New(id, media, ...)` in recipes; the planner treats custom specs the
 same as built-ins.
 
 ## Current Adapters

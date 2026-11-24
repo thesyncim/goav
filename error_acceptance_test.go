@@ -442,7 +442,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	_, err := goavtest.Runtime().Build(context.Background(), goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
-		Encode(codec.Codec("weird", av.MediaAudio)).
+		Encode(codec.New("weird", av.MediaAudio)).
 		To(goav.Write("out.ogg", io.Discard)))
 	buildErr := requireBuildError(t, err, errcode.Code("encode_adapter_missing"), "build job", "audio",
 		"runconfig.WithEncoder(...)",

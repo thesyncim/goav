@@ -48,7 +48,7 @@ func encodeCustomPCM(ctx context.Context, rt *goav.Runtime) ([]*av.Packet, error
 	encoded := goavtest.NewCollector()
 	if err := rt.Run(ctx, goavtest.Audio(8000, 1, []int16{5, 6}).
 		Audio().
-		Encode(codec.Codec(examplePCM, av.MediaAudio, codec.SampleRate(8000), codec.Channels(codec.Mono))).
+		Encode(codec.New(examplePCM, av.MediaAudio, codec.SampleRate(8000), codec.Channels(codec.Mono))).
 		To(encoded.Sink())); err != nil {
 		return nil, err
 	}

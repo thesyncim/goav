@@ -201,7 +201,7 @@ thumbnail := launch.Sink("thumbnail", "keep one frame in every N",
 	})
 acme := launch.Encoder("acme", "encode with the host's ACME codec",
 	func(a acmeArgs) (codec.Spec, error) {
-		return codec.Codec("x_acme_video", av.MediaVideo, codec.Bitrate(a.Bitrate)), nil
+		return codec.New("x_acme_video", av.MediaVideo, codec.Bitrate(a.Bitrate)), nil
 	})
 server, err := ctlserver.New(task, ctlserver.Elements(thumbnail, acme), cue)
 ```

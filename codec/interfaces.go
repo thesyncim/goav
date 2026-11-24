@@ -151,11 +151,11 @@ func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
 	return b
 }
 
-// CodecSettings carries the grouped common encoder/decoder settings (tier 1)
+// Settings carries the grouped common encoder/decoder settings (tier 1)
 // plus adapter-specific string settings and the raw Control escape hatch.
 // Recipes populate it through codec options (Bitrate, FPS, Profile, Setting,
 // Control, ...); adapters read it at open.
-type CodecSettings struct {
+type Settings struct {
 	// Bitrate requests an encoder bitrate in bits per second. Zero lets the
 	// encoder choose its default bitrate.
 	Bitrate int `json:"bitrate,omitempty"`
@@ -210,7 +210,7 @@ type DecodeConfig struct {
 	LowLatency bool
 	Resilience ResiliencePolicy
 	Bounds     DecodeBounds
-	Settings   CodecSettings
+	Settings   Settings
 	// OpaqueState carries adapter-specific, caller-owned state. Adapter
 	// packages must document the concrete type before reading it.
 	OpaqueState any
@@ -223,7 +223,7 @@ type EncodeConfig struct {
 	Parameters av.CodecParameters
 	Realtime   bool
 	LowLatency bool
-	Settings   CodecSettings
+	Settings   Settings
 }
 
 // DecodeResult is the caller-owned output buffer DecodeInto/FlushInto append

@@ -30,7 +30,7 @@ func TestBitrateEventRoundTripAndValidation(t *testing.T) {
 }
 
 func TestCodecSettingsOptionsAreLastWinsAndCustomFriendly(t *testing.T) {
-	var settings CodecSettings
+	var settings Settings
 	var native any
 	controlErr := errors.New("native rejected")
 
@@ -116,7 +116,7 @@ func TestCodecSpecsApplyTypedSettingsToParameters(t *testing.T) {
 		t.Fatalf("Opus settings = %+v", opus.Settings)
 	}
 
-	custom := Codec(av.CodecID("x_acme_audio"), av.MediaAudio, Channels(6), SampleRate(44100))
+	custom := New(av.CodecID("x_acme_audio"), av.MediaAudio, Channels(6), SampleRate(44100))
 	if custom.Parameters.ID != "x_acme_audio" ||
 		custom.Parameters.Type != av.MediaAudio ||
 		custom.Parameters.Channels != 6 ||
@@ -129,13 +129,6 @@ func TestCodecSpecsApplyTypedSettingsToParameters(t *testing.T) {
 	fallback := newCodecSpec(av.CodecID("x_fallback"), av.MediaData, av.CodecParameters{}, nil)
 	if fallback.Parameters.ID != "x_fallback" || fallback.Parameters.Type != av.MediaData {
 		t.Fatalf("fallback parameters = %+v", fallback.Parameters)
-	}
-
-	if !Auto().Auto || Auto().Copy {
-		t.Fatalf("Auto() = %+v", Auto())
-	}
-	if !Copy().Copy || Copy().Auto {
-		t.Fatalf("Copy() = %+v", Copy())
 	}
 }
 

@@ -537,7 +537,7 @@ func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 	report, err := rt.Explain(context.Background(), goav.FileInput("input.raw", strings.NewReader("")).
 		Audio().
 		Decode().
-		Encode(codec.Codec(custom, av.MediaAudio)).
+		Encode(codec.New(custom, av.MediaAudio)).
 		To(goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 			return nil
 		}))))

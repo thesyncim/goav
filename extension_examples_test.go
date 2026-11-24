@@ -201,7 +201,7 @@ func ExampleWithEncoder_customSettings() {
 
 	err := goavtest.Runtime(runconfig.WithEncoder(factory.desc, factory)).Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2}).
 		Audio().
-		Encode(codec.Codec(exampleCodecID, av.MediaAudio,
+		Encode(codec.New(exampleCodecID, av.MediaAudio,
 			codec.Bitrate(64_000),
 			codec.Profile("speech"),
 			codec.Control(func(native any) error {

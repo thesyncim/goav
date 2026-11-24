@@ -30,7 +30,7 @@ func videoStream(id av.CodecID) av.Stream {
 	}
 }
 
-func encodeConfig(b backend, settings codec.CodecSettings) codec.EncodeConfig {
+func encodeConfig(b backend, settings codec.Settings) codec.EncodeConfig {
 	stream := videoStream(b.desc.ID)
 	stream.Codec.ID = ""
 	settings.Backend = b.desc.Backend.Name
@@ -49,7 +49,7 @@ type encoded struct {
 
 // encodeVideo encodes the test sequence, asking for a keyframe before frame
 // forcedKeyAt, and flushes.
-func encodeVideo(t *testing.T, b backend, settings codec.CodecSettings) (encoded, bool) {
+func encodeVideo(t *testing.T, b backend, settings codec.Settings) (encoded, bool) {
 	t.Helper()
 	encoder := openEncoder(t, b, encodeConfig(b, settings))
 	if encoder == nil {
@@ -87,7 +87,7 @@ func runVideo(t *testing.T, b backend, decoders []backend) {
 		t.Run("mux", func(t *testing.T) { videoMux(t, b, decoders) })
 		t.Run("knobs", func(t *testing.T) { encoderKnobs(t, b) })
 		t.Run("bitrate", func(t *testing.T) { videoBitrate(t, b) })
-		t.Run("close", func(t *testing.T) { encoderClose(t, b, encodeConfig(b, codec.CodecSettings{}), pattern(0)) })
+		t.Run("close", func(t *testing.T) { encoderClose(t, b, encodeConfig(b, codec.Settings{}), pattern(0)) })
 		return
 	}
 	t.Run("reference", func(t *testing.T) { videoReference(t, b, decoders) })
@@ -308,7 +308,7 @@ func encoderKnobs(t *testing.T, b backend) {
 	}
 	name := b.desc.Knobs[0].Name
 	typo := name[:len(name)-1] + "x"
-	_, err := b.encoder.NewEncoder(context.Background(), configFor(b, codec.CodecSettings{Custom: av.Metadata{typo: "1"}}))
+	_, err := b.encoder.NewEncoder(context.Background(), configFor(b, codec.Settings{Custom: av.Metadata{typo: "1"}}))
 	if !errors.Is(err, codec.ErrInvalidSetting) || !strings.Contains(err.Error(), typo) {
 		t.Errorf("%s: misspelled knob %q: err = %v, want codec.ErrInvalidSetting naming it", b.name(), typo, err)
 	}
@@ -316,7 +316,7 @@ func encoderKnobs(t *testing.T, b backend) {
 		if knob.Type != codec.KnobInt || knob.Max == 0 {
 			continue
 		}
-		_, err := b.encoder.NewEncoder(context.Background(), configFor(b, codec.CodecSettings{Custom: av.Metadata{knob.Name: "99999999999"}}))
+		_, err := b.encoder.NewEncoder(context.Background(), configFor(b, codec.Settings{Custom: av.Metadata{knob.Name: "99999999999"}}))
 		if !errors.Is(err, codec.ErrInvalidSetting) {
 			t.Errorf("%s: %s out of range: err = %v, want codec.ErrInvalidSetting", b.name(), knob.Name, err)
 		}
@@ -324,7 +324,7 @@ func encoderKnobs(t *testing.T, b backend) {
 	}
 }
 
-func configFor(b backend, settings codec.CodecSettings) codec.EncodeConfig {
+func configFor(b backend, settings codec.Settings) codec.EncodeConfig {
 	if b.desc.Type == av.MediaAudio {
 		return audioEncodeConfig(b, settings)
 	}

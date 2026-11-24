@@ -61,7 +61,7 @@ func TestNormalizeDecodeConfigSupportsTransportOverride(t *testing.T) {
 			Type:      av.MediaAudio,
 			ExtraData: av.Buffer{Bytes: private},
 		}},
-		Settings: codec.CodecSettings{Custom: av.Metadata{aacTransportKey: aacTransportADTS}},
+		Settings: codec.Settings{Custom: av.Metadata{aacTransportKey: aacTransportADTS}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestNormalizeDecodeConfigSupportsTransportOverride(t *testing.T) {
 			Type:      av.MediaAudio,
 			ExtraData: av.Buffer{Bytes: private},
 		}},
-		Settings: codec.CodecSettings{Custom: av.Metadata{aacTransportKey: aacTransportAuto}},
+		Settings: codec.Settings{Custom: av.Metadata{aacTransportKey: aacTransportAuto}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestNormalizeDecodeConfigSupportsTransportOverride(t *testing.T) {
 
 	_, _, err = normalizeDecodeConfig(codec.DecodeConfig{
 		Stream:   av.Stream{Codec: av.CodecParameters{ID: av.CodecAAC}},
-		Settings: codec.CodecSettings{Custom: av.Metadata{aacTransportKey: "latm"}},
+		Settings: codec.Settings{Custom: av.Metadata{aacTransportKey: "latm"}},
 	})
 	if !errors.Is(err, codec.ErrUnsupportedFormat) {
 		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
@@ -215,7 +215,7 @@ func TestLifecycleControlAndEvents(t *testing.T) {
 	hookErr := errors.New("control failed")
 	_, err := NewDecoderFactory().NewDecoder(context.Background(), codec.DecodeConfig{
 		Stream: aacADTSStream(),
-		Settings: codec.CodecSettings{Control: func(native any) error {
+		Settings: codec.Settings{Control: func(native any) error {
 			if _, ok := native.(*aaclib.Decoder); !ok {
 				t.Fatalf("native = %T, want *aac.Decoder", native)
 			}

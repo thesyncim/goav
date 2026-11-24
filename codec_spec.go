@@ -19,7 +19,7 @@ func codecSpecFromOptions(options ...codec.Option) codec.Spec {
 	return spec
 }
 
-func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) codec.CodecSettings {
+func mergeCodecSettings(base codec.Settings, override codec.Settings) codec.Settings {
 	if override.Bitrate != 0 {
 		base.Bitrate = override.Bitrate
 	}

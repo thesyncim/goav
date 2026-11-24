@@ -71,7 +71,7 @@ func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig)
 type Decoder struct {
 	decoder   *aaclib.Decoder
 	stream    av.Stream
-	settings  codec.CodecSettings
+	settings  codec.Settings
 	transport aaclib.Transport
 	audio     av.AudioFrame
 	pcm       []int16
@@ -360,7 +360,7 @@ func streamHasRawConfig(stream av.Stream) bool {
 		(firstPositive(stream.Codec.SampleRate, int(stream.Codec.ClockRate)) > 0 && stream.Codec.Channels > 0)
 }
 
-func decodeTransport(settings codec.CodecSettings, parameters av.CodecParameters) (aaclib.Transport, error) {
+func decodeTransport(settings codec.Settings, parameters av.CodecParameters) (aaclib.Transport, error) {
 	value := ""
 	if settings.Custom != nil {
 		value = settings.Custom[aacTransportKey]
@@ -488,7 +488,7 @@ func codecChangedStream(current av.Stream, event *av.Event) (av.Stream, bool) {
 	return next, true
 }
 
-func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
+func cloneCodecSettings(settings codec.Settings) codec.Settings {
 	cloned := settings
 	if settings.Custom != nil {
 		cloned.Custom = make(av.Metadata, len(settings.Custom))

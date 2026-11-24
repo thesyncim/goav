@@ -57,7 +57,7 @@ not the root (there is no `goav.Bitrate`), and come in two tiers:
 
 - **Common typed settings.** `codec.Bitrate`, `FPS`, `KeyframeInterval`,
   `Profile`, `Level`, and the audio output overrides `Channels`, `SampleRate`,
-  and `ClockRate` fill `codec.CodecSettings` (`Spec.Settings`);
+  and `ClockRate` fill `codec.Settings` (`Spec.Settings`);
   `codec.Setting(key, value)` carries adapter-owned string knobs. The pipeline
   language's `encode` binds these and passes any other key through as a
   `codec.Setting`; `goav elements` prints the option list, so do not copy it

@@ -270,7 +270,7 @@ func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
 	request := compile.DecodeRequest{
 		Selector: testSelectAudio(),
 		Config: codec.Spec{
-			Settings: codec.CodecSettings{
+			Settings: codec.Settings{
 				Bitrate: 48_000,
 				Profile: "analysis",
 				Control: control,

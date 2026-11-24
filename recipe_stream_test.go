@@ -318,7 +318,7 @@ func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
 	_, err := rt.Build(context.Background(), goav.FileInput("input.wav", strings.NewReader("")).
 		Audio().
 		Decode().
-		Encode(codec.Codec("pcm", av.MediaAudio)).
+		Encode(codec.New("pcm", av.MediaAudio)).
 		To(goav.Write("archive.ogg", io.Discard)))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
@@ -569,7 +569,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 		spec codec.Spec
 		code errcode.Code
 	}{
-		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},
+		{name: "auto", spec: codec.Spec{Auto: true}, code: "encode_auto_unresolved"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

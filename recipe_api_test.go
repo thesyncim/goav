@@ -584,9 +584,9 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 
 func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 	codecSpec := reflect.TypeFor[codec.Spec]()
-	settingsType := reflect.TypeFor[codec.CodecSettings]()
+	settingsType := reflect.TypeFor[codec.Settings]()
 	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
-		t.Fatalf("Spec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
+		t.Fatalf("Spec.Settings = %v %v, want codec.Settings", field.Type, ok)
 	}
 	for _, field := range []string{
 		"Bitrate",
@@ -611,7 +611,7 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 		{name: "encode", typ: reflect.TypeFor[codec.EncodeConfig]()},
 	} {
 		if field, ok := tt.typ.FieldByName("Settings"); !ok || field.Type != settingsType {
-			t.Fatalf("%s config Settings = %v %v, want codec.CodecSettings", tt.name, field.Type, ok)
+			t.Fatalf("%s config Settings = %v %v, want codec.Settings", tt.name, field.Type, ok)
 		}
 		for _, field := range []string{
 			"Bitrate",

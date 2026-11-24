@@ -22,5 +22,5 @@ decoded: [[5 6]]
 The checked output lives in `testdata/expected.txt`.
 
 Failure example: registering only the descriptor, without the encoder/decoder
-factory, makes `.Encode(codec.Codec("example/pcm", av.MediaAudio))` fail with
+factory, makes `.Encode(codec.New("example/pcm", av.MediaAudio))` fail with
 `encode_adapter_unavailable` before the task opens resources.

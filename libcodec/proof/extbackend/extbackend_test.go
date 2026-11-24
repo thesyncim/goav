@@ -60,7 +60,7 @@ func TestProgramSelectsTheBackendByName(t *testing.T) {
 // it was chosen, and its knobs, like a built-in one.
 func TestExplainNamesTheBackend(t *testing.T) {
 	available(t)
-	out := goavtest.Video(64, 48, 2).Video().Encode(codec.Codec(extbackend.Codec, "video")).To(goavtest.NewCollector().Sink())
+	out := goavtest.Video(64, 48, 2).Video().Encode(codec.New(extbackend.Codec, "video")).To(goavtest.NewCollector().Sink())
 	report, err := bundle.MustNew(extbackend.Option()).Explain(context.Background(), out)
 	if err != nil {
 		t.Fatal(err)

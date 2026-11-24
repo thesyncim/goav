@@ -17,7 +17,7 @@ import (
 func TestWorkOperationEncodeCodecContracts(t *testing.T) {
 	if got := workOperationEncodeCodec(compile.WorkOperation{
 		Kind:  plan.OpEncode,
-		Codec: codec.Codec(av.CodecID("x_custom"), av.MediaAudio),
+		Codec: codec.New(av.CodecID("x_custom"), av.MediaAudio),
 	}); got != av.CodecID("x_custom") {
 		t.Fatalf("work operation codec = %q, want x_custom", got)
 	}

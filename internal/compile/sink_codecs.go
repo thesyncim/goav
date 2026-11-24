@@ -139,7 +139,7 @@ func encodeSpecFor(id av.CodecID, media av.MediaType) codec.Spec {
 	case av.CodecAV1:
 		return codec.AV1()
 	default:
-		return codec.Codec(id, media)
+		return codec.New(id, media)
 	}
 }
 
@@ -159,7 +159,7 @@ func encodeConstructor(id av.CodecID, media av.MediaType) string {
 	case av.CodecAV1:
 		return "codec.AV1()"
 	default:
-		return fmt.Sprintf("codec.Codec(%q, %q)", id, media)
+		return fmt.Sprintf("codec.New(%q, %q)", id, media)
 	}
 }
 

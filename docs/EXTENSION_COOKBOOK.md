@@ -256,7 +256,7 @@ test, expected output, and a build-time failure example.
 
 Register codecs per runtime. A descriptor without a factory is useful for
 capability reporting, but encode/decode recipes need factories. Keep adapter
-settings in `codec.CodecSettings` so recipes, the string launcher, and control
+settings in `codec.Settings` so recipes, the string launcher, and control
 hosts all speak the same shape.
 
 ```go

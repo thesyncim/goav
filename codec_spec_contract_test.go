@@ -9,7 +9,7 @@ import (
 )
 
 func TestMergeDecodeCodecSpecContracts(t *testing.T) {
-	base := codec.Codec(av.CodecID("x-base-audio"), av.MediaAudio,
+	base := codec.New(av.CodecID("x-base-audio"), av.MediaAudio,
 		codec.Bitrate(32_000),
 		codec.Profile("base-profile"),
 		codec.Channels(codec.Stereo),
@@ -42,7 +42,7 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 			ExtraData:     av.Buffer{Bytes: []byte{0xaa, 0xbb}},
 			Attributes:    av.Metadata{"vendor": "external"},
 		},
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Bitrate:          96_000,
 			Framerate:        av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}},
 			KeyframeInterval: 60,

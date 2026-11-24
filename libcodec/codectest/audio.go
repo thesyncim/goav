@@ -25,7 +25,7 @@ func audioStream(id av.CodecID) av.Stream {
 	}
 }
 
-func audioEncodeConfig(b backend, settings codec.CodecSettings) codec.EncodeConfig {
+func audioEncodeConfig(b backend, settings codec.Settings) codec.EncodeConfig {
 	stream := audioStream("")
 	settings.Backend = b.desc.Backend.Name
 	return codec.EncodeConfig{
@@ -40,7 +40,7 @@ func runAudio(t *testing.T, b backend, decoders []backend) {
 		t.Run("roundtrip", func(t *testing.T) { audioRoundTrip(t, b, decoders) })
 		t.Run("mux", func(t *testing.T) { audioMux(t, b, decoders) })
 		t.Run("knobs", func(t *testing.T) { encoderKnobs(t, b) })
-		t.Run("close", func(t *testing.T) { encoderClose(t, b, audioEncodeConfig(b, codec.CodecSettings{}), tone(0)) })
+		t.Run("close", func(t *testing.T) { encoderClose(t, b, audioEncodeConfig(b, codec.Settings{}), tone(0)) })
 		return
 	}
 	t.Run("reference", func(t *testing.T) { audioReference(t, b, decoders) })

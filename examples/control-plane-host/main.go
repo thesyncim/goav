@@ -218,7 +218,7 @@ func (h *host) elements() []launch.Element {
 			})), nil
 		}),
 		launch.Encoder("acme", "encode with the host's ACME codec", func(a acmeArgs) (codec.Spec, error) {
-			return codec.Codec(acmeCodec, av.MediaVideo,
+			return codec.New(acmeCodec, av.MediaVideo,
 				codec.Bitrate(a.Bitrate),
 				codec.Control(func(native *acmeOptions) error {
 					native.Lookahead = cmp.Or(a.Lookahead, "shallow")

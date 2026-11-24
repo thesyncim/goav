@@ -21,6 +21,7 @@ import (
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
@@ -79,6 +80,12 @@ func Describe(outs ...goav.Output) (pipeline.Spec, error) {
 // without opening anything.
 func Explain(ctx context.Context, outs ...goav.Output) (plan.Report, error) {
 	return Default().Explain(ctx, outs...)
+}
+
+// Probe inspects a media container with the default bundled runtime's format
+// adapters.
+func Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
+	return Default().Probe(ctx, request)
 }
 
 // All returns one runtime option registering all bundled formats, codecs,

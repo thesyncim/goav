@@ -310,7 +310,7 @@ type CodecAdapterRequest struct {
 	Realtime     bool
 	// Settings are the request's codec settings, checked against the chosen
 	// backend's knobs.
-	Settings codec.CodecSettings
+	Settings codec.Settings
 }
 
 // Need is the request as a backend-selection need.

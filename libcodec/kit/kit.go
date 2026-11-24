@@ -421,7 +421,7 @@ type Updater interface {
 // keyframe requests as av.EventKeyframeRequired.
 const EventSetting av.EventType = "codec_setting"
 
-func refuseControl(c *Codec, settings codec.CodecSettings) error {
+func refuseControl(c *Codec, settings codec.Settings) error {
 	if settings.Control == nil {
 		return nil
 	}

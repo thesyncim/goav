@@ -670,7 +670,7 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(16000, 1).
-		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
+		Encode(codec.New(toyCodecID, av.MediaAudio)).
 		To(goav.Custom("out.toyfmt", dest)))
 	if err != nil {
 		t.Fatal(err)
@@ -744,7 +744,7 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 		Audio().
 		Decode().
 		Do(failing).
-		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
+		Encode(codec.New(toyCodecID, av.MediaAudio)).
 		To(goav.Custom("out.toyfmt", dest)))
 	if err == nil {
 		t.Fatal("run should fail through the failing stage")

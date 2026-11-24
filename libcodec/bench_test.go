@@ -50,7 +50,7 @@ func benchEncoder(b *testing.B, options runconfig.Option, id av.CodecID, backend
 	encoder, err := choice.Encoder.NewEncoder(context.Background(), codec.EncodeConfig{
 		Stream:     av.Stream{Type: av.MediaVideo, TimeBase: benchBase, Codec: av.CodecParameters{Type: av.MediaVideo, Width: benchWidth, Height: benchHeight, PixelFormat: av.PixelFormatI420}},
 		Parameters: av.CodecParameters{ID: id, Type: av.MediaVideo, Width: benchWidth, Height: benchHeight, ClockRate: 90000},
-		Settings:   codec.CodecSettings{Bitrate: 4_000_000, KeyframeInterval: 60, Backend: backend},
+		Settings:   codec.Settings{Bitrate: 4_000_000, KeyframeInterval: 60, Backend: backend},
 	})
 	if err != nil {
 		b.Skipf("%s/%s: %v", id, backend, err)

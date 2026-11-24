@@ -2639,7 +2639,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 	before := builtTask.Spec()
 
 	_, err = builtTask.Attach(ctx,
-		builtTask.Tap("audio.frames").Encode(codec.Codec(customPCM, av.MediaAudio)).As("record").To(Sink(SinkFunc("record", func(context.Context, Message) error {
+		builtTask.Tap("audio.frames").Encode(codec.New(customPCM, av.MediaAudio)).As("record").To(Sink(SinkFunc("record", func(context.Context, Message) error {
 			return nil
 		}))),
 	)
@@ -2714,7 +2714,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
+			Encode(codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
 	)
@@ -3172,7 +3172,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
+			Encode(codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 			Tap("audio.voice.packets").
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
@@ -3369,7 +3369,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		WithEncoder(desc, encoderFactory),
 		testBundleFilters(),
 	)
-	encoded := codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
+	encoded := codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
 
 	task, err := runtime.Build(ctx,
 		FileInput("input.ogg", strings.NewReader("")).
@@ -3442,7 +3442,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		WithEncoder(desc, encoderFactory),
 		testBundleFilters(),
 	)
-	encoded := codec.Codec(
+	encoded := codec.New(
 		customPCM,
 		av.MediaAudio,
 		codec.SampleRate(16_000),

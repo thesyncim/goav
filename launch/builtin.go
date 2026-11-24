@@ -491,5 +491,5 @@ func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) codec.Sp
 	case av.CodecOpus:
 		return codec.Opus(opts...)
 	}
-	return codec.Codec(id, media, opts...)
+	return codec.New(id, media, opts...)
 }
