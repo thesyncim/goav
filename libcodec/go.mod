@@ -9,7 +9,7 @@ require (
 )
 
 require (
-	github.com/thesyncim/goav1 v0.0.0-20261124140820-93c8fb491899 // indirect
+	github.com/thesyncim/goav1 v0.0.0-20261124192411-065c2686bf5f // indirect
 	github.com/thesyncim/gopus v0.2.7 // indirect
 	github.com/thesyncim/govpx v0.0.0-20261018202535-159dce5b931a // indirect
 )
