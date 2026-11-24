@@ -171,7 +171,7 @@ func packetsMedia(codecID av.CodecID, packets []av.Packet) av.MediaType {
 	switch codecID {
 	case av.CodecOpus, av.CodecVorbis, av.CodecFLAC, av.CodecAAC, av.CodecPCM:
 		return av.MediaAudio
-	case av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
+	case av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecHEVC, av.CodecAV1:
 		return av.MediaVideo
 	case av.CodecTextUTF8:
 		return av.MediaSubtitle

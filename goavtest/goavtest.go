@@ -50,7 +50,7 @@ func nextName(kind string) string {
 // for: every well-known av.Codec* id.
 var runtimeCodecs = []av.CodecID{
 	av.CodecOpus, av.CodecVorbis, av.CodecFLAC, av.CodecAAC,
-	av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1,
+	av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecHEVC, av.CodecAV1,
 	av.CodecPCM, av.CodecTextUTF8,
 }
 

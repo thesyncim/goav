@@ -182,11 +182,11 @@ func probeRule(rule ProbeRule, request ProbeRequest) (ProbeResult, bool) {
 	if rule.Protocol != "" && request.Input.Protocol == rule.Protocol {
 		return ProbeResult{Format: rule.Format, Score: score, Reason: reason}, true
 	}
-	if matchMIME(rule.MIMETypes, request.MIMEType) || matchMIME(rule.MIMETypes, request.Input.MIMEType) {
-		return ProbeResult{Format: rule.Format, Score: score - 10, Reason: reason}, true
-	}
 	if matchMagic(rule.Magic, request.Header) {
 		return ProbeResult{Format: rule.Format, Score: score, Reason: reason}, true
+	}
+	if matchMIME(rule.MIMETypes, request.MIMEType) || matchMIME(rule.MIMETypes, request.Input.MIMEType) {
+		return ProbeResult{Format: rule.Format, Score: score - 10, Reason: reason}, true
 	}
 	if matchExtension(rule.Extensions, request.Name) || matchExtension(rule.Extensions, request.Input.Name) || matchExtension(rule.Extensions, request.Input.URI) {
 		return ProbeResult{Format: rule.Format, Score: score - 20, Reason: reason}, true

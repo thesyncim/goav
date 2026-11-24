@@ -261,6 +261,7 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		return err
 	}
 
+	defer payload.DropPacket(s.result.Packet)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err

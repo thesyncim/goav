@@ -214,7 +214,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	if base.Audio == nil || len(base.Planes) == 0 {
 		return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", base.StreamID)
 	}
-	n := len(base.Planes[0].Buffer.Bytes)
+	n := -1
 	if cap(inputs) < len(frames) {
 		inputs = make([][]byte, 0, len(frames))
 	} else {
@@ -235,12 +235,23 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 			return nil, fmt.Errorf("goav: audio mix arms differ (arm %q is %d ch/%d Hz, arm %q is %d ch/%d Hz)",
 				f.StreamID, f.Audio.Channels, f.Audio.SampleRate, base.StreamID, base.Audio.Channels, base.Audio.SampleRate)
 		}
-		if l := len(f.Planes[0].Buffer.Bytes); l < n {
-			n = l
+		raw := f.Planes[0].Buffer.Bytes
+		off := f.Planes[0].Offset
+		if off < 0 || off > len(raw) {
+			return nil, fmt.Errorf("goav: mix arm %q audio plane offset %d out of range [0,%d]", f.StreamID, off, len(raw))
 		}
-		inputs = append(inputs, f.Planes[0].Buffer.Bytes)
+		pcm := raw[off:]
+		if n < 0 || len(pcm) < n {
+			n = len(pcm)
+		}
+		inputs = append(inputs, pcm)
 	}
-	n -= n % 2 // whole int16 samples
+	if n < 0 {
+		n = 0
+	}
+	channels := max(base.Audio.Channels, 1)
+	frameBytes := channels * 2
+	n -= n % frameBytes // whole multi-channel int16 frames
 	if cap(dst.Planes) < 1 {
 		dst.Planes = make([]av.Plane, 1)
 	}
@@ -248,7 +259,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	mixed := av.NewBuffer(n)
 	mixS16Into(mixed.Bytes, inputs, n)
 	*audio = *base.Audio
-	audio.Samples = n / 2 / max(base.Audio.Channels, 1)
+	audio.Samples = n / frameBytes
 	dst.StreamID = out
 	dst.Type = av.MediaAudio
 	dst.PTS = base.PTS
@@ -258,8 +269,8 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	dst.Metadata = nil
 	dst.Planes[0] = av.Plane{
 		Buffer: mixed,
-		Stride: base.Planes[0].Stride,
-		Offset: base.Planes[0].Offset,
+		Stride: frameBytes,
+		Offset: 0,
 	}
 	return dst, nil
 }

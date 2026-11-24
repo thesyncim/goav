@@ -206,6 +206,7 @@ func (s *TestSource) OpenSource(context.Context) (pipeline.Source, []av.Stream, 
 	if s == nil {
 		return nil, nil, errors.New("goavtest: nil TestSource")
 	}
+	s.closed.Store(false)
 	return s, []av.Stream{cloneStream(s.stream)}, nil
 }
 
@@ -328,7 +329,7 @@ func (s *TestSource) emit(ctx context.Context, emitter pipeline.Emitter, message
 			return nil
 		}
 		if errors.Is(err, pipeline.ErrBackpressure) {
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || s.closed.Load() {
 				return nil
 			}
 			continue

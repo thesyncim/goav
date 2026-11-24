@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/pipeline"
 )
 
 // SyncPolicy names one shared media timeline. Reuse the returned value across
@@ -103,7 +102,6 @@ type syncScheduler struct {
 	mu     sync.Mutex
 	latest map[av.StreamID]time.Duration
 	wait   func(context.Context) error
-	closed bool
 }
 
 func newSyncScheduler() *syncScheduler {
@@ -131,9 +129,6 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 	if s.latest == nil {
 		s.latest = make(map[av.StreamID]time.Duration)
 	}
-	if s.closed {
-		return 0, false, pipeline.ErrClosed
-	}
 	if previous, ok := s.latest[stream]; ok && pts+tolerance < previous {
 		return previous - pts, true, nil
 	}
@@ -159,9 +154,6 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		if err != nil {
 			return 0, false, err
 		}
-		if s.closed {
-			return 0, false, pipeline.ErrClosed
-		}
 	}
 	return 0, false, nil
 }
@@ -171,7 +163,7 @@ func (s *syncScheduler) observeEvent(event *av.Event) {
 		return
 	}
 	switch event.Type {
-	case av.EventDiscontinuity, av.EventCodecChanged, av.EventStreamRemoved:
+	case av.EventDiscontinuity, av.EventCodecChanged, av.EventStreamRemoved, av.EventEndOfStream:
 		s.mu.Lock()
 		if event.StreamID != "" {
 			delete(s.latest, event.StreamID)
