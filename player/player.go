@@ -180,7 +180,7 @@ func (w *Window) Run(ctx context.Context, task goav.Task) error {
 	w.mu.Lock()
 	title, width, height := w.title, w.width, w.height
 	w.mu.Unlock()
-	g := newGame(w, task, title, width, height, notice, done)
+	g := newGame(ctx, w, task, title, width, height, notice, done)
 	runErr := runWindow(g)
 	cancel()
 	closeErr := task.Close()

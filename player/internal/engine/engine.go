@@ -667,10 +667,14 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 	for {
 		e.mu.Lock()
 		ready := e.pictured
+		closed := e.closed
 		wake := e.wake
 		e.mu.Unlock()
 		if ready {
 			return true
+		}
+		if closed {
+			return false
 		}
 		select {
 		case <-wake:

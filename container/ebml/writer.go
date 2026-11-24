@@ -162,14 +162,14 @@ func (w *Writer) FinishSizedElement(patch SizePatch) error {
 		return ErrInvalidSize
 	}
 	size := uint64(current - patch.Start)
-	if _, err := seeker.Seek(patch.Offset, io.SeekStart); err != nil {
-		return err
-	}
-	w.offset = patch.Offset
 	n, err := EncodeSizeVINTWidth(w.scratch[:], size, patch.Width)
 	if err != nil {
 		return err
 	}
+	if _, err := seeker.Seek(patch.Offset, io.SeekStart); err != nil {
+		return err
+	}
+	w.offset = patch.Offset
 	if _, err := w.Write(w.scratch[:n]); err != nil {
 		return err
 	}

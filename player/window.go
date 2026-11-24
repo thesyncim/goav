@@ -19,6 +19,7 @@ var rates = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4}
 // game is the ebiten side of a Window: it presents the engine's video on
 // the display refresh, draws the overlay, and turns keys into task controls.
 type game struct {
+	ctx   context.Context
 	w     *Window
 	task  goav.Task
 	title string
@@ -45,8 +46,8 @@ type game struct {
 	ended    bool
 }
 
-func newGame(w *Window, task goav.Task, title string, width, height int, notice string, done <-chan error) *game {
-	g := &game{w: w, task: task, title: title, done: done, controls: make(chan func(), 16), rate: 3}
+func newGame(ctx context.Context, w *Window, task goav.Task, title string, width, height int, notice string, done <-chan error) *game {
+	g := &game{ctx: ctx, w: w, task: task, title: title, done: done, controls: make(chan func(), 16), rate: 3}
 	if width > 0 && height > 0 {
 		ebiten.SetWindowSize(width, height)
 		g.sized = true
@@ -139,7 +140,7 @@ func (g *game) keys() {
 			if paused {
 				op, verb = task.Pause, "pause"
 			}
-			if err := op(context.Background()); err != nil {
+			if err := op(g.ctx); err != nil {
 				g.setStatus(fmt.Sprintf("%s held by backpressure: %v", verb, err))
 				return
 			}
@@ -170,7 +171,7 @@ func (g *game) seek(delta time.Duration) {
 	target := max(g.w.engine.Stats().Position+delta, 0)
 	e, task, paused := g.w.engine, g.task, g.paused
 	g.control(func() {
-		if err := e.Seek(context.Background(), task, target, paused); err != nil {
+		if err := e.Seek(g.ctx, task, target, paused); err != nil {
 			g.setStatus(fmt.Sprintf("seek: %v", err))
 			return
 		}
@@ -184,7 +185,7 @@ func (g *game) setRate() {
 	g.control(func() {
 		ctrl, err := control.Rate(r)
 		if err == nil {
-			err = task.Control(context.Background(), ctrl)
+			err = task.Control(g.ctx, ctrl)
 		}
 		// The engine consumes at the new rate either way: on a free-running
 		// task that alone sets the pace through backpressure.

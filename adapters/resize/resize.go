@@ -377,8 +377,14 @@ func planeReady(plane *av.Plane, width int, height int) bool {
 	if width <= 0 || height <= 0 || stride < width {
 		return false
 	}
-	need := (height-1)*stride + width
-	return need <= len(plane.Buffer.Bytes)
+	avail := len(plane.Buffer.Bytes)
+	if width > avail {
+		return false
+	}
+	if height > 1 && stride > (avail-width)/(height-1) {
+		return false
+	}
+	return true
 }
 
 // prepareOutputPlanes gives the output new pooled planes carved out of a
