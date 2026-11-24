@@ -210,7 +210,7 @@ func TestJitterRingReordersAcrossSequenceRollover(t *testing.T) {
 	if want := []uint16{65533, 65534, 65535, 0}; !equalSeqs(released, want) {
 		t.Fatalf("released = %v, want %v", released, want)
 	}
-	if stats := jitter.Stats(); stats.Lost != 0 || stats.Reordered != 0 || stats.Buffered != 0 || stats.Expected != 1 {
+	if stats := jitter.Stats(); stats.Lost != 0 || stats.Reordered != 2 || stats.Buffered != 0 || stats.Expected != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 }

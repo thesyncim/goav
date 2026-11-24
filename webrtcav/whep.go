@@ -126,17 +126,20 @@ type whepSession struct {
 	// events announces a track the answer did not declare (av.EventStreamAdded).
 	events chan av.Event
 	// declared maps the answer's sending media sections (by mid) to their
-	// stream index.
-	declared map[string]int
+	// declared stream ID.
+	declared map[string]av.StreamID
 
-	mu           sync.Mutex
-	readers      []TrackReader
-	streams      []av.Stream
-	payloads     []rtpav.PayloadMap
-	closed       bool
-	closeOnce    sync.Once
-	failOnce     sync.Once
-	activeTracks atomic.Int32
+	mu              sync.Mutex
+	declaredReaders map[string]TrackReader
+	pendingDeclared int
+	started         bool
+	readers         []TrackReader
+	streams         []av.Stream
+	payloads        []rtpav.PayloadMap
+	closed          bool
+	closeOnce       sync.Once
+	failOnce        sync.Once
+	activeTracks    atomic.Int32
 }
 
 // One bounded FIFO carries every configuration record and its packet. Each
@@ -210,7 +213,8 @@ func (s *whepSession) declare(answer string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.declared = map[string]int{}
+	s.declared = map[string]av.StreamID{}
+	s.declaredReaders = map[string]TrackReader{}
 	for _, media := range parsed.MediaDescriptions {
 		_, sendonly := media.Attribute("sendonly")
 		_, sendrecv := media.Attribute("sendrecv")
@@ -230,10 +234,11 @@ func (s *whepSession) declare(answer string) {
 		}
 		codec := sdpCodec(media.Attributes, kind, media.MediaName.Formats[0])
 		stream := streamFromRemoteTrack(RemoteTrack{Codec: codec, Stream: av.Stream{ID: av.StreamID(id), Name: id}})
-		s.declared[mid] = len(s.streams)
+		s.declared[mid] = stream.ID
 		s.streams = append(s.streams, stream)
 		s.payloads = append(s.payloads, trackPayloadMap(stream, rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{payloadCodecFromWebRTC(codec, stream.Codec)})))
 	}
+	s.pendingDeclared = len(s.streams)
 }
 
 // sdpCodec is the codec a media section's first payload type names.
@@ -288,6 +293,9 @@ func (s *whepSession) awaitTracks(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	s.mu.Lock()
+	s.started = true
+	s.mu.Unlock()
 	go s.adoptLate()
 	return nil
 }
@@ -321,12 +329,30 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		}
 	}
 	s.mu.Lock()
-	index, declared := s.declared[mid]
+	declaredID, declared := s.declared[mid]
+	existingReader := s.declaredReaders[mid]
 	remote := RemoteTrack{Track: a.track, Feedback: s}
 	if declared {
-		remote.Stream = av.Stream{ID: s.streams[index].ID, Name: s.streams[index].Name}
+		remote.Stream = av.Stream{ID: declaredID, Name: string(declaredID)}
+		if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == declaredID }); idx >= 0 {
+			remote.Stream.Name = s.streams[idx].Name
+		}
 	}
 	s.mu.Unlock()
+	if declared && existingReader != nil {
+		if err := existingReader.UpdateTrack(ctx, remote); err != nil {
+			return err
+		}
+		if streams, err := existingReader.Streams(ctx); err == nil && len(streams) > 0 {
+			s.mu.Lock()
+			if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == declaredID }); idx >= 0 {
+				s.streams[idx] = streams[0]
+				s.payloads[idx] = existingReader.PayloadMap()
+			}
+			s.mu.Unlock()
+		}
+		return nil
+	}
 	reader, err := NewTrackRemoteAdapter().AdaptTrack(ctx, remote)
 	if err != nil {
 		return err
@@ -350,7 +376,24 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 	s.readers = append(s.readers, reader)
 	var added *av.Event
 	if declared {
-		s.payloads[index] = reader.PayloadMap()
+		if s.pendingDeclared > 0 {
+			s.pendingDeclared--
+		}
+		s.declaredReaders[mid] = reader
+		if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == declaredID }); idx >= 0 {
+			oldCodec := s.streams[idx].Codec.ID
+			s.streams[idx] = streams[0]
+			s.payloads[idx] = reader.PayloadMap()
+			if s.started && oldCodec != "" && streams[0].Codec.ID != "" && oldCodec != streams[0].Codec.ID {
+				stream := streams[0]
+				added = &av.Event{Type: av.EventCodecChanged, StreamID: stream.ID, Stream: &stream, Codec: &stream.Codec, Epoch: stream.Epoch}
+			}
+		} else {
+			s.streams = append(s.streams, streams[0])
+			s.payloads = append(s.payloads, reader.PayloadMap())
+			stream := streams[0]
+			added = &av.Event{Type: av.EventStreamAdded, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
+		}
 	} else {
 		s.streams = append(s.streams, streams[0])
 		s.payloads = append(s.payloads, reader.PayloadMap())
@@ -395,13 +438,17 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
 		if err != nil {
 			remaining := s.activeTracks.Add(-1)
-			if errors.Is(err, io.EOF) && remaining > 0 {
+			s.mu.Lock()
+			keepAlive := remaining > 0 || s.pendingDeclared > 0
+			s.mu.Unlock()
+			if errors.Is(err, io.EOF) && keepAlive {
 				if streams, serr := reader.Streams(s.ctx); serr == nil && len(streams) > 0 {
 					stream := streams[0]
 					removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
 					s.mu.Lock()
 					closed := s.closed
 					if !closed {
+						s.removeReaderLocked(reader, stream.ID)
 						select {
 						case s.events <- *cloneReadEvent(removed):
 						default:
@@ -409,6 +456,7 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 					}
 					s.mu.Unlock()
 					if !closed {
+						_ = reader.Close()
 						select {
 						case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
 						case <-s.ctx.Done():
@@ -416,6 +464,7 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 						return
 					}
 				} else if !s.isClosed() {
+					_ = reader.Close()
 					return
 				}
 			}
@@ -453,7 +502,27 @@ func (s *whepSession) PayloadMap() rtpav.PayloadMap {
 	return append(mergedPayloads(nil), s.payloads...)
 }
 
+func (s *whepSession) removeReaderLocked(reader TrackReader, id av.StreamID) {
+	if idx := slices.Index(s.readers, reader); idx >= 0 {
+		s.readers = slices.Delete(s.readers, idx, idx+1)
+	}
+	for mid, r := range s.declaredReaders {
+		if r == reader {
+			delete(s.declaredReaders, mid)
+		}
+	}
+	if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == id }); idx >= 0 {
+		s.streams = slices.Delete(s.streams, idx, idx+1)
+		if idx < len(s.payloads) {
+			s.payloads = slices.Delete(s.payloads, idx, idx+1)
+		}
+	}
+}
+
 func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpav.PayloadMap, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
 	select {
 	case record := <-s.records:
 		if record.err != nil {
@@ -478,8 +547,14 @@ func (s *whepSession) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpa
 
 func (s *whepSession) Events() <-chan av.Event { return s.events }
 
-func (s *whepSession) WriteRTCP(_ context.Context, packets []rtcp.Packet) error {
-	if len(packets) == 0 || s.isClosed() {
+func (s *whepSession) WriteRTCP(ctx context.Context, packets []rtcp.Packet) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.isClosed() {
+		return ErrClosed
+	}
+	if len(packets) == 0 {
 		return nil
 	}
 	return s.pc.WriteRTCP(packets)

@@ -258,6 +258,9 @@ func refusedCodecs(answer string, transceivers []*webrtc.RTPTransceiver, streams
 			if media.MediaName.Port.Value == 0 {
 				break
 			}
+			if _, inactive := media.Attribute("inactive"); inactive {
+				break
+			}
 			for _, attribute := range media.Attributes {
 				if attribute.Key == "rtpmap" && strings.Contains(strings.ToLower(attribute.Value), " "+strings.ToLower(name)+"/") {
 					accepted = true

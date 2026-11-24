@@ -85,23 +85,24 @@ func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterR
 		return nil
 	}
 	if int(delta) >= len(b.slots) {
+		if err := appendJitterEvent(out, av.Event{Type: av.EventPacketLoss}); err != nil {
+			return err
+		}
 		// Buffered packets are not lost: they arrived, and are discarded with the ring.
 		if lost := int(delta) - b.buffered(); lost > 0 {
 			b.stats.Lost += uint64(lost)
 		}
 		lossBefore = true
-		if err := appendJitterEvent(out, av.Event{Type: av.EventPacketLoss}); err != nil {
-			return err
-		}
 		b.dropUntil(seq)
 	}
 
 	slot := &b.slots[b.slotFor(seq)]
-	if slot.full {
-		b.stats.Reordered++
-	} else {
+	if !slot.full {
 		b.count++
 		b.stats.Buffered++
+		if delta > 0 {
+			b.stats.Reordered++
+		}
 	}
 	slot.seq = seq
 	slot.packet = pkt

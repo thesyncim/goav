@@ -317,12 +317,19 @@ func (s *Source) lookupPayload(payloadType uint8) (PayloadCodec, bool) {
 }
 
 func (s *Source) flushJitter(ctx context.Context, emitter pipeline.Emitter) error {
-	if s.jitter != nil {
+	if s.jitter == nil {
+		return nil
+	}
+	for {
 		s.jitterOut.Reset()
-		if err := s.jitter.FlushInto(ctx, &s.jitterOut); err != nil {
-			return err
+		flushErr := s.jitter.FlushInto(ctx, &s.jitterOut)
+		if flushErr != nil && !errors.Is(flushErr, ErrResultFull) {
+			return flushErr
 		}
 		if err := s.emitEvents(ctx, emitter, s.jitterOut.Events); err != nil {
+			return err
+		}
+		if err := s.writeFeedback(ctx, s.jitterOut.Feedback); err != nil {
 			return err
 		}
 		for i := range s.jitterOut.Ready {
@@ -330,8 +337,13 @@ func (s *Source) flushJitter(ctx context.Context, emitter pipeline.Emitter) erro
 				return err
 			}
 		}
+		if flushErr == nil {
+			return nil
+		}
+		if len(s.jitterOut.Ready) == 0 && len(s.jitterOut.Events) == 0 && len(s.jitterOut.Feedback) == 0 {
+			return flushErr
+		}
 	}
-	return nil
 }
 
 func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
@@ -344,6 +356,9 @@ func (s *Source) flush(ctx context.Context, emitter pipeline.Emitter) error {
 			return err
 		}
 		if err := s.emitEvents(ctx, emitter, s.depacketOut.Events); err != nil {
+			return err
+		}
+		if err := s.writeFeedback(ctx, s.depacketOut.Feedback); err != nil {
 			return err
 		}
 		for j := range s.depacketOut.Packets {
@@ -485,6 +500,7 @@ func (s *Source) handleEvent(ctx context.Context, event *av.Event) error {
 				kept = append(kept, depacketizer)
 			}
 		}
+		clear(s.depacketizers[len(kept):])
 		s.depacketizers = kept
 	}
 	if canonicalize {
@@ -597,6 +613,7 @@ func (s *Source) applyStreamRemoved(event *av.Event) {
 		}
 		streams = append(streams, s.streams[i])
 	}
+	clear(s.streams[len(streams):])
 	s.streams = streams
 	timestamps := s.timestamps[:0]
 	for i := range s.timestamps {

@@ -328,9 +328,15 @@ func (s *sender) payloadFor(id av.CodecID) (PayloadCodec, bool) {
 
 // newHistory makes the NACK history: slots packets, their payload room cut
 // from one allocation, so the data path never allocates for it.
+// newHistory rounds slots up to a power of two (capped at 65536) so uint16
+// sequence wraparound never aliases slots in the ring.
 func newHistory(slots int, mtu int) []sentPacket {
-	history := make([]sentPacket, slots)
-	arena := make([]byte, slots*mtu)
+	size := 1
+	for size < slots && size < 1<<16 {
+		size <<= 1
+	}
+	history := make([]sentPacket, size)
+	arena := make([]byte, size*mtu)
 	for i := range history {
 		history[i].buf = arena[i*mtu : i*mtu : (i+1)*mtu]
 	}
@@ -342,7 +348,7 @@ func (s *sendStream) remember(packet *rtp.Packet) {
 	if len(s.history) == 0 {
 		return
 	}
-	slot := &s.history[int(packet.SequenceNumber)%len(s.history)]
+	slot := &s.history[int(packet.SequenceNumber)&(len(s.history)-1)]
 	if !slot.state.CompareAndSwap(slotReady, slotWriting) && !slot.state.CompareAndSwap(slotEmpty, slotWriting) {
 		return
 	}
@@ -391,7 +397,7 @@ func (s *sender) retransmit(ctx context.Context, nack *rtcp.TransportLayerNack) 
 }
 
 func (s *sendStream) resend(ctx context.Context, writer PacketWriter, seq uint16) {
-	slot := &s.history[int(seq)%len(s.history)]
+	slot := &s.history[int(seq)&(len(s.history)-1)]
 	if !slot.state.CompareAndSwap(slotReady, slotReading) {
 		return
 	}

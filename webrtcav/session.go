@@ -193,7 +193,7 @@ func (s *peerConnectionSession) enqueueTrack(track RemoteTrack) {
 func (s *peerConnectionSession) emitTrackAdded(track RemoteTrack) {
 	stream := track.Stream
 	if stream.ID == "" && track.Track != nil {
-		stream = streamFromRemoteTrack(track)
+		stream = streamFromRemoteTrack(normalizeRemoteTrack(track))
 	}
 	s.emit(av.Event{
 		Type:     av.EventStreamAdded,

@@ -23,9 +23,11 @@ const (
 
 // H264Depacketizer converts H264 RTP payloads into Annex B access-unit packets.
 type H264Depacketizer struct {
-	assembler videoFrameAssembler
-	keyframe  bool
-	fragment  bool
+	assembler      videoFrameAssembler
+	keyframe       bool
+	fragment       bool
+	hasParamBuffer bool
+	paramTimestamp uint32
 }
 
 var _ Depacketizer = (*H264Depacketizer)(nil)
@@ -56,13 +58,38 @@ func (d *H264Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 	sync := start && h264HasIDR(pkt.Payload)
 	if d.assembler.dropping {
 		if !sync {
+			if start && !pkt.Marker && h264HasParamSet(pkt.Payload) {
+				if !d.hasParamBuffer || d.paramTimestamp != pkt.Timestamp {
+					d.assembler.buffer = d.assembler.buffer[:0]
+					d.paramTimestamp = pkt.Timestamp
+					d.hasParamBuffer = true
+				}
+				d.fragment = false
+				if err := d.appendPayload(pkt.Payload); err != nil {
+					d.hasParamBuffer = false
+					d.assembler.resetPartial()
+					d.fragment = false
+					d.keyframe = false
+					return err
+				}
+				return nil
+			}
+			d.hasParamBuffer = false
 			d.assembler.requestSync = true
 			d.assembler.resetPartial()
 			d.fragment = false
 			d.keyframe = false
 			return d.assembler.emitPendingSync(out)
 		}
-		d.begin(pkt.Timestamp)
+		if d.hasParamBuffer && d.paramTimestamp == pkt.Timestamp {
+			d.assembler.started = true
+			d.assembler.timestamp = pkt.Timestamp
+			d.keyframe = false
+			d.fragment = false
+		} else {
+			d.begin(pkt.Timestamp)
+		}
+		d.hasParamBuffer = false
 		d.assembler.dropping = false
 		d.assembler.requestSync = false
 	} else if !d.assembler.started {
@@ -81,9 +108,10 @@ func (d *H264Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 	}
 
 	if err := d.appendPayload(pkt.Payload); err != nil {
-		if err == ErrFrameTooLarge {
-			d.assembler.dropUntilSync()
-		}
+		d.fragment = false
+		d.keyframe = false
+		d.hasParamBuffer = false
+		d.assembler.dropUntilSync()
 		return err
 	}
 	if !pkt.Marker || d.fragment {
@@ -103,6 +131,7 @@ func (d *H264Depacketizer) FlushInto(context.Context, *DepacketizeResult) error 
 	d.assembler.resetPartial()
 	d.keyframe = false
 	d.fragment = false
+	d.hasParamBuffer = false
 	return nil
 }
 
@@ -120,6 +149,7 @@ func (d *H264Depacketizer) HandleEvent(ctx context.Context, event *av.Event) err
 		if affected {
 			d.keyframe = false
 			d.fragment = false
+			d.hasParamBuffer = false
 		}
 	}
 	return nil
@@ -137,8 +167,14 @@ func (d *H264Depacketizer) appendPayload(payload []byte) error {
 	naluType := payload[0] & h264NALUTypeMask
 	switch {
 	case naluType > 0 && naluType < h264NALUSTAPA:
+		if d.fragment {
+			return ErrInvalidPayload
+		}
 		return d.appendNALU(payload)
 	case naluType == h264NALUSTAPA:
+		if d.fragment {
+			return ErrInvalidPayload
+		}
 		return d.appendSTAPA(payload)
 	case naluType == h264NALUFUA:
 		return d.appendFUA(payload)
@@ -177,6 +213,9 @@ func (d *H264Depacketizer) appendFUA(payload []byte) error {
 	end := payload[1]&h264FUEndMask != 0
 	naluHeader := (payload[0] & h264NALUNRIMask) | (payload[1] & h264NALUTypeMask)
 	if start {
+		if d.fragment {
+			return ErrInvalidPayload
+		}
 		d.fragment = !end
 		if naluHeader&h264NALUTypeMask == h264NALUIDR {
 			d.keyframe = true
@@ -247,6 +286,43 @@ func h264StartsNALU(payload []byte) bool {
 		return len(payload) >= 2 && payload[1]&h264FUStartMask != 0
 	}
 	return naluType > 0 && naluType <= h264NALUSTAPA
+}
+
+func h264IsParamSet(naluType byte) bool {
+	return naluType == h264NALUSPS || naluType == h264NALUPPS || naluType == h264NALUAUD
+}
+
+func h264HasParamSet(payload []byte) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	naluType := payload[0] & h264NALUTypeMask
+	switch {
+	case h264IsParamSet(naluType):
+		return true
+	case naluType == h264NALUSTAPA:
+		offset := 1
+		found := false
+		for offset+2 <= len(payload) {
+			size := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+			offset += 2
+			if size == 0 {
+				continue
+			}
+			if offset+size > len(payload) {
+				return false
+			}
+			nt := payload[offset] & h264NALUTypeMask
+			if !h264IsParamSet(nt) {
+				return false
+			}
+			found = true
+			offset += size
+		}
+		return found && offset == len(payload)
+	default:
+		return false
+	}
 }
 
 func h264HasIDR(payload []byte) bool {

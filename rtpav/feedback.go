@@ -10,9 +10,12 @@ type FeedbackResult struct {
 	NACKPairs  []rtcp.NackPair
 	FIREntries []rtcp.FIREntry
 
-	nack rtcp.TransportLayerNack
-	pli  rtcp.PictureLossIndication
-	fir  rtcp.FullIntraRequest
+	nacks     [4]rtcp.TransportLayerNack
+	nackCount int
+	plis      [4]rtcp.PictureLossIndication
+	pliCount  int
+	firs      [4]rtcp.FullIntraRequest
+	firCount  int
 }
 
 // Reset clears the result for reuse, keeping allocated capacity.
@@ -29,9 +32,18 @@ func (r *FeedbackResult) Reset() {
 	r.Packets = r.Packets[:0]
 	r.NACKPairs = r.NACKPairs[:0]
 	r.FIREntries = r.FIREntries[:0]
-	r.nack = rtcp.TransportLayerNack{}
-	r.pli = rtcp.PictureLossIndication{}
-	r.fir = rtcp.FullIntraRequest{}
+	for i := range r.nackCount {
+		r.nacks[i] = rtcp.TransportLayerNack{}
+	}
+	for i := range r.pliCount {
+		r.plis[i] = rtcp.PictureLossIndication{}
+	}
+	for i := range r.firCount {
+		r.firs[i] = rtcp.FullIntraRequest{}
+	}
+	r.nackCount = 0
+	r.pliCount = 0
+	r.firCount = 0
 }
 
 // AddNACK appends one transport-layer NACK covering the missing sequence
@@ -39,6 +51,9 @@ func (r *FeedbackResult) Reset() {
 func (r *FeedbackResult) AddNACK(senderSSRC uint32, mediaSSRC uint32, missing []uint16) error {
 	if len(missing) == 0 {
 		return nil
+	}
+	if len(r.Packets) == cap(r.Packets) {
+		return ErrResultFull
 	}
 	start := len(r.NACKPairs)
 	if err := r.appendNACKPair(rtcp.NackPair{PacketID: missing[0]}); err != nil {
@@ -60,39 +75,69 @@ func (r *FeedbackResult) AddNACK(senderSSRC uint32, mediaSSRC uint32, missing []
 		}
 		current.LostPackets |= 1 << (delta - 1)
 	}
-	r.nack = rtcp.TransportLayerNack{
+	pkt := rtcp.TransportLayerNack{
 		SenderSSRC: senderSSRC,
 		MediaSSRC:  mediaSSRC,
 		Nacks:      r.NACKPairs[start:],
 	}
-	return r.appendPacket(&r.nack)
+	var ptr *rtcp.TransportLayerNack
+	if r.nackCount < len(r.nacks) {
+		r.nacks[r.nackCount] = pkt
+		ptr = &r.nacks[r.nackCount]
+		r.nackCount++
+	} else {
+		p := pkt
+		ptr = &p
+	}
+	return r.appendPacket(ptr)
 }
 
 // AddPLI appends one picture-loss indication asking the sender for a new
 // keyframe.
 func (r *FeedbackResult) AddPLI(senderSSRC uint32, mediaSSRC uint32) error {
-	r.pli = rtcp.PictureLossIndication{
+	if len(r.Packets) == cap(r.Packets) {
+		return ErrResultFull
+	}
+	pkt := rtcp.PictureLossIndication{
 		SenderSSRC: senderSSRC,
 		MediaSSRC:  mediaSSRC,
 	}
-	return r.appendPacket(&r.pli)
+	var ptr *rtcp.PictureLossIndication
+	if r.pliCount < len(r.plis) {
+		r.plis[r.pliCount] = pkt
+		ptr = &r.plis[r.pliCount]
+		r.pliCount++
+	} else {
+		p := pkt
+		ptr = &p
+	}
+	return r.appendPacket(ptr)
 }
 
 // AddFIR appends one full-intra request with the given FIR sequence number.
 func (r *FeedbackResult) AddFIR(senderSSRC uint32, mediaSSRC uint32, sequenceNumber uint8) error {
-	if len(r.FIREntries) == cap(r.FIREntries) {
+	if len(r.Packets) == cap(r.Packets) || len(r.FIREntries) == cap(r.FIREntries) {
 		return ErrResultFull
 	}
 	r.FIREntries = append(r.FIREntries, rtcp.FIREntry{
 		SSRC:           mediaSSRC,
 		SequenceNumber: sequenceNumber,
 	})
-	r.fir = rtcp.FullIntraRequest{
+	pkt := rtcp.FullIntraRequest{
 		SenderSSRC: senderSSRC,
 		MediaSSRC:  mediaSSRC,
 		FIR:        r.FIREntries[len(r.FIREntries)-1:],
 	}
-	return r.appendPacket(&r.fir)
+	var ptr *rtcp.FullIntraRequest
+	if r.firCount < len(r.firs) {
+		r.firs[r.firCount] = pkt
+		ptr = &r.firs[r.firCount]
+		r.firCount++
+	} else {
+		p := pkt
+		ptr = &p
+	}
+	return r.appendPacket(ptr)
 }
 
 func (r *FeedbackResult) appendNACKPair(pair rtcp.NackPair) error {
