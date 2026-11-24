@@ -137,7 +137,11 @@ func framePCM(frame *av.Frame, channels int) ([]int16, error) {
 	if frame.Audio.Channels != 0 && frame.Audio.Channels != channels {
 		return nil, fmt.Errorf("%w: %d channels, the encoder opened with %d", codec.ErrUnsupportedFormat, frame.Audio.Channels, channels)
 	}
-	data := frame.Planes[0].Buffer.Bytes[frame.Planes[0].Offset:]
+	plane := frame.Planes[0]
+	if plane.Offset < 0 || plane.Offset > len(plane.Buffer.Bytes) {
+		return nil, fmt.Errorf("%w: plane offset %d out of range for %d bytes", codec.ErrUnsupportedFormat, plane.Offset, len(plane.Buffer.Bytes))
+	}
+	data := plane.Buffer.Bytes[plane.Offset:]
 	samples := len(data) / 2
 	if frame.Audio.Samples > 0 {
 		samples = frame.Audio.Samples * channels

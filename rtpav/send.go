@@ -199,6 +199,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 		return errors.New("rtpav: Send opened twice")
 	}
 	used := map[uint32]bool{0: true}
+	built := make([]*sendStream, 0, len(streams))
 	for _, stream := range streams {
 		payload, ok := s.payloadFor(stream.Codec.ID)
 		if !ok {
@@ -216,7 +217,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 			ssrc = rand.Uint32()
 		}
 		used[ssrc] = true
-		s.streams = append(s.streams, &sendStream{
+		built = append(built, &sendStream{
 			stream:     stream,
 			packetizer: packetizer,
 			payload:    payload,
@@ -227,9 +228,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 			maxBitrate: configuredBitrate(stream),
 		})
 	}
-	if s.streams == nil {
-		s.streams = []*sendStream{}
-	}
+	s.streams = built
 	loop, cancel := context.WithCancel(context.Background())
 	s.cancel, s.done = cancel, make(chan struct{})
 	go s.feedback(loop)

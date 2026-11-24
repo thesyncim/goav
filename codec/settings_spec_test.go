@@ -165,3 +165,17 @@ func TestVideoCodecSpecsUseVideoDefaultsAndOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestAACSpecDefaults(t *testing.T) {
+	spec := AAC(Bitrate(128_000))
+	if spec.ID != av.CodecAAC ||
+		spec.Type != av.MediaAudio ||
+		spec.Parameters.ID != av.CodecAAC ||
+		spec.Parameters.Type != av.MediaAudio ||
+		spec.Parameters.SampleRate != 48000 ||
+		spec.Parameters.ClockRate != 48000 ||
+		spec.Parameters.Channels != Stereo ||
+		spec.Settings.Bitrate != 128_000 {
+		t.Fatalf("AAC spec = %+v", spec)
+	}
+}

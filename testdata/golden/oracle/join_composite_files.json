@@ -472,7 +472,8 @@
           "video"
         ],
         "pixelFormats": [
-          "i420"
+          "i420",
+          "yuv420p"
         ],
         "realtime": true,
         "requiredBy": "composite",

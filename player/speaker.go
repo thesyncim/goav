@@ -45,7 +45,10 @@ func openSpeaker(e *engine.Engine) (stop func(), err error) {
 	// reports one. Both delay what is heard, so both shift the heard position.
 	e.SetDevice(func() int { return p.BufferedSize() / engine.BytesPerFrame }, speakerBuffer+hardwareLatency())
 	p.Play()
-	// The engine's device callback keeps the player reachable while it plays
-	// (oto closes a collected player).
-	return p.Pause, nil
+	// The engine's device callback keeps the player reachable while it plays;
+	// closing releases the oto player from the mixer immediately.
+	return func() {
+		p.Pause()
+		_ = p.Close()
+	}, nil
 }

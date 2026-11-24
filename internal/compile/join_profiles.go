@@ -581,7 +581,7 @@ func compositeJoinedOutputShape(p *JoinPlan) shape.Spec {
 		switch arm.PixelFormat {
 		case "":
 			missingPixelFormat = true
-		case av.PixelFormatI420:
+		case av.PixelFormatI420, av.PixelFormatYUV420P:
 		default:
 			if unsupportedPixelFormat == "" {
 				unsupportedPixelFormat = arm.PixelFormat

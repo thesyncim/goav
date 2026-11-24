@@ -51,12 +51,31 @@ func findStartCode(data []byte, offset int) (int, int) {
 // AppendAVC appends the Annex B access unit src to dst as an AVCC sample
 // with 4-byte NAL lengths.
 func AppendAVC(dst []byte, src []byte) ([]byte, error) {
-	err := ForEachNAL(src, func(nal []byte) error {
+	start, width := findStartCode(src, 0)
+	if start < 0 {
+		return dst, ErrInvalid
+	}
+	for i := range start {
+		if src[i] != 0 {
+			return dst, ErrInvalid
+		}
+	}
+	for start >= 0 {
+		nalStart := start + width
+		next, nextWidth := findStartCode(src, nalStart)
+		nalEnd := len(src)
+		if next >= 0 {
+			nalEnd = next
+		}
+		if nalStart >= nalEnd {
+			return dst, ErrInvalid
+		}
+		nal := src[nalStart:nalEnd]
 		dst = binary.BigEndian.AppendUint32(dst, uint32(len(nal)))
 		dst = append(dst, nal...)
-		return nil
-	})
-	return dst, err
+		start, width = next, nextWidth
+	}
+	return dst, nil
 }
 
 // ConfigFromAnnexB builds an avcC record, with 4-byte NAL lengths, from the

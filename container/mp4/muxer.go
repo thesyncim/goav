@@ -62,6 +62,8 @@ type FormatMuxer struct {
 	sequence   uint32
 	anchor     *muxTrack
 	box        boxWriter
+	readyBuf   []int
+	offsetsBuf []int
 	// fragment is the longest fragment the output asked for (0: cut at
 	// keyframes only).
 	fragment time.Duration
@@ -404,7 +406,10 @@ func (m *FormatMuxer) flushFragment(last bool) error {
 	}
 	// Each track sends the samples it knows the length of; a trailing sample
 	// without a duration waits for the next fragment.
-	ready := make([]int, len(m.tracks))
+	if cap(m.readyBuf) < len(m.tracks) {
+		m.readyBuf = make([]int, len(m.tracks))
+	}
+	ready := m.readyBuf[:len(m.tracks)]
 	any := false
 	for i, t := range m.tracks {
 		n := len(t.samples)
@@ -425,7 +430,10 @@ func (m *FormatMuxer) flushFragment(last bool) error {
 	w.startFull("mfhd", 0, 0)
 	w.u32(m.sequence)
 	w.end()
-	dataOffsets := make([]int, len(m.tracks))
+	if cap(m.offsetsBuf) < len(m.tracks) {
+		m.offsetsBuf = make([]int, len(m.tracks))
+	}
+	dataOffsets := m.offsetsBuf[:len(m.tracks)]
 	for i, t := range m.tracks {
 		if ready[i] == 0 {
 			continue
@@ -449,14 +457,16 @@ func (m *FormatMuxer) flushFragment(last bool) error {
 	}
 	w.u32(uint32(mdatSize))
 	w.str("mdat")
+	if err := m.write(w.b); err != nil {
+		return err
+	}
 	for i, t := range m.tracks {
 		if ready[i] == 0 {
 			continue
 		}
-		w.bytes(t.data[:t.fragmentBytes(ready[i])])
-	}
-	if err := m.write(w.b); err != nil {
-		return err
+		if err := m.write(t.data[:t.fragmentBytes(ready[i])]); err != nil {
+			return err
+		}
 	}
 	for i, t := range m.tracks {
 		t.dropFragment(ready[i])

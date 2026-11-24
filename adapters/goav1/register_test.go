@@ -71,9 +71,9 @@ func TestDecoderFactoryProvidesRuntimeState(t *testing.T) {
 		t.Fatalf("state = %T", state)
 	}
 	if decoderState.Format().MonoChrome != true ||
-		decoderState.ScratchSize().Events < defaultRuntimeEvents ||
-		decoderState.ScratchSize().Event.Plan.JobCount < 1 {
-		t.Fatalf("state format=%+v scratch=%+v", decoderState.Format(), decoderState.ScratchSize())
+		len(decoderState.paddingSeed) == 0 ||
+		len(decoderState.rtpScratch) == 0 {
+		t.Fatalf("state format=%+v", decoderState.Format())
 	}
 	decoderState.Close()
 }

@@ -240,7 +240,10 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 		return "", err
 	}
 	defer resp.Body.Close()
-	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", s.plainError(err)
+	}
 	if resp.StatusCode != http.StatusCreated {
 		return "", &StatusError{Protocol: s.protocol, Method: http.MethodPost, StatusCode: resp.StatusCode, Status: resp.Status}
 	}

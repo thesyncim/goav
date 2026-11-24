@@ -1,8 +1,6 @@
 module github.com/thesyncim/goav/examples/custom-codec
 
-go 1.27.0
-
-toolchain go1.27.2
+go 1.27.4
 
 require (
 	github.com/thesyncim/goav v0.0.0-20261020183009-ea6589a0aecc

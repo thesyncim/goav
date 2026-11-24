@@ -4,7 +4,7 @@ import "github.com/thesyncim/goav/av"
 
 // Spec is a fully-resolved codec choice: the codec id and media type, the
 // structural Parameters, the encoder Settings, and the Copy/Auto modes. Build it
-// with the constructors (VP9, VP8, Opus, H264, AV1, Codec) or Copy/Auto.
+// with the constructors (VP9, VP8, Opus, AAC, H264, HEVC, AV1, Codec) or Copy/Auto.
 type Spec struct {
 	ID         av.CodecID         `json:"id,omitempty"`
 	Type       av.MediaType       `json:"type,omitempty"`
@@ -29,6 +29,18 @@ func Codec(id av.CodecID, media av.MediaType, options ...Option) Spec {
 func Opus(options ...Option) Spec {
 	return newCodecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
+		Type:          av.MediaAudio,
+		ClockRate:     48000,
+		SampleRate:    48000,
+		Channels:      Stereo,
+		ChannelLayout: "stereo",
+	}, options...)
+}
+
+// AAC builds an AAC encoder spec (defaults to 48kHz stereo).
+func AAC(options ...Option) Spec {
+	return newCodecSpec(av.CodecAAC, av.MediaAudio, av.CodecParameters{
+		ID:            av.CodecAAC,
 		Type:          av.MediaAudio,
 		ClockRate:     48000,
 		SampleRate:    48000,

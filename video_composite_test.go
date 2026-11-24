@@ -342,3 +342,28 @@ type videoCompositeFailEmitter struct {
 func (e *videoCompositeFailEmitter) Emit(context.Context, *pipeline.Message) error {
 	return e.err
 }
+
+func TestVideoCompositeAcceptsYUV420P(t *testing.T) {
+	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
+	defer func() { _ = stage.Close() }()
+
+	a := compositeTestI420Frame("a", 4, 4, 10, 20, 30)
+	a.Video.PixelFormat = av.PixelFormatYUV420P
+	b := compositeTestI420Frame("b", 4, 4, 40, 50, 60)
+
+	emitter := &mixTestEmitter{}
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: a}, emitter); err != nil {
+		t.Fatalf("arm a error = %v", err)
+	}
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: b}, emitter); err != nil {
+		t.Fatalf("arm b error = %v", err)
+	}
+	if len(emitter.frames) != 1 {
+		t.Fatalf("emitted frames = %d, want 1", len(emitter.frames))
+	}
+	out := emitter.frames[0]
+	if out.Video == nil || out.Video.Width != 8 || out.Video.Height != 4 || out.Video.PixelFormat != av.PixelFormatI420 {
+		t.Fatalf("composite output video = %+v", out.Video)
+	}
+}

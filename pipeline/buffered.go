@@ -464,7 +464,8 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, m
 	// it cannot abort siblings or the source; a simple one-target chain keeps the
 	// strict behavior (e.g. DropNever propagates ErrBackpressure to tear down).
 	// Every target queues the same payload by reference.
-	fanout := countTargets(snap, fromNode, msg) > 1
+	fanoutKnown := false
+	fanout := false
 
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
@@ -484,12 +485,18 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, m
 				// subscriber cannot tear down the source. Everything else —
 				// cancellation, config/validation errors, and simple-chain
 				// backpressure (the strict DropNever contract) — still propagates.
-				if fanout && errors.Is(err, ErrBackpressure) {
-					observeDrop(target.counters, target.policy.Drop, &g.cold)
-					delivery.Shed++
-				} else {
-					return delivery, err
+				if errors.Is(err, ErrBackpressure) {
+					if !fanoutKnown {
+						fanout = countTargets(snap, fromNode, msg) > 1
+						fanoutKnown = true
+					}
+					if fanout {
+						observeDrop(target.counters, target.policy.Drop, &g.cold)
+						delivery.Shed++
+						continue
+					}
 				}
+				return delivery, err
 			} else if delivered {
 				delivery.Delivered++
 			} else {

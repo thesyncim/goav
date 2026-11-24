@@ -439,13 +439,19 @@ func (e *encoder) fill(buffer uintptr, pic *kit.Picture) error {
 	if !(format == pixelI420 && planes == 3) && !(semi && planes == 2) || f.cv.width(buffer) < pic.Width || f.cv.height(buffer) < pic.Height {
 		return &kit.Error{Backend: Name, Op: "encode", Reason: "the session's pixel buffers are " + fourCCString(format) + ", not y420 or 420v at the frame's size"}
 	}
-	f.cv.lock(buffer, 0)
+	if s := f.cv.lock(buffer, 0); s != 0 {
+		return kit.Fail(Name, "encode", "CVPixelBufferLockBaseAddress", int64(s))
+	}
 	defer f.cv.unlock(buffer, 0)
-	cw := (pic.Width + 1) / 2
+	cw, ch := (pic.Width+1)/2, (pic.Height+1)/2
 	for i := range planes {
 		rows, stride := f.cv.planeHeight(buffer, i), f.cv.planeStride(buffer, i)
 		dst := unsafe.Slice((*byte)(f.cv.planeBase(buffer, i)), stride*rows)
-		for row := range rows {
+		copyRows := min(rows, ch)
+		if i == 0 {
+			copyRows = min(rows, pic.Height)
+		}
+		for row := range copyRows {
 			line := dst[row*stride : (row+1)*stride]
 			switch {
 			case i == 0:

@@ -186,6 +186,7 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
+| [`goav/cameraav`](cameraav) | cgo-free camera capture with bounded zero-allocation frame delivery |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 | [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
 | [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, ctl ([CLI](docs/CLI.md)) |

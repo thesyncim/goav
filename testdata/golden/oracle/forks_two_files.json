@@ -1077,7 +1077,8 @@
           "video"
         ],
         "pixelFormats": [
-          "i420"
+          "i420",
+          "yuv420p"
         ],
         "realtime": true,
         "requiredBy": "a-vp8",
@@ -1119,7 +1120,8 @@
           "video"
         ],
         "pixelFormats": [
-          "i420"
+          "i420",
+          "yuv420p"
         ],
         "realtime": true,
         "requiredBy": "a-vp9",
@@ -1161,7 +1163,8 @@
           "video"
         ],
         "pixelFormats": [
-          "i420"
+          "i420",
+          "yuv420p"
         ],
         "realtime": true,
         "requiredBy": "b-vp8",
@@ -1203,7 +1206,8 @@
           "video"
         ],
         "pixelFormats": [
-          "i420"
+          "i420",
+          "yuv420p"
         ],
         "realtime": true,
         "requiredBy": "b-vp9",

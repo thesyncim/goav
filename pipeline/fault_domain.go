@@ -36,8 +36,9 @@ func (e *FaultError) Unwrap() error { return e.Cause }
 
 type faultContext struct {
 	context.Context
-	parent context.Context
-	cancel context.CancelFunc
+	parent           context.Context
+	parentComparable bool
+	cancel           context.CancelFunc
 }
 
 // FaultDomain is a durable failure record, retained after its nodes retire.
@@ -127,7 +128,8 @@ func (d *FaultDomain) setContext(parent context.Context) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	_ = ctx.Done() // allocate on the control plane, never per message
-	prior := d.ctx.Swap(&faultContext{Context: ctx, parent: parent, cancel: cancel})
+	parentComparable := parent != nil && reflect.TypeOf(parent).Comparable()
+	prior := d.ctx.Swap(&faultContext{Context: ctx, parent: parent, parentComparable: parentComparable, cancel: cancel})
 	if prior != nil {
 		prior.cancel()
 	}
@@ -140,7 +142,7 @@ func (b *nodeBase) faulted() bool { return b.domain.Load().Failed() }
 func (b *nodeBase) handlerContext(ctx context.Context) (context.Context, func()) {
 	if d := b.domain.Load(); d != nil {
 		if dc := d.ctx.Load(); dc != nil {
-			if reflect.TypeOf(ctx).Comparable() && (ctx == dc.parent || ctx == dc.Context) {
+			if ctx == dc.Context || (dc.parentComparable && ctx == dc.parent) {
 				return dc.Context, nil
 			}
 			// An explicit per-delivery context keeps its values and deadline.

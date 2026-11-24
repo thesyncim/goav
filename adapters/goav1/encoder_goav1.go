@@ -512,9 +512,7 @@ func mapGoav1EncodeError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, backend.ErrEncoderInvalidConfig),
-		errors.Is(err, backend.ErrEncoderInvalidFrame),
-		errors.Is(err, backend.ErrEncoderUnsupported):
+	case errors.Is(err, backend.ErrEncoderInvalidFrame):
 		return fmt.Errorf("goav1: %v: %w", err, codec.ErrUnsupportedFormat)
 	default:
 		return err

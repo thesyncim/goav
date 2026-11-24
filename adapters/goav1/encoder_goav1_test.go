@@ -394,7 +394,7 @@ func TestAV1EncoderHelpers(t *testing.T) {
 	if got := encodeAV1FPS(codec.EncodeConfig{}); got != 30 {
 		t.Fatalf("default fps = %d, want 30", got)
 	}
-	if got := mapGoav1EncodeError(backend.ErrEncoderInvalidConfig); !errors.Is(got, codec.ErrUnsupportedFormat) {
+	if got := mapGoav1EncodeError(backend.ErrEncoderInvalidFrame); !errors.Is(got, codec.ErrUnsupportedFormat) {
 		t.Fatalf("mapped err = %v, want ErrUnsupportedFormat", got)
 	}
 	boom := errors.New("boom")

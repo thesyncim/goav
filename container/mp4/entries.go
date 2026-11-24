@@ -112,7 +112,15 @@ func (t *muxTrack) sampleData(payload []byte, keyframe bool) ([]byte, error) {
 				t.config = record
 			}
 		}
-		return av1.StripTemporalDelimiters(payload)
+		var err error
+		out, err := av1.AppendWithoutTemporalDelimiters(t.scratch[:0], payload)
+		if err != nil {
+			return nil, err
+		}
+		if len(out) > 0 && &out[0] != &payload[0] {
+			t.scratch = out
+		}
+		return out, nil
 	case av.CodecVP8, av.CodecVP9:
 		if keyframe && !t.vpKnown {
 			t.vp, t.vpKnown = parseVPKeyframe(t.codec, payload)

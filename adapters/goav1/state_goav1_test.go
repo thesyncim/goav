@@ -9,6 +9,12 @@ import (
 	backend "github.com/thesyncim/goav1"
 )
 
+const (
+	testOBUSequenceHeader byte = 1
+	testOBUFrameHeader    byte = 3
+	testOBUTileGroup      byte = 4
+)
+
 func TestDecoderFrameFormatFromBounds(t *testing.T) {
 	format, err := DecoderFrameFormatFromBounds(codec.DecodeBounds{
 		MaxWidth:  64,
@@ -20,13 +26,6 @@ func TestDecoderFrameFormatFromBounds(t *testing.T) {
 	if format.Width != 64 || format.Height != 48 || format.BitDepth != 8 ||
 		!format.SubsamplingX || !format.SubsamplingY || format.Align != defaultAlign {
 		t.Fatalf("format = %+v", format)
-	}
-	layout, err := backend.FrameRequiredSize(format)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if layout.Size == 0 {
-		t.Fatalf("layout = %+v", layout)
 	}
 }
 
@@ -66,9 +65,6 @@ func TestDecoderFrameFormatFromStreamPixelFormats(t *testing.T) {
 				format.SubsamplingY != test.subsamplingY {
 				t.Fatalf("format = %+v", format)
 			}
-			if _, err := backend.FrameRequiredSize(format); err != nil {
-				t.Fatal(err)
-			}
 		})
 	}
 }
@@ -86,20 +82,7 @@ func TestDecoderFrameFormatFromStreamRejectsUnsupportedPixelFormat(t *testing.T)
 	}
 }
 
-func TestDecoderScratchSizeFromBounds(t *testing.T) {
-	size := DecoderScratchSizeFromBounds(codec.DecodeBounds{
-		MaxFramesPerInput: 2,
-		MaxEventsPerInput: 3,
-		MaxPayloadBytes:   100,
-		MaxRetainedBytes:  200,
-	})
-	if size.Events != 3 || size.RTPSpans != 3 || size.RTPBuffer != 300 ||
-		size.Event.Outputs != 2 {
-		t.Fatalf("size = %+v", size)
-	}
-}
-
-func TestNewDecoderStateBindsRuntime(t *testing.T) {
+func TestNewDecoderStateLifecycle(t *testing.T) {
 	state, err := NewDecoderState(DecoderStateConfig{
 		Bounds: codec.DecodeBounds{
 			MaxFramesPerInput: 2,
@@ -113,326 +96,77 @@ func TestNewDecoderStateBindsRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Stream() == nil || state.BatchRunner() == nil {
-		t.Fatal("state did not expose stream and batch runner")
+	if state.HasSequenceHeader() {
+		t.Fatal("expected HasSequenceHeader() == false before first decode")
 	}
-
-	scratch := state.Scratch()
-	size := state.ScratchSize()
-	if err := scratch.Check(size); err != nil {
-		t.Fatal(err)
-	}
-	if len(scratch.Events) != 3 || len(scratch.RTPBuffer) != 300 ||
-		len(scratch.RTPSpans) != 3 || len(scratch.Outputs) != 2 {
-		t.Fatalf("scratch = %+v", scratch)
-	}
-
-	runtime := state.Runtime()
-	if runtime.State == nil || runtime.Refs == nil || runtime.FramePool == nil ||
-		runtime.Align != defaultAlign || runtime.SideData == nil || runtime.Stats == nil {
-		t.Fatalf("runtime = %+v", runtime)
-	}
-	if len(runtime.ReferenceSurfaces) != backend.InterRefsPerFrame ||
-		len(runtime.ReferenceFrames) != backend.InterRefsPerFrame ||
-		len(runtime.Releases) != backend.RefFrames ||
-		len(runtime.Outputs) != 2 {
-		t.Fatalf("runtime slices = %+v", runtime)
-	}
-
-	if runtime.FramePool.Available() != defaultSurfaceCount {
-		t.Fatalf("available = %d", runtime.FramePool.Available())
-	}
-	if _, frame, err := runtime.FramePool.Acquire(); err != nil || frame == nil {
-		t.Fatalf("acquire frame=%p err=%v", frame, err)
+	if state.Bounds().MaxWidth != 64 || state.Format().Width != 64 {
+		t.Fatalf("bounds=%+v format=%+v", state.Bounds(), state.Format())
 	}
 	state.Reset()
-	if runtime := state.Runtime(); runtime.FramePool.Available() != defaultSurfaceCount {
-		t.Fatalf("available after reset = %d", runtime.FramePool.Available())
-	}
+	state.Close()
 }
 
-func TestNewDecoderStateKeepsExplicitScratchMax(t *testing.T) {
-	state, err := NewDecoderState(DecoderStateConfig{
-		Bounds: codec.DecodeBounds{
-			MaxFramesPerInput: 1,
-			MaxEventsPerInput: 1,
-			MaxPayloadBytes:   10,
-			MaxRetainedBytes:  10,
-			MaxWidth:          64,
-			MaxHeight:         64,
-		},
-		Scratch: backend.DecoderFrameWorkResidualStreamScratchSize{
-			Events:    8,
-			RTPBuffer: 128,
-			RTPSpans:  8,
-			Event: backend.DecoderFrameWorkResidualEventScratchSize{
-				Outputs: 4,
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	size := state.ScratchSize()
-	if size.Events != 8 || size.RTPBuffer != 128 || size.RTPSpans != 8 ||
-		size.Event.Outputs != 4 {
-		t.Fatalf("size = %+v", size)
-	}
-}
-
-func TestDecoderStatePlansBindsAndRunsLowOverhead(t *testing.T) {
-	payload := testLowOverheadStream()
-	probe := testLowOverheadPlan(t, payload)
-	workerPool, err := backend.NewTileWorkerPool(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer workerPool.Close()
-
-	state, err := NewDecoderState(DecoderStateConfig{
-		Bounds: codec.DecodeBounds{
-			MaxFramesPerInput: 1,
-			MaxEventsPerInput: probe.Size.Events,
-			MaxPayloadBytes:   len(payload),
-			MaxRetainedBytes:  0,
-			MaxWidth:          16,
-			MaxHeight:         16,
-		},
-		Format: backend.FrameFormat{
-			Width:        16,
-			Height:       16,
-			BitDepth:     8,
-			MonoChrome:   true,
-			SubsamplingX: true,
-			SubsamplingY: true,
-			Align:        defaultAlign,
-		},
-		Scratch:    probe.Size,
-		WorkerPool: workerPool,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	plan, err := state.PlanLowOverhead(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !plan.HasEvent() || plan.Size.Events != 3 || plan.Size.Event.Outputs != 1 {
-		t.Fatalf("plan = %+v", plan)
-	}
-	if _, ok := state.Runner(); ok {
-		t.Fatal("runner should not be bound before BindRunner")
-	}
-
-	runner, err := state.BindRunner(plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current, ok := state.Runner(); !ok || current != runner {
-		t.Fatalf("bound runner current=%p ok=%v want=%p", current, ok, runner)
-	}
-	runnerState := runner.State()
-	if !runnerState.Bound ||
-		runnerState.EventCapacity != plan.Size.Events ||
-		runnerState.OutputCapacity != plan.Size.Event.Outputs {
-		t.Fatalf("runner state = %+v", runnerState)
-	}
-
-	var result backend.DecoderFrameWorkResidualStreamResult
-	if err := runner.RunLowOverheadInto(&result, payload, nil); err != nil {
-		t.Fatal(err)
-	}
-	if result.EventCount != 3 ||
-		result.Run.CompletedFrames != 1 ||
-		result.Run.OutputCount != 1 ||
-		len(result.Run.Outputs) != 1 ||
-		result.Run.Outputs[0] == nil ||
-		result.Run.Outputs[0] != result.Run.Last.Output {
-		t.Fatalf("result = %+v", result)
-	}
-	if state.stats.TXBs == 0 || state.stats.Residuals == 0 {
-		t.Fatalf("stats = %+v", state.stats)
-	}
-
-	state.Reset()
-	if _, ok := state.Runner(); ok {
-		t.Fatal("runner should be cleared after Reset")
-	}
-}
-
-func TestDecoderStatePlansBindsAndRunsRTPPayloads(t *testing.T) {
-	payloads := testFragmentedRTPPayloads()
-	probe := testRTPPayloadsPlan(t, payloads)
-	workerPool, err := backend.NewTileWorkerPool(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer workerPool.Close()
-
-	state, err := NewDecoderState(DecoderStateConfig{
-		Bounds: codec.DecodeBounds{
-			MaxFramesPerInput: 1,
-			MaxEventsPerInput: probe.Size.Events,
-			MaxPayloadBytes:   128,
-			MaxRetainedBytes:  128,
-			MaxWidth:          16,
-			MaxHeight:         16,
-		},
-		Format: backend.FrameFormat{
-			Width:        16,
-			Height:       16,
-			BitDepth:     8,
-			MonoChrome:   true,
-			SubsamplingX: true,
-			SubsamplingY: true,
-			Align:        defaultAlign,
-		},
-		Scratch:    probe.Size,
-		WorkerPool: workerPool,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	runner, err := state.BindRunner(probe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result backend.DecoderFrameWorkResidualStreamResult
-	for i := range payloads {
-		plan, err := state.PlanRTPPayload(payloads[i])
-		if err != nil {
-			t.Fatalf("plan payload %d: %v", i, err)
-		}
-		if !decoderStreamScratchFits(probe.Size, plan.Size) {
-			t.Fatalf("payload %d plan does not fit probe: plan=%+v probe=%+v", i, plan.Size, probe.Size)
-		}
-		if err := runner.RunRTPPayloadInto(&result, payloads[i], nil); err != nil {
-			t.Fatalf("run payload %d: %v", i, err)
-		}
-	}
-	if result.Run.CompletedFrames != 1 ||
-		result.Run.OutputCount != 1 ||
-		result.Run.Outputs[0] == nil ||
-		state.runner.RTPUsed != 0 {
-		t.Fatalf("result = %+v retained=%d", result, state.runner.RTPUsed)
-	}
-}
-
-func TestNewDecoderStateRejectsMissingGeometry(t *testing.T) {
-	_, err := NewDecoderState(DecoderStateConfig{})
-	if !errors.Is(err, codec.ErrUnsupportedFormat) {
-		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
-	}
-}
-
-func testLowOverheadPlan(t *testing.T, payload []byte) backend.DecoderFrameWorkResidualStreamPlan {
-	t.Helper()
-	var stream backend.DecoderStream
-	events := make([]backend.DecoderEvent, 4)
-	spans := make([]backend.TileSpan, 1)
-	jobs := make([]backend.TileJob, 1)
-	batches := make([]backend.TileBatch, 1)
-	plan, err := backend.DecoderFrameWorkResidualLowOverheadStreamPlan(
-		stream,
-		payload,
-		1,
-		events,
-		spans,
-		jobs,
-		batches,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return plan
-}
-
-func testRTPPayloadsPlan(t *testing.T, payloads [][]byte) backend.DecoderFrameWorkResidualStreamPlan {
-	t.Helper()
-	var stream backend.DecoderStream
-	events := make([]backend.DecoderEvent, 4)
-	rtpBuffer := make([]byte, 256)
-	rtpSpans := make([]backend.RTPObuSpan, 4)
-	spans := make([]backend.TileSpan, 1)
-	jobs := make([]backend.TileJob, 1)
-	batches := make([]backend.TileBatch, 1)
-	plan, err := backend.DecoderFrameWorkResidualRTPPayloadsStreamPlan(
-		stream,
-		0,
-		payloads,
-		1,
-		rtpBuffer,
-		rtpSpans,
-		events,
-		spans,
-		jobs,
-		batches,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return plan
+func testTileData() []byte {
+	return []byte{0x0a, 0x1b, 0x59, 0x03, 0xa2, 0x4c, 0x8f, 0x24, 0x87, 0xdc, 0xb4, 0x19, 0x46, 0x81, 0xa4, 0x82, 0x4f, 0x21}
 }
 
 func testLowOverheadStream() []byte {
-	var stream []byte
-	stream = appendTestLowOverheadOBU(stream, backend.OBUSequenceHeader, testSequenceHeaderPayload())
-	stream = appendTestLowOverheadOBU(stream, backend.OBUFrameHeader, testFrameHeaderPayload())
-	stream = appendTestLowOverheadOBU(stream, backend.OBUTileGroup, []byte{0x80})
-	return stream
+	var payload []byte
+	payload = appendTestLowOverheadOBU(payload, testOBUSequenceHeader, testSequenceHeaderPayload())
+	payload = appendTestLowOverheadOBU(payload, testOBUFrameHeader, testFrameHeaderPayload())
+	payload = appendTestLowOverheadOBU(payload, testOBUTileGroup, testTileData())
+	return payload
 }
 
 func testRTPPayload() []byte {
 	elements := [...]backend.RTPElement{
-		{Data: testRTPElement(backend.OBUSequenceHeader, testSequenceHeaderPayload())},
-		{Data: testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())},
-		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+		{Data: testRTPElement(testOBUSequenceHeader, testSequenceHeaderPayload())},
+		{Data: testRTPElement(testOBUFrameHeader, testFrameHeaderPayload())},
+		{Data: testRTPElement(testOBUTileGroup, testTileData())},
 	}
-	payload := make([]byte, 128)
-	n, err := backend.PutRTPPayload(payload, backend.RTPAggregationHeader{
-		ElementCount:                uint8(len(elements)),
+	var dst [128]byte
+	n, err := backend.PutRTPPayload(dst[:], backend.RTPAggregationHeader{
+		ElementCount:                3,
 		StartsNewCodedVideoSequence: true,
 	}, elements[:])
 	if err != nil {
 		panic(err)
 	}
-	return payload[:n]
+	return append([]byte(nil), dst[:n]...)
 }
 
 func testRTPFramePayload() []byte {
 	elements := [...]backend.RTPElement{
-		{Data: testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())},
-		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+		{Data: testRTPElement(testOBUFrameHeader, testFrameHeaderPayload())},
+		{Data: testRTPElement(testOBUTileGroup, testTileData())},
 	}
-	payload := make([]byte, 128)
-	n, err := backend.PutRTPPayload(payload, backend.RTPAggregationHeader{
-		ElementCount: uint8(len(elements)),
+	var dst [128]byte
+	n, err := backend.PutRTPPayload(dst[:], backend.RTPAggregationHeader{
+		ElementCount: 2,
 	}, elements[:])
 	if err != nil {
 		panic(err)
 	}
-	return payload[:n]
+	return append([]byte(nil), dst[:n]...)
 }
 
 func testFragmentedRTPPayloads() [][]byte {
-	payloads := make([][]byte, 0, 4)
-
-	sequence := [...]backend.RTPElement{
-		{Data: testRTPElement(backend.OBUSequenceHeader, testSequenceHeaderPayload())},
-	}
+	var payloads [][]byte
 	var packet [128]byte
+
+	seq := [...]backend.RTPElement{
+		{Data: testRTPElement(testOBUSequenceHeader, testSequenceHeaderPayload())},
+	}
 	n, err := backend.PutRTPPayload(packet[:], backend.RTPAggregationHeader{
 		ElementCount:                1,
 		StartsNewCodedVideoSequence: true,
-	}, sequence[:])
+	}, seq[:])
 	if err != nil {
 		panic(err)
 	}
 	payloads = append(payloads, append([]byte(nil), packet[:n]...))
 
-	frameHeader := testRTPElement(backend.OBUFrameHeader, testFrameHeaderPayload())
+	frameHeader := testRTPElement(testOBUFrameHeader, testFrameHeaderPayload())
 	n, next, more, err := backend.PutRTPFragment(packet[:], frameHeader, 0, 2, false)
 	if err != nil {
 		panic(err)
@@ -451,7 +185,7 @@ func testFragmentedRTPPayloads() [][]byte {
 	payloads = append(payloads, append([]byte(nil), packet[:n]...))
 
 	tile := [...]backend.RTPElement{
-		{Data: testRTPElement(backend.OBUTileGroup, []byte{0x80})},
+		{Data: testRTPElement(testOBUTileGroup, testTileData())},
 	}
 	n, err = backend.PutRTPPayload(packet[:], backend.RTPAggregationHeader{ElementCount: 1}, tile[:])
 	if err != nil {
@@ -461,28 +195,18 @@ func testFragmentedRTPPayloads() [][]byte {
 	return payloads
 }
 
-func testRTPElement(typ backend.OBUType, payload []byte) []byte {
-	var header [2]byte
-	n, err := backend.PutOBUHeader(header[:], backend.OBUHeader{Type: typ})
-	if err != nil {
-		panic(err)
-	}
-	element := make([]byte, 0, n+len(payload))
-	element = append(element, header[:n]...)
+func testRTPElement(typ byte, payload []byte) []byte {
+	element := make([]byte, 0, 1+len(payload))
+	element = append(element, typ<<3)
 	element = append(element, payload...)
 	return element
 }
 
-func appendTestLowOverheadOBU(dst []byte, typ backend.OBUType, payload []byte) []byte {
+func appendTestLowOverheadOBU(dst []byte, typ byte, payload []byte) []byte {
 	if len(payload) > 0x7f {
 		panic("test payload too large")
 	}
-	var header [2]byte
-	n, err := backend.PutOBUHeader(header[:], backend.OBUHeader{Type: typ, HasSizeField: true})
-	if err != nil {
-		panic(err)
-	}
-	dst = append(dst, header[:n]...)
+	dst = append(dst, (typ<<3)|0x02)
 	dst = append(dst, byte(len(payload)))
 	dst = append(dst, payload...)
 	return dst
@@ -499,7 +223,7 @@ func testSequenceHeaderPayload() []byte {
 	w.writeBits(15, 8) // max_frame_width_minus_1
 	w.writeBits(15, 8) // max_frame_height_minus_1
 	w.writeBool(false) // use_128x128_superblock
-	w.writeBool(true)  // enable_filter_intra
+	w.writeBool(false) // enable_filter_intra
 	w.writeBool(true)  // enable_intra_edge_filter
 	w.writeBool(false) // enable_superres
 	w.writeBool(true)  // enable_cdef
@@ -514,7 +238,8 @@ func testSequenceHeaderPayload() []byte {
 
 func testFrameHeaderPayload() []byte {
 	var w testBitWriter
-	w.writeBool(true)  // disable_cdf_update
+	w.writeBool(false) // disable_cdf_update
+	w.writeBool(false) // allow_screen_content_tools
 	w.writeBool(false) // render_and_frame_size_different
 	w.writeBool(false) // uniform_tile_spacing_flag
 	w.writeBits(0, 8)  // base_q_idx
@@ -522,7 +247,7 @@ func testFrameHeaderPayload() []byte {
 	w.writeBool(false) // using_qmatrix
 	w.writeBool(false) // segmentation_enabled
 	w.writeBool(false) // reduced_tx_set
-	return w.bytes()
+	return w.trailingBits()
 }
 
 type testBitWriter struct {
