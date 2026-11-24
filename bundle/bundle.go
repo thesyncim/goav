@@ -21,6 +21,7 @@ import (
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
@@ -31,19 +32,16 @@ import (
 // schemes already registered, then applies opts on top. Registration is
 // last-wins, so opts can add or override bundled implementations.
 func New(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(appendOptions(Options(), opts...)...)
+	return goav.New(append(Options(), opts...)...)
 }
 
 // MustNew is New for package-level setup and tests.
 func MustNew(opts ...runconfig.Option) *goav.Runtime {
-	return mustRuntime(New(opts...))
-}
-
-func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
+	rt, err := New(opts...)
 	if err != nil {
 		panic(err)
 	}
-	return runtime
+	return rt
 }
 
 // Default is the process-wide bundled runtime: built with default options on
@@ -65,7 +63,7 @@ func Run(ctx context.Context, outs ...goav.Output) error {
 }
 
 // Build builds outs with the default bundled runtime without starting them.
-func Build(ctx context.Context, outs ...goav.Output) (goav.LiveTask, error) {
+func Build(ctx context.Context, outs ...goav.Output) (goav.Task, error) {
 	return Default().Build(ctx, outs...)
 }
 
@@ -80,6 +78,18 @@ func Describe(outs ...goav.Output) (pipeline.Spec, error) {
 func Explain(ctx context.Context, outs ...goav.Output) (plan.Report, error) {
 	return Default().Explain(ctx, outs...)
 }
+
+// Probe inspects a media container with the default bundled runtime's format
+// adapters.
+func Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
+	return Default().Probe(ctx, request)
+}
+
+// All returns one runtime option registering all bundled formats, codecs,
+// filters, and URL schemes:
+//
+//	rt, err := goav.New(bundle.All(), myOption)
+func All() runconfig.Option { return group(Options()) }
 
 // Options returns fresh runtime options for all bundled formats, codecs,
 // filters, and URL schemes. The returned slice is safe for callers to append
@@ -108,7 +118,7 @@ func Filters() runconfig.Option { return group(filterOptions) }
 
 // Schemes registers the URL schemes goav.URIInput and goav.URI resolve
 // through: file, http, and https (package scheme). Add others, or replace
-// these, with runconfig.Scheme.
+// these, with runconfig.WithScheme.
 func Schemes() runconfig.Option { return group(schemeOptions) }
 
 func group(options []runconfig.Option) runconfig.Option {
@@ -142,15 +152,8 @@ var filterOptions = []runconfig.Option{
 	runconfig.WithFilterAdapter(resizeadapter.Register),
 }
 
-func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconfig.Option {
-	options := make([]runconfig.Option, 0, len(base)+len(extra))
-	options = append(options, base...)
-	options = append(options, extra...)
-	return options
-}
-
 var schemeOptions = []runconfig.Option{
-	runconfig.Scheme("file", scheme.File()),
-	runconfig.Scheme("http", scheme.HTTP()),
-	runconfig.Scheme("https", scheme.HTTP()),
+	runconfig.WithScheme("file", scheme.File()),
+	runconfig.WithScheme("http", scheme.HTTP()),
+	runconfig.WithScheme("https", scheme.HTTP()),
 }

@@ -235,7 +235,7 @@ func vp8EncodeConfig() codec.EncodeConfig {
 			Height:      16,
 			PixelFormat: av.PixelFormatI420,
 		},
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Bitrate:   300,
 			Framerate: av.Duration{Value: 3000, Base: av.RTPTimeBase(90000)},
 		},

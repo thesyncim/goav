@@ -40,8 +40,8 @@ type session struct {
 	revision  uint64
 	eventSeq  uint64
 
-	videoTask  goav.LiveTask
-	audioTask  goav.LiveTask
+	videoTask  goav.Task
+	audioTask  goav.Task
 	videoCodec string
 	audioCodec string
 	lastError  string
@@ -64,7 +64,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Video().
 		Decode().
 		Tap(videoTapName).
@@ -101,7 +101,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Audio().
 		Decode().
 		Tap(audioTapName).
@@ -130,7 +130,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	go s.runTask("audio", task)
 }
 
-func (s *session) runTask(kind string, task goav.LiveTask) {
+func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
 	go s.drainTaskEvents(task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {

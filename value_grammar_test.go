@@ -60,7 +60,7 @@ func TestValueGrammarReuseFansOut(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var hd, sd bytes.Buffer
-	in := goav.FileInput("in.webm", bytes.NewReader(opusWebM(t)))
+	in := goav.Read("in.webm", bytes.NewReader(opusWebM(t)))
 	audio := in.Audio().Decode()
 	outs := []goav.Output{
 		audio.Resample(48_000, 2).Encode(codec.Opus()).As("hd").To(goav.Write("hd.webm", &hd)),
@@ -100,7 +100,7 @@ func TestValueGrammarMuxesStreamsIntoOneFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	in := goav.Read("in.mp4", bytes.NewReader(data))
 	out := goav.Write("out.mkv", &buf)
 	if err := offlineRuntime().Run(ctx, in.Video().To(out), in.Audio().To(out)); err != nil {
 		t.Fatalf("run: %v", err)
@@ -120,7 +120,7 @@ func TestValueGrammarCopiesEveryStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Write("out.mkv", &buf))); err != nil {
+	if err := offlineRuntime().Run(ctx, goav.Read("in.mp4", bytes.NewReader(data)).To(goav.Write("out.mkv", &buf))); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if got := matroskaTracks(t, buf.Bytes()); got != 2 {
@@ -229,7 +229,7 @@ func TestValueGrammarLadderWithSharedAudio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	in := goav.Read("in.mp4", bytes.NewReader(data))
 	v := in.Video().Decode()
 	hd := v.Resize(1280, 720).Encode(codec.VP9()).As("hd")
 	sd := v.Resize(640, 360).Encode(codec.VP9()).As("sd")
@@ -470,7 +470,7 @@ func TestValueGrammarJoinRefusesAMissingMuxerAtBuild(t *testing.T) {
 // asking a video-only file for audio: the fix names the selection the input
 // can satisfy instead of pointing at a stream of the wrong kind.
 func TestValueGrammarMissingStreamKindNamesWhatTheInputHas(t *testing.T) {
-	in := goav.FileInput("in.webm", bytes.NewReader(encodeTestWebM(t, 1)))
+	in := goav.Read("in.webm", bytes.NewReader(encodeTestWebM(t, 1)))
 	_, err := offlineRuntime().Build(context.Background(), in.Audio().To(goav.Write("out.webm", io.Discard)))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {

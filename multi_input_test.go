@@ -80,7 +80,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 	ctx := context.Background()
 	cameraCodec := av.CodecID("x_cam")
 	micCodec := av.CodecID("x_mic")
-	packetSource := func(id av.StreamID, media av.MediaType, codecID av.CodecID, opts ...shape.Option) InputSpec {
+	packetSource := func(id av.StreamID, media av.MediaType, codecID av.CodecID, opts ...shape.Option) Input {
 		options := append([]shape.Option{shape.Stream(id)}, opts...)
 		return Source(string(id),
 			shape.Packet(media, codecID, options...),

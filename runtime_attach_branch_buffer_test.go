@@ -58,7 +58,7 @@ func TestRuntimeBranchExplicitDropBufferCarriesDecodedFrames(t *testing.T) {
 // passthrough decoder fabricates a fresh, mutable (graph-owned) frame for each
 // foreign packet, so frames reaching a buffered branch edge must be copied
 // into the branch's own backing rather than shared by reference.
-func mutableFrameVideoPackets(name string, width, height, count int) goav.InputSpec {
+func mutableFrameVideoPackets(name string, width, height, count int) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(_ context.Context, push source.Push) error {

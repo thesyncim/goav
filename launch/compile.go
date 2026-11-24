@@ -38,7 +38,7 @@ func Compile(program string, options ...Option) ([]goav.Output, error) {
 	c := &compiler{
 		cfg:    cfg,
 		scope:  map[string]value{},
-		inputs: map[string]goav.InputSpec{},
+		inputs: map[string]goav.Input{},
 		dests:  map[string]goav.Destination{},
 		syncs:  map[string]flow.SyncPolicy{},
 	}
@@ -87,7 +87,7 @@ func (k valueKind) String() string {
 
 type value struct {
 	kind   valueKind
-	input  goav.InputSpec
+	input  goav.Input
 	stream goav.Stream
 	dest   goav.Destination
 	layer  goav.JoinArg
@@ -114,7 +114,7 @@ func (r fileRef) key() string {
 type compiler struct {
 	cfg    *config
 	scope  map[string]value
-	inputs map[string]goav.InputSpec
+	inputs map[string]goav.Input
 	dests  map[string]goav.Destination
 	syncs  map[string]flow.SyncPolicy
 	names  map[string]int
@@ -336,9 +336,9 @@ func (c *compiler) fileInput(ref fileRef, t *termNode) (value, error) {
 	if ref.format != "" {
 		return value{}, &Error{Pos: t.pos, End: t.end, Msg: "an input's format is detected from its contents", Hint: "format= applies where a file is written; drop it here"}
 	}
-	in := goav.URIInput(ref.uri)
+	in := goav.FromURI(ref.uri)
 	if ref.uri == "" {
-		in = goav.Input(fileBytes{fs: c.cfg.files, name: ref.path})
+		in = goav.From(fileBytes{fs: c.cfg.files, name: ref.path})
 	}
 	c.inputs[ref.key()] = in
 	return value{kind: kindInput, input: in}, nil
@@ -357,7 +357,7 @@ func (c *compiler) fileDestination(ref fileRef, t *termNode) (goav.Destination, 
 	if ref.format != "" {
 		opts = append(opts, goav.Format(ref.format))
 	}
-	d := goav.URI(ref.uri, opts...)
+	d := goav.ToURI(ref.uri, opts...)
 	if ref.uri == "" {
 		d = goav.Custom(ref.path, fileDestination{fs: c.cfg.files, name: ref.path}, opts...)
 	}

@@ -595,7 +595,7 @@ func (d *toyDestination) Contract() provider.Contract {
 	}
 }
 
-func (d *toyDestination) Open(_ context.Context, info provider.Info) (provider.Writer, error) {
+func (d *toyDestination) Open(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 	d.mu.Lock()
 	d.info = info
 	d.mu.Unlock()
@@ -666,11 +666,11 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 	dest := &toyDestination{}
 	provider := newToyProvider([]int16{100, 200}, []int16{300, 400})
 
-	err := toyRuntime().Run(ctx, goav.Input(provider).
+	err := toyRuntime().Run(ctx, goav.From(provider).
 		Audio().
 		Decode().
 		Resample(16000, 1).
-		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
+		Encode(codec.New(toyCodecID, av.MediaAudio)).
 		To(goav.Custom("out.toyfmt", dest)))
 	if err != nil {
 		t.Fatal(err)
@@ -713,7 +713,7 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 		mu.Unlock()
 		return nil
 	})
-	err = toyRuntime().Run(ctx, goav.FileInput("roundtrip.toyfmt", bytes.NewReader(file)).
+	err = toyRuntime().Run(ctx, goav.Read("roundtrip.toyfmt", bytes.NewReader(file)).
 		Audio().
 		Decode().
 		To(goav.Sink(collect)))
@@ -740,11 +740,11 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 		return errors.New("adapterproof: induced failure")
 	})
 
-	err := toyRuntime().Run(ctx, goav.Input(provider).
+	err := toyRuntime().Run(ctx, goav.From(provider).
 		Audio().
 		Decode().
 		Do(failing).
-		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
+		Encode(codec.New(toyCodecID, av.MediaAudio)).
 		To(goav.Custom("out.toyfmt", dest)))
 	if err == nil {
 		t.Fatal("run should fail through the failing stage")

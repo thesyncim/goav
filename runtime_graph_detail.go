@@ -23,7 +23,7 @@ func inputNodeDetail(input format.Input) string {
 	return compile.JoinSpecDetail(parts...)
 }
 
-func customSourceDetail(input InputSpec) string {
+func customSourceDetail(input Input) string {
 	parts := []string{"custom source"}
 	if input.source != nil {
 		shape := recipeir.NormalizeSourceShape(input.inputName("source"), input.source.shape)
@@ -45,7 +45,7 @@ func customSourceDetail(input InputSpec) string {
 
 // providerDetail is a provider input's node detail: the provider's own, plus
 // the scheme a URIInput resolved through.
-func (s InputSpec) providerDetail() string {
+func (s Input) providerDetail() string {
 	detail := providerNodeDetail(s.provider)
 	if s.uri == nil {
 		return detail

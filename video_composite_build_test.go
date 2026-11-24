@@ -15,7 +15,7 @@ import (
 // compositeTestVideoSource emits a single solid-color I420 frame then EOS, so a
 // Composite arm has a deterministic frame to place on the canvas. It mirrors
 // mixTestAudioSource (frame source → Sink), reusing compositeTestI420Frame.
-func compositeTestVideoSource(id av.StreamID, w, h int, y, u, v byte) InputSpec {
+func compositeTestVideoSource(id av.StreamID, w, h int, y, u, v byte) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaVideo, shape.Video(w, h, av.PixelFormatI420), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {

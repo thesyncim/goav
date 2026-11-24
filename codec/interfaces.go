@@ -151,11 +151,11 @@ func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
 	return b
 }
 
-// CodecSettings carries the grouped common encoder/decoder settings (tier 1)
+// Settings carries the grouped common encoder/decoder settings (tier 1)
 // plus adapter-specific string settings and the raw Control escape hatch.
 // Recipes populate it through codec options (Bitrate, FPS, Profile, Setting,
 // Control, ...); adapters read it at open.
-type CodecSettings struct {
+type Settings struct {
 	// Bitrate requests an encoder bitrate in bits per second. Zero lets the
 	// encoder choose its default bitrate.
 	Bitrate int `json:"bitrate,omitempty"`
@@ -194,11 +194,8 @@ type CodecSettings struct {
 	// while external adapters keep ownership of validation and interpretation.
 	Custom av.Metadata `json:"custom,omitempty"`
 	// Control is the raw escape hatch: at encoder/decoder open the adapter invokes
-	// it with its *concrete* native encoder/decoder (or, for construction-only
-	// knobs, its options builder — the adapter documents which), so the caller can
-	// type-assert to the real type and apply anything the library exposes. Nothing
-	// is ever unreachable. A non-nil error from Control fails the open. This single
-	// callback replaces a separate typed-config blob — it is strictly more capable.
+	// it with its concrete native encoder/decoder (or construction options), so
+	// callers can apply backend-specific settings directly. A non-nil error fails open.
 	Control func(any) error `json:"-"`
 }
 
@@ -210,7 +207,7 @@ type DecodeConfig struct {
 	LowLatency bool
 	Resilience ResiliencePolicy
 	Bounds     DecodeBounds
-	Settings   CodecSettings
+	Settings   Settings
 	// OpaqueState carries adapter-specific, caller-owned state. Adapter
 	// packages must document the concrete type before reading it.
 	OpaqueState any
@@ -223,7 +220,7 @@ type EncodeConfig struct {
 	Parameters av.CodecParameters
 	Realtime   bool
 	LowLatency bool
-	Settings   CodecSettings
+	Settings   Settings
 }
 
 // DecodeResult is the caller-owned output buffer DecodeInto/FlushInto append
@@ -287,9 +284,7 @@ type ControlRequest struct {
 
 // Reset clears the request for reuse.
 func (r *ControlRequest) Reset() {
-	r.Type = ""
-	r.StreamID = ""
-	r.Reason = ""
+	*r = ControlRequest{}
 }
 
 // ControlType names a decoder's upstream ask.

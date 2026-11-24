@@ -17,7 +17,7 @@ import (
 
 // solidVideo is an I420 source of frames whose luma is one value, so a pixel
 // of the composited canvas names the arm it came from.
-func solidVideo(name string, width, height, frames int, luma byte) goav.InputSpec {
+func solidVideo(name string, width, height, frames int, luma byte) goav.Input {
 	return goav.Source(name, shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
 		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 30}
@@ -42,7 +42,7 @@ func solidVideo(name string, width, height, frames int, luma byte) goav.InputSpe
 // known only when they open; Describe plans the same resize node the build
 // runs.
 func TestCompositePictureInPicture(t *testing.T) {
-	encode := func(in goav.InputSpec) []byte {
+	encode := func(in goav.Input) []byte {
 		var out bytes.Buffer
 		if err := offlineRuntime().Run(context.Background(), in.Video().Encode(codec.VP8()).To(goav.Write("v.webm", &out))); err != nil {
 			t.Fatal(err)
@@ -55,7 +55,7 @@ func TestCompositePictureInPicture(t *testing.T) {
 		cam, screen goav.Stream
 	}{
 		{"frames", solidVideo("cam", 96, 64, 3, 60).Video(), solidVideo("screen", 96, 64, 3, 200).Video()},
-		{"files", goav.FileInput("cam.webm", bytes.NewReader(camFile)).Video().Decode(), goav.FileInput("screen.webm", bytes.NewReader(screenFile)).Video().Decode()},
+		{"files", goav.Read("cam.webm", bytes.NewReader(camFile)).Video().Decode(), goav.Read("screen.webm", bytes.NewReader(screenFile)).Video().Decode()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pip := goav.Composite(tc.cam, goav.At(tc.screen.Resize(32, 24), 56, 32))
@@ -93,7 +93,7 @@ func near(got, want byte) bool { return got >= want-12 && got <= want+12 }
 // transform before the arm decodes, a resample on a video arm, and an encode
 // on an arm are refused with the fix.
 func TestCompositeArmRefusesWorkItCannotLower(t *testing.T) {
-	file := goav.FileInput("cam.webm", bytes.NewReader(nil))
+	file := goav.Read("cam.webm", bytes.NewReader(nil))
 	for _, tc := range []struct {
 		arm  goav.Stream
 		want string

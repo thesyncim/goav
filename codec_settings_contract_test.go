@@ -11,7 +11,7 @@ import (
 
 func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 	baseControl := func(any) error { return nil }
-	base := codec.CodecSettings{
+	base := codec.Settings{
 		Bitrate:          64_000,
 		Framerate:        av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 24}},
 		KeyframeInterval: 24,
@@ -25,13 +25,13 @@ func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 		SampleRateSet:    true,
 		Control:          baseControl,
 	}
-	if got := mergeCodecSettings(base, codec.CodecSettings{}); !reflect.DeepEqual(codecSettingsSnapshot(got), codecSettingsSnapshot(base)) {
+	if got := mergeCodecSettings(base, codec.Settings{}); !reflect.DeepEqual(codecSettingsSnapshot(got), codecSettingsSnapshot(base)) {
 		t.Fatalf("zero override changed settings: got %+v want %+v", got, base)
 	}
 
 	controlErr := errors.New("native rejected")
 	var native any
-	override := codec.CodecSettings{
+	override := codec.Settings{
 		Bitrate:          128_000,
 		Framerate:        av.Duration{Value: 1001, Base: av.TimeBase{Num: 1, Den: 30000}},
 		KeyframeInterval: 60,
@@ -70,7 +70,7 @@ func TestMergeCodecSettingsPreservesCustomControl(t *testing.T) {
 	}
 }
 
-func codecSettingsSnapshot(settings codec.CodecSettings) codec.CodecSettings {
+func codecSettingsSnapshot(settings codec.Settings) codec.Settings {
 	settings.Control = nil
 	return settings
 }

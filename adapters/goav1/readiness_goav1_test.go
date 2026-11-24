@@ -17,48 +17,16 @@ func TestBackendRealtimeAPISurface(t *testing.T) {
 
 	var _ func(backend.VideoEncoderConfig) (*backend.VideoEncoder, error) = backend.NewVideoEncoder
 	var _ func(*backend.VideoEncoder, backend.I420Frame, bool) (backend.EncodedFrame, error) = (*backend.VideoEncoder).Encode
-	var _ func(backend.FrameFormat) (backend.FrameLayout, error) = backend.FrameRequiredSize
+	var _ func([][]byte, ...backend.Option) (*backend.Decoder, error) = backend.NewDecoderFromRTPPayloads
+	var _ func(*backend.Decoder, []byte) ([]*backend.Frame, error) = (*backend.Decoder).DecodeRTPPayload
+	var _ func(*backend.Decoder, []byte) ([]*backend.Frame, error) = (*backend.Decoder).DecodeRTPPayloadAfterLoss
 	var _ func(
-		backend.DecoderStream,
-		int,
 		[]byte,
-		int,
-		[]byte,
-		[]backend.RTPObuSpan,
-		[]backend.DecoderEvent,
-		[]backend.TileSpan,
-		[]backend.TileJob,
-		[]backend.TileBatch,
-	) (backend.DecoderFrameWorkResidualStreamPlan, error) = backend.DecoderFrameWorkResidualRTPPayloadStreamPlan
-	var _ func(
-		backend.DecoderStream,
-		int,
-		[][]byte,
-		int,
-		[]byte,
-		[]backend.RTPObuSpan,
-		[]backend.DecoderEvent,
-		[]backend.TileSpan,
-		[]backend.TileJob,
-		[]backend.TileBatch,
-	) (backend.DecoderFrameWorkResidualStreamPlan, error) = backend.DecoderFrameWorkResidualRTPPayloadsStreamPlan
-	var _ func(
-		backend.DecoderFrameWorkResidualStreamPlan,
-		*backend.DecoderStream,
-		backend.DecoderFrameWorkResidualEventRuntime,
-		backend.DecoderFrameWorkResidualStreamScratch,
-		*backend.DecoderFrameWorkBatchResidualRunner,
-	) (backend.DecoderFrameWorkResidualStreamRunner, backend.DecoderFrameWorkSideData, error) = backend.BindDecoderFrameWorkResidualStreamPlanRunner
-	var _ func(
-		*backend.DecoderFrameWorkResidualStreamRunner,
-		*backend.DecoderFrameWorkResidualStreamResult,
-		[]byte,
-		backend.DecoderFrameWorkPostFilterFunc,
-	) error = (*backend.DecoderFrameWorkResidualStreamRunner).RunRTPPayloadInto
-	var _ func(
-		*backend.DecoderFrameWorkResidualStreamRunner,
-		*backend.DecoderFrameWorkResidualStreamResult,
-		[]byte,
-		backend.DecoderFrameWorkPostFilterFunc,
-	) error = (*backend.DecoderFrameWorkResidualStreamRunner).RunRTPPayloadAfterLossInto
+		backend.RTPPayloadSizeLimits,
+		bool,
+		bool,
+		[]backend.RTPPacketizerOBU,
+		[]backend.RTPPacketPlan,
+		[]backend.RTPPacketPlan,
+	) (backend.RTPPacketizer, error) = backend.NewRTPPacketizer
 }

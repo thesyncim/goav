@@ -81,8 +81,8 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 	mic, music := goavtest.Audio(48_000, 1, []int16{1}), goavtest.Audio(48_000, 1, []int16{2})
 	cam, screen := goavtest.Video(64, 48, 1), goavtest.Video(16, 16, 1)
 	nullSink := goav.Sink(component.SinkFunc("null", func(context.Context, component.Message) error { return nil }))
-	source := func(name string, in goav.InputSpec) launch.Element {
-		return launch.Source(name, "a test input", func(struct{}) (goav.InputSpec, error) { return in, nil })
+	source := func(name string, in goav.Input) launch.Element {
+		return launch.Source(name, "a test input", func(struct{}) (goav.Input, error) { return in, nil })
 	}
 	inputs := launch.Use(source("mic", mic), source("music", music), source("cam", cam), source("screen", screen))
 	for _, tc := range []struct {
@@ -94,7 +94,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			name:    "transcode",
 			program: `file in.webm ! video ! decode ! resize 1280x720 ! encode vp9 bitrate=2M ! file out.webm`,
 			gofor: func() []goav.Output {
-				v := goav.FileInput("in.webm", r()).Video().Decode().Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000)))
+				v := goav.Read("in.webm", r()).Video().Decode().Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000)))
 				return []goav.Output{v.To(goav.Write("out.webm", w()))}
 			},
 		},
@@ -108,7 +108,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 				in ! audio ! decode ! encode opus ! file hd.webm, file sd.webm
 			`,
 			gofor: func() []goav.Output {
-				in := goav.FileInput("in.webm", r())
+				in := goav.Read("in.webm", r())
 				v := in.Video().Decode()
 				hd, sd := goav.Write("hd.webm", w()), goav.Write("sd.webm", w())
 				return []goav.Output{
@@ -122,7 +122,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			name:    "remux",
 			program: `file in.mp4 ! file out.mkv`,
 			gofor: func() []goav.Output {
-				return []goav.Output{goav.FileInput("in.mp4", r()).To(goav.Write("out.mkv", w()))}
+				return []goav.Output{goav.Read("in.mp4", r()).To(goav.Write("out.mkv", w()))}
 			},
 		},
 		{
@@ -132,7 +132,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 				file in.mp4 ! audio ! file out.mkv
 			`,
 			gofor: func() []goav.Output {
-				in := goav.FileInput("in.mp4", r())
+				in := goav.Read("in.mp4", r())
 				out := goav.Write("out.mkv", w())
 				return []goav.Output{in.Video().To(out), in.Audio().To(out)}
 			},
@@ -144,7 +144,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 				file b.webm ! video ! decode ! encode vp9 ! file y.webm
 			`,
 			gofor: func() []goav.Output {
-				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				a, b := goav.Read("a.webm", r()), goav.Read("b.webm", r())
 				return []goav.Output{
 					a.Video().Decode().Encode(codec.VP9()).To(goav.Write("x.webm", w())),
 					b.Video().Decode().Encode(codec.VP9()).To(goav.Write("y.webm", w())),
@@ -159,7 +159,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			`,
 			gofor: func() []goav.Output {
 				out := goav.Write("m.webm", w())
-				return []goav.Output{goav.FileInput("a.webm", r()).Video().To(out), goav.FileInput("b.webm", r()).Audio().To(out)}
+				return []goav.Output{goav.Read("a.webm", r()).Video().To(out), goav.Read("b.webm", r()).Audio().To(out)}
 			},
 		},
 		{
@@ -191,8 +191,8 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 				b ! resize 16x12 ! encode vp9 ! as b-small ! file b-small.webm
 			`,
 			gofor: func() []goav.Output {
-				a := goav.FileInput("a.webm", r()).Video().Decode().Resize(32, 24)
-				b := goav.FileInput("b.webm", r()).Video().Decode()
+				a := goav.Read("a.webm", r()).Video().Decode().Resize(32, 24)
+				b := goav.Read("b.webm", r()).Video().Decode()
 				return []goav.Output{
 					a.Encode(codec.VP8()).As("a-vp8").To(goav.Write("a-vp8.webm", w())),
 					a.Encode(codec.VP9()).As("a-vp9").To(goav.Write("a-vp9.webm", w())),
@@ -229,7 +229,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			name:    "mix files",
 			program: `mix(file a.webm ! audio ! decode, file b.webm ! audio ! decode) ! encode opus ! file m.webm`,
 			gofor: func() []goav.Output {
-				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				a, b := goav.Read("a.webm", r()), goav.Read("b.webm", r())
 				return []goav.Output{goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(goav.Write("m.webm", w()))}
 			},
 		},
@@ -237,7 +237,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			name:    "composite files",
 			program: `composite(file a.webm ! video ! decode, file b.webm ! video ! decode ! at 40 30) ! encode vp8 ! file pip.webm`,
 			gofor: func() []goav.Output {
-				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				a, b := goav.Read("a.webm", r()), goav.Read("b.webm", r())
 				pip := goav.Composite(a.Video().Decode(), goav.At(b.Video().Decode(), 40, 30))
 				return []goav.Output{pip.Encode(codec.VP8()).To(goav.Write("pip.webm", w()))}
 			},
@@ -253,7 +253,7 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			name:    "taps, buffers, names",
 			program: `file in.webm ! video ! decode ! tap live ! buffer drop-oldest 3 ! encode vp8 keyframe_interval=60 ! as preview ! file p.webm`,
 			gofor: func() []goav.Output {
-				s := goav.FileInput("in.webm", r()).Video().Decode().Tap("live").Buffer(flow.DropOldest(3)).Encode(codec.VP8(codec.KeyframeInterval(60))).As("preview")
+				s := goav.Read("in.webm", r()).Video().Decode().Tap("live").Buffer(flow.DropOldest(3)).Encode(codec.VP8(codec.KeyframeInterval(60))).As("preview")
 				return []goav.Output{s.To(goav.Write("p.webm", w()))}
 			},
 		},
@@ -319,7 +319,7 @@ func TestProgramMixesFileProviderAndSourceInputs(t *testing.T) {
 		t.Fatalf("fixture: %v", err)
 	}
 	fs.inputs["a.webm"] = fs.outputs["a.webm"].Bytes()
-	mic := launch.Source("mic", "a test input", func(struct{}) (goav.InputSpec, error) {
+	mic := launch.Source("mic", "a test input", func(struct{}) (goav.Input, error) {
 		return goavtest.Audio(48_000, 2, make([]int16, 1920), make([]int16, 1920)), nil
 	})
 	outs, err := launch.Compile(`
@@ -347,7 +347,7 @@ func TestProgramMixesFileProviderAndSourceInputs(t *testing.T) {
 		t.Fatalf("o.webm tracks = %d, packets per track = %v; want the file's video and two audio tracks", len(demuxer.Tracks()), perTrack)
 	}
 	frames := goavtest.NewCollector()
-	if err := bundle.Run(ctx, goav.FileInput("o.webm", bytes.NewReader(out)).Video().Decode().To(frames.Sink())); err != nil {
+	if err := bundle.Run(ctx, goav.Read("o.webm", bytes.NewReader(out)).Video().Decode().To(frames.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(frames.Frames()); got != 5 {

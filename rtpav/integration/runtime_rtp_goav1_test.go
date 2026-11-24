@@ -48,7 +48,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	rt := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))
-	job := goav.Input(rtpav.Receive(receiver,
+	job := goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	)).
@@ -131,7 +131,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	}
 	sink := &runtimeAV1SinkDestination{name: "frames"}
 
-	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	)).
@@ -197,7 +197,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
@@ -285,7 +285,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
@@ -415,18 +415,16 @@ func runtimeAV1PayloadMap(epoch av.Epoch, payloadType uint8, stream av.Stream) r
 	}})
 }
 
+const (
+	runtimeAV1OBUSequenceHeader byte = 1
+	runtimeAV1OBUFrameHeader    byte = 3
+	runtimeAV1OBUTileGroup      byte = 4
+)
+
 func runtimeAV1RTPPayload() []byte {
-	return runtimeAV1RTPPayloadWithSequence(runtimeAV1SequenceHeaderPayload(), runtimeAV1FrameHeaderPayload())
-}
-
-func runtimeAV1I420RTPPayload() []byte {
-	return runtimeAV1RTPPayloadWithSequence(runtimeAV1I420SequenceHeaderPayload(), runtimeAV1I420FrameHeaderPayload())
-}
-
-func runtimeAV1RTPPayloadWithSequence(sequenceHeader []byte, frameHeader []byte) []byte {
-	seq := runtimeAV1OBUElement(av1backend.OBUSequenceHeader, sequenceHeader)
-	frame := runtimeAV1OBUElement(av1backend.OBUFrameHeader, frameHeader)
-	tile := runtimeAV1OBUElement(av1backend.OBUTileGroup, []byte{0x80})
+	seq := runtimeAV1OBUElement(runtimeAV1OBUSequenceHeader, runtimeAV1SequenceHeaderPayload())
+	frame := runtimeAV1OBUElement(runtimeAV1OBUFrameHeader, runtimeAV1FrameHeaderPayload())
+	tile := runtimeAV1OBUElement(runtimeAV1OBUTileGroup, []byte{0x0a, 0x1b, 0x59, 0x03, 0xa2, 0x4c, 0x8f, 0x24, 0x87, 0xdc, 0xb4, 0x19, 0x46, 0x81, 0xa4, 0x82, 0x4f, 0x21})
 	payload := []byte{0x38}
 	payload = append(payload, byte(len(seq)))
 	payload = append(payload, seq...)
@@ -436,25 +434,62 @@ func runtimeAV1RTPPayloadWithSequence(sequenceHeader []byte, frameHeader []byte)
 	return payload
 }
 
-func runtimeAV1OBUElement(typ av1backend.OBUType, payload []byte) []byte {
-	var header [2]byte
-	n, err := av1backend.PutOBUHeader(header[:], av1backend.OBUHeader{Type: typ})
+func runtimeAV1I420RTPPayload() []byte {
+	enc, err := av1backend.NewVideoEncoder(av1backend.VideoEncoderConfig{
+		Width:  16,
+		Height: 16,
+		QIndex: 120,
+	})
 	if err != nil {
 		panic(err)
 	}
-	out := append([]byte{}, header[:n]...)
+	defer enc.Close()
+	y := make([]byte, 16*16)
+	u := make([]byte, 8*8)
+	v := make([]byte, 8*8)
+	for i := range y {
+		y[i] = 128
+	}
+	for i := range u {
+		u[i] = 128
+		v[i] = 128
+	}
+	encoded, err := enc.Encode(av1backend.I420Frame{
+		Width:        16,
+		Height:       16,
+		Y:            y,
+		U:            u,
+		V:            v,
+		YStride:      16,
+		ChromaStride: 8,
+	}, true)
+	if err != nil {
+		panic(err)
+	}
+	obuScratch := make([]av1backend.RTPPacketizerOBU, 32)
+	packetScratch := make([]av1backend.RTPPacketPlan, 8)
+	workScratch := make([]av1backend.RTPPacketPlan, 8)
+	p, err := av1backend.NewRTPPacketizer(encoded.Data, av1backend.RTPPayloadSizeLimits{
+		MaxPayloadLen: max(len(encoded.Data)+64, 1024),
+	}, true, true, obuScratch, packetScratch, workScratch)
+	if err != nil {
+		panic(err)
+	}
+	dst := make([]byte, max(len(encoded.Data)+64, 1024))
+	n, _, ok, err := p.NextPacket(dst)
+	if err != nil || !ok {
+		panic(err)
+	}
+	return dst[:n]
+}
+
+func runtimeAV1OBUElement(typ byte, payload []byte) []byte {
+	out := make([]byte, 0, 1+len(payload))
+	out = append(out, typ<<3)
 	return append(out, payload...)
 }
 
 func runtimeAV1SequenceHeaderPayload() []byte {
-	return runtimeAV1SequenceHeaderPayloadForMonochrome(true)
-}
-
-func runtimeAV1I420SequenceHeaderPayload() []byte {
-	return runtimeAV1SequenceHeaderPayloadForMonochrome(false)
-}
-
-func runtimeAV1SequenceHeaderPayloadForMonochrome(mono bool) []byte {
 	var w runtimeAV1BitWriter
 	w.writeBits(0, 3)
 	w.writeBool(true)
@@ -465,46 +500,31 @@ func runtimeAV1SequenceHeaderPayloadForMonochrome(mono bool) []byte {
 	w.writeBits(15, 8)
 	w.writeBits(15, 8)
 	w.writeBool(false)
-	w.writeBool(true)
-	w.writeBool(true)
 	w.writeBool(false)
 	w.writeBool(true)
 	w.writeBool(false)
+	w.writeBool(true)
 	w.writeBool(false)
-	w.writeBool(mono)
+	w.writeBool(false)
+	w.writeBool(true)
 	w.writeBool(false)
 	w.writeBool(false)
-	if !mono {
-		w.writeBits(0, 2)
-		w.writeBool(false)
-	}
 	w.writeBool(false)
 	return w.trailingBits()
 }
 
 func runtimeAV1FrameHeaderPayload() []byte {
-	return runtimeAV1FrameHeaderPayloadForMonochrome(true)
-}
-
-func runtimeAV1I420FrameHeaderPayload() []byte {
-	return runtimeAV1FrameHeaderPayloadForMonochrome(false)
-}
-
-func runtimeAV1FrameHeaderPayloadForMonochrome(mono bool) []byte {
 	var w runtimeAV1BitWriter
-	w.writeBool(true)
+	w.writeBool(false)
+	w.writeBool(false)
 	w.writeBool(false)
 	w.writeBool(false)
 	w.writeBits(0, 8)
 	w.writeBool(false)
-	if !mono {
-		w.writeBool(false)
-		w.writeBool(false)
-	}
 	w.writeBool(false)
 	w.writeBool(false)
 	w.writeBool(false)
-	return w.bytes()
+	return w.trailingBits()
 }
 
 type runtimeAV1BitWriter struct {

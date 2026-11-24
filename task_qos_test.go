@@ -87,7 +87,7 @@ func TestQoSReportsLateness(t *testing.T) {
 // qosEncodeVideoSource is a release-gated I420 frame source with real PTS
 // values, so an encode chain downstream produces packets a playout gate can
 // schedule and shed deterministically on the fake clock.
-func qosEncodeVideoSource(id av.StreamID, release chan struct{}, pts ...time.Duration) InputSpec {
+func qosEncodeVideoSource(id av.StreamID, release chan struct{}, pts ...time.Duration) Input {
 	const width, height = 16, 16
 	chromaW, chromaH := (width+1)/2, (height+1)/2
 	yPlane := bytes.Repeat([]byte{0x80}, width*height)

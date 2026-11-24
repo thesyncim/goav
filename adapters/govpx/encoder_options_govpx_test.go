@@ -10,7 +10,7 @@ import (
 func TestVP8EncoderOptionsRealtimePreset(t *testing.T) {
 	rt := vp8EncoderOptions(codec.EncodeConfig{
 		Realtime: true,
-		Settings: codec.CodecSettings{Bitrate: 600_000, KeyframeInterval: 120},
+		Settings: codec.Settings{Bitrate: 600_000, KeyframeInterval: 120},
 	}, 640, 360)
 
 	if rt.RateControlMode != govpxlib.RateControlCBR {
@@ -38,7 +38,7 @@ func TestVP8EncoderOptionsRealtimePreset(t *testing.T) {
 		t.Error("realtime CBR should allow frame drops to hold bitrate")
 	}
 
-	vbr := vp8EncoderOptions(codec.EncodeConfig{Settings: codec.CodecSettings{Bitrate: 600_000}}, 640, 360)
+	vbr := vp8EncoderOptions(codec.EncodeConfig{Settings: codec.Settings{Bitrate: 600_000}}, 640, 360)
 	if vbr.Deadline == govpxlib.DeadlineRealtime || vbr.ErrorResilient {
 		t.Error("non-realtime VP8 must not force the realtime preset")
 	}
@@ -47,7 +47,7 @@ func TestVP8EncoderOptionsRealtimePreset(t *testing.T) {
 func TestVP9EncoderOptionsRealtimePreset(t *testing.T) {
 	rt := vp9EncoderOptions(codec.EncodeConfig{
 		Realtime: true,
-		Settings: codec.CodecSettings{Bitrate: 600_000, KeyframeInterval: 90},
+		Settings: codec.Settings{Bitrate: 600_000, KeyframeInterval: 90},
 	}, 640, 360)
 
 	if !rt.RateControlModeSet || rt.RateControlMode != govpxlib.RateControlCBR {
@@ -73,7 +73,7 @@ func TestVP9EncoderOptionsRealtimePreset(t *testing.T) {
 	}
 
 	// Non-realtime keeps plain CBR without the realtime tuning.
-	plain := vp9EncoderOptions(codec.EncodeConfig{Settings: codec.CodecSettings{Bitrate: 600_000}}, 640, 360)
+	plain := vp9EncoderOptions(codec.EncodeConfig{Settings: codec.Settings{Bitrate: 600_000}}, 640, 360)
 	if plain.Deadline == govpxlib.DeadlineRealtime || plain.CpuUsed == 9 || plain.Threads != 0 {
 		t.Error("non-realtime VP9 must not force the realtime preset")
 	}
@@ -103,7 +103,7 @@ func TestPickVP9ThreadsMatchesTileColumns(t *testing.T) {
 // at least every 128 frames without one, as libvpx does: a file keyed only
 // at its first frame can be neither seeked nor segmented.
 func TestOfflineEncodesKeepTheirKeyframeInterval(t *testing.T) {
-	set := codec.EncodeConfig{Settings: codec.CodecSettings{KeyframeInterval: 50}}
+	set := codec.EncodeConfig{Settings: codec.Settings{KeyframeInterval: 50}}
 	if got := vp8EncoderOptions(set, 640, 360).KeyFrameInterval; got != 50 {
 		t.Errorf("VP8 offline keyframe interval = %d, want 50", got)
 	}

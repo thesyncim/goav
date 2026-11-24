@@ -252,7 +252,7 @@ func (d Descriptor) Knob(name string) (Knob, bool) {
 // backend's raw parameters; lowLatency defaults the realtime knob. Settings
 // scoped to another backend are skipped. A descriptor that declares no knobs
 // accepts its settings unchecked, as the values of their names.
-func (d Descriptor) ResolveKnobs(s CodecSettings, lowLatency bool) (KnobValues, error) {
+func (d Descriptor) ResolveKnobs(s Settings, lowLatency bool) (KnobValues, error) {
 	values := KnobValues{values: map[string]string{}, set: map[string]bool{}}
 	backend := strings.ToLower(d.Backend.Name)
 	if d.Knobs == nil {
@@ -405,7 +405,7 @@ var (
 // KnobSettings are the knob settings s makes of whichever backend serves it,
 // by knob name: the typed common settings (bitrate, gop, profile, level) and
 // every codec.Setting not scoped to one backend.
-func (s CodecSettings) KnobSettings() map[string]string {
+func (s Settings) KnobSettings() map[string]string {
 	out := map[string]string{}
 	for name, value := range map[string]string{
 		knobBitrate: positiveText(s.Bitrate),
@@ -440,7 +440,7 @@ func KnobScope(key string) (string, bool) {
 // CheckScopes refuses a setting scoped to a backend the registry holds no
 // descriptor of for codec id (openh264.rc with no openh264), with the nearest
 // backend name, so a misspelled scope is never silently skipped.
-func (r *SimpleRegistry) CheckScopes(id av.CodecID, s CodecSettings) error {
+func (r *SimpleRegistry) CheckScopes(id av.CodecID, s Settings) error {
 	var names []string
 	for _, desc := range r.descriptors {
 		if desc.ID == id && !slices.Contains(names, desc.Backend.Name) {

@@ -58,44 +58,44 @@ func oracleSink(name string) goav.Destination {
 	return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error { return nil }))
 }
 
-func oracleMP4(t *testing.T) goav.InputSpec {
+func oracleMP4(t *testing.T) goav.Input {
 	t.Helper()
 	data, err := os.ReadFile(mp4Fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return goav.FileInput("in.mp4", bytes.NewReader(data))
+	return goav.Read("in.mp4", bytes.NewReader(data))
 }
 
 // oracleSeq names synthetic sources per case: goavtest numbers them from a
 // process-wide counter, which would make the goldens depend on test order.
 var oracleSeq int
 
-func oracleSource(kind string, spec func(name string) shape.Spec) goav.InputSpec {
+func oracleSource(kind string, spec func(name string) shape.Spec) goav.Input {
 	oracleSeq++
 	name := fmt.Sprintf("%s-%d", kind, oracleSeq)
 	return goav.Source(name, spec(name), func(context.Context, source.Push) error { return nil })
 }
 
-func oracleAudio() goav.InputSpec {
+func oracleAudio() goav.Input {
 	return oracleSource("audio", func(name string) shape.Spec {
 		return shape.Frame(av.MediaAudio, shape.Audio(48_000, 2, av.SampleFormatS16), shape.Stream(av.StreamID(name)))
 	})
 }
 
-func oracleVideoSized(width, height int) goav.InputSpec {
+func oracleVideoSized(width, height int) goav.Input {
 	return oracleSource("video", func(name string) shape.Spec {
 		return shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(av.StreamID(name)))
 	})
 }
-func oracleAudio44() goav.InputSpec {
+func oracleAudio44() goav.Input {
 	return goav.Source("mic44", shape.Frame(av.MediaAudio, shape.Audio(44_100, 1, av.SampleFormatS16)), func(context.Context, source.Push) error { return nil })
 }
-func oracleVideo() goav.InputSpec { return oracleVideoSized(64, 48) }
+func oracleVideo() goav.Input { return oracleVideoSized(64, 48) }
 
 // oracleVP8 is a VP8 packet source: decoding it needs no platform-specific
 // backend, so the goldens hold on every CI target.
-func oracleVP8() goav.InputSpec {
+func oracleVP8() goav.Input {
 	return oracleSource("vp8", func(name string) shape.Spec {
 		return shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(64, 48, ""), shape.Stream(av.StreamID(name)))
 	})
@@ -114,8 +114,8 @@ func oracleCorpus(t *testing.T) map[string]func() []goav.Output {
 	w := func(name string) goav.Destination { return goav.Write(name, io.Discard) }
 	outs := func(outs ...goav.Output) []goav.Output { return outs }
 	webmA, webmB := mfWebM(t, 64, 48, 3, 48_000, 2, 3), mfWebM(t, 32, 24, 3, 24_000, 1, 3)
-	files := func() (goav.InputSpec, goav.InputSpec) {
-		return goav.FileInput("a.webm", bytes.NewReader(webmA)), goav.FileInput("b.webm", bytes.NewReader(webmB))
+	files := func() (goav.Input, goav.Input) {
+		return goav.Read("a.webm", bytes.NewReader(webmA)), goav.Read("b.webm", bytes.NewReader(webmB))
 	}
 	twoAudio := oracleTwoAudioWebM(t)
 	return map[string]func() []goav.Output{
@@ -327,7 +327,7 @@ func oracleCorpus(t *testing.T) map[string]func() []goav.Output {
 			return outs(oracleVideo().Video().Encode(codec.VP8()).To(goav.Write("out", io.Discard)))
 		},
 		"error_ambiguous_audio": func() []goav.Output {
-			return outs(goav.FileInput("two.webm", bytes.NewReader(twoAudio)).Audio().Decode().To(oracleSink("frames")))
+			return outs(goav.Read("two.webm", bytes.NewReader(twoAudio)).Audio().Decode().To(oracleSink("frames")))
 		},
 		"error_mix_one_arm": func() []goav.Output {
 			return outs(goav.Mix(oracleAudio().Audio()).To(oracleSink("mixed")))

@@ -186,7 +186,7 @@ func reportedStream(stream av.Stream, encoder codec.Encoder) av.Stream {
 	return stream
 }
 
-func applyCodecSettingsToParameters(parameters av.CodecParameters, settings codec.CodecSettings) av.CodecParameters {
+func applyCodecSettingsToParameters(parameters av.CodecParameters, settings codec.Settings) av.CodecParameters {
 	if settings.Profile != "" {
 		parameters.Profile = settings.Profile
 	}

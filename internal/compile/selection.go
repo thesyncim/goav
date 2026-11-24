@@ -465,7 +465,7 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		Details:   builderr.DetailLines(details),
 		Fixes: builderr.Fixes([]string{
 			"select from one of the listed inputs directly: input.Audio() or input.Video()",
-			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
+			"name inputs with goav.Source(name, ...), goav.Read(name, ...), or the goav.Name(...) option",
 		}),
 		Cause: builderr.ErrUnsupportedBuild,
 	}

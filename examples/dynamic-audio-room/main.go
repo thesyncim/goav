@@ -124,7 +124,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	room := NewRoom(roomName, roomSampleRate, roomChannels)
 	input := room.Input()
 	meter := NewTrackMeter()
-	roomSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
+	roomSync := flow.Sync("room").WithTolerance(20 * time.Millisecond).WithDropLate()
 	meterStage := component.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 		meter.Observe(frame)
 		return emit.Frame(frame)
@@ -357,7 +357,7 @@ func NewRoom(name string, sampleRate int, channels int) *Room {
 	}
 }
 
-func (r *Room) Input() goav.InputSpec {
+func (r *Room) Input() goav.Input {
 	return goav.Source(r.name,
 		shape.Frame(av.MediaAudio,
 			shape.Audio(r.sampleRate, r.channels, av.SampleFormatS16),

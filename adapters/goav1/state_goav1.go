@@ -8,79 +8,51 @@ import (
 
 const (
 	defaultAlign         = 64
-	defaultSurfaceCount  = backend.RefFrames + 1
 	defaultMaxFrames     = 1
 	defaultMaxEvents     = 1
 	defaultRuntimeEvents = 8
 	defaultMaxPayload    = 1200
 	defaultMaxRetained   = 4096
 	defaultDecoderWorker = 1
+	defaultRTPSeedBytes  = 64 * 1024
+	maxAV1PayloadEvents  = 64
 )
 
-// DecoderStateConfig describes caller-owned AV1 decoder state for the tagged
-// realtime adapter path. Format is an exact coded frame format, not merely a
-// maximum envelope; AV1 frame pools must match the stream format accepted by
-// the backend runner.
+// DecoderStateConfig describes caller-owned AV1 decoder state for the realtime
+// adapter path.
 type DecoderStateConfig struct {
 	// Bounds supplies generic per-input result, payload, retained-fragment, and
 	// geometry limits from codec.DecodeConfig.
 	Bounds codec.DecodeBounds
-	// Format is the exact backend frame-pool format for the accepted coded
-	// stream. If empty, Bounds.MaxWidth/MaxHeight are used for first-slice
-	// 8-bit 4:2:0 output.
+	// Format is the expected coded frame format. If empty, Bounds.MaxWidth and
+	// Bounds.MaxHeight are used for 8-bit 4:2:0 output.
 	Format backend.FrameFormat
-	// Scratch augments the generic bounds with backend event/tile scratch sizes
-	// learned from probing or application policy.
-	Scratch backend.DecoderFrameWorkResidualStreamScratchSize
-	// SurfaceCount defaults to the AV1 reference set plus one in-flight output.
-	SurfaceCount int
-	// Workers defaults to one and is retained for runner planning.
+	// Workers defaults to one.
 	Workers int
-	// WorkerPool is caller-owned and required before running tile-bearing plans.
-	WorkerPool *backend.TileWorkerPool
-	// OwnWorkerPool closes WorkerPool when DecoderState.Close is called.
-	OwnWorkerPool bool
 }
 
-// DecoderState owns the reusable backend state and scratch required by a
-// packet-by-packet AV1 decoder. It is intended to be passed as
-// codec.DecodeConfig.OpaqueState once the concrete decoder factory is enabled.
+// DecoderState owns the reusable goav1.Decoder and scratch buffers required by
+// a packet-by-packet AV1 decoder. It can be passed as
+// codec.DecodeConfig.OpaqueState.
 type DecoderState struct {
-	bounds       codec.DecodeBounds
-	format       backend.FrameFormat
-	scratchSize  backend.DecoderFrameWorkResidualStreamScratchSize
-	surfaceCount int
-	workers      int
+	bounds  codec.DecodeBounds
+	format  backend.FrameFormat
+	workers int
 
-	stream backend.DecoderStream
-	work   backend.DecoderFrameWorkState
-	refs   backend.DecoderSurfaceReferences
+	dec *backend.Decoder
 
-	frameBacking []byte
-	frames       []backend.Frame
-	free         []int
-	used         []bool
-	pool         backend.FramePool
+	obuScratch    []backend.RTPPacketizerOBU
+	packetScratch []backend.RTPPacketPlan
+	workScratch   []backend.RTPPacketPlan
+	rtpScratch    []byte
+	paddingSeed   []byte
 
-	referenceSurfaces []int
-	referenceFrames   []*backend.Frame
-	releases          []int
-
-	sideData      backend.DecoderFrameWorkSideData
-	stats         backend.DecoderFrameWorkTileResidualStats
-	batch         backend.DecoderFrameWorkBatchResidualRunner
-	scratch       backend.DecoderFrameWorkResidualStreamScratch
-	planRTPBuffer []byte
-	planRTPSpans  []backend.RTPObuSpan
-	runner        backend.DecoderFrameWorkResidualStreamRunner
-	bound         bool
-
-	workerPool    *backend.TileWorkerPool
-	ownWorkerPool bool
+	initPayloads [][]byte
+	initBuf      []byte
 }
 
-// DecoderFrameFormatFromBounds converts DecodeBounds into the exact default
-// 8-bit 4:2:0 coded frame format used when no stream pixel format is supplied.
+// DecoderFrameFormatFromBounds converts DecodeBounds into the default 8-bit
+// 4:2:0 coded frame format used when no stream pixel format is supplied.
 func DecoderFrameFormatFromBounds(bounds codec.DecodeBounds) (backend.FrameFormat, error) {
 	bounds = normalizeDecoderBounds(bounds)
 	if bounds.MaxWidth <= 0 || bounds.MaxHeight <= 0 {
@@ -94,14 +66,14 @@ func DecoderFrameFormatFromBounds(bounds codec.DecodeBounds) (backend.FrameForma
 		SubsamplingY: true,
 		Align:        defaultAlign,
 	}
-	if _, err := backend.FrameRequiredSize(format); err != nil {
+	if _, _, err := backendFramePixelFormat(format); err != nil {
 		return backend.FrameFormat{}, err
 	}
 	return format, nil
 }
 
 // DecoderFrameFormatFromStream converts stream metadata and bounds into the
-// exact frame-pool format used by the AV1 adapter.
+// frame format used by the AV1 adapter.
 func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (backend.FrameFormat, error) {
 	bounds = normalizeDecoderBounds(bounds)
 	if bounds.MaxWidth <= 0 {
@@ -115,15 +87,15 @@ func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (
 		return backend.FrameFormat{}, err
 	}
 	switch stream.Codec.PixelFormat {
-	case "", av.PixelFormatI420, av.PixelFormatYUV420P:
+	case "", av.PixelFormatI420:
 		format.MonoChrome = false
 		format.SubsamplingX = true
 		format.SubsamplingY = true
-	case av.PixelFormatI422, av.PixelFormatYUV422P:
+	case av.PixelFormatI422:
 		format.MonoChrome = false
 		format.SubsamplingX = true
 		format.SubsamplingY = false
-	case av.PixelFormatI444, av.PixelFormatYUV444P:
+	case av.PixelFormatI444:
 		format.MonoChrome = false
 		format.SubsamplingX = false
 		format.SubsamplingY = false
@@ -134,76 +106,14 @@ func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (
 	default:
 		return backend.FrameFormat{}, codec.ErrUnsupportedFormat
 	}
-	if _, err := backend.FrameRequiredSize(format); err != nil {
+	if _, _, err := backendFramePixelFormat(format); err != nil {
 		return backend.FrameFormat{}, err
 	}
 	return format, nil
 }
 
-// DecoderScratchSizeFromBounds reserves parser/RTP/output slots from the
-// generic DecodeBounds. Event-runner scratch remains caller-overridable through
-// DecoderStateConfig.Scratch because the backend sizes tile residual scratch
-// from parsed sequence and frame events.
-func DecoderScratchSizeFromBounds(bounds codec.DecodeBounds) backend.DecoderFrameWorkResidualStreamScratchSize {
-	bounds = normalizeDecoderBounds(bounds)
-	retainedAndPayload := max(bounds.MaxRetainedBytes+bounds.MaxPayloadBytes, bounds.MaxRetainedBytes)
-	return backend.DecoderFrameWorkResidualStreamScratchSize{
-		Events:    bounds.MaxEventsPerInput,
-		RTPBuffer: retainedAndPayload,
-		RTPSpans:  bounds.MaxEventsPerInput,
-		Event: backend.DecoderFrameWorkResidualEventScratchSize{
-			Outputs: bounds.MaxFramesPerInput,
-		},
-	}
-}
-
-// RuntimeDecoderScratchSizeFromBounds returns a conservative first-slice
-// scratch shape for high-level realtime runtimes. Applications with exact
-// stream knowledge can still pass a tuned DecoderState through OpaqueState.
-func RuntimeDecoderScratchSizeFromBounds(bounds codec.DecodeBounds, workers int) backend.DecoderFrameWorkResidualStreamScratchSize {
-	bounds = normalizeDecoderBounds(bounds)
-	if bounds.MaxEventsPerInput < defaultRuntimeEvents {
-		bounds.MaxEventsPerInput = defaultRuntimeEvents
-	}
-	if workers <= 0 {
-		workers = defaultDecoderWorker
-	}
-	size := DecoderScratchSizeFromBounds(bounds)
-	tileScratch := max(backend.MaxTiles, 1)
-	size.Event.Plan = backend.DecoderTileWorkPlan{
-		SpanCount:  tileScratch,
-		JobCount:   tileScratch,
-		BatchCount: tileScratch,
-	}
-	framePixels := max(bounds.MaxWidth*bounds.MaxHeight, 4096)
-	sideEntries := max(framePixels/16, 64)
-	size.Event.SideData = backend.DecoderFrameWorkSideDataScratchSize{
-		CDEFIndexMap:             sideEntries,
-		CDEFReadMap:              sideEntries,
-		LoopFilterMap:            sideEntries,
-		RestorationRecords:       sideEntries,
-		RestorationBoundaryAbove: bounds.MaxWidth * 3,
-		RestorationBoundaryBelow: bounds.MaxWidth * 3,
-	}
-	batchScratch := backend.DecoderFrameWorkBatchResidualScratchSize{
-		Int32Scratch:     32768,
-		ResidualScratch:  32768,
-		LoopContextAbove: maxInt(bounds.MaxWidth*4, 1024),
-	}
-	size.Event.Runner = backend.DecoderFrameWorkBatchResidualRunnerScratchSize{
-		Workers:             workers,
-		Batch:               batchScratch,
-		RestorationRequests: workers,
-		Int32Scratch:        batchScratch.Int32Scratch * workers,
-		ResidualScratch:     batchScratch.ResidualScratch * workers,
-		LoopContextAbove:    batchScratch.LoopContextAbove * workers,
-	}
-	return size
-}
-
-// NewDecoderState allocates and binds reusable AV1 decoder state from explicit
-// bounds and exact format. All slices retained by the returned state are owned
-// by the state and reused across packet decode calls.
+// NewDecoderState allocates reusable AV1 decoder state and scratch buffers from
+// explicit bounds and format.
 func NewDecoderState(config DecoderStateConfig) (*DecoderState, error) {
 	bounds := normalizeDecoderBounds(config.Bounds)
 	format := config.Format
@@ -214,52 +124,27 @@ func NewDecoderState(config DecoderStateConfig) (*DecoderState, error) {
 			return nil, err
 		}
 	}
-	if _, err := backend.FrameRequiredSize(format); err != nil {
+	if _, _, err := backendFramePixelFormat(format); err != nil {
 		return nil, err
-	}
-
-	surfaceCount := config.SurfaceCount
-	if surfaceCount <= 0 {
-		surfaceCount = defaultSurfaceCount
 	}
 	workers := config.Workers
 	if workers <= 0 {
 		workers = defaultDecoderWorker
 	}
+	seedEvents := min(max(bounds.MaxEventsPerInput, defaultRuntimeEvents), maxAV1PayloadEvents)
+	seedBytes := max(bounds.MaxPayloadBytes+bounds.MaxRetainedBytes, defaultRTPSeedBytes)
+	rtpCap := max(bounds.MaxPayloadBytes+64, defaultRTPSeedBytes)
 
-	scratchSize := DecoderScratchSizeFromBounds(bounds).Max(config.Scratch)
-	_, backingSize, err := backend.FramePoolRequiredSize(format, surfaceCount)
-	if err != nil {
-		return nil, err
-	}
-
-	state := &DecoderState{
-		bounds:            bounds,
-		format:            format,
-		scratchSize:       scratchSize,
-		surfaceCount:      surfaceCount,
-		workers:           workers,
-		frameBacking:      make([]byte, backingSize),
-		frames:            make([]backend.Frame, surfaceCount),
-		free:              make([]int, surfaceCount),
-		used:              make([]bool, surfaceCount),
-		referenceSurfaces: make([]int, backend.InterRefsPerFrame),
-		referenceFrames:   make([]*backend.Frame, backend.InterRefsPerFrame),
-		releases:          make([]int, backend.RefFrames),
-		workerPool:        config.WorkerPool,
-		ownWorkerPool:     config.OwnWorkerPool,
-	}
-	state.pool, err = backend.BindFramePool(state.frameBacking[:backingSize], format, state.frames, state.free, state.used)
-	if err != nil {
-		return nil, err
-	}
-	state.scratch = newDecoderStreamScratch(scratchSize)
-	if err := state.scratch.Check(scratchSize); err != nil {
-		return nil, err
-	}
-	state.planRTPBuffer = make([]byte, scratchSize.RTPBuffer)
-	state.planRTPSpans = make([]backend.RTPObuSpan, scratchSize.RTPSpans)
-	return state, nil
+	return &DecoderState{
+		bounds:        bounds,
+		format:        format,
+		workers:       workers,
+		obuScratch:    make([]backend.RTPPacketizerOBU, maxAV1PayloadEvents),
+		packetScratch: make([]backend.RTPPacketPlan, 16),
+		workScratch:   make([]backend.RTPPacketPlan, 16),
+		rtpScratch:    make([]byte, rtpCap),
+		paddingSeed:   buildAV1PaddingRTPSeed(seedEvents, seedBytes),
+	}, nil
 }
 
 func normalizeDecoderBounds(bounds codec.DecodeBounds) codec.DecodeBounds {
@@ -271,50 +156,48 @@ func normalizeDecoderBounds(bounds codec.DecodeBounds) codec.DecodeBounds {
 	})
 }
 
-func newDecoderStreamScratch(size backend.DecoderFrameWorkResidualStreamScratchSize) backend.DecoderFrameWorkResidualStreamScratch {
-	return backend.DecoderFrameWorkResidualStreamScratch{
-		Events:    make([]backend.DecoderEvent, size.Events),
-		Event:     newDecoderEventScratch(size.Event),
-		SideData:  newDecoderSideDataScratch(size.Event.SideData),
-		Outputs:   make([]*backend.Frame, size.Event.Outputs),
-		RTPBuffer: make([]byte, size.RTPBuffer),
-		RTPSpans:  make([]backend.RTPObuSpan, size.RTPSpans),
+// buildAV1PaddingRTPSeed constructs a valid AV1 RTP payload composed solely of
+// OBU_PADDING elements so NewDecoderFromRTPPayloads sizes its reusable RTP
+// buffer and event/span slices to handle subsequent live payloads without
+// failing with ErrRTPShortBuffer or ErrEventBufferTooSmall.
+func buildAV1PaddingRTPSeed(eventSlots, totalBytes int) []byte {
+	if eventSlots < 1 {
+		eventSlots = 1
 	}
+	if eventSlots > maxAV1PayloadEvents {
+		eventSlots = maxAV1PayloadEvents
+	}
+	if totalBytes < 16 {
+		totalBytes = 16
+	}
+	// Aggregation header: Z=0, Y=0, W=0 (all elements LEB128 length-prefixed), N=0.
+	out := make([]byte, 0, totalBytes+eventSlots*2+8)
+	out = append(out, 0x00)
+	// (eventSlots - 1) minimal 1-byte OBU_PADDING elements (header 0x78: type=15, has_size=0).
+	for i := 0; i < eventSlots-1; i++ {
+		out = append(out, 0x01, 0x78)
+	}
+	// Final OBU_PADDING element sized to cover totalBytes.
+	padOBULen := max(totalBytes-(eventSlots-1), 1)
+	out = appendLEB128(out, uint64(padOBULen))
+	out = append(out, 0x78)
+	if padOBULen > 1 {
+		out = append(out, make([]byte, padOBULen-1)...)
+	}
+	return out
 }
 
-func newDecoderEventScratch(size backend.DecoderFrameWorkResidualEventScratchSize) backend.DecoderFrameWorkResidualEventScratch {
-	return backend.DecoderFrameWorkResidualEventScratch{
-		Runner:   newDecoderBatchRunnerScratch(size.Runner),
-		SideData: newDecoderSideDataScratch(size.SideData),
-		Spans:    make([]backend.TileSpan, size.Plan.SpanCount),
-		Jobs:     make([]backend.TileJob, size.Plan.JobCount),
-		Batches:  make([]backend.TileBatch, size.Plan.BatchCount),
-	}
-}
-
-func newDecoderBatchRunnerScratch(size backend.DecoderFrameWorkBatchResidualRunnerScratchSize) backend.DecoderFrameWorkBatchResidualRunnerScratch {
-	return backend.DecoderFrameWorkBatchResidualRunnerScratch{
-		States:                  make([]backend.TileDecodeState, size.Workers),
-		Storages:                make([]backend.DecoderFrameWorkTileResidualCDFStorage, size.Workers),
-		TileScratch:             make([]backend.DecoderFrameWorkTileResidualScratch, size.Workers),
-		RestorationRequests:     make([]backend.DecoderFrameWorkTileRestorationRequest, size.RestorationRequests),
-		PredictionScratch:       make([]backend.DecoderFrameWorkPredictionScratch, size.Workers),
-		InterPredictionScratch:  make([]backend.DecoderFrameWorkInterPredictionScratch, size.Workers),
-		Stats:                   make([]backend.DecoderFrameWorkTileResidualStats, size.Workers),
-		Int32Scratch:            make([]int32, size.Int32Scratch),
-		ResidualScratch:         make([]int16, size.ResidualScratch),
-		LoopContextAboveScratch: make([]backend.TileBlockLoopRootAboveContext, size.LoopContextAbove),
-	}
-}
-
-func newDecoderSideDataScratch(size backend.DecoderFrameWorkSideDataScratchSize) backend.DecoderFrameWorkSideDataScratch {
-	return backend.DecoderFrameWorkSideDataScratch{
-		CDEFIndexMap:             make([]uint8, size.CDEFIndexMap),
-		CDEFReadMap:              make([]bool, size.CDEFReadMap),
-		LoopFilterMap:            make([]backend.DecoderFrameWorkLoopFilterBlockRecord, size.LoopFilterMap),
-		RestorationRecords:       make([]backend.TileRestorationUnitRecord, size.RestorationRecords),
-		RestorationBoundaryAbove: make([]uint16, size.RestorationBoundaryAbove),
-		RestorationBoundaryBelow: make([]uint16, size.RestorationBoundaryBelow),
+func appendLEB128(dst []byte, v uint64) []byte {
+	for {
+		b := byte(v & 0x7f)
+		v >>= 7
+		if v != 0 {
+			b |= 0x80
+		}
+		dst = append(dst, b)
+		if v == 0 {
+			return dst
+		}
 	}
 }
 
@@ -332,207 +215,83 @@ func (s *DecoderState) Format() backend.FrameFormat {
 	return s.format
 }
 
-func (s *DecoderState) ScratchSize() backend.DecoderFrameWorkResidualStreamScratchSize {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualStreamScratchSize{}
-	}
-	return s.scratchSize
-}
-
-func (s *DecoderState) Stream() *backend.DecoderStream {
-	if s == nil {
-		return nil
-	}
-	return &s.stream
-}
-
-func (s *DecoderState) Scratch() backend.DecoderFrameWorkResidualStreamScratch {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualStreamScratch{}
-	}
-	return s.scratch
-}
-
-func (s *DecoderState) Runtime() backend.DecoderFrameWorkResidualEventRuntime {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualEventRuntime{}
-	}
-	return backend.DecoderFrameWorkResidualEventRuntime{
-		State:             &s.work,
-		Refs:              &s.refs,
-		FramePool:         &s.pool,
-		Align:             s.format.Align,
-		ReferenceSurfaces: s.referenceSurfaces,
-		ReferenceFrames:   s.referenceFrames,
-		Releases:          s.releases,
-		WorkerPool:        s.workerPool,
-		SideData:          &s.sideData,
-		Stats:             &s.stats,
-		Outputs:           s.scratch.Outputs,
-	}
-}
-
-func (s *DecoderState) BatchRunner() *backend.DecoderFrameWorkBatchResidualRunner {
-	if s == nil {
-		return nil
-	}
-	return &s.batch
-}
-
-// PlanLowOverhead validates one depacketized AV1 low-overhead OBU buffer
-// against a copy of the current stream state and reports the scratch/bind shape
-// required by BindRunner.
-func (s *DecoderState) PlanLowOverhead(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
-	}
-	return backend.DecoderFrameWorkResidualLowOverheadStreamPlan(
-		s.stream,
-		payload,
-		s.workers,
-		s.scratch.Events,
-		s.scratch.Event.Spans,
-		s.scratch.Event.Jobs,
-		s.scratch.Event.Batches,
-	)
-}
-
-// PlanLowOverheads validates an ordered batch of depacketized AV1
-// low-overhead OBU buffers against a copy of the current stream state and
-// returns a reusable max plan for BindRunner.
-func (s *DecoderState) PlanLowOverheads(payloads [][]byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
-	}
-	return backend.DecoderFrameWorkResidualLowOverheadStreamsPlan(
-		s.stream,
-		payloads,
-		s.workers,
-		s.scratch.Events,
-		s.scratch.Event.Spans,
-		s.scratch.Event.Jobs,
-		s.scratch.Event.Batches,
-	)
-}
-
-// PlanRTPPayload validates one raw AV1 RTP payload against a copy of the
-// current stream state and retained fragment bytes.
-func (s *DecoderState) PlanRTPPayload(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	return s.planRTPPayload(payload, false)
-}
-
-// PlanRTPPayloadAfterLoss validates one raw AV1 RTP payload as the first
-// payload after loss. It clears retained RTP fragment state in the planning
-// copy while preserving sequence/reference parser state.
-func (s *DecoderState) PlanRTPPayloadAfterLoss(payload []byte) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	return s.planRTPPayload(payload, true)
-}
-
-func (s *DecoderState) planRTPPayload(payload []byte, afterLoss bool) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	if s == nil {
-		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrDecoderInvalidFrameWorkState
-	}
-	stream := s.stream
-	used := 0
-	if afterLoss {
-		stream.ResetRTP()
-	} else if s.bound {
-		used = s.runner.RTPUsed
-	}
-	if used > len(s.planRTPBuffer) {
-		return backend.DecoderFrameWorkResidualStreamPlan{}, backend.ErrRTPShortBuffer
-	}
-	if used > 0 {
-		copy(s.planRTPBuffer, s.runner.RTPBuffer[:used])
-	}
-	return backend.DecoderFrameWorkResidualRTPPayloadStreamPlan(
-		stream,
-		used,
-		payload,
-		s.workers,
-		s.planRTPBuffer,
-		s.planRTPSpans,
-		s.scratch.Events,
-		s.scratch.Event.Spans,
-		s.scratch.Event.Jobs,
-		s.scratch.Event.Batches,
-	)
-}
-
 func (s *DecoderState) HasSequenceHeader() bool {
-	if s == nil {
-		return false
-	}
-	return s.stream.HasSequenceHeader()
+	return s != nil && s.dec != nil
 }
 
-// BindRunner binds the reusable backend runner for a previously planned stream
-// shape. Callers should re-plan and re-bind when codec parameters or accepted
-// sequence shape change.
-func (s *DecoderState) BindRunner(plan backend.DecoderFrameWorkResidualStreamPlan) (*backend.DecoderFrameWorkResidualStreamRunner, error) {
+func (s *DecoderState) ensureDecoder(seedPayloads [][]byte) error {
 	if s == nil {
-		return nil, backend.ErrDecoderInvalidFrameWorkState
+		return codec.ErrUnsupportedFormat
 	}
-	if plan.Size.Event.Runner.Workers > 0 && s.workerPool == nil {
-		return nil, backend.ErrThreadingInvalidWorkerCount
+	if s.dec != nil {
+		s.dec.Close()
+		s.dec = nil
 	}
-	if err := s.scratch.Check(plan.Size); err != nil {
-		return nil, err
+	seeds := make([][]byte, 0, len(seedPayloads)+1)
+	seeds = append(seeds, seedPayloads...)
+	if len(s.paddingSeed) > 0 {
+		seeds = append(seeds, s.paddingSeed)
 	}
-	runner, _, err := backend.BindDecoderFrameWorkResidualStreamPlanRunner(
-		plan,
-		&s.stream,
-		s.Runtime(),
-		s.scratch,
-		&s.batch,
-	)
+	opts := make([]backend.Option, 0, 2)
+	opts = append(opts, backend.WithWorkers(s.workers))
+	if s.bounds.MaxWidth > 0 && s.bounds.MaxHeight > 0 {
+		opts = append(opts, backend.WithFrameSizeLimit(s.bounds.MaxWidth*s.bounds.MaxHeight))
+	}
+	dec, err := backend.NewDecoderFromRTPPayloads(seeds, opts...)
+	if err != nil {
+		return err
+	}
+	s.dec = dec
+	return nil
+}
+
+func (s *DecoderState) packetizeLowOverhead(payload []byte, keyframe bool) ([]byte, error) {
+	limits := backend.RTPPayloadSizeLimits{
+		MaxPayloadLen: max(len(payload)+64, 1024),
+	}
+	p, err := backend.NewRTPPacketizer(payload, limits, keyframe, true, s.obuScratch, s.packetScratch, s.workScratch)
 	if err != nil {
 		return nil, err
 	}
-	s.runner = runner
-	s.bound = true
-	return &s.runner, nil
+	needed, ok := p.NextPacketSize()
+	if !ok {
+		return nil, nil
+	}
+	if needed > len(s.rtpScratch) {
+		s.rtpScratch = make([]byte, max(needed, len(s.rtpScratch)*2))
+	}
+	n, _, ok, err := p.NextPacket(s.rtpScratch)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return s.rtpScratch[:n], nil
 }
 
-// Runner returns the currently bound backend runner, when BindRunner has
-// succeeded and Reset has not cleared it.
-func (s *DecoderState) Runner() (*backend.DecoderFrameWorkResidualStreamRunner, bool) {
-	if s == nil || !s.bound {
-		return nil, false
-	}
-	return &s.runner, true
+func (s *DecoderState) resetInitFragments() {
+	s.initPayloads = s.initPayloads[:0]
+	s.initBuf = s.initBuf[:0]
 }
 
 func (s *DecoderState) Reset() {
 	if s == nil {
 		return
 	}
-	s.stream.Reset()
-	s.work.Reset()
-	s.refs.Reset()
-	s.pool.Reset()
-	s.sideData = backend.DecoderFrameWorkSideData{}
-	s.stats = backend.DecoderFrameWorkTileResidualStats{}
-	s.batch = backend.DecoderFrameWorkBatchResidualRunner{}
-	s.runner = backend.DecoderFrameWorkResidualStreamRunner{}
-	s.bound = false
+	if s.dec != nil {
+		_ = s.dec.Reset()
+	}
+	s.resetInitFragments()
 }
 
 func (s *DecoderState) Close() {
 	if s == nil {
 		return
 	}
-	s.Reset()
-	if s.ownWorkerPool {
-		s.workerPool.Close()
-		s.workerPool = nil
-		s.ownWorkerPool = false
+	if s.dec != nil {
+		s.dec.Close()
+		s.dec = nil
 	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	s.resetInitFragments()
 }

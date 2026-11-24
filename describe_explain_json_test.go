@@ -27,7 +27,7 @@ import (
 // GOAV_UPDATE_GOLDEN=1 go test -run 'GoldenJSON'.
 
 func describeJSONRecipe() goav.Output {
-	return goav.FileInput("input.webm", strings.NewReader("")).
+	return goav.Read("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(1280, 720).

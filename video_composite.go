@@ -238,7 +238,7 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compile.CompositeLayou
 		if f.Video == nil {
 			return nil, fmt.Errorf("goav: composite arm %q delivered a frame with no video plane", f.StreamID)
 		}
-		if f.Video.PixelFormat != av.PixelFormatI420 {
+		if f.Video.PixelFormat != av.PixelFormatI420 && f.Video.PixelFormat != av.PixelFormatYUV420P {
 			return nil, fmt.Errorf("goav: video composite requires %s, got %q on arm %q", av.PixelFormatI420, f.Video.PixelFormat, f.StreamID)
 		}
 		if len(f.Planes) < 3 {

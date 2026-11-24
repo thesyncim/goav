@@ -15,7 +15,7 @@ import (
 // timeline is the task-wide clock service: one shared av.Clock per task that
 // maps the runtime clock onto media run time through an atomically readable
 // rate and pause epoch. Paced consumers — the realtime demux pacer, clock-aware
-// provider sources, and (later slices) playout gates — read and sleep on the
+// provider sources, and playout gates — read and sleep on the
 // timeline, so one control.Rate re-anchors every consumer coherently instead
 // of each source keeping a private rate.
 //

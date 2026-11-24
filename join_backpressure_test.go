@@ -75,7 +75,7 @@ func TestJoinBackpressureReleasesOnCancel(t *testing.T) {
 	}
 }
 
-func joinOf(kind string, a, b goav.InputSpec) goav.Stream {
+func joinOf(kind string, a, b goav.Input) goav.Stream {
 	if kind == "composite" {
 		return goav.Composite(a.Video(), b.Video())
 	}
@@ -85,7 +85,7 @@ func joinOf(kind string, a, b goav.InputSpec) goav.Stream {
 // gatedArmSource pushes frames tiny frames of the join kind's media, first
 // waiting for release when it is non-nil, and closes done when it has pushed
 // them all.
-func gatedArmSource(kind string, name string, frames int, release <-chan struct{}, done chan<- struct{}) goav.InputSpec {
+func gatedArmSource(kind string, name string, frames int, release <-chan struct{}, done chan<- struct{}) goav.Input {
 	spec := shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16))
 	if kind == "composite" {
 		spec = shape.Frame(av.MediaVideo, shape.Video(2, 2, av.PixelFormatI420))
@@ -164,7 +164,7 @@ func TestLiveJoinKeepsBufferingFastArm(t *testing.T) {
 
 // liveArmSource is gatedArmSource as a live source that retries on
 // backpressure.
-func liveArmSource(name string, frames int, release <-chan struct{}, done chan<- struct{}) goav.InputSpec {
+func liveArmSource(name string, frames int, release <-chan struct{}, done chan<- struct{}) goav.Input {
 	return goav.Source(name, shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {
 			if done != nil {

@@ -257,3 +257,52 @@ func TestTrackCodecUpdatesNormalizeOlderEpochs(t *testing.T) {
 		t.Fatalf("epoch update: event=%+v map=%v err=%v", event, payloads, err)
 	}
 }
+
+func TestWHEPSingleTrackEOFEmitsStreamRemoved(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	aRemote, bRemote := opusRemoteTrack(111), opusRemoteTrack(111)
+	aRemote.Stream.ID, bRemote.Stream.ID = "a", "b"
+	aTransport, bTransport := newBlockingTrackRTPReader(), newBlockingTrackRTPReader()
+	a, b := newTrackReader(aRemote, aTransport), newTrackReader(bRemote, bTransport)
+	defer a.Close()
+	defer b.Close()
+	aStreams, _ := a.Streams(ctx)
+	bStreams, _ := b.Streams(ctx)
+	s := &whepSession{
+		ctx:      ctx,
+		cancel:   cancel,
+		records:  make(chan whepRecord, 8),
+		events:   make(chan av.Event, 4),
+		streams:  []av.Stream{aStreams[0], bStreams[0]},
+		payloads: []rtpav.PayloadMap{a.PayloadMap(), b.PayloadMap()},
+	}
+	go s.pump(a)
+	go s.pump(b)
+	waitRead(t, aTransport)
+	waitRead(t, bTransport)
+
+	// End track A with io.EOF while track B stays alive.
+	close(aTransport.packets)
+	_, event, _, err := s.ReadRTP(ctx)
+	if err != nil {
+		t.Fatalf("single-track EOF killed session: %v", err)
+	}
+	if event == nil || event.Type != av.EventStreamRemoved || event.StreamID != "a" {
+		t.Fatalf("event = %+v, want EventStreamRemoved for stream a", event)
+	}
+
+	// Track B must still deliver packets.
+	bTransport.packets <- &rtp.Packet{Header: rtp.Header{PayloadType: 111, SequenceNumber: 1, Timestamp: 960}, Payload: []byte{1, 2}}
+	pkt, _, _, err := s.ReadRTP(ctx)
+	if err != nil || pkt == nil {
+		t.Fatalf("sibling track B failed after A EOF: pkt=%v err=%v", pkt, err)
+	}
+
+	// When the last remaining track B hits io.EOF, session disconnects.
+	close(bTransport.packets)
+	_, _, _, err = s.ReadRTP(ctx)
+	if !errors.Is(err, ErrWHEPDisconnected) {
+		t.Fatalf("last-track EOF err = %v, want ErrWHEPDisconnected", err)
+	}
+}

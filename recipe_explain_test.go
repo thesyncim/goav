@@ -36,7 +36,7 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 
 func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	report, err := recordJob(
-		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.Read("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("recording.mp4", io.Discard),
 	).UseRuntime(mustRuntime()).Explain(context.Background())
 	var buildErr *goav.BuildError
@@ -62,7 +62,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 }
 
 func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
-	report, err := mustRuntime(bundle.Codecs()).Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := mustRuntime(bundle.Codecs()).Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -108,7 +108,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	)
 
 	web := goav.Write("web.ogg", io.Discard)
-	report, err := branchJob(goav.FileInput("input.ogg", strings.NewReader(""))).
+	report, err := branchJob(goav.Read("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video("v").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Audio("a").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web).
@@ -170,7 +170,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 		}),
 	)
 
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Tap("audio.decoded").
@@ -236,7 +236,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	)
 
 	web := goav.Write("web.ogg", io.Discard)
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(1280, 720).
@@ -301,7 +301,7 @@ func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 	}{
 		{
 			name: "frame to packet",
-			job: recipeOf(goav.FileInput("input.ivf", strings.NewReader("")).
+			job: recipeOf(goav.Read("input.ivf", strings.NewReader("")).
 				Video().
 				Decode().
 				Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
@@ -355,7 +355,7 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 	})
 
 	web := goav.Write("web.ogg", io.Discard)
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(640, 360).
@@ -426,7 +426,7 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 		}),
 	)
 
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -452,7 +452,7 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 	}
 	requirement.SampleFormats[0] = "mutated"
 	requirement.Metadata["sample_format"] = "mutated"
-	report, err = rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err = rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -491,7 +491,7 @@ func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 		}),
 	)
 
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -534,10 +534,10 @@ func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 		}, recipeAPIEncoderFactory{})
 	}))
 
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.raw", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.raw", strings.NewReader("")).
 		Audio().
 		Decode().
-		Encode(codec.Codec(custom, av.MediaAudio)).
+		Encode(codec.New(custom, av.MediaAudio)).
 		To(goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 			return nil
 		}))))
@@ -594,7 +594,7 @@ func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 		}),
 	)
 
-	report, err := rt.Explain(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	report, err := rt.Explain(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
@@ -643,7 +643,7 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 	)
 
 	web := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
-	in := goav.FileInput("input.ogg", strings.NewReader(""))
+	in := goav.Read("input.ogg", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode()
@@ -691,7 +691,7 @@ func TestReportsUseDestinations(t *testing.T) {
 
 func TestRecipeReportsNilRuntime(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.Read("input.ivf", strings.NewReader("")),
 		goav.Write("recording.ivf", io.Discard),
 	).UseRuntime(nil).BuildLive(context.Background())
 
@@ -708,7 +708,7 @@ func TestRecipeReportsNilRuntime(t *testing.T) {
 
 func TestRecipeReportsOmittedRuntime(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.Read("input.ivf", strings.NewReader("")),
 		goav.Write("recording.ivf", io.Discard),
 	).UseRuntime(nil).BuildLive(context.Background())
 

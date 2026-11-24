@@ -22,13 +22,13 @@ import (
 
 // pcmSource returns a custom frame-domain input that pushes one S16 PCM frame
 // per sample slice, then ends the stream.
-func pcmSource(name string, sampleRate int, channels int, frames ...[]int16) goav.InputSpec {
+func pcmSource(name string, sampleRate int, channels int, frames ...[]int16) goav.Input {
 	return pcmSourceAt(name, sampleRate, channels, nil, frames...)
 }
 
 // pcmSourceAt is pcmSource with an optional PTS stamp (in milliseconds, 20ms
 // frames) per pushed frame, for the PTS-aligned join examples.
-func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frames ...[]int16) goav.InputSpec {
+func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frames ...[]int16) goav.Input {
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16), shape.Stream(av.StreamID(name))),
 		func(_ context.Context, push source.Push) error {
@@ -57,7 +57,7 @@ func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frame
 
 // i420Source returns a custom frame-domain input that pushes one solid-color
 // I420 video frame (every luma sample = luma), then ends the stream.
-func i420Source(name string, width int, height int, luma byte) goav.InputSpec {
+func i420Source(name string, width int, height int, luma byte) goav.Input {
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(av.StreamID(name))),
 		func(_ context.Context, push source.Push) error {
@@ -344,7 +344,7 @@ func ExampleAttachment_rebranch() {
 	ctx := context.Background()
 	var part1, part2 bytes.Buffer
 
-	task, err := mustRuntime().Build(ctx, goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
+	task, err := mustRuntime().Build(ctx, goav.Read("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
 		Tap("video.encoded").
 		To(goav.Write("live.ivf", io.Discard)))
@@ -383,7 +383,7 @@ func ExampleAttachment_rebranch() {
 func ExampleTask_control() {
 	ctx := context.Background()
 
-	task, err := mustRuntime().Build(ctx, goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
+	task, err := mustRuntime().Build(ctx, goav.Read("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(1_000_000))).
@@ -445,7 +445,7 @@ func ExampleTask_watch() {
 func ExampleBuildError() {
 	// Decoded frames cannot feed a muxed file without an encoder: the build
 	// refuses before any resource opens.
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
 		Decode().
 		To(goav.Write("frames.ivf", io.Discard)))

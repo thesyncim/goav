@@ -2,11 +2,11 @@ package goaac
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"maps"
 	"strings"
-	"unsafe"
 
 	aaclib "github.com/thesyncim/goaac"
 	"github.com/thesyncim/goav/av"
@@ -71,9 +71,10 @@ func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig)
 type Decoder struct {
 	decoder   *aaclib.Decoder
 	stream    av.Stream
-	settings  codec.CodecSettings
+	settings  codec.Settings
 	transport aaclib.Transport
 	audio     av.AudioFrame
+	pcm       []int16
 	closed    bool
 }
 
@@ -125,11 +126,16 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	out.Frames = out.Frames[:index+1]
 	frame := &out.Frames[index]
 	frame.Reset()
-	pcm, backing, err := prepareOutputFrame(frame, required)
+	backing, err := prepareOutputFrame(frame, required)
 	if err != nil {
 		out.Frames = out.Frames[:index]
 		return err
 	}
+	maxSamples := len(backing) / 2
+	if cap(d.pcm) < maxSamples {
+		d.pcm = make([]int16, maxSamples)
+	}
+	pcm := d.pcm[:0:maxSamples]
 
 	decoded, info, err := d.decoder.Decode(pcm, pkt.Payload.Bytes)
 	if err != nil {
@@ -139,6 +145,13 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if len(decoded) == 0 {
 		out.Frames = out.Frames[:index]
 		return nil
+	}
+	if len(decoded)*2 > len(backing) {
+		out.Frames = out.Frames[:index]
+		return codec.ErrOutputBufferTooSmall
+	}
+	for i, s := range decoded {
+		binary.LittleEndian.PutUint16(backing[i*2:], uint16(s))
 	}
 
 	channels := firstPositive(info.Channels, d.stream.Codec.Channels)
@@ -347,7 +360,7 @@ func streamHasRawConfig(stream av.Stream) bool {
 		(firstPositive(stream.Codec.SampleRate, int(stream.Codec.ClockRate)) > 0 && stream.Codec.Channels > 0)
 }
 
-func decodeTransport(settings codec.CodecSettings, parameters av.CodecParameters) (aaclib.Transport, error) {
+func decodeTransport(settings codec.Settings, parameters av.CodecParameters) (aaclib.Transport, error) {
 	value := ""
 	if settings.Custom != nil {
 		value = settings.Custom[aacTransportKey]
@@ -392,22 +405,21 @@ func rawConfigFromStream(stream av.Stream) (aaclib.Config, error) {
 	return cfg, nil
 }
 
-func prepareOutputFrame(frame *av.Frame, requiredSamples int) ([]int16, []byte, error) {
+func prepareOutputFrame(frame *av.Frame, requiredSamples int) ([]byte, error) {
 	if cap(frame.Planes) < 1 {
-		return nil, nil, codec.ErrOutputBufferTooSmall
+		return nil, codec.ErrOutputBufferTooSmall
 	}
 	frame.Planes = frame.Planes[:1]
 	plane := &frame.Planes[0]
 	requiredBytes := requiredSamples * 2
 	if requiredSamples <= 0 || cap(plane.Buffer.Bytes) < requiredBytes {
-		return nil, nil, codec.ErrOutputBufferTooSmall
+		return nil, codec.ErrOutputBufferTooSmall
 	}
 	backing := plane.Buffer.Bytes[:cap(plane.Buffer.Bytes)]
 	if len(backing)%2 != 0 {
 		backing = backing[:len(backing)-1]
 	}
-	pcm := unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(backing))), len(backing)/2)
-	return pcm[:0], backing, nil
+	return backing, nil
 }
 
 func audioFrameFromStream(stream av.Stream, samples int) av.AudioFrame {
@@ -476,7 +488,7 @@ func codecChangedStream(current av.Stream, event *av.Event) (av.Stream, bool) {
 	return next, true
 }
 
-func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
+func cloneCodecSettings(settings codec.Settings) codec.Settings {
 	cloned := settings
 	if settings.Custom != nil {
 		cloned.Custom = make(av.Metadata, len(settings.Custom))

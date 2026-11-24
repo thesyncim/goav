@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 )
 
-func packetStageInput() goav.InputSpec {
+func packetStageInput() goav.Input {
 	return goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})
 }
 

@@ -47,7 +47,7 @@ func (s *soakEncoderProbe) Handle(_ context.Context, m *pipeline.Message) error 
 	}
 	return nil
 }
-func soakAudio() goav.InputSpec {
+func soakAudio() goav.Input {
 	return goav.Source("tone", shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.SampleFormatS16), shape.Realtime(true)), func(ctx context.Context, push source.Push) error {
 		tick := time.NewTicker(20 * time.Millisecond)
 		defer tick.Stop()
@@ -198,7 +198,7 @@ func TestTaskAVLifecycleSoak(t *testing.T) {
 					t.Fatal(ctx.Err())
 				}
 			}
-			receiver, err = rt.Build(ctx, goav.Input(Track(receivedVideo)).Video().Decode().To(goav.Sink(videoCount)), goav.Input(Track(receivedAudio)).Audio().Decode().To(goav.Sink(audioCount)))
+			receiver, err = rt.Build(ctx, goav.From(Track(receivedVideo)).Video().Decode().To(goav.Sink(videoCount)), goav.From(Track(receivedAudio)).Audio().Decode().To(goav.Sink(audioCount)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -263,7 +263,7 @@ func TestTaskAVLifecycleSoak(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	input := goav.FileInput("recording.webm", file)
+	input := goav.Read("recording.webm", file)
 	recordedVideo, recordedAudio := &soakCountSink{name: "recorded-video"}, &soakCountSink{name: "recorded-audio"}
 	if err := rt.Run(ctx, input.Video().Decode().To(goav.Sink(recordedVideo)), input.Audio().Decode().To(goav.Sink(recordedAudio))); err != nil {
 		t.Fatal(err)

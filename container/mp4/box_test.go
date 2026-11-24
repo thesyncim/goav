@@ -182,4 +182,23 @@ func TestReadPayloadRefusesHugeBox(t *testing.T) {
 	}
 }
 
+// readBoxHeader must reject a 64-bit largesize that would overflow off+size.
+func TestReadBoxHeaderLargeSizeOverflow(t *testing.T) {
+	buf := make([]byte, 32)
+	// Prefix 8-byte valid box so off > 0.
+	buf[3] = 8
+	copy(buf[4:8], "free")
+	// Second box at off=8: size=1 (64-bit largesize), largesize=0x7ffffffffffffff8 (off+size overflows int64).
+	buf[11] = 1
+	copy(buf[12:16], "mdat")
+	for i := 16; i < 24; i++ {
+		buf[i] = 0xff
+	}
+	buf[16] = 0x7f
+	buf[23] = 0xf8
+	if _, err := readBoxHeader(bytes.NewReader(buf), 8, int64(len(buf))); !errors.Is(err, ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated", err)
+	}
+}
+
 var _ io.ReaderAt = (*bytes.Reader)(nil)

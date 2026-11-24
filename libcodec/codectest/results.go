@@ -143,9 +143,9 @@ func merged(base, reported av.CodecParameters) av.CodecParameters {
 
 // withBitrate asks for a bitrate when the backend takes one: a backend that
 // declares knobs without bitrate (a lossless codec, say) refuses it.
-func withBitrate(b backend, bitsPerSecond int) codec.CodecSettings {
+func withBitrate(b backend, bitsPerSecond int) codec.Settings {
 	if _, ok := b.desc.Knob("bitrate"); ok || b.desc.Knobs == nil {
-		return codec.CodecSettings{Bitrate: bitsPerSecond}
+		return codec.Settings{Bitrate: bitsPerSecond}
 	}
-	return codec.CodecSettings{}
+	return codec.Settings{}
 }

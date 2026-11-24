@@ -21,7 +21,7 @@ func Descriptor() filter.Descriptor {
 		Name:         filter.FactoryResize,
 		Input:        av.MediaVideo,
 		Output:       av.MediaVideo,
-		PixelFormats: []string{av.PixelFormatI420, av.PixelFormatYUV420P},
+		PixelFormats: []string{av.PixelFormatI420},
 		ResizeModes: []filter.ResizeMode{
 			filter.ResizeExact,
 			filter.ResizeFit,
@@ -349,13 +349,15 @@ func supportedMode(mode filter.ResizeMode) bool {
 }
 
 func normalizePixelFormat(format string) (string, bool) {
-	switch strings.ToLower(format) {
+	switch format {
 	case "":
 		return "", true
 	case av.PixelFormatI420:
 		return av.PixelFormatI420, true
-	case av.PixelFormatYUV420P:
-		return av.PixelFormatYUV420P, true
+	}
+	switch strings.ToLower(format) {
+	case av.PixelFormatI420, "yuv420p":
+		return av.PixelFormatI420, true
 	default:
 		return "", false
 	}
@@ -379,19 +381,21 @@ func planeReady(plane *av.Plane, width int, height int) bool {
 	return need <= len(plane.Buffer.Bytes)
 }
 
-// prepareOutputPlanes gives the output new pooled planes: the stage hands
+// prepareOutputPlanes gives the output new pooled planes carved out of a
+// single pooled block (one pool round trip instead of three): the stage hands
 // each output downstream by reference, so the previous one may still be in
-// use.
+// use. Each plane holds its own reference, as av.Frame.Release expects.
 func prepareOutputPlanes(planes []av.Plane, width int, height int) {
-	prepareOutputPlane(&planes[0], width, height)
-	prepareOutputPlane(&planes[1], width/2, height/2)
-	prepareOutputPlane(&planes[2], width/2, height/2)
-}
-
-func prepareOutputPlane(plane *av.Plane, width int, height int) {
-	plane.Buffer = av.NewBuffer(width * height)
-	plane.Stride = width
-	plane.Offset = 0
+	chromaWidth, chromaHeight := width/2, height/2
+	lumaSize := width * height
+	chromaSize := chromaWidth * chromaHeight
+	block := av.NewBuffer(lumaSize + 2*chromaSize)
+	block.Retain()
+	block.Retain()
+	bytes := block.Bytes
+	planes[0] = av.Plane{Buffer: av.Buffer{Bytes: bytes[:lumaSize:lumaSize], Owner: block.Owner}, Stride: width}
+	planes[1] = av.Plane{Buffer: av.Buffer{Bytes: bytes[lumaSize : lumaSize+chromaSize : lumaSize+chromaSize], Owner: block.Owner}, Stride: chromaWidth}
+	planes[2] = av.Plane{Buffer: av.Buffer{Bytes: bytes[lumaSize+chromaSize:], Owner: block.Owner}, Stride: chromaWidth}
 }
 
 func (f *Filter) scaleI420(dst []av.Plane, src []av.Plane, g geometry) {

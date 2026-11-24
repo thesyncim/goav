@@ -35,6 +35,8 @@ func gateMessageTime(msg *pipeline.Message) (av.StreamID, time.Duration, bool) {
 	}
 }
 
+var gateNameReplacer = strings.NewReplacer(" ", "-", "/", "-", "\\", "-", "\t", "-", "\n", "-")
+
 // gateStageName builds the diagnostic node name for a timed gate:
 // prefix-<sanitized policy name>, with the prefix doubling as the default name.
 func gateStageName(prefix string, name string) string {
@@ -42,8 +44,7 @@ func gateStageName(prefix string, name string) string {
 	if name == "" {
 		name = prefix
 	}
-	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", "\t", "-", "\n", "-")
-	return prefix + "-" + replacer.Replace(name)
+	return prefix + "-" + gateNameReplacer.Replace(name)
 }
 
 // gateTimebaseError refuses one media message that reached a timed gate

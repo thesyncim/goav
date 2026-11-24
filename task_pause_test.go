@@ -259,7 +259,7 @@ func TestTaskSeekWhilePausedAppliesAtNextReadBoundary(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	step := newPauseStepSink()
 	clock := &paceFileClock{}
-	task, err := mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock)).Build(ctx, FileInput("seek.mkv", bytes.NewReader(data)).
+	task, err := mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock)).Build(ctx, Read("seek.mkv", bytes.NewReader(data)).
 		Audio().
 		To(Sink(SinkFunc("rec", step.record))))
 	if err != nil {
@@ -349,8 +349,8 @@ func TestTaskReadinessEventFires(t *testing.T) {
 	audio := &countingPacketSink{}
 
 	task, err := mustNew(WithClock(clock)).Build(ctx,
-		Input(&timelinePacedProvider{source: cam}).Video().To(Sink(SinkFunc("video", video.record))),
-		Input(&timelinePacedProvider{source: mic}).Audio().To(Sink(SinkFunc("audio", audio.record))))
+		From(&timelinePacedProvider{source: cam}).Video().To(Sink(SinkFunc("video", video.record))),
+		From(&timelinePacedProvider{source: mic}).Audio().To(Sink(SinkFunc("audio", audio.record))))
 	if err != nil {
 		t.Fatal(err)
 	}

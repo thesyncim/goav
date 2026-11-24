@@ -200,7 +200,7 @@ func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig) error {
 // vp8EncoderOptions builds the libvpx options for a VP8 encode. A realtime config
 // (RTP/WebRTC ingress, or an explicit realtime flow) selects the low-latency
 // CBR/realtime preset used by the govpx RTC reference, instead of the default
-// VBR good-quality mode. Bitrate, fps, and keyframe cadence come from CodecSettings.
+// VBR good-quality mode. Bitrate, fps, and keyframe cadence come from codec.Settings.
 func vp8EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.EncoderOptions {
 	options := govpxlib.EncoderOptions{
 		Width:             width,
@@ -234,7 +234,7 @@ func vp8EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.En
 }
 
 // encodeKeyframeInterval resolves the max GOP distance: an explicit
-// CodecSettings.KeyframeInterval wins, else the realtime default.
+// codec.Settings.KeyframeInterval wins, else the realtime default.
 func encodeKeyframeInterval(config codec.EncodeConfig, def int) int {
 	if config.Settings.KeyframeInterval > 0 {
 		return config.Settings.KeyframeInterval

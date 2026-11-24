@@ -23,16 +23,13 @@ type layout struct {
 }
 
 var layouts = map[string]layout{
-	av.PixelFormatI420:    {planes: 3, shiftX: 1, shiftY: 1, bytes: 1},
-	av.PixelFormatYUV420P: {planes: 3, shiftX: 1, shiftY: 1, bytes: 1},
-	av.PixelFormatI422:    {planes: 3, shiftX: 1, bytes: 1},
-	av.PixelFormatYUV422P: {planes: 3, shiftX: 1, bytes: 1},
-	av.PixelFormatI444:    {planes: 3, bytes: 1},
-	av.PixelFormatYUV444P: {planes: 3, bytes: 1},
-	"yuv420p10le":         {planes: 3, shiftX: 1, shiftY: 1, bytes: 2},
-	"yuv422p10le":         {planes: 3, shiftX: 1, bytes: 2},
-	"yuv444p10le":         {planes: 3, bytes: 2},
-	NV12:                  {planes: 2, shiftX: 1, shiftY: 1, bytes: 1, planar: av.PixelFormatI420, interlvd: true},
+	av.PixelFormatI420: {planes: 3, shiftX: 1, shiftY: 1, bytes: 1},
+	av.PixelFormatI422: {planes: 3, shiftX: 1, bytes: 1},
+	av.PixelFormatI444: {planes: 3, bytes: 1},
+	"yuv420p10le":      {planes: 3, shiftX: 1, shiftY: 1, bytes: 2},
+	"yuv422p10le":      {planes: 3, shiftX: 1, bytes: 2},
+	"yuv444p10le":      {planes: 3, bytes: 2},
+	NV12:               {planes: 2, shiftX: 1, shiftY: 1, bytes: 1, planar: av.PixelFormatI420, interlvd: true},
 }
 
 // Picture is one picture lent to or by a backend. Format is a goav pixel

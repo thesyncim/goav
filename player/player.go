@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/player/internal/engine"
+	"github.com/thesyncim/goav/runconfig"
 )
 
 // Window is a playback window and the speaker it plays through. Its
@@ -106,6 +107,15 @@ func (w *Window) Element() launch.Element {
 	})
 }
 
+// RuntimeOptions returns the runtime options needed to pace a task against
+// this window's hardware speaker clock in realtime mode.
+func (w *Window) RuntimeOptions() []runconfig.Option {
+	return []runconfig.Option{
+		runconfig.WithClock(w.Clock()),
+		runconfig.WithRealtime(true),
+	}
+}
+
 // Stats is a point-in-time view of playback.
 type Stats struct {
 	// Position is the media time being heard (without audio: shown).
@@ -140,7 +150,7 @@ func (w *Window) Stats() Stats {
 //
 // Run must be called from the main goroutine (the windowing systems require
 // it) and at most once per process (one audio device context per process).
-func (w *Window) Run(ctx context.Context, task goav.LiveTask) error {
+func (w *Window) Run(ctx context.Context, task goav.Task) error {
 	if task == nil {
 		return errors.New("player: Run needs a task")
 	}

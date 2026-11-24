@@ -34,7 +34,7 @@ func (staticRTPReader) Close() error { return nil }
 // ExampleInput opens an RTP receive provider as a goav recipe input: the
 // provider seam carries the transport, goav carries the recipe.
 func ExampleInput() {
-	mic := goav.Input(rtpav.Receive(staticRTPReader{}, rtpav.WithName("mic"), rtpav.WithCodec(codec.Opus())))
+	mic := goav.From(rtpav.Receive(staticRTPReader{}, rtpav.WithName("mic"), rtpav.WithCodec(codec.Opus())))
 
 	report, err := bundle.Explain(context.Background(), mic.Audio().To(goav.Write("mic.webm", io.Discard)))
 	if err != nil {

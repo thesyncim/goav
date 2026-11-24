@@ -1,6 +1,7 @@
 package goav_test
 
 import (
+	"io"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -102,7 +103,7 @@ func (recipeAPICustomDestination) Contract() provider.Contract {
 	}
 }
 
-func (recipeAPICustomDestination) Open(context.Context, provider.Info) (provider.Writer, error) {
+func (recipeAPICustomDestination) Open(context.Context, provider.Info) (io.WriteCloser, error) {
 	return recipeAPICustomWriter{}, nil
 }
 
@@ -348,24 +349,24 @@ func (r *testRecipe) Explain(ctx context.Context) (plan.Report, error) {
 	return r.rt().Explain(ctx, r.outs...)
 }
 
-func (r *testRecipe) Build(ctx context.Context) (goav.LiveTask, error) {
+func (r *testRecipe) Build(ctx context.Context) (goav.Task, error) {
 	return r.rt().Build(ctx, r.outs...)
 }
 
-func (r *testRecipe) BuildLive(ctx context.Context) (goav.LiveTask, error) { return r.Build(ctx) }
+func (r *testRecipe) BuildLive(ctx context.Context) (goav.Task, error) { return r.Build(ctx) }
 
 func (r *testRecipe) Run(ctx context.Context) error { return r.rt().Run(ctx, r.outs...) }
 
-func recordJob(input goav.InputSpec, outputs ...goav.Destination) *testRecipe {
+func recordJob(input goav.Input, outputs ...goav.Destination) *testRecipe {
 	return recipeOf(input.To(outputs...))
 }
 
-func decodeJob(input goav.InputSpec, output goav.Destination) *testRecipe {
+func decodeJob(input goav.Input, output goav.Destination) *testRecipe {
 	return recipeOf(input.Stream().Decode().To(output))
 }
 
 type testBranchJob struct {
-	input    goav.InputSpec
+	input    goav.Input
 	runtime  *goav.Runtime
 	set      bool
 	branches []testTranscodeBranch
@@ -393,7 +394,7 @@ type testTranscodeBranchBuilder struct {
 }
 
 // branchJob declares named decoded forks of one input, one per media call.
-func branchJob(input goav.InputSpec) *testBranchJob {
+func branchJob(input goav.Input) *testBranchJob {
 	return &testBranchJob{input: input}
 }
 
@@ -457,11 +458,11 @@ func (j *testBranchJob) Explain(ctx context.Context) (plan.Report, error) {
 
 func (j *testBranchJob) Describe() (pipeline.Spec, error) { return j.recipe().Describe() }
 
-func (j *testBranchJob) Build(ctx context.Context) (goav.LiveTask, error) {
+func (j *testBranchJob) Build(ctx context.Context) (goav.Task, error) {
 	return j.recipe().Build(ctx)
 }
 
-func (j *testBranchJob) BuildLive(ctx context.Context) (goav.LiveTask, error) {
+func (j *testBranchJob) BuildLive(ctx context.Context) (goav.Task, error) {
 	return j.recipe().Build(ctx)
 }
 
@@ -528,7 +529,7 @@ func TestExpertGraphRequiresRuntime(t *testing.T) {
 }
 
 func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
-	inputType := reflect.TypeFor[goav.InputSpec]()
+	inputType := reflect.TypeFor[goav.Input]()
 	if _, ok := inputType.MethodByName("Depacketize"); ok {
 		t.Fatal("InputSpec exposes manual depacketizer wiring; RTP recipes should use codec intent")
 	}
@@ -583,9 +584,9 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 
 func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 	codecSpec := reflect.TypeFor[codec.Spec]()
-	settingsType := reflect.TypeFor[codec.CodecSettings]()
+	settingsType := reflect.TypeFor[codec.Settings]()
 	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
-		t.Fatalf("Spec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
+		t.Fatalf("Spec.Settings = %v %v, want codec.Settings", field.Type, ok)
 	}
 	for _, field := range []string{
 		"Bitrate",
@@ -610,7 +611,7 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 		{name: "encode", typ: reflect.TypeFor[codec.EncodeConfig]()},
 	} {
 		if field, ok := tt.typ.FieldByName("Settings"); !ok || field.Type != settingsType {
-			t.Fatalf("%s config Settings = %v %v, want codec.CodecSettings", tt.name, field.Type, ok)
+			t.Fatalf("%s config Settings = %v %v, want codec.Settings", tt.name, field.Type, ok)
 		}
 		for _, field := range []string{
 			"Bitrate",

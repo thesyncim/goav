@@ -1,7 +1,7 @@
 # CLI
 
-`goav` runs, describes, and explains programs in goav's pipeline language, and
-`goav ctl` steers a task an application serves over a control socket. A
+`goav` runs, describes, explains, and plays programs in goav's pipeline language,
+lists local cameras with `goav cameras`, and steers running tasks with `goav ctl`. A
 program is the same recipe the Go library builds, written as text: the CLI and
 the library produce the same graph.
 
@@ -10,6 +10,7 @@ goav run      [--runtime default|demo|test] [--control unix://PATH] [--serve ADD
 goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'
 goav explain  [--runtime ...] [-f FILE] '<program>'
 goav play     [-f FILE] FILE|'<program>'
+goav cameras  [--json] [--request-access]
 goav elements
 goav ctl      --control unix://PATH <method> [key=value...]
 ```
@@ -41,7 +42,7 @@ the one above.
 
 | Kind | Elements |
 | --- | --- |
-| Sources | `file PATH`, `uri URL` (or a quoted URL: http, https, whep), `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
+| Sources | `file PATH`, `uri URL` (or a quoted URL: http, https, whep, camera), `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto` |
 | Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! resize WxH ! at X Y [, sync=pts])`, `select(a, b)` |

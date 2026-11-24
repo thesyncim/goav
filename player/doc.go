@@ -9,7 +9,7 @@
 //
 //	w := player.New(player.Title("demo"))
 //	rt := bundle.MustNew(runconfig.WithRealtime(true), runconfig.WithClock(w.Clock()))
-//	in := goav.FileInput("in.webm", f)
+//	in := goav.Read("in.webm", f)
 //	task, err := rt.Build(ctx,
 //		in.Video().Decode().To(w.Destination()),
 //		in.Audio().Decode().Resample(48000, 2).To(w.Destination()))

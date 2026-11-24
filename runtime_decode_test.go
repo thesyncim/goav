@@ -195,7 +195,7 @@ func TestDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
 		},
 	}, decoderFactory))
 
-	_, err := mustNew(formats, codecs).Build(context.Background(), FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustNew(formats, codecs).Build(context.Background(), Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"})))
@@ -239,7 +239,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := mustNew(WithRealtime(true), formats, codecs).Build(context.Background(), FileInput("input.ivf", strings.NewReader("")).
+	task, err := mustNew(WithRealtime(true), formats, codecs).Build(context.Background(), Read("input.ivf", strings.NewReader("")).
 		Video().
 		Decode().
 		To(Sink(sink)))
@@ -270,7 +270,7 @@ func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
 	request := compile.DecodeRequest{
 		Selector: testSelectAudio(),
 		Config: codec.Spec{
-			Settings: codec.CodecSettings{
+			Settings: codec.Settings{
 				Bitrate: 48_000,
 				Profile: "analysis",
 				Control: control,

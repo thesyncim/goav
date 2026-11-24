@@ -232,14 +232,13 @@ func init() {
 		a := argsOf[syncArgs](args)
 		policy, ok := c.syncs[a.Name]
 		if !ok {
-			var opts []flow.SyncPolicy
+			policy = flow.Sync(a.Name)
 			if a.Tolerance > 0 {
-				opts = append(opts, flow.SyncTolerance(a.Tolerance))
+				policy = policy.WithTolerance(a.Tolerance)
 			}
 			if a.DropLate {
-				opts = append(opts, flow.SyncDropLate())
+				policy = policy.WithDropLate()
 			}
-			policy = flow.Sync(a.Name, opts...)
 			c.syncs[a.Name] = policy
 		} else if a.Tolerance > 0 || a.DropLate {
 			return value{}, &Error{Pos: -1, Msg: "sync " + a.Name + " is already defined", Hint: "set tolerance and drop_late where sync " + a.Name + " first appears"}
@@ -492,5 +491,5 @@ func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) codec.Sp
 	case av.CodecOpus:
 		return codec.Opus(opts...)
 	}
-	return codec.Codec(id, media, opts...)
+	return codec.New(id, media, opts...)
 }

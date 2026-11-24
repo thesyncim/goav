@@ -6,17 +6,8 @@ import (
 	"time"
 )
 
-// This file is the one payload seam for the time-axis control events. EventSeek
-// carries its position on Event.Timestamp; EventRate and EventSegment each need
-// one more value, which rides Event.Metadata through the typed build/parse pairs
-// below — the same wire-form discipline as codec.BitrateMetadata/EventBitrate
-// for EventBitrateChanged — so control producers and sources never hand-roll
-// metadata strings.
-
 // MetadataRate is the Event.Metadata key carrying a requested playback rate as
-// a decimal string (1 = realtime). It is the payload of EventRate events —
-// the wire form of task-wide rate controls; build it with RateMetadata and
-// read it with EventRateValue.
+// a decimal string (1 = realtime). Build with RateMetadata, read with EventRateValue.
 const MetadataRate = "rate"
 
 // MetadataSegmentEnd is the Event.Metadata key carrying a segment's exclusive

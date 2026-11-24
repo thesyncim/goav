@@ -27,15 +27,15 @@ import (
 // opens live, or any input marked Live); a file or an application-pushed
 // source refuses it.
 func Reconnect(attempts int, backoff time.Duration) InputOption {
-	return inputOption(func(spec *InputSpec) {
+	return inputOption(func(spec *Input) {
 		spec.reconnect = &reconnectPolicy{attempts: max(attempts, 0), backoff: backoff}
 	})
 }
 
 // inputOption is the concrete input-only option (Reconnect).
-type inputOption func(*InputSpec)
+type inputOption func(*Input)
 
-func (o inputOption) applyInput(spec *InputSpec) {
+func (o inputOption) applyInput(spec *Input) {
 	if spec != nil && o != nil {
 		o(spec)
 	}
@@ -448,7 +448,7 @@ func (e *countingEmitter) observe(msg *pipeline.Message) func() {
 // length and no ranges, or as an Icecast stream, is live without it; Live
 // says so before anything opens.
 func Live() InputOption {
-	return inputOption(func(spec *InputSpec) {
+	return inputOption(func(spec *Input) {
 		spec.realtime = true
 		spec.input.Realtime = true
 	})

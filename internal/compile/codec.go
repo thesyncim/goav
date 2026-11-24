@@ -45,7 +45,7 @@ func CodecParametersEqual(a, b av.CodecParameters) bool {
 		metadataEqual(a.Attributes, b.Attributes)
 }
 
-func codecSettingsEqual(a, b codec.CodecSettings) bool {
+func codecSettingsEqual(a, b codec.Settings) bool {
 	return a.Bitrate == b.Bitrate &&
 		a.Framerate == b.Framerate &&
 		a.KeyframeInterval == b.KeyframeInterval &&
@@ -89,7 +89,7 @@ func metadataEqual(a, b av.Metadata) bool {
 	return true
 }
 
-func CloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
+func CloneCodecSettings(settings codec.Settings) codec.Settings {
 	// Config (Tier 2) and control.Control (Tier 3) are reference values owned by the
 	// caller; copy the reference, not the target.
 	return settings

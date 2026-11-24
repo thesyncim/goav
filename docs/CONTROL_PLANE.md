@@ -10,7 +10,7 @@ Use it when something outside your code must steer a live task: add a
 preview or a recording on demand, retarget a bitrate, seek, watch QoS, or stop
 cleanly. Keep media logic in Go: a stage, encoder, or sink your clients need
 is a host element (below), not a script. Everything the control plane does is
-a `LiveTask` call your Go code could make; it adds a wire, not a second API.
+a `Task` call your Go code could make; it adds a wire, not a second API.
 
 ## Serving a task
 
@@ -170,7 +170,7 @@ type cueParams struct {
 	Offset time.Duration `json:"offset" help:"how far past the cue: 500ms"`
 }
 cue := ctlserver.Method("cue", "seek the player to a named cue",
-	func(ctx context.Context, task goav.LiveTask, p cueParams) (any, error) {
+	func(ctx context.Context, task goav.Task, p cueParams) (any, error) {
 		at, ok := cues[p.Name]
 		if !ok {
 			return nil, fmt.Errorf("no cue %q", p.Name)
@@ -201,7 +201,7 @@ thumbnail := launch.Sink("thumbnail", "keep one frame in every N",
 	})
 acme := launch.Encoder("acme", "encode with the host's ACME codec",
 	func(a acmeArgs) (codec.Spec, error) {
-		return codec.Codec("x_acme_video", av.MediaVideo, codec.Bitrate(a.Bitrate)), nil
+		return codec.New("x_acme_video", av.MediaVideo, codec.Bitrate(a.Bitrate)), nil
 	})
 server, err := ctlserver.New(task, ctlserver.Elements(thumbnail, acme), cue)
 ```

@@ -66,7 +66,7 @@ func TestProgramsOpenURIs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", program, err)
 		}
-		in := goav.URIInput(clip)
+		in := goav.FromURI(clip)
 		want := shapeOf(t, []goav.Output{in.Video().To(goav.Write("out.ivf", &bytes.Buffer{}))})
 		if got := shapeOf(t, outs); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: graph %+v, want %+v", program, got, want)

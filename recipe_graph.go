@@ -21,7 +21,7 @@ import (
 // parents.
 type recipeGraph struct {
 	graph   recipeir.Graph
-	inputs  []InputSpec
+	inputs  []Input
 	dests   []Destination
 	matches []sourcepkg.StreamMatch
 	// roots carries the value root of each root node.
@@ -97,7 +97,7 @@ func (g *recipeGraph) add(node recipeir.Node, root *streamRoot) recipeir.NodeID 
 func (g *recipeGraph) node(id recipeir.NodeID) recipeir.Node { return g.graph.Nodes[id] }
 
 // input is the source node of one input, shared by every stream of it.
-func (g *recipeGraph) input(spec InputSpec) recipeir.NodeID {
+func (g *recipeGraph) input(spec Input) recipeir.NodeID {
 	if id, ok := g.byInput[spec.id]; ok && spec.id != nil {
 		return id
 	}
@@ -190,7 +190,7 @@ func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 		}
 		return g.add(recipeir.Node{Kind: recipeir.NodeAnchor, Anchor: anchor}, root), nil
 	case root.input.id == nil:
-		return 0, publicError(compile.StreamInvalidError("", "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source"))
+		return 0, publicError(compile.StreamInvalidError("", "the stream's input was not constructed: use goav.Read, goav.From, or goav.Source"))
 	case root.rule != nil:
 		input := g.input(root.input)
 		g.matches = append(g.matches, *root.rule)
@@ -278,7 +278,7 @@ func destinationConfigKey(spec destinationSpec) string {
 // knows for the compiler, as its compileHost.
 type compileHandles struct {
 	runtime *Runtime
-	inputs  []InputSpec
+	inputs  []Input
 	dests   []destinationSpec
 }
 
@@ -320,7 +320,7 @@ func (g *recipeGraph) compileRequest(h *compileHandles) *compile.Request {
 }
 
 // compileInputFromSpec is what the compiler knows of one input.
-func compileInputFromSpec(input InputSpec, sourceNode string) compile.Input {
+func compileInputFromSpec(input Input, sourceNode string) compile.Input {
 	declared, ok := declaredSourceShape(input)
 	return compile.Input{
 		IR:           recipeIRInputFromSpec(input),

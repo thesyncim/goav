@@ -31,10 +31,10 @@ stage concern.
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
 | Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(ctx, task.Track(input, track)...To(sink))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
-| Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
-| Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
+| Open a transport or live provider | `provider.Source` via `goav.From(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
+| Write bytes after format resolution | `goav.WriteFunc(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
-| Run app code on each packet, frame, or event | `.Do(component.NewFrameStage(...))` or a `pipeline.Stage` | `components_test.go` | nil callback returns `component.ErrNilStageCallback` |
+| Run app code on each packet, frame, or event | `.Do(component.FrameFunc(...))` or a `pipeline.Stage` | `components_test.go` | nil callback fails validation with `component.ErrNilStageCallback` |
 | Replace a frame transform | `filter.Factory` + `runconfig.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
 | Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `runconfig.WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
 | Converge several arms | `goav.Join(name, pipeline.Stage, streams...)` | `examples/custom-join` | incompatible arm media refuses at build time |
@@ -78,7 +78,7 @@ Rules:
 
 When the source needs seek/segment control, late stream discovery, decode bounds,
 or a transport-owned open phase, implement `provider.Source` and pass it with
-`goav.Input(provider)`. The runnable module `examples/provider-source` verifies
+`goav.From(provider)`. The runnable module `examples/provider-source` verifies
 the provider-owned open phase, declared shape facts, stream discovery, a
 running `pipeline.Source`, and a nil-provider failure — the copyable module
 for transport packages such as SRT, NDI, RTP variants, or proprietary ingest.
@@ -133,13 +133,13 @@ application does not need a join-time first-frame boundary.
 
 ## Custom Destination
 
-Use `goav.Writer` for byte destinations that should open after the output
+Use `goav.WriteFunc` for byte destinations that should open after the output
 format and stream set are known. This keeps upload clients, memory buffers, and
 custom path schemes outside the media graph until the planner knows what bytes
 will be written.
 
 ```go
-dest := goav.Writer("mem://voice.webm",
+dest := goav.WriteFunc("mem://voice.webm",
     func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
         // info.Format, info.Streams, info.Metadata, and info.Realtime are final.
         return upload, nil
@@ -199,21 +199,16 @@ rewriters, or a frame transform that needs no shape solving. The `component`
 constructors wrap a callback as a `pipeline.Stage`:
 
 ```go
-meter, err := component.NewFrameStage("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
+meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
     observe(frame)
     return emit.Frame(frame)
 })
-if err != nil {
-    return err
-}
-err = rt.Run(ctx, input.Audio().Decode().Do(meter).To(out))
+err := rt.Run(ctx, input.Audio().Decode().Do(meter).To(out))
 ```
 
-`NewPacketStage`, `NewFrameStage`, `NewEventStage`, and `NewSink` return
-`component.ErrNilStageCallback` or `ErrNilSinkCallback` for a nil callback
-immediately. The shorter `PacketFunc`, `FrameFunc`, `EventFunc`, and
-`SinkFunc` suit examples and tests; they report a nil callback later, during
-validation. A packet stage runs wherever the stream carries packets, on an
+`PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` report a nil callback during
+validation with `component.ErrNilStageCallback` or `ErrNilSinkCallback`.
+A packet stage runs wherever the stream carries packets, on an
 undecoded stream or after the encoder as a bitstream filter
 (`.Encode(codec.VP8()).Do(sei)`); a frame stage there is refused.
 
@@ -261,7 +256,7 @@ test, expected output, and a build-time failure example.
 
 Register codecs per runtime. A descriptor without a factory is useful for
 capability reporting, but encode/decode recipes need factories. Keep adapter
-settings in `codec.CodecSettings` so recipes, the string launcher, and control
+settings in `codec.Settings` so recipes, the string launcher, and control
 hosts all speak the same shape.
 
 ```go
@@ -320,7 +315,7 @@ type seekParams struct {
     Position time.Duration `json:"position" ctl:"required" help:"media position: 2s"`
 }
 reposition := ctlserver.Method("reposition", "seek the player",
-    func(ctx context.Context, task goav.LiveTask, p seekParams) (any, error) {
+    func(ctx context.Context, task goav.Task, p seekParams) (any, error) {
         return struct{}{}, task.Control(ctx, control.Seek(p.Position).At(pipeline.NodeRef("player")))
     })
 meter := launch.Stage("meter", "measure each frame", func(struct{}) (pipeline.Stage, error) {
@@ -356,7 +351,7 @@ package pins its hot paths with allocation guards next to the contract;
 |---|---|---|
 | `av` | `Packet`, `Frame`, `Event`, `Buffer`/`Plane` (immutable once published; `Ref`/`Retain` keep, `MakeWritable` copies before a write, `NewBuffer` pools), and reset helpers so hot paths reuse structs | - |
 | `pipeline` | `Message`, `Source`, `Stage`, `Sink`, `Emitter`, `Route` (stream/event scoping), one-to-many fanout | dynamic graph mutation (closed graphs return `pipeline.ErrClosed`), buffer policy, graph stats; on a task, `task.Stats()`, `task.Snapshot()`, `task.Taps()`, and the `plan.Report` from `Explain` |
-| `component` | `NewPacketStage`, `NewFrameStage`, `NewEventStage`, `NewSink`, and the `*Func` helpers | - |
+| `component` | `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` | - |
 | `codec` | `Registry`, `Descriptor` (identity + capability preflight), `DecoderFactory`/`EncoderFactory`, `DecoderStage` (packets -> frames; preserves realtime events, drives loss/PLC, flushes before EOS), `EncoderStage` (frames -> packets; observes control events, flushes delayed packets), caller-owned `DecodeResult`/`EncodeResult` | decode state factories for adapter scratch |
 | `format` | `Registry`, `Prober`, `Demuxer`/`Muxer`, `DemuxSource` (stream-added events, packets, EOS), `MuxStage` (writes packets, emits write-result events), caller-owned `ReadResult`/`WriteResult` | `Descriptor` capability metadata |
 | `filter` | `Registry`, `FrameFilter`, `SimpleRegistry` (descriptor metadata for `Explain`), `Stage` (frame transforms preserving events, flushing before EOS), caller-owned `Result` | - |

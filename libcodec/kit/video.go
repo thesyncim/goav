@@ -103,7 +103,7 @@ func durationIn(d av.Duration, base av.TimeBase) int64 {
 type videoEncoder struct {
 	c        *Codec
 	desc     codec.Descriptor
-	settings codec.CodecSettings
+	settings codec.Settings
 	stream   av.Stream
 	config   VideoConfig
 	session  VideoEncoder

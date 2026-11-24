@@ -133,7 +133,7 @@ func TestAudioMixStageEmitsEOSWhenAllInputsEnd(t *testing.T) {
 	}
 }
 
-func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
+func mixTestAudioSource(id av.StreamID, samples ...int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
@@ -234,7 +234,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
 	rt := mustNew(WithDecoder(desc, recipePCMDecoderFactory{}))
 
-	packetSrc := func(id av.StreamID) InputSpec {
+	packetSrc := func(id av.StreamID) Input {
 		return Source(string(id),
 			shape.Packet(av.MediaAudio, pcm, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream(id)),
 			func(_ context.Context, push SourcePush) error {
@@ -401,7 +401,7 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	}
 }
 
-func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
+func mixTestAudioSourceRate(id av.StreamID, rate int) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(rate, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {

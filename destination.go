@@ -196,7 +196,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 // the returned writer also implements provider.TransactionalWriter, Commit
 // runs after a successful run or drained detach and Abort runs on failure —
 // the seam for object-store uploads with an explicit commit boundary.
-func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Destination {
+func WriteFunc(name string, open provider.OpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
 		custom: writerDestination{name: name, open: open},
@@ -229,7 +229,7 @@ func (d writerDestination) Contract() provider.Contract {
 	return contract
 }
 
-func (d writerDestination) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+func (d writerDestination) Open(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
 	if d.open == nil {
 		return nil, errNilWriter
 	}
@@ -253,7 +253,7 @@ func (w nopDestinationWriter) Close() error {
 
 // MediaOption is a direction-agnostic option accepted by both input and
 // destination constructors. [Name], [MIME], and [Metadata] state the same fact
-// about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
+// about either end of a recipe, so goav.Read(name, r, goav.MIME(...))
 // and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed:
 // only goav option constructors implement it.
 type MediaOption interface {
@@ -264,11 +264,11 @@ type MediaOption interface {
 // mediaOption is the concrete direction-agnostic option: one apply function
 // per direction, each acting on that direction's spec.
 type mediaOption struct {
-	input       func(*InputSpec)
+	input       func(*Input)
 	destination func(*destinationSpec)
 }
 
-func (o mediaOption) applyInput(spec *InputSpec) {
+func (o mediaOption) applyInput(spec *Input) {
 	if spec != nil && o.input != nil {
 		o.input(spec)
 	}
@@ -294,7 +294,7 @@ func (o destinationOption) applyDestination(spec *destinationSpec) {
 // group and dedupe by.
 func Name(name string) MediaOption {
 	return mediaOption{
-		input: func(spec *InputSpec) {
+		input: func(spec *Input) {
 			spec.name = name
 			spec.input.Name = name
 		},
@@ -309,7 +309,7 @@ func Name(name string) MediaOption {
 // selects the output format and is reported to destination openers.
 func MIME(mimeType string) MediaOption {
 	return mediaOption{
-		input: func(spec *InputSpec) {
+		input: func(spec *Input) {
 			spec.input.MIMEType = mimeType
 		},
 		destination: func(spec *destinationSpec) {
@@ -323,7 +323,7 @@ func MIME(mimeType string) MediaOption {
 // on provider.Info (an uploader can store it as object metadata).
 func Metadata(metadata av.Metadata) MediaOption {
 	return mediaOption{
-		input: func(spec *InputSpec) {
+		input: func(spec *Input) {
 			spec.input.Metadata = compile.CloneMetadata(metadata)
 		},
 		destination: func(spec *destinationSpec) {
@@ -407,7 +407,7 @@ func (s destinationSpec) Contract() provider.Contract {
 	return contract
 }
 
-func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+func (s destinationSpec) Open(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -446,25 +446,25 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				Reason:    "file output has no writer",
 				fixes: buildErrorFixes([]string{
 					"pass a non-nil io.Writer to goav.Write(name, writer)",
-					"use goav.URI(uri) when the output is opened by an adapter",
+					"use goav.ToURI(uri) when the output is opened by an adapter",
 				}),
 				cause: s.err,
 			}
 		}
 		suggestions := []string{
 			"pass a non-nil sink to goav.Sink(...)",
-			"use goav.Write(...) or goav.URI(...) for muxed output",
+			"use goav.Write(...) or goav.ToURI(...) for muxed output",
 		}
 		if errors.Is(s.err, errNilWriter) {
 			suggestions = []string{
-				"pass a non-nil writer callback to goav.Writer(...)",
-				"use goav.Write(...) or goav.URI(...) for muxed output",
+				"pass a non-nil writer callback to goav.WriteFunc(...)",
+				"use goav.Write(...) or goav.ToURI(...) for muxed output",
 			}
 		}
 		if errors.Is(s.err, errNilDestinationProvider) {
 			suggestions = []string{
 				"pass a non-nil provider.Destination to goav.Custom(name, destination)",
-				"use goav.Write(...), goav.Writer(...), goav.URI(...), or goav.Sink(...) for built-in destinations",
+				"use goav.Write(...), goav.WriteFunc(...), goav.ToURI(...), or goav.Sink(...) for built-in destinations",
 			}
 		}
 		return &BuildError{
@@ -490,7 +490,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				fixes: buildErrorFixes([]string{
 					"pass a non-nil sink callback to component.SinkFunc(...)",
 					"pass a non-nil sink to goav.Sink(...)",
-					"use goav.Write(...) or goav.URI(...) for muxed output",
+					"use goav.Write(...) or goav.ToURI(...) for muxed output",
 				}),
 				cause: err,
 			}
@@ -522,7 +522,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    "file output has no writer",
 			fixes: buildErrorFixes([]string{
 				"pass a non-nil io.Writer to goav.Write(name, writer)",
-				"use goav.URI(uri) when the output is opened by an adapter",
+				"use goav.ToURI(uri) when the output is opened by an adapter",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -552,7 +552,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    "output has no URI, writer, or sink",
 			fixes: buildErrorFixes([]string{
 				"use goav.Write(name, writer) for writer-backed output",
-				"use goav.URI(uri) for URI-backed output",
+				"use goav.ToURI(uri) for URI-backed output",
 			}),
 			cause: errUnsupportedBuild,
 		}

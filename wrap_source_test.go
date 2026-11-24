@@ -54,7 +54,7 @@ func (e countingEmitter) Emit(ctx context.Context, msg *pipeline.Message) error 
 func TestWrapSourceDecoratesCustomInput(t *testing.T) {
 	ctx := context.Background()
 	var count atomic.Int64
-	input := goav.WrapSource(goavtest.Audio(8000, 1, []int16{1, 2}, []int16{3, 4}),
+	input := goavtest.Audio(8000, 1, []int16{1, 2}, []int16{3, 4}).Wrap(
 		func(source pipeline.Source) pipeline.Source {
 			return countingSource{inner: source, count: &count}
 		})
@@ -109,7 +109,7 @@ func TestWrapSourceDecoratesFileInput(t *testing.T) {
 	}
 
 	var count atomic.Int64
-	input := goav.WrapSource(goav.FileInput("in.webm", bytes.NewReader(file.Bytes())),
+	input := goav.Read("in.webm", bytes.NewReader(file.Bytes())).Wrap(
 		func(source pipeline.Source) pipeline.Source {
 			return countingSource{inner: source, count: &count}
 		})

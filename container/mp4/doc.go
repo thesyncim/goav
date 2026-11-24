@@ -2,7 +2,7 @@
 // demuxer and muxer for MP4/MOV/M4A/M4V. It registers behind the goav format
 // extension point as the av.FormatMP4 demuxer and muxer.
 //
-// The muxer writes H.264, AV1, VP8, VP9, AAC, Opus, and FLAC tracks. To a
+// The muxer writes H.264, HEVC, AV1, VP8, VP9, AAC, Opus, and FLAC tracks. To a
 // seekable output it writes a progressive file, moov after the samples; to a
 // pipe or a realtime output it writes fragmented MP4, a moof and mdat per
 // fragment cut at video keyframes, which plays while it grows. Edit lists
@@ -20,9 +20,9 @@
 // trun fragment runs using the mvex/trex defaults. It needs an io.ReaderAt; a
 // plain io.Reader is buffered in memory as a fallback.
 //
-// Supported sample entries map to av codec ids: avc1/avc3 (H264), av01 (AV1),
-// vp08/vp09 (VP8/VP9), mp4a (AAC), Opus, and fLaC (FLAC). Codec configuration
-// (avcC, av1C, vpcC, esds AudioSpecificConfig, dOps) is exposed as stream
-// ExtraData. Tracks whose codec goav has no id for are skipped, so a file's
-// supported tracks still demux.
+// Supported sample entries map to av codec ids: avc1/avc3 (H264), hvc1/hev1
+// (HEVC), av01 (AV1), vp08/vp09 (VP8/VP9), mp4a (AAC), Opus, and fLaC (FLAC).
+// Codec configuration (avcC, hvcC, av1C, vpcC, esds AudioSpecificConfig, dOps)
+// is exposed as stream ExtraData. Tracks whose codec goav has no id for are
+// skipped, so a file's supported tracks still demux.
 package mp4

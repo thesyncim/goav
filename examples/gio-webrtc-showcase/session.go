@@ -55,8 +55,8 @@ type session struct {
 	renegotiateKinds []string
 	scenarios        []scenarioResult
 
-	videoTask  goav.LiveTask
-	audioTask  goav.LiveTask
+	videoTask  goav.Task
+	audioTask  goav.Task
 	syncPolicy flow.SyncPolicy
 	videoCodec string
 	videoSSRC  uint32
@@ -88,7 +88,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(decodedVideoMaxWidth, decodedVideoMaxHeight, av.PixelFormatI420))).
@@ -129,7 +129,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
+	task, err := s.runtime.Build(s.ctx, goav.From(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Audio().
 		Decode().
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
@@ -161,7 +161,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	go s.runTask("audio", task)
 }
 
-func (s *session) runTask(kind string, task goav.LiveTask) {
+func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
 	go s.drainTaskEvents(kind, task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -411,7 +411,7 @@ func (s *session) sortedBranchesLocked(kind string) []*branch {
 	return out
 }
 
-func (s *session) taskForKindLocked(kind string) goav.LiveTask {
+func (s *session) taskForKindLocked(kind string) goav.Task {
 	switch kind {
 	case "video":
 		return s.videoTask

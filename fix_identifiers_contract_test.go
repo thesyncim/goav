@@ -54,7 +54,7 @@ func TestStringLiteralAPIReferencesResolve(t *testing.T) {
 	for _, file := range files["goav"] {
 		ast.Inspect(file, func(n ast.Node) bool {
 			spec, ok := n.(*ast.TypeSpec)
-			if !ok || (spec.Name.Name != "Task" && spec.Name.Name != "LiveTask") {
+			if !ok || spec.Name.Name != "Task" {
 				return true
 			}
 			if iface, ok := spec.Type.(*ast.InterfaceType); ok {

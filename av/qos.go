@@ -5,16 +5,6 @@ import (
 	"time"
 )
 
-// This file is the one payload seam for EventQoS reports, following the
-// build/parse discipline of timecontrol.go and codec.BitrateMetadata: the
-// lateness and the delivered-or-dropped disposition ride Event.Metadata
-// through the typed pair below, so report producers and QoS policies never
-// hand-roll metadata strings. The keys stay unexported — the pair is the wire
-// contract.
-
-// metadataQoSLateness carries how far past due the reported message was, as
-// decimal nanoseconds. metadataQoSDropped carries whether the message was shed
-// ("true") or delivered late ("false").
 const (
 	metadataQoSLateness = "qos_lateness_ns"
 	metadataQoSDropped  = "qos_dropped"

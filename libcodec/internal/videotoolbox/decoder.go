@@ -93,6 +93,9 @@ func (d *decoder) formatFrom(sets [][]byte) error {
 	pointers := make([]unsafe.Pointer, len(sets))
 	sizes := make([]int, len(sets))
 	for i, set := range sets {
+		if len(set) == 0 {
+			return &kit.Error{Backend: Name, Op: "open", Reason: "parameter set is empty"}
+		}
 		pinner.Pin(&set[0])
 		pointers[i], sizes[i] = unsafe.Pointer(&set[0]), len(set)
 	}
@@ -112,6 +115,9 @@ func (d *decoder) formatFrom(sets [][]byte) error {
 }
 
 func (d *decoder) Decode(unit *kit.Packet, emit func(*kit.Picture) error) error {
+	if len(unit.Data) == 0 {
+		return nil
+	}
 	f := d.f
 	var block, sample uintptr
 	if s := f.cm.blockCreate(0, 0, len(unit.Data), 0, 0, 0, len(unit.Data), assureMemoryNow, &block); s != 0 {
@@ -196,14 +202,13 @@ func decodeFailure(call string, s int32) error {
 // owned by the planes.
 func (d *decoder) lend(p picture, emit func(*kit.Picture) error) error {
 	f := d.f
-	owner := &pixelOwner{f: f, buffer: p.image}
-	owner.refs.Store(1)
-	defer owner.Release()
 	if s := f.cv.lock(p.image, readOnly); s != 0 {
-		owner.refs.Store(0)
 		f.cf.release(p.image)
 		return kit.Fail(Name, "decode", "CVPixelBufferLockBaseAddress", int64(s))
 	}
+	owner := &pixelOwner{f: f, buffer: p.image}
+	owner.refs.Store(1)
+	defer owner.Release()
 	format, planes := f.cv.pixelFormat(p.image), f.cv.planeCount(p.image)
 	pixelFormat := av.PixelFormatI420
 	switch {

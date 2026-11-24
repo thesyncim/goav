@@ -352,7 +352,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	// and its transactional destination commits on the natural EOS — the
 	// trim-to-file shape, with a recording branch attached at runtime.
 	source := &segmentPacketSource{stream: "audio"}
-	task, err := mustNew().Build(ctx, Input(&segmentProvider{source: source}).
+	task, err := mustNew().Build(ctx, From(&segmentProvider{source: source}).
 		Audio().
 		Tap("audio.packets").
 		To(lifecycleTestSink("base")))

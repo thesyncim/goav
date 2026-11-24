@@ -70,7 +70,7 @@ func (h *host) serve(ctx context.Context, address, dir string) error {
 		return err
 	}
 	display := component.SinkFunc("display", func(context.Context, component.Message) error { return nil })
-	task, err := rt.Build(ctx, goav.Input(h.player).Video().Tap("live").To(goav.Sink(display)))
+	task, err := rt.Build(ctx, goav.From(h.player).Video().Tap("live").To(goav.Sink(display)))
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ type report struct {
 // methods are the host's own methods, typed by their params structs.
 func (h *host) methods() []ctlserver.Option {
 	return []ctlserver.Option{
-		ctlserver.Method("cue", "seek the player to a named cue", func(ctx context.Context, task goav.LiveTask, p cueParams) (any, error) {
+		ctlserver.Method("cue", "seek the player to a named cue", func(ctx context.Context, task goav.Task, p cueParams) (any, error) {
 			at, ok := cues[p.Name]
 			if !ok {
 				return nil, fmt.Errorf("no cue %q; the cues are intro, chorus, and outro", p.Name)
@@ -138,7 +138,7 @@ func (h *host) methods() []ctlserver.Option {
 			}
 			return map[string]string{"cue": p.Name, "position": at.String()}, nil
 		}),
-		ctlserver.Method("controls", "the controls the player has received", func(_ context.Context, _ goav.LiveTask, p controlsParams) (any, error) {
+		ctlserver.Method("controls", "the controls the player has received", func(_ context.Context, _ goav.Task, p controlsParams) (any, error) {
 			out := []received{}
 			for _, e := range h.player.received() {
 				if p.Type != "" && string(e.Type) != p.Type {
@@ -155,7 +155,7 @@ func (h *host) methods() []ctlserver.Option {
 			}
 			return out, nil
 		}),
-		ctlserver.Method("collected", "what the meters measured, the sinks kept, and the ACME encoders opened", func(context.Context, goav.LiveTask, struct{}) (any, error) {
+		ctlserver.Method("collected", "what the meters measured, the sinks kept, and the ACME encoders opened", func(context.Context, goav.Task, struct{}) (any, error) {
 			h.mu.Lock()
 			defer h.mu.Unlock()
 			return report{maps.Clone(h.levels), maps.Clone(h.kept), slices.Clone(h.opened)}, nil
@@ -218,7 +218,7 @@ func (h *host) elements() []launch.Element {
 			})), nil
 		}),
 		launch.Encoder("acme", "encode with the host's ACME codec", func(a acmeArgs) (codec.Spec, error) {
-			return codec.Codec(acmeCodec, av.MediaVideo,
+			return codec.New(acmeCodec, av.MediaVideo,
 				codec.Bitrate(a.Bitrate),
 				codec.Control(func(native *acmeOptions) error {
 					native.Lookahead = cmp.Or(a.Lookahead, "shallow")

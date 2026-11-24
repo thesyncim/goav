@@ -21,7 +21,7 @@ import (
 // matching durations, so PTS-aligned joins and pacing behave coherently.
 // Each call gets a distinct generated name (and stream id), so several Audio
 // inputs can stand side by side as Mix/Composite/Select arms.
-func Audio(sampleRate, channels int, frames ...[]int16) goav.InputSpec {
+func Audio(sampleRate, channels int, frames ...[]int16) goav.Input {
 	name := nextName("audio")
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16)),
@@ -45,7 +45,7 @@ func Audio(sampleRate, channels int, frames ...[]int16) goav.InputSpec {
 // the name is the stream id controls target (control.SelectActive(name)). With
 // no frames it loops a single one-sample silent frame. The source retries on
 // backpressure and returns cleanly when the task stops.
-func LiveAudio(name string, sampleRate, channels int, frames ...[]int16) goav.InputSpec {
+func LiveAudio(name string, sampleRate, channels int, frames ...[]int16) goav.Input {
 	if len(frames) == 0 {
 		frames = [][]int16{make([]int16, max(channels, 1))}
 	}
@@ -82,7 +82,7 @@ const videoFPS = 30
 // 128, so a test can tell which source frame any output pixel came from.
 // Frames are stamped at 30fps (PTS n, duration 1, timebase 1/30). Each call
 // gets a distinct generated name (and stream id).
-func Video(width, height, frames int) goav.InputSpec {
+func Video(width, height, frames int) goav.Input {
 	name := nextName("video")
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
@@ -101,7 +101,7 @@ func Video(width, height, frames int) goav.InputSpec {
 // stops, for tests that attach, switch, or control a running video task. The
 // caller names it because the name is the stream id controls target. The
 // source retries on backpressure and returns cleanly when the task stops.
-func LiveVideo(name string, width, height int) goav.InputSpec {
+func LiveVideo(name string, width, height int) goav.Input {
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {
@@ -130,7 +130,7 @@ func LiveVideo(name string, width, height int) goav.InputSpec {
 // carries exactly one stream, so foreign ids would route nowhere); an empty
 // Type inherits the source's media kind, which is taken from the first packet
 // that declares one, else inferred from a well-known codecID, else video.
-func Packets(codecID av.CodecID, packets ...av.Packet) goav.InputSpec {
+func Packets(codecID av.CodecID, packets ...av.Packet) goav.Input {
 	name := nextName("packets")
 	media := packetsMedia(codecID, packets)
 	return goav.Source(name,

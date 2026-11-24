@@ -144,13 +144,21 @@ func (s *joinSyncState) admits(arm int) bool {
 // publishDepths mirrors each arm's pending depth for admit and wakes an arm
 // whose depth fell below the lead. The stages call it after every Handle.
 func (s *joinSyncState) publishDepths() {
+	if len(s.arms) == 0 {
+		return
+	}
 	for _, id := range s.inputs {
 		gate := s.gates[id]
 		if gate == nil {
 			continue
 		}
 		depth := int64(len(s.pending[id]))
-		if gate.depth.Swap(depth) >= joinArmLeadFrames && depth < joinArmLeadFrames {
+		prev := gate.depth.Load()
+		if prev == depth {
+			continue
+		}
+		gate.depth.Store(depth)
+		if prev >= joinArmLeadFrames && depth < joinArmLeadFrames {
 			select {
 			case gate.wake <- struct{}{}:
 			default:

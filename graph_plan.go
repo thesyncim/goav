@@ -32,7 +32,7 @@ func (p graphPlan) Describe() (pipeline.Spec, error) {
 	return p.spec(), nil
 }
 
-func (p graphPlan) Build(ctx context.Context) (LiveTask, error) {
+func (p graphPlan) Build(ctx context.Context) (Task, error) {
 	if !p.ready() {
 		return nil, publicError(compile.GraphPlanInvalidError("graph plan is not ready", nil))
 	}

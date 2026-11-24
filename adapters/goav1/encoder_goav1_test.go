@@ -30,7 +30,7 @@ func TestEncoderProducesDecodableAV1Packet(t *testing.T) {
 		Stream:     stream,
 		Parameters: stream.Codec,
 		Realtime:   true,
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Framerate:        av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}},
 			KeyframeInterval: 1,
 			Custom:           av.Metadata{"qindex": "96"},
@@ -135,7 +135,7 @@ func TestEncoderAppliesCustomSettingsToNativeConfig(t *testing.T) {
 		},
 		Parameters: av.CodecParameters{ID: av.CodecAV1, Type: av.MediaVideo, Width: 32, Height: 32},
 		Realtime:   true,
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Bitrate:   400_000,
 			Framerate: av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}},
 			Custom: av.Metadata{
@@ -183,7 +183,7 @@ func TestEncoderRejectsUnsupportedCustomSetting(t *testing.T) {
 			},
 		},
 		Parameters: av.CodecParameters{ID: av.CodecAV1, Type: av.MediaVideo, Width: 16, Height: 16},
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Custom: av.Metadata{"speed": "8"},
 		},
 	})
@@ -194,7 +194,7 @@ func TestEncoderRejectsUnsupportedCustomSetting(t *testing.T) {
 
 func TestEncoderLifecycleAndEvents(t *testing.T) {
 	ctx := context.Background()
-	encoder := newTestAV1Encoder(t, codec.CodecSettings{
+	encoder := newTestAV1Encoder(t, codec.Settings{
 		Bitrate:   400_000,
 		Framerate: av.Duration{Value: 1, Base: av.TimeBase{Num: 1, Den: 30}},
 	})
@@ -265,7 +265,7 @@ func TestEncoderLifecycleAndEvents(t *testing.T) {
 }
 
 func TestEncoderRejectsInvalidFrames(t *testing.T) {
-	encoder := newTestAV1Encoder(t, codec.CodecSettings{Custom: av.Metadata{"qindex": "96"}})
+	encoder := newTestAV1Encoder(t, codec.Settings{Custom: av.Metadata{"qindex": "96"}})
 	defer encoder.Close()
 
 	for _, tc := range []struct {
@@ -345,7 +345,7 @@ func TestEncoderRejectsInvalidFrames(t *testing.T) {
 
 func TestAV1EncoderSettingsValidation(t *testing.T) {
 	cfg, err := av1EncoderConfig(codec.EncodeConfig{
-		Settings: codec.CodecSettings{
+		Settings: codec.Settings{
 			Bitrate: 200_000,
 			Custom: av.Metadata{
 				"q-index": "80",
@@ -370,7 +370,7 @@ func TestAV1EncoderSettingsValidation(t *testing.T) {
 		{name: "bad tune", settings: av.Metadata{"tune": "film"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := av1EncoderConfig(codec.EncodeConfig{Settings: codec.CodecSettings{Custom: tc.settings}}, 16, 16)
+			_, err := av1EncoderConfig(codec.EncodeConfig{Settings: codec.Settings{Custom: tc.settings}}, 16, 16)
 			if !errors.Is(err, codec.ErrUnsupportedFormat) {
 				t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
 			}
@@ -394,7 +394,7 @@ func TestAV1EncoderHelpers(t *testing.T) {
 	if got := encodeAV1FPS(codec.EncodeConfig{}); got != 30 {
 		t.Fatalf("default fps = %d, want 30", got)
 	}
-	if got := mapGoav1EncodeError(backend.ErrEncoderInvalidConfig); !errors.Is(got, codec.ErrUnsupportedFormat) {
+	if got := mapGoav1EncodeError(backend.ErrEncoderInvalidFrame); !errors.Is(got, codec.ErrUnsupportedFormat) {
 		t.Fatalf("mapped err = %v, want ErrUnsupportedFormat", got)
 	}
 	boom := errors.New("boom")
@@ -406,7 +406,7 @@ func TestAV1EncoderHelpers(t *testing.T) {
 	}
 }
 
-func newTestAV1Encoder(t *testing.T, settings codec.CodecSettings) *Encoder {
+func newTestAV1Encoder(t *testing.T, settings codec.Settings) *Encoder {
 	t.Helper()
 	encoder, err := NewEncoderFactory().NewEncoder(context.Background(), codec.EncodeConfig{
 		Stream: av.Stream{
@@ -474,7 +474,7 @@ func patternedAV1Frame(width, height, n int) *av.Frame {
 // encodes into a caller-owned result without allocating.
 func TestAV1EncodeAllocs(t *testing.T) {
 	ctx := context.Background()
-	encoder := newTestAV1Encoder(t, codec.CodecSettings{})
+	encoder := newTestAV1Encoder(t, codec.Settings{})
 	result := newAV1EncodeResult()
 	frame := patternedAV1Frame(16, 16, 0)
 	n := 0

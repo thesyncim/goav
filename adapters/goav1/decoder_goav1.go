@@ -3,6 +3,7 @@ package goav1
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -66,23 +67,11 @@ func (DecoderFactory) NewDecodeState(ctx context.Context, config codec.DecodeCon
 	if err != nil {
 		return nil, err
 	}
-	workerPool, err := backend.NewTileWorkerPool(defaultDecoderWorker)
-	if err != nil {
-		return nil, err
-	}
-	state, err := NewDecoderState(DecoderStateConfig{
-		Bounds:        bounds,
-		Format:        format,
-		Scratch:       RuntimeDecoderScratchSizeFromBounds(bounds, defaultDecoderWorker),
-		Workers:       defaultDecoderWorker,
-		WorkerPool:    workerPool,
-		OwnWorkerPool: true,
+	return NewDecoderState(DecoderStateConfig{
+		Bounds:  bounds,
+		Format:  format,
+		Workers: defaultDecoderWorker,
 	})
-	if err != nil {
-		workerPool.Close()
-		return nil, err
-	}
-	return state, nil
 }
 
 // Decoder consumes depacketized AV1 low-overhead OBU buffers through the
@@ -90,14 +79,11 @@ func (DecoderFactory) NewDecodeState(ctx context.Context, config codec.DecodeCon
 // AV1 RTP payload bytes can use DecodeRTPPayloadInto on this concrete type.
 type Decoder struct {
 	state            *DecoderState
-	runner           *backend.DecoderFrameWorkResidualStreamRunner
-	runnerSize       backend.DecoderFrameWorkResidualStreamScratchSize
 	stream           av.Stream
 	video            av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
 	dropUntilSync    bool
-	result           backend.DecoderFrameWorkResidualStreamResult
 	closed           bool
 }
 
@@ -123,8 +109,6 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 
 	state.Reset()
 	d.state = state
-	d.runner = nil
-	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}
 	d.stream = normalizeDecoderStream(config.Stream, state.Format(), pixelFormat)
 	d.video = av.VideoFrame{
 		Width:       d.stream.Codec.Width,
@@ -134,7 +118,6 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
 	d.dropUntilSync = false
-	d.result = backend.DecoderFrameWorkResidualStreamResult{}
 	d.closed = false
 	return nil
 }
@@ -167,32 +150,52 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 		return nil
 	}
 
-	plan, err := d.state.PlanLowOverhead(pkt.Payload.Bytes)
+	hasSeq := lowOverheadHasSequenceHeader(pkt.Payload.Bytes)
+	sync := pkt.Keyframe || hasSeq
+	if d.dropUntilSync && !sync {
+		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+	}
+	if len(out.Frames) >= cap(out.Frames) {
+		return codec.ErrResultFull
+	}
+
+	rtpPayload, err := d.state.packetizeLowOverhead(pkt.Payload.Bytes, sync)
 	if err != nil {
 		if d.dropUntilSync {
 			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
 		}
 		return mapGoav1Error(err)
 	}
-	sync := pkt.Keyframe || decoderPlanHasSync(plan, d.state.scratch.Events)
-	if d.dropUntilSync && !sync {
-		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+	if len(rtpPayload) == 0 {
+		return nil
 	}
-	if len(out.Frames)+plan.Size.Event.Outputs > cap(out.Frames) {
-		return codec.ErrResultFull
+
+	if d.state.dec == nil {
+		if err := d.state.ensureDecoder([][]byte{rtpPayload}); err != nil {
+			if d.dropUntilSync {
+				return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+			}
+			return mapGoav1Error(err)
+		}
 	}
-	runner, err := d.runnerForPlan(plan)
+
+	frames, err := d.state.dec.DecodeRTPPayload(rtpPayload)
+	if err != nil && hasSeq {
+		// Re-initialize on sequence/format changes carrying a new sequence header.
+		if initErr := d.state.ensureDecoder([][]byte{rtpPayload}); initErr == nil {
+			frames, err = d.state.dec.DecodeRTPPayload(rtpPayload)
+		}
+	}
 	if err != nil {
-		return mapGoav1Error(err)
-	}
-	d.result = backend.DecoderFrameWorkResidualStreamResult{}
-	if err := runner.RunLowOverheadInto(&d.result, pkt.Payload.Bytes, nil); err != nil {
+		if d.dropUntilSync {
+			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+		}
 		return mapGoav1Error(err)
 	}
 	if sync {
 		d.dropUntilSync = false
 	}
-	return d.appendDecodedFrames(pkt, &d.result, out)
+	return d.appendDecodedFrames(pkt, frames, out)
 }
 
 func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out *codec.DecodeResult) error {
@@ -209,53 +212,101 @@ func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out 
 		return codec.ErrUnsupportedFormat
 	}
 	if pkt == nil {
-		if err := d.resetRTPAfterLoss(); err != nil {
-			return mapGoav1Error(err)
-		}
+		d.resetRTPAfterLoss()
 		return d.appendKeyframeRequest(out, "av1 rtp packet loss")
 	}
 
 	afterLoss := pkt.LossBefore || pkt.Discontinuous
 	if afterLoss {
-		if err := d.resetRTPAfterLoss(); err != nil {
-			return mapGoav1Error(err)
-		}
+		d.resetRTPAfterLoss()
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
-		if err := d.resetRTPAfterLoss(); err != nil {
-			return mapGoav1Error(err)
-		}
+		d.resetRTPAfterLoss()
 		return d.appendKeyframeRequest(out, "av1 corrupt rtp payload")
 	}
 	if len(pkt.Payload.Bytes) == 0 {
 		return nil
 	}
 
-	plan, err := d.planRTPPayload(pkt.Payload.Bytes, afterLoss)
+	hdr, _, err := backend.ParseRTPAggregationHeader(pkt.Payload.Bytes)
 	if err != nil {
 		if d.dropUntilSync {
 			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
 		}
 		return mapGoav1Error(err)
 	}
-	sync := pkt.Keyframe ||
-		decoderPlanHasSync(plan, d.state.scratch.Events) ||
-		(d.state.HasSequenceHeader() && decoderPlanHasKeyFrame(plan, d.state.scratch.Events))
-	if d.dropUntilSync && !sync && plan.Size.Events != 0 {
+	sync := pkt.Keyframe || hdr.StartsNewCodedVideoSequence
+	if d.dropUntilSync && !sync && !hdr.ContinuesPrevious {
 		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
 	}
-	if len(out.Frames)+plan.Size.Event.Outputs > cap(out.Frames) {
+	if len(out.Frames) >= cap(out.Frames) && !hdr.ContinuesNext {
 		return codec.ErrResultFull
 	}
-	runner, err := d.runnerForPlan(plan)
-	if err != nil {
-		return mapGoav1Error(err)
+
+	if d.state.dec == nil {
+		if afterLoss {
+			d.state.resetInitFragments()
+		}
+		start := len(d.state.initBuf)
+		d.state.initBuf = append(d.state.initBuf, pkt.Payload.Bytes...)
+		d.state.initPayloads = append(d.state.initPayloads, d.state.initBuf[start:])
+		if hdr.ContinuesNext {
+			return nil
+		}
+		if err := d.state.ensureDecoder(d.state.initPayloads); err != nil {
+			if strings.Contains(err.Error(), "did not identify a bind event") {
+				return nil
+			}
+			d.state.resetInitFragments()
+			if d.dropUntilSync {
+				return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+			}
+			return mapGoav1Error(err)
+		}
+		var lastFrames []*backend.Frame
+		for i, frag := range d.state.initPayloads {
+			var frames []*backend.Frame
+			if i == 0 && afterLoss {
+				frames, err = d.state.dec.DecodeRTPPayloadAfterLoss(frag)
+			} else {
+				frames, err = d.state.dec.DecodeRTPPayload(frag)
+			}
+			if err != nil {
+				d.state.resetInitFragments()
+				if d.dropUntilSync {
+					return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+				}
+				return mapGoav1Error(err)
+			}
+			if len(frames) > 0 {
+				lastFrames = frames
+			}
+		}
+		if len(lastFrames) == 0 {
+			// Sequence/frame headers arrived without a completing tile group yet;
+			// keep accumulating initPayloads so the decoder arena is sized with
+			// at least one completed frame output slot.
+			d.state.dec.Close()
+			d.state.dec = nil
+			return nil
+		}
+		d.state.resetInitFragments()
+		if sync || len(lastFrames) > 0 {
+			d.dropUntilSync = false
+		}
+		return d.appendDecodedFrames(pkt, lastFrames, out)
 	}
-	d.result = backend.DecoderFrameWorkResidualStreamResult{}
+
+	var frames []*backend.Frame
 	if afterLoss {
-		err = runner.RunRTPPayloadAfterLossInto(&d.result, pkt.Payload.Bytes, nil)
+		frames, err = d.state.dec.DecodeRTPPayloadAfterLoss(pkt.Payload.Bytes)
 	} else {
-		err = runner.RunRTPPayloadInto(&d.result, pkt.Payload.Bytes, nil)
+		frames, err = d.state.dec.DecodeRTPPayload(pkt.Payload.Bytes)
+	}
+	if err != nil && hdr.StartsNewCodedVideoSequence && !hdr.ContinuesNext {
+		if initErr := d.state.ensureDecoder([][]byte{pkt.Payload.Bytes}); initErr == nil {
+			frames, err = d.state.dec.DecodeRTPPayload(pkt.Payload.Bytes)
+		}
 	}
 	if err != nil {
 		if d.dropUntilSync {
@@ -266,7 +317,7 @@ func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out 
 	if sync {
 		d.dropUntilSync = false
 	}
-	return d.appendDecodedFrames(pkt, &d.result, out)
+	return d.appendDecodedFrames(pkt, frames, out)
 }
 
 func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error {
@@ -310,8 +361,6 @@ func (d *Decoder) Close() error {
 	if d.state != nil {
 		d.state.Close()
 	}
-	d.runner = nil
-	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}
 	d.dropUntilSync = false
 	return nil
 }
@@ -320,52 +369,14 @@ func (d *Decoder) resetAfterLoss() {
 	if d.state != nil {
 		d.state.Reset()
 	}
-	d.runner = nil
-	d.runnerSize = backend.DecoderFrameWorkResidualStreamScratchSize{}
 	d.dropUntilSync = true
-	d.result = backend.DecoderFrameWorkResidualStreamResult{}
 }
 
-func (d *Decoder) resetRTPAfterLoss() error {
-	if d.runner != nil {
-		if err := d.runner.ResetRTP(); err != nil {
-			return err
-		}
+func (d *Decoder) resetRTPAfterLoss() {
+	if d.state != nil {
+		d.state.resetInitFragments()
 	}
 	d.dropUntilSync = true
-	d.result = backend.DecoderFrameWorkResidualStreamResult{}
-	return nil
-}
-
-func (d *Decoder) planRTPPayload(payload []byte, afterLoss bool) (backend.DecoderFrameWorkResidualStreamPlan, error) {
-	if afterLoss {
-		return d.state.PlanRTPPayloadAfterLoss(payload)
-	}
-	return d.state.PlanRTPPayload(payload)
-}
-
-func (d *Decoder) runnerForPlan(plan backend.DecoderFrameWorkResidualStreamPlan) (*backend.DecoderFrameWorkResidualStreamRunner, error) {
-	if d.runner != nil && decoderStreamScratchFits(d.runnerSize, plan.Size) {
-		return d.runner, nil
-	}
-	retained := 0
-	if d.runner != nil {
-		retained = d.runner.RTPUsed
-	}
-	runner, err := d.state.BindRunner(plan)
-	if err != nil {
-		return nil, err
-	}
-	if retained > 0 {
-		if retained > len(runner.RTPBuffer) {
-			return nil, backend.ErrRTPShortBuffer
-		}
-		copy(runner.RTPBuffer[:retained], d.state.scratch.RTPBuffer[:retained])
-		runner.RTPUsed = retained
-	}
-	d.runner = runner
-	d.runnerSize = plan.Size
-	return runner, nil
 }
 
 func (d *Decoder) applyEventStream(event *av.Event) {
@@ -426,15 +437,11 @@ func normalizeDecoderPixelFormat(pixelFormat string) string {
 	}
 }
 
-func (d *Decoder) appendDecodedFrames(pkt *av.Packet, result *backend.DecoderFrameWorkResidualStreamResult, out *codec.DecodeResult) error {
-	if result == nil || result.Run.OutputCount == 0 {
+func (d *Decoder) appendDecodedFrames(pkt *av.Packet, outputs []*backend.Frame, out *codec.DecodeResult) error {
+	if len(outputs) == 0 {
 		return nil
 	}
-	if result.Run.OutputCount > len(result.Run.Outputs) {
-		return codec.ErrResultFull
-	}
 	needed := 0
-	outputs := result.Run.Outputs[:result.Run.OutputCount]
 	for i := range outputs {
 		if outputs[i] != nil {
 			needed++
@@ -542,75 +549,51 @@ func backendFramePixelFormat(format backend.FrameFormat) (string, int, error) {
 	return "", 0, codec.ErrUnsupportedFormat
 }
 
-func decoderStreamScratchFits(have, need backend.DecoderFrameWorkResidualStreamScratchSize) bool {
-	return have.Events >= need.Events &&
-		have.RTPBuffer >= need.RTPBuffer &&
-		have.RTPSpans >= need.RTPSpans &&
-		decoderEventScratchFits(have.Event, need.Event)
-}
-
-func decoderEventScratchFits(have, need backend.DecoderFrameWorkResidualEventScratchSize) bool {
-	return have.Outputs >= need.Outputs &&
-		have.Plan.SpanCount >= need.Plan.SpanCount &&
-		have.Plan.JobCount >= need.Plan.JobCount &&
-		have.Plan.BatchCount >= need.Plan.BatchCount &&
-		decoderRunnerScratchFits(have.Runner, need.Runner) &&
-		decoderSideDataScratchFits(have.SideData, need.SideData)
-}
-
-func decoderPlanHasSync(plan backend.DecoderFrameWorkResidualStreamPlan, events []backend.DecoderEvent) bool {
-	eventCount := min(plan.Size.Events, len(events))
-	haveSequence := false
-	for i := 0; i < eventCount; i++ {
-		event := &events[i]
-		switch event.Kind {
-		case backend.DecoderEventSequenceHeader:
-			haveSequence = true
-		case backend.DecoderEventFrameHeader,
-			backend.DecoderEventRedundantFrameHeader,
-			backend.DecoderEventFrame:
-			if haveSequence && event.FrameHeader.FrameType == backend.FrameTypeKey {
-				return true
-			}
+// lowOverheadHasSequenceHeader scans a low-overhead OBU temporal unit without
+// allocating and reports whether it contains an OBU_SEQUENCE_HEADER (type 1).
+func lowOverheadHasSequenceHeader(data []byte) bool {
+	i := 0
+	for i < len(data) {
+		hdr := data[i]
+		i++
+		if hdr&0x80 != 0 {
+			return false
 		}
+		obuType := (hdr >> 3) & 0x0f
+		hasExt := hdr&0x04 != 0
+		hasSize := hdr&0x02 != 0
+		if hasExt {
+			if i >= len(data) {
+				return false
+			}
+			i++
+		}
+		if obuType == 1 {
+			return true
+		}
+		if !hasSize {
+			return false
+		}
+		var size uint64
+		var shift uint
+		for {
+			if i >= len(data) || shift >= 56 {
+				return false
+			}
+			b := data[i]
+			i++
+			size |= uint64(b&0x7f) << shift
+			if b&0x80 == 0 {
+				break
+			}
+			shift += 7
+		}
+		if size > uint64(len(data)-i) {
+			return false
+		}
+		i += int(size)
 	}
 	return false
-}
-
-func decoderPlanHasKeyFrame(plan backend.DecoderFrameWorkResidualStreamPlan, events []backend.DecoderEvent) bool {
-	eventCount := min(plan.Size.Events, len(events))
-	for i := 0; i < eventCount; i++ {
-		event := &events[i]
-		switch event.Kind {
-		case backend.DecoderEventFrameHeader,
-			backend.DecoderEventRedundantFrameHeader,
-			backend.DecoderEventFrame:
-			if event.FrameHeader.FrameType == backend.FrameTypeKey {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func decoderRunnerScratchFits(have, need backend.DecoderFrameWorkBatchResidualRunnerScratchSize) bool {
-	return have.Workers >= need.Workers &&
-		have.RestorationRequests >= need.RestorationRequests &&
-		have.Int32Scratch >= need.Int32Scratch &&
-		have.ResidualScratch >= need.ResidualScratch &&
-		have.LoopContextAbove >= need.LoopContextAbove &&
-		have.Batch.Int32Scratch >= need.Batch.Int32Scratch &&
-		have.Batch.ResidualScratch >= need.Batch.ResidualScratch &&
-		have.Batch.LoopContextAbove >= need.Batch.LoopContextAbove
-}
-
-func decoderSideDataScratchFits(have, need backend.DecoderFrameWorkSideDataScratchSize) bool {
-	return have.CDEFIndexMap >= need.CDEFIndexMap &&
-		have.CDEFReadMap >= need.CDEFReadMap &&
-		have.LoopFilterMap >= need.LoopFilterMap &&
-		have.RestorationRecords >= need.RestorationRecords &&
-		have.RestorationBoundaryAbove >= need.RestorationBoundaryAbove &&
-		have.RestorationBoundaryBelow >= need.RestorationBoundaryBelow
 }
 
 func (d *Decoder) appendKeyframeRequest(out *codec.DecodeResult, reason string) error {
@@ -632,9 +615,7 @@ func mapGoav1Error(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, backend.ErrFrameInvalidFormat):
-		return codec.ErrUnsupportedFormat
-	case errors.Is(err, backend.ErrDecoderInvalidFrameWorkState):
+	case errors.Is(err, backend.ErrDecoderFrameSizeLimit):
 		return codec.ErrUnsupportedFormat
 	default:
 		return err

@@ -331,7 +331,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 
 // branchOutput is the Output a branch attaches to its kind's decode task: the
 // task's decoded tap, synced, scaled or resampled, and encoded for its track.
-func branchOutput(task goav.LiveTask, r *branch, syncPolicy flow.SyncPolicy) (goav.Output, error) {
+func branchOutput(task goav.Task, r *branch, syncPolicy flow.SyncPolicy) (goav.Output, error) {
 	if r == nil || r.Sink == nil {
 		return goav.Output{}, fmt.Errorf("branch has no output sink")
 	}

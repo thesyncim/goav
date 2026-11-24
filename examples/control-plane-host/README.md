@@ -1,8 +1,5 @@
 # Control-plane host
 
-> Demonstrates the control plane, a governed pre-v1 feature rather than the
-> v1 front door. See [V1 scope](../../docs/COMPATIBILITY.md#v1-scope).
-
 An application that serves its running task with `ctlserver`, adding methods
 and pipeline elements of its own. The task plays a stand-in deck, `player` (a
 fade from black to white at 30 fps that applies seek and records every

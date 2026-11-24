@@ -215,20 +215,102 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 
 // convert writes count output samples starting at outPos, interpolating
 // between the previous frame's last sample and this frame's samples.
+// Uses an incremental (base, frac) step and Q16 fixed-point reciprocal so the
+// inner loop performs zero integer divisions.
 func (f *Filter) convert(dst []byte, input []byte, count int) {
 	inRate, outRate := int64(f.inputRate), int64(f.outputRate)
-	for j := range count {
-		position := (f.outPos + int64(j)) * inRate
-		base := position / outRate
-		frac := int(position % outRate)
-		for channel := range f.outputChannels {
-			a := f.inputSample(input, base, channel)
+	position := f.outPos * inRate
+	base := position / outRate
+	frac := int(position % outRate)
+	step := inRate / outRate
+	rem := int(inRate % outRate)
+	inv := (uint64(1)<<32 + uint64(outRate)/2) / uint64(outRate)
+	inPos := f.inPos
+	inCh, outCh := f.inputChannels, f.outputChannels
+
+	switch {
+	case inCh == 1 && outCh == 1:
+		last0 := f.last[0]
+		for j := range count {
+			var a int
+			if base < inPos {
+				a = last0
+			} else {
+				a = int(getS16(input, int(base-inPos)*2))
+			}
 			value := a
 			if frac != 0 {
-				b := f.inputSample(input, base+1, channel)
-				value = (a*(f.outputRate-frac) + b*frac) / f.outputRate
+				var b int
+				if base+1 < inPos {
+					b = last0
+				} else {
+					b = int(getS16(input, int(base+1-inPos)*2))
+				}
+				w := int((uint64(frac) * inv) >> 16)
+				value = a + ((b-a)*w)>>16
 			}
-			putS16(dst, (j*f.outputChannels+channel)*2, int16(value))
+			putS16(dst, j*2, int16(value))
+			base += step
+			frac += rem
+			if frac >= f.outputRate {
+				frac -= f.outputRate
+				base++
+			}
+		}
+	case inCh == 2 && outCh == 2:
+		last0, last1 := f.last[0], f.last[1]
+		for j := range count {
+			var a0, a1 int
+			if base < inPos {
+				a0, a1 = last0, last1
+			} else {
+				off := int(base-inPos) * 4
+				a0, a1 = int(getS16(input, off)), int(getS16(input, off+2))
+			}
+			v0, v1 := a0, a1
+			if frac != 0 {
+				var b0, b1 int
+				if base+1 < inPos {
+					b0, b1 = last0, last1
+				} else {
+					off := int(base+1-inPos) * 4
+					b0, b1 = int(getS16(input, off)), int(getS16(input, off+2))
+				}
+				w := int((uint64(frac) * inv) >> 16)
+				v0 = a0 + ((b0-a0)*w)>>16
+				v1 = a1 + ((b1-a1)*w)>>16
+			}
+			outOff := j * 4
+			putS16(dst, outOff, int16(v0))
+			putS16(dst, outOff+2, int16(v1))
+			base += step
+			frac += rem
+			if frac >= f.outputRate {
+				frac -= f.outputRate
+				base++
+			}
+		}
+	default:
+		for j := range count {
+			w := 0
+			if frac != 0 {
+				w = int((uint64(frac) * inv) >> 16)
+			}
+			for channel := range outCh {
+				a := f.inputSample(input, base, channel)
+				value := a
+				if w != 0 {
+					b := f.inputSample(input, base+1, channel)
+					value = a + ((b-a)*w)>>16
+				}
+				putS16(dst, (j*outCh+channel)*2, int16(value))
+			}
+			base += step
+			frac += rem
+			if frac >= f.outputRate {
+				frac -= f.outputRate
+				base++
+			}
 		}
 	}
 	f.outPos += int64(count)
@@ -378,23 +460,32 @@ func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputC
 		remapS16Channels(dst, src, inputSamples, inputChannels, outputChannels)
 		return
 	}
+	step := inputRate / outputRate
+	rem := inputRate % outputRate
+	inv := (uint64(1)<<32 + uint64(outputRate)/2) / uint64(outputRate)
+	base, frac := 0, 0
 	for sample := range outputSamples {
-		position := sample * inputRate
-		base := position / outputRate
-		frac := position % outputRate
 		next := base + 1
+		w := 0
 		if next >= inputSamples {
 			next = base
-			frac = 0
+		} else if frac != 0 {
+			w = int((uint64(frac) * inv) >> 16)
 		}
 		for channel := range outputChannels {
 			a := mixedSampleS16(src, base, inputChannels, channel, outputChannels)
-			b := mixedSampleS16(src, next, inputChannels, channel, outputChannels)
 			value := a
-			if frac != 0 {
-				value = (a*(outputRate-frac) + b*frac) / outputRate
+			if w != 0 {
+				b := mixedSampleS16(src, next, inputChannels, channel, outputChannels)
+				value = a + ((b-a)*w)>>16
 			}
 			putS16(dst, (sample*outputChannels+channel)*2, int16(value))
+		}
+		base += step
+		frac += rem
+		if frac >= outputRate {
+			frac -= outputRate
+			base++
 		}
 	}
 }

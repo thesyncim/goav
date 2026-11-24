@@ -513,34 +513,32 @@ func TestDecoderCloseLifecycle(t *testing.T) {
 	}
 }
 
-func newTestDecoder(t *testing.T, payload []byte) (*Decoder, *backend.TileWorkerPool) {
+type testCloser func()
+
+func (c testCloser) Close() { c() }
+
+func newTestDecoder(t *testing.T, payload []byte) (*Decoder, testCloser) {
 	t.Helper()
-	probe := testLowOverheadPlan(t, payload)
-	return newTestDecoderWithScratch(t, len(payload), len(payload), probe.Size)
+	return newTestDecoderWithBounds(t, len(payload), len(payload))
 }
 
-func newTestRTPDecoder(t *testing.T, payloads ...[]byte) (*Decoder, *backend.TileWorkerPool) {
+func newTestRTPDecoder(t *testing.T, payloads ...[]byte) (*Decoder, testCloser) {
 	t.Helper()
-	probe := testRTPPayloadsPlan(t, payloads)
 	maxPayload := 0
 	for i := range payloads {
 		if len(payloads[i]) > maxPayload {
 			maxPayload = len(payloads[i])
 		}
 	}
-	return newTestDecoderWithScratch(t, maxPayload, maxPayload, probe.Size)
+	return newTestDecoderWithBounds(t, maxPayload, maxPayload)
 }
 
-func newTestDecoderWithScratch(t *testing.T, maxPayload int, maxRetained int, scratch backend.DecoderFrameWorkResidualStreamScratchSize) (*Decoder, *backend.TileWorkerPool) {
+func newTestDecoderWithBounds(t *testing.T, maxPayload int, maxRetained int) (*Decoder, testCloser) {
 	t.Helper()
-	workerPool, err := backend.NewTileWorkerPool(1)
-	if err != nil {
-		t.Fatal(err)
-	}
 	state, err := NewDecoderState(DecoderStateConfig{
 		Bounds: codec.DecodeBounds{
 			MaxFramesPerInput:   1,
-			MaxEventsPerInput:   scratch.Events,
+			MaxEventsPerInput:   8,
 			MaxRequestsPerInput: 1,
 			MaxPayloadBytes:     maxPayload,
 			MaxRetainedBytes:    maxRetained,
@@ -556,11 +554,8 @@ func newTestDecoderWithScratch(t *testing.T, maxPayload int, maxRetained int, sc
 			SubsamplingY: true,
 			Align:        defaultAlign,
 		},
-		Scratch:    scratch,
-		WorkerPool: workerPool,
 	})
 	if err != nil {
-		workerPool.Close()
 		t.Fatal(err)
 	}
 	factory := NewDecoderFactory()
@@ -582,15 +577,15 @@ func newTestDecoderWithScratch(t *testing.T, maxPayload int, maxRetained int, sc
 		OpaqueState: state,
 	})
 	if err != nil {
-		workerPool.Close()
+		state.Close()
 		t.Fatal(err)
 	}
 	decoder, ok := codecDecoder.(*Decoder)
 	if !ok {
-		workerPool.Close()
+		state.Close()
 		t.Fatalf("decoder type = %T", codecDecoder)
 	}
-	return decoder, workerPool
+	return decoder, func() { _ = decoder.Close() }
 }
 
 func testDecodeResult(maxFrames, maxRequests int) codec.DecodeResult {
@@ -606,5 +601,5 @@ func testDecodeResult(maxFrames, maxRequests int) codec.DecodeResult {
 
 func testUnsyncableLowOverheadPayload() []byte {
 	var payload []byte
-	return appendTestLowOverheadOBU(payload, backend.OBUTileGroup, []byte{0x80})
+	return appendTestLowOverheadOBU(payload, testOBUTileGroup, []byte{0x80})
 }

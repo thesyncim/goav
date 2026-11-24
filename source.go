@@ -19,13 +19,13 @@ type sourceInputSpec struct {
 	fn    sourcepkg.Func
 }
 
-// inputStreamAnchor is the runtime-attach anchor for one stream an InputSpec
+// inputStreamAnchor is the runtime-attach anchor for one stream an Input
 // produces or will produce: what task.Track(input, stream) compiles to, so an
 // application that owns its track lifecycle attaches a per-track branch before
 // the source pushes that track's media. The av.Stream supplies the branch's
 // source shape facts, which makes it the deterministic sibling of OnStream.
 type inputStreamAnchor struct {
-	input  InputSpec
+	input  Input
 	stream av.Stream
 }
 
@@ -35,9 +35,9 @@ type inputStreamAnchor struct {
 // on the task pushing through source.Push. Custom sources participate in
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
-func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
+func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) Input {
 	spec = recipeir.NormalizeSourceShape(name, spec)
-	return applyInputOptions(inputSpecHandle(InputSpec{
+	return applyInputOptions(inputSpecHandle(Input{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolCustom,
@@ -50,7 +50,7 @@ func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption
 }
 
 // track returns the attach anchor for one stream of this input.
-func (s InputSpec) track(stream av.Stream) inputStreamAnchor {
+func (s Input) track(stream av.Stream) inputStreamAnchor {
 	return inputStreamAnchor{input: s, stream: stream}
 }
 
@@ -112,14 +112,14 @@ func sourceShapeChannelLayout(spec shape.Spec) string {
 	}
 }
 
-func customSourceShape(input InputSpec) (shape.Spec, bool) {
+func customSourceShape(input Input) (shape.Spec, bool) {
 	if input.source == nil {
 		return shape.Spec{}, false
 	}
 	return recipeir.NormalizeSourceShape(input.inputName("source"), input.source.shape), true
 }
 
-func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
+func declaredSourceShape(input Input) (shape.Spec, bool) {
 	if spec, ok := customSourceShape(input); ok {
 		return spec, true
 	}
@@ -140,14 +140,14 @@ func compileStateCustomSourceShape(state compileSourceShapeState) (shape.Spec, b
 	return state.customSourceShapeForCompile()
 }
 
-func customSourceStreams(input InputSpec) []av.Stream {
+func customSourceStreams(input Input) []av.Stream {
 	if input.source == nil {
 		return nil
 	}
 	return []av.Stream{declaredSourceStream(input, input.source.shape)}
 }
 
-func customSourceProbeResult(input InputSpec) format.ProbeResult {
+func customSourceProbeResult(input Input) format.ProbeResult {
 	return format.ProbeResult{
 		Score:   100,
 		Streams: customSourceStreams(input),
@@ -155,7 +155,7 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 	}
 }
 
-func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
+func declaredSourceStream(input Input, spec shape.Spec) av.Stream {
 	shape := recipeir.NormalizeSourceShape(input.inputName("source"), spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
@@ -202,7 +202,7 @@ type graphSourceBuild struct {
 // With qualify, a demuxed input stamps its stream ids with its node name, which
 // keeps several file inputs of one run apart; declared ids (custom sources,
 // providers) are the application's and stay as they are.
-func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
+func (s Input) openGraphSourceBuild(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
 	build, err := s.openGraphSourceBuildKind(ctx, service, name, qualify)
 	if err != nil {
 		return graphSourceBuild{}, err
@@ -213,7 +213,7 @@ func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, n
 
 // openGraphSourceBuildKind opens the input by kind; openGraphSourceBuild
 // layers the WrapSource decoration on top.
-func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
+func (s Input) openGraphSourceBuildKind(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -254,7 +254,7 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 
 // openDemuxed opens a file-like input or a byte provider's bytes and demuxes
 // them.
-func (s InputSpec) openDemuxed(ctx context.Context, service *builder, qualifier string) (graphSourceBuild, error) {
+func (s Input) openDemuxed(ctx context.Context, service *builder, qualifier string) (graphSourceBuild, error) {
 	input := s.formatInput()
 	var reader io.ReadCloser
 	if s.bytes != nil {
@@ -283,7 +283,7 @@ func (s InputSpec) openDemuxed(ctx context.Context, service *builder, qualifier 
 // graphSourceNodeName returns the base planner node name for this input. Callers
 // iterating several inputs resolve names through graphSourceNodeNames so repeated
 // provider names get the index-suffix disambiguation.
-func (s InputSpec) graphSourceNodeName() string {
+func (s Input) graphSourceNodeName() string {
 	switch {
 	case s.source != nil:
 		return customSourceNodeName(s)
@@ -304,7 +304,7 @@ func demuxNodeName(input format.Input) string {
 	return "input"
 }
 
-func customSourceNodeName(input InputSpec) string {
+func customSourceNodeName(input Input) string {
 	if input.source == nil {
 		return firstNonEmpty(input.name, input.input.Name, "source")
 	}
@@ -315,7 +315,7 @@ func customSourceNodeName(input InputSpec) string {
 // the running source's node name for every input kind so describe and build
 // agree. Provider inputs repeating an earlier input's name get an index suffix
 // ("rtp", "rtp-1", ...).
-func graphSourceNodeNames(inputs []InputSpec) []string {
+func graphSourceNodeNames(inputs []Input) []string {
 	names := make([]string, len(inputs))
 	seen := make(map[string]struct{}, len(inputs))
 	for i := range inputs {
@@ -326,7 +326,7 @@ func graphSourceNodeNames(inputs []InputSpec) []string {
 
 // graphSourceNodeDetail returns the planner node detail for this input, matching
 // the running source's detail for every input kind.
-func (s InputSpec) graphSourceNodeDetail() string {
+func (s Input) graphSourceNodeDetail() string {
 	switch {
 	case s.source != nil:
 		return customSourceDetail(s)
@@ -337,7 +337,7 @@ func (s InputSpec) graphSourceNodeDetail() string {
 	}
 }
 
-func newCustomSource(input InputSpec) (pipeline.Source, []av.Stream, error) {
+func newCustomSource(input Input) (pipeline.Source, []av.Stream, error) {
 	if input.source == nil {
 		return nil, nil, errNilSource
 	}
@@ -387,7 +387,7 @@ func (s *customSource) Close() error {
 }
 
 // inputStartsFrameDomain reports an input that delivers decoded frames.
-func inputStartsFrameDomain(input InputSpec) bool {
+func inputStartsFrameDomain(input Input) bool {
 	spec, ok := declaredSourceShape(input)
 	return ok && spec.Domain == shape.DomainFrame
 }

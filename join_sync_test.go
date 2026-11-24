@@ -324,7 +324,7 @@ func TestVideoCompositeSyncByPTSPaintsPresentArms(t *testing.T) {
 	}
 }
 
-func mixSyncTestSource(id av.StreamID, ptsMS []int64, frames [][]int16) InputSpec {
+func mixSyncTestSource(id av.StreamID, ptsMS []int64, frames [][]int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {

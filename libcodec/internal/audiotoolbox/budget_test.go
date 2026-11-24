@@ -22,7 +22,7 @@ func TestSessionsShareOneCallback(t *testing.T) {
 		}
 	}
 	desc := codec.Descriptor{Knobs: c.Knobs, Backend: codec.BackendInfo{Name: Name}}
-	knobs, err := desc.ResolveKnobs(codec.CodecSettings{Bitrate: 128_000}, false)
+	knobs, err := desc.ResolveKnobs(codec.Settings{Bitrate: 128_000}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

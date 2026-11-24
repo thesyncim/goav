@@ -35,7 +35,7 @@ func TestMP4AudioDecodesThroughGrammar(t *testing.T) {
 				t.Fatal(err)
 			}
 			out := goavtest.NewCollector()
-			err = runtimeWithAAC().Run(ctx, goav.FileInput(fixture, bytes.NewReader(data)).Audio().Decode().To(out.Sink()))
+			err = runtimeWithAAC().Run(ctx, goav.Read(fixture, bytes.NewReader(data)).Audio().Decode().To(out.Sink()))
 			if errors.Is(err, codec.ErrUnavailable) {
 				t.Skip("goaac backend unavailable on this target")
 			}
@@ -62,7 +62,7 @@ func TestAACToOpusTranscodesEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := runtimeWithAAC().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
+	if err := runtimeWithAAC().Run(ctx, goav.Read("in.mp4", bytes.NewReader(data)).
 		Audio().
 		Decode().
 		Resample(48000, 1).

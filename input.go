@@ -1,4 +1,4 @@
-// Recipe inputs: InputSpec constructors, validation, and input format adapter checks.
+// Recipe inputs: Input constructors, validation, and input format adapter checks.
 
 package goav
 
@@ -19,7 +19,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// InputSpec is one declared recipe input: a file-like reader, a URL, a custom
+// Input is one declared recipe input: a file-like reader, a URL, a custom
 // source, or a provider input, plus the optional name and MIME facts the
 // planner uses before opening it. Construct one with FileInput, URIInput,
 // Source, or Input; configure it with options (Name, MIME, Metadata,
@@ -27,7 +27,7 @@ import (
 // codec facts come from a custom Source or provider SourceShape declaration.
 // The zero value is intentionally not a valid input; construct input specs
 // with FileInput, URIInput, Source, or Input.
-type InputSpec struct {
+type Input struct {
 	origin   inputSpecOrigin
 	input    format.Input
 	provider provider.Source
@@ -61,36 +61,18 @@ const (
 	inputSpecOriginConstructed
 )
 
-func inputSpecHandle(spec InputSpec) InputSpec {
+func inputSpecHandle(spec Input) Input {
 	spec.origin = inputSpecOriginConstructed
 	spec.id = &inputIdentity{}
 	return spec
 }
 
-// WrapSource returns a copy of the input whose opened source is decorated by
-// wrap — the decoration seam for inputs. Every input kind (file, URI, source
-// provider, custom Source) opens through one internal seam into a running
-// pipeline.Source; wrap intercepts that value right after it opens, so an
-// external decorator can observe or transform the message stream of any
-// built-in input without reimplementing it: delegate Name/Close, wrap Start,
-// and interpose on the pipeline.Emitter it is started with. Several wraps
-// compose in declaration order — the last one added is outermost (closest to
-// the graph). Planning is untouched: the input keeps its identity, probes,
-// declared shape, and codec intent, so stream selection and Describe() see
-// the original input.
-//
-// Node identity is pinned: after wrapping, the source's Name() and described
-// node detail are forced back to the opened source's values, so Describe() ≡
-// Build() holds no matter what the decorator reports — decorators decorate
-// behavior, not identity. Optional node capabilities (pipeline.
-// ControllableSource, DropReporter, ...) are visible only when the decorator
-// implements them by delegation; a decorator that hides ControllableSource
-// detaches the input from source controls such as Seek.
-//
-// Destinations need no analog: every destination constructor takes a
-// caller-held value (an io.Writer for Write, a provider.Destination for
-// Custom, a pipeline.Sink for Sink) that can be wrapped before it is passed.
-func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) InputSpec {
+// Wrap returns a copy of spec whose opened pipeline.Source is decorated by
+// wrap. Wraps compose in declaration order (last added is outermost). Planning
+// identity, probes, and Describe() node names remain pinned to the underlying
+// source; optional capabilities (such as pipeline.ControllableSource) are
+// visible only if the decorator delegates them.
+func (spec Input) Wrap(wrap func(pipeline.Source) pipeline.Source) Input {
 	if wrap == nil {
 		return spec
 	}
@@ -102,23 +84,23 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 }
 
 // InputOption configures an input value ([FileInput], [Source], [Input], or
-// [InputSpec.With]). Build one with [Name], [MIME], or [Metadata], the
+// [Input.With]). Build one with [Name], [MIME], or [Metadata], the
 // direction-agnostic [MediaOption] constructors. It is sealed: only goav option
 // constructors implement it.
 type InputOption interface {
-	applyInput(*InputSpec)
+	applyInput(*Input)
 }
 
 // With returns a copy of the input with the options applied — the same option
 // vocabulary the constructors take, for layering config onto an
 // already-constructed value (renaming a generated test input, say).
-func (s InputSpec) With(opts ...InputOption) InputSpec {
+func (s Input) With(opts ...InputOption) Input {
 	spec := applyInputOptions(s, opts)
 	spec.id = &inputIdentity{}
 	return spec
 }
 
-func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
+func applyInputOptions(spec Input, opts []InputOption) Input {
 	for i := range opts {
 		if opts[i] != nil {
 			opts[i].applyInput(&spec)
@@ -130,8 +112,8 @@ func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
 // FileInput declares a file-like input read from reader. Its container is
 // detected from its first bytes when it opens; name (its extension) is the
 // hint used when the bytes match no format, and names the input.
-func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
-	spec := InputSpec{
+func Read(name string, reader io.Reader, opts ...InputOption) Input {
+	spec := Input{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolFile,
@@ -145,13 +127,13 @@ func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 	return applyInputOptions(inputSpecHandle(spec), opts)
 }
 
-func (s InputSpec) formatInput() format.Input {
+func (s Input) formatInput() format.Input {
 	input := s.input
 	input.Realtime = input.Realtime || s.realtime
 	return input
 }
 
-func (s InputSpec) validate() error {
+func (s Input) validate() error {
 	var refusal *BuildError
 	if errors.As(s.err, &refusal) {
 		return refusal
@@ -159,12 +141,12 @@ func (s InputSpec) validate() error {
 	if s.err != nil {
 		fixes := []string{
 			"check the input constructor arguments",
-			"pass a non-nil provider to goav.Input(provider)",
+			"pass a non-nil provider to goav.From(provider)",
 		}
 		if errors.Is(s.err, errNilReader) {
 			fixes = []string{
-				"pass a non-nil io.Reader to goav.FileInput(name, reader)",
-				"use goav.Input(provider) for realtime receive through a source provider",
+				"pass a non-nil io.Reader to goav.Read(name, reader)",
+				"use goav.From(provider) for realtime receive through a source provider",
 				"use goav.Source(name, shape, fn) for application-pushed media",
 			}
 		}
@@ -188,9 +170,9 @@ func (s InputSpec) validate() error {
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    "empty input spec",
 			fixes: buildErrorFixes([]string{
-				"use goav.FileInput(name, reader) for file-like input",
+				"use goav.Read(name, reader) for file-like input",
 				"use goav.Source(name, shape, fn) for application-pushed packets",
-				"use goav.Input(provider) for realtime receive through a source provider",
+				"use goav.From(provider) for realtime receive through a source provider",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -206,7 +188,7 @@ func (s InputSpec) validate() error {
 	return s.validatePlainInput()
 }
 
-func (s InputSpec) validateCustomSource() error {
+func (s Input) validateCustomSource() error {
 	if s.source == nil {
 		return nil
 	}
@@ -221,7 +203,7 @@ func (s InputSpec) validateCustomSource() error {
 			Reason:    "custom source has no push callback",
 			fixes: buildErrorFixes([]string{
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
-				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
+				"use goav.Read or goav.From(provider) for built-in source adapters",
 			}),
 			cause: errNilSource,
 		}
@@ -263,7 +245,7 @@ func (s InputSpec) validateCustomSource() error {
 	return nil
 }
 
-func (s InputSpec) validatePlainInput() error {
+func (s Input) validatePlainInput() error {
 	if s.provider != nil || s.bytes != nil {
 		return nil
 	}
@@ -281,9 +263,9 @@ func (s InputSpec) validatePlainInput() error {
 		Node:      "input",
 		Reason:    "empty input spec",
 		fixes: buildErrorFixes([]string{
-			"use goav.FileInput(name, reader) for file-like input",
+			"use goav.Read(name, reader) for file-like input",
 			"use goav.Source(name, shape, fn) for application-pushed packets",
-			"use goav.Input(provider) for realtime receive through a source provider",
+			"use goav.From(provider) for realtime receive through a source provider",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -291,7 +273,7 @@ func (s InputSpec) validatePlainInput() error {
 
 // providerName returns the provider's node name capability ("" without one) so
 // recipe naming, narrowing, and duplicate detection see provider-named inputs.
-func (s InputSpec) providerName() string {
+func (s Input) providerName() string {
 	if s.provider == nil {
 		return ""
 	}
@@ -302,7 +284,7 @@ func (s InputSpec) providerName() string {
 }
 
 // recipeIRInputFromSpec is the planner-visible data of one input.
-func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
+func recipeIRInputFromSpec(s Input) recipeir.Input {
 	out := recipeir.Input{
 		Name:     firstNonEmpty(s.name, s.input.Name, s.providerName()),
 		URI:      s.input.URI,
@@ -325,14 +307,14 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 	return out
 }
 
-func (s InputSpec) inputName(fallback string) string {
+func (s Input) inputName(fallback string) string {
 	return firstNonEmpty(s.name, s.input.Name, s.input.URI, s.providerName(), fallback)
 }
 
 // validateJobInputs checks each input and that several inputs of one run carry
 // distinct names: a stream binds to its input by name, and a file input names
 // the stream ids it qualifies.
-func validateJobInputs(inputs []InputSpec) error {
+func validateJobInputs(inputs []Input) error {
 	for i := range inputs {
 		if err := inputs[i].validate(); err != nil {
 			return err
@@ -341,7 +323,7 @@ func validateJobInputs(inputs []InputSpec) error {
 	return validateInputNames(inputs)
 }
 
-func validateInputNames(inputs []InputSpec) error {
+func validateInputNames(inputs []Input) error {
 	seen := make(map[string]int, len(inputs))
 	for i := range inputs {
 		name := inputs[i].inputName("")
@@ -366,14 +348,14 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 		Reason:    fmt.Sprintf("input name %q is defined more than once", name),
 		fields:    errDetails(errNote(fmt.Sprintf("first input index: %d", firstIndex)), errNote(fmt.Sprintf("second input index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
-			"give each input a distinct goav.Name(...), or distinct file names: goav.FileInput(\"a.webm\", ra) and goav.FileInput(\"b.webm\", rb)",
+			"give each input a distinct goav.Name(...), or distinct file names: goav.Read(\"a.webm\", ra) and goav.Read(\"b.webm\", rb)",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",
 		}),
 		cause: errUnsupportedBuild,
 	}
 }
 
-func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []InputSpec) ([]format.ProbeResult, error) {
+func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Input) ([]format.ProbeResult, error) {
 	if rt == nil {
 		return nil, nil
 	}
@@ -406,7 +388,7 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 // sourceEventDomain reports the media domain this input's source produces, so
 // discovered-stream anchors carry the right domain (frame-domain custom
 // sources announce frame streams; everything else is packet-domain).
-func (s InputSpec) sourceEventDomain() shape.MediaDomain {
+func (s Input) sourceEventDomain() shape.MediaDomain {
 	if spec, ok := declaredSourceShape(s); ok && spec.Domain != "" {
 		return spec.Domain
 	}
@@ -415,7 +397,7 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 
 // pinnedFormat is the container a byte provider declares
 // (SourceShape().Format), which replaces probing.
-func (s InputSpec) pinnedFormat() av.FormatID {
+func (s Input) pinnedFormat() av.FormatID {
 	if s.bytes == nil {
 		return ""
 	}

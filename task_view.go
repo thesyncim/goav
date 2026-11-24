@@ -14,14 +14,14 @@ import (
 )
 
 // TaskSnapshot is an immutable point-in-time view of a task's graph, taps,
-// active runtime branches, and counters, returned by LiveTask.Snapshot.
+// active runtime branches, and counters, returned by Task.Snapshot.
 type TaskSnapshot struct {
 	State TaskState `json:"state"`
 	// Err is the retained execution/finalization error, suitable for errors.Is.
 	// Error is its printable form for JSON consumers.
 	Err   error  `json:"-"`
 	Error string `json:"error,omitempty"`
-	// Paused reports whether the task timeline is frozen by LiveTask.Pause. It
+	// Paused reports whether the task timeline is frozen by Task.Pause. It
 	// is orthogonal to State: a paused task still reports its run progress.
 	Paused       bool                  `json:"paused,omitempty"`
 	Spec         pipeline.Spec         `json:"spec"`
@@ -70,7 +70,7 @@ type DestinationSnapshot struct {
 }
 
 // TapSnapshot describes one named media outlet a task exposes for runtime
-// branches, as LiveTask.Taps lists it.
+// branches, as Task.Taps lists it.
 type TapSnapshot struct {
 	Name      string             `json:"name"`
 	MediaKind av.MediaType       `json:"mediaKind,omitempty"`

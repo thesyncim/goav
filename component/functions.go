@@ -73,98 +73,32 @@ func (e *Emit) EOS(streams ...av.StreamID) error {
 
 // PacketFunc wraps a function as a packet-processing stage for .Do(...):
 // fn observes or transforms each packet and forwards output through emit.
-// Frames and events pass through untouched. Nil callbacks produce a stage that
-// validates later; use NewPacketStage when construction should fail immediately.
+// Frames and events pass through untouched.
 func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) pipeline.Stage {
 	return mediaFuncStage{name: name, packet: fn}
 }
 
-// NewPacketStage is the strict form of PacketFunc: it returns
-// ErrNilStageCallback instead of constructing an invalid stage.
-func NewPacketStage(name string, fn func(context.Context, *av.Packet, Emit) error) (pipeline.Stage, error) {
-	stage := mediaFuncStage{name: name, packet: fn}
-	if err := stage.ValidateComponent(); err != nil {
-		return nil, err
-	}
-	return stage, nil
-}
-
 // FrameFunc wraps a function as a frame-processing stage for .Do(...): fn
 // observes or transforms each frame and forwards output through emit. Packets
-// and events pass through untouched. Nil callbacks produce a stage that
-// validates later; use NewFrameStage when construction should fail immediately.
+// and events pass through untouched.
 func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pipeline.Stage {
 	return mediaFuncStage{name: name, frame: fn}
 }
 
-// NewFrameStage is the strict form of FrameFunc: it returns
-// ErrNilStageCallback instead of constructing an invalid stage.
-func NewFrameStage(name string, fn func(context.Context, *av.Frame, Emit) error) (pipeline.Stage, error) {
-	stage := mediaFuncStage{name: name, frame: fn}
-	if err := stage.ValidateComponent(); err != nil {
-		return nil, err
-	}
-	return stage, nil
-}
-
 // EventFunc wraps a function as an event-observing stage for .Do(...): fn
 // sees each event, and every message (the event included) continues
-// downstream. Nil callbacks produce a stage that validates later; use
-// NewEventStage when construction should fail immediately.
+// downstream.
 func EventFunc(name string, fn func(context.Context, av.Event) error) pipeline.Stage {
 	return mediaFuncStage{name: name, event: fn}
-}
-
-// NewEventStage is the strict form of EventFunc: it returns
-// ErrNilStageCallback instead of constructing an invalid stage.
-func NewEventStage(name string, fn func(context.Context, av.Event) error) (pipeline.Stage, error) {
-	stage := mediaFuncStage{name: name, event: fn}
-	if err := stage.ValidateComponent(); err != nil {
-		return nil, err
-	}
-	return stage, nil
-}
-
-// MustStage unwraps a strict stage constructor result and panics on error.
-func MustStage(stage pipeline.Stage, err error) pipeline.Stage {
-	if err != nil {
-		panic(err)
-	}
-	if stage == nil {
-		panic(ErrNilStageCallback)
-	}
-	return stage
 }
 
 // SinkFunc wraps a function as a terminal sink for goav.Sink(...): fn receives
 // every delivered message, one call at a time, never concurrently. A
 // message is lent for the call: keep a frame or packet past it with Ref (its
 // bytes are shared, never copied), and never write lent bytes. Returning an
-// error fails the task. Nil callbacks produce a sink that validates later; use
-// NewSink when construction should fail immediately.
+// error fails the task.
 func SinkFunc(name string, fn func(context.Context, Message) error) pipeline.Sink {
 	return mediaFuncSink{name: name, fn: fn}
-}
-
-// NewSink is the strict form of SinkFunc: it returns ErrNilSinkCallback
-// instead of constructing an invalid sink.
-func NewSink(name string, fn func(context.Context, Message) error) (pipeline.Sink, error) {
-	sink := mediaFuncSink{name: name, fn: fn}
-	if err := sink.ValidateComponent(); err != nil {
-		return nil, err
-	}
-	return sink, nil
-}
-
-// MustSink unwraps a strict sink constructor result and panics on error.
-func MustSink(sink pipeline.Sink, err error) pipeline.Sink {
-	if err != nil {
-		panic(err)
-	}
-	if sink == nil {
-		panic(ErrNilSinkCallback)
-	}
-	return sink
 }
 
 type mediaFuncStage struct {

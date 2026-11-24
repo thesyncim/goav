@@ -60,8 +60,8 @@ var docSnippetPackages = map[string]string{
 const docSnippetPrelude = `
 	var ctx context.Context
 	var rt *goav.Runtime
-	var task goav.LiveTask
-	var input goav.InputSpec
+	var task goav.Task
+	var input goav.Input
 	_, _, _, _ = ctx, rt, task, input
 `
 
@@ -88,7 +88,7 @@ func TestDocsGoExamplesTypeCheck(t *testing.T) {
 		if errs := check.snippet("err := rt.Run(ctx, input.Video().Branches())"); len(errs) == 0 {
 			t.Fatal("a call to a method the API lacks type-checked clean; the checker is not checking")
 		}
-		if errs := check.snippet("var _ = goav.From"); len(errs) == 0 {
+		if errs := check.snippet("var _ = goav.NoSuchSymbol"); len(errs) == 0 {
 			t.Fatal("a missing package-level name type-checked clean; the checker is not checking")
 		}
 	})

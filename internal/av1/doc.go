@@ -11,26 +11,54 @@ var ErrInvalid = errors.New("av1: invalid bitstream")
 // obuTemporalDelimiter is the OBU type a container's samples leave out.
 const obuTemporalDelimiter = 2
 
+// AppendWithoutTemporalDelimiters appends the OBUs of data to dst, skipping
+// temporal delimiter OBUs. It returns data itself without copying into dst
+// when data contains no temporal delimiter OBUs.
+func AppendWithoutTemporalDelimiters(dst, data []byte) ([]byte, error) {
+	found := false
+	for offset := 0; offset < len(data); {
+		obu, next, err := readAV1OBU(data, offset)
+		if err != nil {
+			return nil, err
+		}
+		if obu.Type == obuTemporalDelimiter {
+			found = true
+		}
+		offset = next
+	}
+	if !found {
+		return data, nil
+	}
+	for offset := 0; offset < len(data); {
+		obu, next, err := readAV1OBU(data, offset)
+		if err != nil {
+			return nil, err
+		}
+		if obu.Type != obuTemporalDelimiter {
+			dst = append(dst, obu.Data...)
+		}
+		offset = next
+	}
+	return dst, nil
+}
+
 // StripTemporalDelimiters returns a temporal unit without its temporal
 // delimiter OBUs, as ISO BMFF and Matroska samples store it. It returns data
 // itself when there is none to strip.
 func StripTemporalDelimiters(data []byte) ([]byte, error) {
 	found := false
-	if err := av1ForEachOBU(data, func(obu av1OBU) error {
-		found = found || obu.Type == obuTemporalDelimiter
-		return nil
-	}); err != nil {
-		return nil, err
+	for offset := 0; offset < len(data); {
+		obu, next, err := readAV1OBU(data, offset)
+		if err != nil {
+			return nil, err
+		}
+		if obu.Type == obuTemporalDelimiter {
+			found = true
+		}
+		offset = next
 	}
 	if !found {
 		return data, nil
 	}
-	out := make([]byte, 0, len(data))
-	_ = av1ForEachOBU(data, func(obu av1OBU) error {
-		if obu.Type != obuTemporalDelimiter {
-			out = append(out, obu.Data...)
-		}
-		return nil
-	})
-	return out, nil
+	return AppendWithoutTemporalDelimiters(make([]byte, 0, len(data)), data)
 }

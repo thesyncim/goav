@@ -63,7 +63,7 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	rt := mustGoAVRuntime(codecs)
-	job := goav.Input(rtpav.Receive(receiver,
+	job := goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
 		rtpav.WithDecodeBounds(requested),
@@ -146,7 +146,7 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := mustGoAVRuntime(codecs).Build(ctx, goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(codecs).Build(ctx, goav.From(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(
 			rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
@@ -207,7 +207,7 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(ivfadapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream)))).
+	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(ivfadapter.Register)).Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream)))).
 		To(goav.Write("recording.ivf", &recording)))
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(annexbadapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream)))).
+	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(annexbadapter.Register)).Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream)))).
 		To(goav.Write("recording.h264", &recording)))
 	if err != nil {
 		t.Fatal(err)

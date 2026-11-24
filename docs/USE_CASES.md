@@ -17,7 +17,7 @@ later without rebuilding the receive path.
 Packet-preserving recording:
 
 ```go
-in := goav.Input(webrtcav.Track(track))
+in := goav.From(webrtcav.Track(track))
 err := rt.Run(ctx, in.To(goav.Write("recording.ivf", file)))
 ```
 
@@ -41,7 +41,7 @@ inputs codec intent so the runtime can choose the depacketizer before packets
 arrive.
 
 ```go
-cam := goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))
+cam := goav.From(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))
 err := rt.Run(ctx, cam.To(
     goav.Write("recording.ivf", file),
     goav.Write("preview.ivf", preview),
@@ -51,7 +51,7 @@ err := rt.Run(ctx, cam.To(
 Decode and transform one selected stream:
 
 ```go
-mic := goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
+mic := goav.From(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
 err := rt.Run(ctx, mic.Audio().
     Decode().
     Resample(16_000, codec.Mono).
@@ -261,7 +261,7 @@ archive := func(s goav.Stream) goav.Stream {
     return s.Resample(48_000, codec.Stereo).
         Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
 }
-in := goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
+in := goav.From(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
 decoded := in.Audio().Decode()
 
 err := rt.Run(ctx,
@@ -344,7 +344,7 @@ lifecycle states.
 ![Runtime pipeline debugging](assets/pipeline-debug.svg)
 
 ```go
-out := goav.Input(webrtcav.Track(track)).Audio().
+out := goav.From(webrtcav.Track(track)).Audio().
     Decode().
     Tap("audio.decoded").
     To(goav.Sink(playback))
@@ -405,7 +405,7 @@ log.Printf("packets=%d frames=%d dropped=%d branches=%d level_frames=%d",
 Packet-preserving file fanout:
 
 ```go
-err := rt.Run(ctx, goav.FileInput("input.ivf", in).To(
+err := rt.Run(ctx, goav.Read("input.ivf", in).To(
     goav.Write("recording.ivf", recording),
     goav.Write("preview.ivf", preview),
 ))

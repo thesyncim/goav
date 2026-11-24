@@ -174,7 +174,7 @@ What the compiler enforces today: the sibling packages (`av`, `errcode`,
 them imports the root `goav` package. Root depends on leaves, never the reverse.
 
 Two packages sit above root on purpose: `expert` imports `goav` to return the
-`LiveTask` its `Build` produces, and `graphrender` imports it to read task and
+`Task` its `Build` produces, and `graphrender` imports it to read task and
 branch snapshots (its spec renderer is `internal/specrender`, a leaf, so the
 root's own tests render graphs without a cycle).
 Root reaches back only through structural seams (the `internal/expertgraph`

@@ -66,7 +66,7 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	)
 	sinkA := &runtimeTestSink{name: "a"}
 	sinkB := &runtimeTestSink{name: "b"}
-	decoded := FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.decoded")
+	decoded := Read("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.decoded")
 	outs := []Output{decoded.As("a").To(Sink(sinkA)), decoded.As("b").To(Sink(sinkB))}
 
 	spec, err := rt.Describe(outs...)
@@ -183,7 +183,7 @@ func TestNorthStarCustomFrameSourceEncodesToFile(t *testing.T) {
 
 // TestNorthStarShapeGuards covers acceptance #11-15 (shape solver/validation).
 func TestNorthStarShapeGuards(t *testing.T) {
-	input := func() InputSpec { return FileInput("input.ogg", strings.NewReader("")) }
+	input := func() Input { return Read("input.ogg", strings.NewReader("")) }
 
 	// #13: a frame branch to File without Encode must fail (File needs packets).
 	t.Run("frame_to_file_without_encode_fails", func(t *testing.T) {

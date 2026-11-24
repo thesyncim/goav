@@ -161,7 +161,7 @@ func (g *graphBuilder) Describe() (pipeline.Spec, error) {
 	return g.builder.Describe()
 }
 
-func (g *graphBuilder) Build(ctx context.Context) (LiveTask, error) {
+func (g *graphBuilder) Build(ctx context.Context) (Task, error) {
 	if g.err != nil {
 		return nil, g.err
 	}

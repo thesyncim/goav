@@ -78,7 +78,7 @@ func generatedCompositionCorpus() []generatedCompositionCase {
 
 // generatedCompositionStream is the generated case's encoded stream: one
 // Stream value, so every Output that routes it shares its work.
-func generatedCompositionStream(input goav.InputSpec, tc generatedCompositionCase) goav.Stream {
+func generatedCompositionStream(input goav.Input, tc generatedCompositionCase) goav.Stream {
 	stream := input.Audio()
 	if tc.resample {
 		stream = stream.Resample(48_000, codec.Mono)
@@ -137,7 +137,7 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 	}
 }
 
-func generatedNamedCompositionAudioInput(name string, sampleRate int) goav.InputSpec {
+func generatedNamedCompositionAudioInput(name string, sampleRate int) goav.Input {
 	return goavtest.NewTestSource(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, 1, av.SampleFormatS16)),
 	).Input()

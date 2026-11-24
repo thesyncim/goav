@@ -13,14 +13,16 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-type resizeOption func(*filter.ResizeConfig)
+// ResizeOption configures a Stream.Resize operation (for example filter.Fit or filter.Fill).
+type ResizeOption = func(*filter.ResizeConfig)
 
-type audioOption func(*filter.ResampleConfig)
+// ResampleOption configures a Stream.Resample operation.
+type ResampleOption = func(*filter.ResampleConfig)
 
 // resizeSpec declares a video geometry conversion to width x height (exact mode
 // unless an option changes it), performed by the runtime's registered resize
 // filter. Chains reach it through .Resize(...).
-func resizeSpec(width int, height int, options ...resizeOption) recipeir.Transform {
+func resizeSpec(width int, height int, options ...ResizeOption) recipeir.Transform {
 	config := filter.ResizeConfig{Width: width, Height: height, Mode: filter.ResizeExact}
 	for i := range options {
 		if options[i] != nil {
@@ -33,7 +35,7 @@ func resizeSpec(width int, height int, options ...resizeOption) recipeir.Transfo
 // resampleSpec declares an audio conversion to the given sample rate and
 // channel count, performed by the runtime's registered resample filter.
 // Chains reach it through .Resample(...).
-func resampleSpec(sampleRate int, channels int, options ...audioOption) recipeir.Transform {
+func resampleSpec(sampleRate int, channels int, options ...ResampleOption) recipeir.Transform {
 	config := filter.ResampleConfig{SampleRate: sampleRate, Channels: channels}
 	for i := range options {
 		if options[i] != nil {

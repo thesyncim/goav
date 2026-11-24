@@ -1,7 +1,7 @@
 // Package plan holds the structured Explain tree: the report a job or task
 // returns about what it will do, which adapters it needs, and the decisions
-// and diagnostics behind the plan. The write-side grammar (From, Mix,
-// Branch, To, Control, constructors, options) lives in the goav root;
+// and diagnostics behind the plan. The recipe grammar (Stream, Mix, Composite,
+// Select, To, Task.Control, constructors, options) lives in the goav root;
 // everything Explain reports back lives here.
 package plan
 

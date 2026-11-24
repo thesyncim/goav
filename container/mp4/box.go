@@ -3,6 +3,7 @@ package mp4
 import (
 	"encoding/binary"
 	"io"
+	"math"
 )
 
 const (
@@ -31,7 +32,7 @@ func (h boxHeader) end() int64 { return h.Offset + h.Size }
 // limit, and a size of 1 selects the 64-bit largesize form. It returns io.EOF
 // when there is no room for another header.
 func readBoxHeader(r io.ReaderAt, off, limit int64) (boxHeader, error) {
-	if off < 0 || off+boxHeaderSize > limit {
+	if off < 0 || limit < off || limit-off < boxHeaderSize {
 		return boxHeader{}, io.EOF
 	}
 	var buf [boxLargeHeaderSize]byte
@@ -43,18 +44,22 @@ func readBoxHeader(r io.ReaderAt, off, limit int64) (boxHeader, error) {
 	headerSize := int64(boxHeaderSize)
 	switch size {
 	case 1:
-		if off+boxLargeHeaderSize > limit {
+		if limit-off < boxLargeHeaderSize {
 			return boxHeader{}, ErrTruncated
 		}
 		if _, err := r.ReadAt(buf[8:16], off+8); err != nil {
 			return boxHeader{}, err
 		}
-		size = int64(binary.BigEndian.Uint64(buf[8:16]))
+		rawSize := binary.BigEndian.Uint64(buf[8:16])
+		if rawSize > uint64(math.MaxInt64) {
+			return boxHeader{}, ErrTruncated
+		}
+		size = int64(rawSize)
 		headerSize = boxLargeHeaderSize
 	case 0:
 		size = limit - off
 	}
-	if size < headerSize || off+size > limit {
+	if size < headerSize || size > limit-off {
 		return boxHeader{}, ErrTruncated
 	}
 	return boxHeader{
@@ -71,7 +76,7 @@ func readBoxHeader(r io.ReaderAt, off, limit int64) (boxHeader, error) {
 // size, which readBoxHeader guarantees is at least the header size, so a
 // malformed size cannot loop forever.
 func walkBoxes(r io.ReaderAt, start, end int64, visit func(boxHeader) error) error {
-	for off := start; off+boxHeaderSize <= end; {
+	for off := start; off <= end && end-off >= boxHeaderSize; {
 		h, err := readBoxHeader(r, off, end)
 		if err != nil {
 			if err == io.EOF {

@@ -10,10 +10,10 @@ This narrowly documented exception to the repository assembly guard avoids
 purego reflective callback allocations; all pixel conversion remains Go.
 
 ```go
-camera := goav.Input(cameraav.New(cameraav.Config{
+camera := goav.From(cameraav.New(cameraav.Config{
     Width: 1280, Height: 720, FPS: 30,
 }))
-output := camera.Video().Encode(codec.VP8()).To(goav.URI("camera.webm"))
+output := camera.Video().Encode(codec.VP8()).To(goav.ToURI("camera.webm"))
 ```
 
 Use `cameraav.Devices(ctx)` for opaque device IDs and supply one as `Config.Device`.
@@ -25,7 +25,7 @@ match a 30 fps request. Unsupported modes fail explicitly. The provider opens at
 Build time and begins capture when its source starts. Describe and Explain do
 not enumerate devices, prompt for access, or activate the camera.
 
-Register `runconfig.Scheme("camera", cameraav.Scheme{})` for URL inputs. The CLI
+Register `runconfig.WithScheme("camera", cameraav.Scheme())` for URL inputs. The CLI
 registers it automatically:
 
 ```sh

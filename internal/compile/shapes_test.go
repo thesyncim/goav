@@ -221,11 +221,11 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		name   string
 		encode codec.Spec
 	}{
-		{name: "copy encode", encode: codec.Copy()},
-		{name: "missing codec id", encode: codec.Codec("", av.MediaAudio)},
+		{name: "copy encode", encode: codec.Spec{Copy: true}},
+		{name: "missing codec id", encode: codec.New("", av.MediaAudio)},
 		{name: "audio defaults are not explicit", encode: codec.Opus()},
 		{name: "video without explicit format facts", encode: codec.VP8()},
-		{name: "unknown media", encode: codec.Codec("x-data", "data")},
+		{name: "unknown media", encode: codec.New("x-data", "data")},
 	}
 	for _, tt := range zeroCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -248,7 +248,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		t.Fatalf("audio soft input shape = %+v, want %+v", got, wantAudio)
 	}
 
-	customAudio := codec.Codec("x-audio", av.MediaAudio, codec.SampleRate(32_000))
+	customAudio := codec.New("x-audio", av.MediaAudio, codec.SampleRate(32_000))
 	wantCustomAudio := shape.Spec{
 		Domain:     shape.DomainFrame,
 		MediaKind:  av.MediaAudio,
@@ -273,7 +273,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		t.Fatalf("video soft input shape = %+v, want %+v", got, wantVideo)
 	}
 
-	customVideo := codec.Codec("x-video", av.MediaVideo)
+	customVideo := codec.New("x-video", av.MediaVideo)
 	customVideo.Parameters.PixelFormat = av.PixelFormatGray8
 	wantCustomVideo := shape.Spec{
 		Domain:      shape.DomainFrame,

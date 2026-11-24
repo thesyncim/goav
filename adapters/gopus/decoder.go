@@ -2,7 +2,7 @@ package gopus
 
 import (
 	"context"
-	"unsafe"
+	"encoding/binary"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -58,6 +58,8 @@ type Decoder struct {
 	sampleRate int
 	channels   int
 	audio      av.AudioFrame
+	audioMeta  []av.AudioFrame
+	pcm        []int16
 	pendingPLC int
 
 	// Pre-skip (RFC 7845 §4.2): the first samples a stream decodes are encoder
@@ -213,7 +215,11 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 	if len(pcmBytes)%2 != 0 {
 		pcmBytes = pcmBytes[:len(pcmBytes)-1]
 	}
-	pcm := bytesAsInt16(pcmBytes)
+	maxSamples := len(pcmBytes) / 2
+	if cap(d.pcm) < maxSamples {
+		d.pcm = make([]int16, maxSamples)
+	}
+	pcm := d.pcm[:maxSamples]
 	samples, err := d.decoder.DecodeInt16(data, pcm)
 	if err != nil {
 		out.Frames = out.Frames[:index]
@@ -233,25 +239,27 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 			return nil
 		}
 	}
-	used := samples * d.channels * 2
+	total := samples * d.channels
+	used := total * 2
+	for i := range total {
+		binary.LittleEndian.PutUint16(pcmBytes[i*2:], uint16(pcm[i]))
+	}
 	plane.Buffer.Bytes = pcmBytes[:used]
 	plane.Stride = d.channels * 2
 
 	d.audio.Samples = samples
+	if cap(d.audioMeta) < cap(out.Frames) {
+		d.audioMeta = make([]av.AudioFrame, cap(out.Frames))
+	}
+	d.audioMeta = d.audioMeta[:cap(out.Frames)]
+	d.audioMeta[index] = d.audio
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
 	frame.Type = av.MediaAudio
 	frame.PTS = pts
 	frame.Duration = av.SamplesDuration(samples, d.sampleRate)
-	frame.Audio = &d.audio
+	frame.Audio = &d.audioMeta[index]
 	return nil
-}
-
-func bytesAsInt16(data []byte) []int16 {
-	if len(data) == 0 {
-		return nil
-	}
-	return unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(data))), len(data)/2)
 }
 
 // samplesBeforeZero is how much of a packet starting at pts presents before

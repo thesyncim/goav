@@ -26,7 +26,7 @@ func knobbed() Descriptor {
 }
 
 func TestResolveKnobsMapsCommonAndScopedSettings(t *testing.T) {
-	var s CodecSettings
+	var s Settings
 	for _, option := range []Option{
 		Bitrate(2_000_000), KeyframeInterval(60), Profile("Main"),
 		Setting("rc", "cbr"),
@@ -50,7 +50,7 @@ func TestResolveKnobsMapsCommonAndScopedSettings(t *testing.T) {
 	if raw := values.Raw(); !slices.Equal(raw, [][2]string{{"iMaxQp", "40"}}) {
 		t.Fatalf("raw = %v", raw)
 	}
-	if defaults, _ := knobbed().ResolveKnobs(CodecSettings{}, false); defaults.String("rc") != "vbr" || defaults.IsSet("rc") || defaults.Bool("realtime") {
+	if defaults, _ := knobbed().ResolveKnobs(Settings{}, false); defaults.String("rc") != "vbr" || defaults.IsSet("rc") || defaults.Bool("realtime") {
 		t.Fatalf("defaults = %+v", defaults)
 	}
 }
@@ -70,7 +70,7 @@ func TestResolveKnobsRefusesWithTheFix(t *testing.T) {
 		"scoped typo":   {Setting("openh264.denoize", "1"), "did you mean denoise?"},
 		"int not a num": {Setting("gop", "often"), "gop=often: want a whole number"},
 	} {
-		var s CodecSettings
+		var s Settings
 		tc.option(&s)
 		_, err := knobbed().ResolveKnobs(s, false)
 		if !errors.Is(err, ErrInvalidSetting) || !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "h264 openh264: ") {
@@ -92,7 +92,7 @@ func TestKnobStringSummarizesTheDeclaration(t *testing.T) {
 }
 
 func TestResolveKnobsWithoutSchemaPassesSettings(t *testing.T) {
-	values, err := Descriptor{ID: av.CodecVP9}.ResolveKnobs(CodecSettings{Custom: av.Metadata{"cpu-used": "4"}}, false)
+	values, err := Descriptor{ID: av.CodecVP9}.ResolveKnobs(Settings{Custom: av.Metadata{"cpu-used": "4"}}, false)
 	if err != nil || values.String("cpu-used") != "4" {
 		t.Fatalf("schemaless = %+v, %v", values, err)
 	}

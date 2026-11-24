@@ -264,7 +264,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
-	outs := []Output{FileInput("", strings.NewReader(""), MIME("audio/ogg")).To(Write("recording.ogg", io.Discard))}
+	outs := []Output{Read("", strings.NewReader(""), MIME("audio/ogg")).To(Write("recording.ogg", io.Discard))}
 
 	task, err := runtime.Build(ctx, outs...)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 		testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{demuxer: demuxer}),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
-	outs := []Output{FileInput("input.ogg", strings.NewReader("")).To(Write("", io.Discard, MIME("audio/ogg")))}
+	outs := []Output{Read("input.ogg", strings.NewReader("")).To(Write("", io.Discard, MIME("audio/ogg")))}
 
 	spec, err := runtime.Describe(outs...)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 
 	_, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			To(Sink(&runtimeTestSink{name: "frames"})),
@@ -380,7 +380,7 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).Audio(StreamIndex(0)).Decode().To(Sink(sink)),
+		Read("input.ogg", strings.NewReader("")).Audio(StreamIndex(0)).Decode().To(Sink(sink)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -430,7 +430,7 @@ func TestStreamRecipeEncodeToSinkDestinationRuns(t *testing.T) {
 	sink := &runtimeTestSink{name: "packets"}
 
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -481,7 +481,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 	sink := &runtimeTestSink{name: "packets"}
 
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -535,7 +535,7 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 	target := Write("archive.ogg", io.Discard, Format(av.FormatOgg))
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -591,7 +591,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 	)
 	base := &runtimeTestSink{name: "packets"}
 	task, err := mustNew(formats).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets").To(Sink(base)),
+		Read("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets").To(Sink(base)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -638,7 +638,7 @@ func TestStreamRecipeCopyFansOutToMuxAndSinkDestinations(t *testing.T) {
 	)
 	sink := &runtimeTestSink{name: "packets"}
 	task, err := mustNew(formats).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			To(Write("archive.ogg", io.Discard), Sink(sink)),
 	)
@@ -678,7 +678,7 @@ func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
 	)
 	base := &runtimeTestSink{name: "packets"}
 	task, err := mustNew(formats).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets").To(Sink(base)),
+		Read("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets").To(Sink(base)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -729,7 +729,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	)
 	sink := &runtimeTestSink{name: "packets"}
-	fork := FileInput("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets")
+	fork := Read("input.ogg", strings.NewReader("")).Audio().Tap("audio.packets")
 	task, err := mustNew(formats).Build(ctx,
 		fork.As("archive").To(Write("archive.ogg", io.Discard)),
 		fork.As("packets").To(Sink(sink)),
@@ -802,7 +802,7 @@ func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			To(Sink(&runtimeTestSink{name: "frames"})),
@@ -849,7 +849,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 	meter := &runtimeTestStage{name: "meter"}
 
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Do(meter).
@@ -895,7 +895,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	)
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -939,7 +939,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
-	fork := FileInput("input.ogg", strings.NewReader("")).Video().Decode().Resize(1280, 720).Tap("video.720p.frames")
+	fork := Read("input.ogg", strings.NewReader("")).Video().Decode().Resize(1280, 720).Tap("video.720p.frames")
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
 		fork.Encode(codec.VP9(codec.Bitrate(2_000_000))).
@@ -993,7 +993,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		testCodecEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
-	fork := FileInput("input.ogg", strings.NewReader("")).Video().Decode().Resize(1280, 720)
+	fork := Read("input.ogg", strings.NewReader("")).Video().Decode().Resize(1280, 720)
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
 		fork.Encode(codec.VP9(codec.Bitrate(2_000_000))).
@@ -1050,7 +1050,7 @@ func TestBranchCompositionEncodeFPSOptionSetsEncodeFramerate(t *testing.T) {
 	)
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Video().
 			Decode().
 			Resize(1280, 720).
@@ -1105,7 +1105,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder}),
 	)
 	levels := &runtimeTestSink{name: "levels"}
-	fork := FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Resample(16_000, codec.Mono)
+	fork := Read("input.ogg", strings.NewReader("")).Audio().Decode().Resample(16_000, codec.Mono)
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
 		fork.Encode(codec.Opus(codec.Bitrate(64_000))).
@@ -1173,7 +1173,7 @@ func TestBranchCompositionFrameSinkDestinationRuns(t *testing.T) {
 	)
 	sink := &runtimeTestSink{name: "frames"}
 	rt := mustNew(formats, codecs)
-	outs := []Output{FileInput("input.ogg", strings.NewReader("")).Audio().Decode().As("frames").To(Sink(sink))}
+	outs := []Output{Read("input.ogg", strings.NewReader("")).Audio().Decode().As("frames").To(Sink(sink))}
 
 	planned, err := rt.Describe(outs...)
 	if err != nil {
@@ -1222,7 +1222,7 @@ func TestBranchCompositionPacketBranchDecodeSinkRuns(t *testing.T) {
 	)
 	sink := &runtimeTestSink{name: "frames"}
 	rt := mustNew(formats, codecs)
-	outs := []Output{FileInput("input.ogg", strings.NewReader("")).Audio().Decode().As("frames").To(Sink(sink))}
+	outs := []Output{Read("input.ogg", strings.NewReader("")).Audio().Decode().As("frames").To(Sink(sink))}
 
 	planned, err := rt.Describe(outs...)
 	if err != nil {
@@ -1278,7 +1278,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.flow.decoded").
@@ -1360,7 +1360,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 	)
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Resample(16_000, codec.Mono).
@@ -1442,7 +1442,7 @@ func TestBranchCompositionFrameSinkFanoutRuns(t *testing.T) {
 	preview := &runtimeTestSink{name: "preview"}
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			As("frames").
@@ -1509,7 +1509,7 @@ func TestBranchCompositionResizeSinkDestinationRuns(t *testing.T) {
 	sink := &runtimeTestSink{name: "thumbnail"}
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Video().
 			Decode().
 			Resize(320, 180).
@@ -1571,7 +1571,7 @@ func TestBranchCompositionEncodeSinkDestinationRuns(t *testing.T) {
 	sink := &runtimeTestSink{name: "packets"}
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -1624,7 +1624,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 	)
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -1703,7 +1703,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 	)
 	rt := mustNew(formats, codecs, filters)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Video().
 			Decode().
 			Tap("video.decoded").
@@ -1798,7 +1798,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	meter := &runtimeTestStage{name: "meter"}
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Do(meter).
@@ -1894,7 +1894,7 @@ func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 	)
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.frames").To(Sink(SinkFunc("frames", func(context.Context, Message) error {
+		Read("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.frames").To(Sink(SinkFunc("frames", func(context.Context, Message) error {
 			return nil
 		}))),
 	}
@@ -1983,7 +1983,7 @@ func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) 
 	)
 	rt := mustNew(formats, codecs)
 	outs := []Output{
-		FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.frames").To(Sink(SinkFunc("frames", func(context.Context, Message) error {
+		Read("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.frames").To(Sink(SinkFunc("frames", func(context.Context, Message) error {
 			return nil
 		}))),
 	}
@@ -2036,7 +2036,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 		Output: av.MediaAudio,
 	}, resampleFactory))
 	task, err := mustNew(formats, codecs, filters).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -2106,7 +2106,7 @@ func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
 	)
 	base := &runtimeTestSink{name: "base"}
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.decoded").To(Sink(base)),
+		Read("input.ogg", strings.NewReader("")).Audio().Decode().Tap("audio.decoded").To(Sink(base)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2185,7 +2185,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 		SampleFormats: []string{av.SampleFormatS16},
 	}, resampleFactory))
 	task, err := mustNew(formats, codecs, filters).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -2246,7 +2246,7 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
 	)
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -2312,7 +2312,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 		testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory),
 	)
 	task, err := mustNew(formats, codecs).Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Tap("audio.decoded").
@@ -2639,7 +2639,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 	before := builtTask.Spec()
 
 	_, err = builtTask.Attach(ctx,
-		builtTask.Tap("audio.frames").Encode(codec.Codec(customPCM, av.MediaAudio)).As("record").To(Sink(SinkFunc("record", func(context.Context, Message) error {
+		builtTask.Tap("audio.frames").Encode(codec.New(customPCM, av.MediaAudio)).As("record").To(Sink(SinkFunc("record", func(context.Context, Message) error {
 			return nil
 		}))),
 	)
@@ -2714,7 +2714,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
+			Encode(codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
 	)
@@ -3172,7 +3172,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 
 	attachment, err := builtTask.Attach(ctx,
 		builtTask.Tap("audio.frames").
-			Encode(codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
+			Encode(codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))).
 			Tap("audio.voice.packets").
 			As("record").
 			To(Write("recording.ogg", io.Discard)),
@@ -3369,10 +3369,10 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		WithEncoder(desc, encoderFactory),
 		testBundleFilters(),
 	)
-	encoded := codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
+	encoded := codec.New(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
 
 	task, err := runtime.Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode().
 			Resample(16_000, codec.Mono).
@@ -3442,7 +3442,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		WithEncoder(desc, encoderFactory),
 		testBundleFilters(),
 	)
-	encoded := codec.Codec(
+	encoded := codec.New(
 		customPCM,
 		av.MediaAudio,
 		codec.SampleRate(16_000),
@@ -3457,7 +3457,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 	archive := Write("archive.ogg", io.Discard)
 
 	task, err := runtime.Build(ctx,
-		FileInput("input.ogg", strings.NewReader("")).
+		Read("input.ogg", strings.NewReader("")).
 			Audio().
 			Decode(codec.Control(func(any) error { return nil })).
 			Resample(16_000, codec.Mono).
@@ -3528,7 +3528,7 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder}),
 	)
 
-	fork := FileInput("input.ogg", strings.NewReader("")).Audio()
+	fork := Read("input.ogg", strings.NewReader("")).Audio()
 	_, err := runtime.Build(ctx,
 		fork.Decode(codec.Profile("left")).As("left").To(Sink(SinkFunc("left", func(context.Context, Message) error {
 			return nil

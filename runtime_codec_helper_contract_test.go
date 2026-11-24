@@ -51,7 +51,7 @@ func TestPrepareEncodeConfigCarriesCustomSettingsAndStreamOverrides(t *testing.T
 				Channels:   1,
 				Attributes: av.Metadata{"target": "pcm"},
 			},
-			Settings: codec.CodecSettings{
+			Settings: codec.Settings{
 				Bitrate: 64_000,
 				Profile: "speech",
 				Level:   "l1",
@@ -99,7 +99,7 @@ func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 			Type: av.MediaAudio,
 		},
 	}
-	config.Settings = codec.CodecSettings{Bitrate: 96_000, Profile: "wideband"}
+	config.Settings = codec.Settings{Bitrate: 96_000, Profile: "wideband"}
 
 	stage, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", request, config)
 	if err != nil {

@@ -58,10 +58,10 @@ func TestCodecDescriptorFormatCompatibilityContracts(t *testing.T) {
 		Type:         av.MediaVideo,
 		Capabilities: codec.Capabilities{PixelFormats: []string{av.PixelFormatI420}},
 	}
-	videoYUV := codec.Descriptor{
-		ID:           av.CodecID("x-video-yuv"),
+	videoI422 := codec.Descriptor{
+		ID:           av.CodecID("x-video-i422"),
 		Type:         av.MediaVideo,
-		Capabilities: codec.Capabilities{PixelFormats: []string{"", av.PixelFormatYUV420P, av.PixelFormatI420}},
+		Capabilities: codec.Capabilities{PixelFormats: []string{"", av.PixelFormatI422, av.PixelFormatI420}},
 	}
 
 	if !codecDescriptorsSampleFormatCompatible([]codec.Descriptor{audioS16}, "") {
@@ -83,23 +83,23 @@ func TestCodecDescriptorFormatCompatibilityContracts(t *testing.T) {
 	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420}, "") {
 		t.Fatal("empty pixel format should be compatible")
 	}
-	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{{ID: av.CodecID("x-video-any"), Type: av.MediaVideo}}, av.PixelFormatYUV420P) {
+	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{{ID: av.CodecID("x-video-any"), Type: av.MediaVideo}}, av.PixelFormatI422) {
 		t.Fatal("descriptor with no pixel format list should accept any pixel format")
 	}
 	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420}, av.PixelFormatI420) {
 		t.Fatal("descriptor did not accept supported pixel format")
 	}
-	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420, videoYUV}, av.PixelFormatYUV420P) {
+	if !codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420, videoI422}, av.PixelFormatI422) {
 		t.Fatal("later descriptor did not accept supported pixel format")
 	}
-	if codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420}, av.PixelFormatYUV420P) {
+	if codecDescriptorsPixelFormatCompatible([]codec.Descriptor{videoI420}, av.PixelFormatI422) {
 		t.Fatal("descriptor accepted unsupported pixel format")
 	}
 
 	if got, want := descriptorSupportedSampleFormats([]codec.Descriptor{audioS16, audioF32}), []string{av.SampleFormatS16, av.SampleFormatF32}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("supported sample formats = %#v, want %#v", got, want)
 	}
-	if got, want := descriptorSupportedPixelFormats([]codec.Descriptor{videoI420, videoYUV}), []string{av.PixelFormatI420, av.PixelFormatYUV420P}; !reflect.DeepEqual(got, want) {
+	if got, want := descriptorSupportedPixelFormats([]codec.Descriptor{videoI420, videoI422}), []string{av.PixelFormatI420, av.PixelFormatI422}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("supported pixel formats = %#v, want %#v", got, want)
 	}
 }

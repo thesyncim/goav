@@ -95,31 +95,9 @@ func (t *task) probeSourceControl(node pipeline.NodeRef) error {
 	return prober.CanControlSource(node)
 }
 
-// flushSeekBacklog is the flush half of a reposition control: the media queued
-// exclusively downstream of a seeking source is backlog from the old position
-// and would otherwise drain to the sinks first. The graph's structural flush
-// capability (buffered runner only) empties those queues, shedding packets/frames
-// under pipeline.DropFlush and preserving queued events. Shared queues and their
-// descendants retain their admitted tail: generic components do not expose media
-// provenance, so flushing them could erase another source's valid media. A graph
-// without the capability (direct runner) buffers nothing.
-//
-// The probe -> flush -> deliver ordering closes the reposition race by
-// construction:
-//   - Probe first: a refused control (unknown source, no ControllableSource)
-//     must not cost queued media, so nothing is flushed unless delivery would
-//     be accepted — CanControlSource runs the same validation delivery runs.
-//   - Flush before deliver: the source cannot apply a seek it has not received,
-//     so nothing the flush sheds can ever be post-seek media. Flushing after
-//     delivery had a real hole: a fast pump could reposition, emit its
-//     discontinuity, and have it consumed by the sink before the flush ran —
-//     leaving post-seek media alone in the queue for the flush to shed.
-//   - What the pump emits between the flush and the seek applying is a bounded
-//     pre-seek tail (at most the queue refill), and it precedes the
-//     av.EventDiscontinuity the source emits at the new position, so once the
-//     discontinuity reaches a sink no pre-seek media follows it (queues are
-//     FIFO and the flush never drops events). The flush's stop-at-discontinuity
-//     rule remains as a belt for repeated seeks landing close together.
+// flushSeekBacklog drains exclusive downstream queues of pre-seek media before
+// delivering the seek control. Running probe -> flush -> deliver ensures a
+// refused seek never drops media and flush never sheds post-seek frames.
 func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
 	flusher, ok := t.graph.(interface {
 		FlushDownstream(pipeline.NodeRef) error

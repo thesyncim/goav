@@ -47,7 +47,7 @@ func testsrcElement() *element {
 		}
 		src.name = c.uniqueName(firstNonEmpty(a.Name, a.Kind))
 		// A test source carries one stream of a known kind: it is that stream.
-		in := goav.Input(testProvider{src})
+		in := goav.From(testProvider{src})
 		if src.video {
 			return value{kind: kindStream, stream: in.Video()}, nil
 		}

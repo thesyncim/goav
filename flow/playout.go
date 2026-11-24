@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"sync"
@@ -36,7 +37,7 @@ const (
 // WithDropLate for preview-style branches that should shed overdue media.
 func Playout(name string) PlayoutPolicy {
 	return PlayoutPolicy{
-		name:      firstNonEmpty(strings.TrimSpace(name), "playout"),
+		name:      cmp.Or(strings.TrimSpace(name), "playout"),
 		mode:      playoutHoldLate,
 		scheduler: newPlayoutScheduler(),
 	}

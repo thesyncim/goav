@@ -67,7 +67,7 @@ func TestBuildTimeBranchBufferIsHonored(t *testing.T) {
 
 // liveS16Source pushes frames one-sample mono S16 frames as a live source,
 // retrying on backpressure, then ends.
-func liveS16Source(name string, frames int) goav.InputSpec {
+func liveS16Source(name string, frames int) goav.Input {
 	base := av.TimeBase{Num: 1, Den: 48_000}
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16), shape.Realtime(true)),
@@ -100,11 +100,11 @@ func liveS16Source(name string, frames int) goav.InputSpec {
 // buffered, so branch a's sink can wait for branch b without deadlocking the
 // fork (a direct graph would call a first and never reach b).
 func TestBranchBufferPromotesOfflineGraph(t *testing.T) {
-	for name, input := range map[string]func() goav.InputSpec{
-		"frames": func() goav.InputSpec {
+	for name, input := range map[string]func() goav.Input{
+		"frames": func() goav.Input {
 			return goavtest.Audio(48_000, 1, []int16{1, 2}, []int16{3, 4}, []int16{5, 6})
 		},
-		"decoded packets": func() goav.InputSpec {
+		"decoded packets": func() goav.Input {
 			return goavtest.Packets(av.CodecOpus,
 				av.Packet{Payload: av.Buffer{Bytes: []byte{1}}},
 				av.Packet{Payload: av.Buffer{Bytes: []byte{2}}},

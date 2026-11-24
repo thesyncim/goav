@@ -7,7 +7,7 @@ import (
 )
 
 func ExampleNew() {
-	camera := goav.Input(cameraav.New(cameraav.Config{Width: 1280, Height: 720, FPS: 30}))
-	output := camera.Video().Encode(codec.VP8()).To(goav.URI("camera.webm"))
+	camera := goav.From(cameraav.New(cameraav.Config{Width: 1280, Height: 720, FPS: 30}))
+	output := camera.Video().Encode(codec.VP8()).To(goav.ToURI("camera.webm"))
 	_ = output // Pass to a configured runtime's Build or Run.
 }

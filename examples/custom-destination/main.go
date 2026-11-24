@@ -47,11 +47,11 @@ func runBrokenDestination(ctx context.Context) error {
 	return goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{11, 12}).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.Writer("mem://broken.ogg", nil, goav.Format(av.FormatOgg))))
+		To(goav.WriteFunc("mem://broken.ogg", nil, goav.Format(av.FormatOgg))))
 }
 
 func memoryWriter(name string, dest *memoryDestination, opened *provider.Info) goav.Destination {
-	return goav.Writer(name,
+	return goav.WriteFunc(name,
 		func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 			*opened = info
 			return dest, nil

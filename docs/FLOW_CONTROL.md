@@ -50,7 +50,7 @@ What holds today (all `-race` clean, with tests):
   the reason is inspectable. An explicit `.Buffer(...)` opts into worker
   concurrency. Every node's handler remains serialized.
 - Stream-local `flow.SyncPolicy` gates can align live audio/video streams without
-  changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
+  changing unsynced delivery. When `flow.Sync(...).WithDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
 - Sink playout is opt-in deliver-when-due: `.Playout(flow.Playout(name))` holds
   a stream's packets/frames until their media time (plus a
@@ -63,7 +63,7 @@ What holds today (all `-race` clean, with tests):
   same `pipeline.DropSync` accounting
   (`TestPlayoutDropLateShedsOverdueMedia`). Events pass through ungated, and
   `EventDiscontinuity` resets the shared anchor.
-- Task pause is timeline control, not a data-plane gate: `LiveTask.Pause(ctx)`
+- Task pause is timeline control, not a data-plane gate: `Task.Pause(ctx)`
   freezes the shared task timeline so paced sources and playout gates stall
   coherently; `Resume(ctx)` continues from the frozen reading with no pause
   gap in media time (`TestTaskPauseFreezesPacedFlow`). Free-running tasks
@@ -160,5 +160,4 @@ An Output may declare `.OnFailure(goav.IsolateBranch)`; the default is
 `goav.FailTask`. Returned handler errors retire only its validated exclusive
 suffix. This does not isolate stalls: a full blocking queue still paces its
 shared producer. Snapshots retain failed branch and destination outcomes;
-Detach joins pending retirement. See [Runtime contracts](RUNTIME_CONTRACTS.md)
-for topology refusals, finalization states, and all-outputs-isolated semantics.
+`Detach` joins pending retirement.

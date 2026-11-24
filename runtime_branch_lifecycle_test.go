@@ -87,7 +87,7 @@ func (s *packetCountSink) Close() error { return nil }
 // liveMutableVideoPackets is a packet-domain video source that loops forever,
 // so a runtime test can attach and detach branches while media keeps flowing.
 // The passthrough decoder turns each foreign packet into a fresh mutable frame.
-func liveMutableVideoPackets(name string, width, height int, tick time.Duration) goav.InputSpec {
+func liveMutableVideoPackets(name string, width, height int, tick time.Duration) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {
@@ -126,7 +126,7 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 		})
 }
 
-func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.LiveTask {
+func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.Input, main pipeline.Sink) goav.Task {
 	t.Helper()
 	task, err := goavtest.Runtime().Build(ctx, input.
 		Video().
@@ -358,7 +358,7 @@ func TestRuntimeBranchDrainDetachDeliversQueuedFrames(t *testing.T) {
 
 // idleAfterVideoPackets is a live packet-domain video source that sends count
 // packets and then stays open with nothing to send until its context ends.
-func idleAfterVideoPackets(name string, width, height, count int) goav.InputSpec {
+func idleAfterVideoPackets(name string, width, height, count int) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {

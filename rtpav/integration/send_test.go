@@ -70,7 +70,7 @@ func TestSendCopiesMP4VideoWithParameterSets(t *testing.T) {
 	rt := bundle.MustNew(runconfig.WithRealtime(false))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := rt.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).Video().To(goav.Sink(rtpav.Send(writer)))); err != nil {
+	if err := rt.Run(ctx, goav.Read("in.mp4", bytes.NewReader(data)).Video().To(goav.Sink(rtpav.Send(writer)))); err != nil {
 		t.Fatal(err)
 	}
 	writer.mu.Lock()
@@ -118,7 +118,7 @@ func TestSendRefusesARemuxWithAAC(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt := bundle.MustNew(runconfig.WithRealtime(false))
-	_, err = rt.Build(context.Background(), goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(rtpav.Send(&captureWriter{closed: make(chan struct{})}))))
+	_, err = rt.Build(context.Background(), goav.Read("in.mp4", bytes.NewReader(data)).To(goav.Sink(rtpav.Send(&captureWriter{closed: make(chan struct{})}))))
 	var refusal *goav.BuildError
 	if !errors.As(err, &refusal) || refusal.Code != "destination_shape_mismatch" || !slices.Contains(refusal.FixLines(), "route the input's streams one by one, decoding the aac one: input.Audio().Decode().To(destination)") {
 		t.Fatalf("err = %v, want destination_shape_mismatch with the fix", err)

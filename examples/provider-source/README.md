@@ -2,7 +2,7 @@
 
 This module shows the transport-provider seam: an external package implements
 `provider.Source`, returns a running `pipeline.Source`, and passes it to
-`goav.Input(provider)`.
+`goav.From(provider)`.
 
 Copy this when a source needs an open phase, stream discovery, transport-owned
 timing, or provider-level shape facts.
@@ -27,7 +27,7 @@ The checked output lives in `testdata/expected.txt`.
 Failure example:
 
 ```go
-goav.Input(nil)
+goav.From(nil)
 ```
 
 A nil provider is refused before the task starts with `FamilyInput` and

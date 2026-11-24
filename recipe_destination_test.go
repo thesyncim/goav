@@ -18,7 +18,7 @@ import (
 
 func TestRecordRecipeCanWriteToTypedDestination(t *testing.T) {
 	target := goav.Write("recording.ivf", io.Discard)
-	job := recipeOf(goav.FileInput("input.ivf", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.ivf", strings.NewReader("")).
 		To(target))
 
 	spec, err := job.Describe()
@@ -39,7 +39,7 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 		})),
 	}
 
-	job := recipeOf(goav.FileInput("input.ogg", strings.NewReader("")).
+	job := recipeOf(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -54,7 +54,7 @@ func TestDuplicateDestinationNameRequiresMux(t *testing.T) {
 	left := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
 	right := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
 
-	in := goav.FileInput("input.ivf", strings.NewReader(""))
+	in := goav.Read("input.ivf", strings.NewReader(""))
 	trunk := in.
 		Video().
 		Decode()
@@ -77,10 +77,10 @@ func TestDuplicateDestinationNameRequiresMux(t *testing.T) {
 func TestDestinationConstructorsReturnDestination(t *testing.T) {
 	destinationType := reflect.TypeFor[goav.Destination]()
 	for name, fn := range map[string]any{
-		"Custom": goav.Custom,
-		"URI":    goav.URI,
-		"Write":  goav.Write,
-		"Writer": goav.Writer,
+		"Custom":    goav.Custom,
+		"ToURI":     goav.ToURI,
+		"Write":     goav.Write,
+		"WriteFunc": goav.WriteFunc,
 	} {
 		fnType := reflect.TypeOf(fn)
 		if fnType.NumOut() != 1 || fnType.Out(0) != destinationType {
@@ -112,7 +112,7 @@ func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
 // vocabulary: the same goav.MIME / goav.Name / goav.Metadata values configure
 // input and destination constructors, while Format stays destination-typed.
 func TestMediaOptionsConfigureBothDirections(t *testing.T) {
-	job := recipeOf(goav.FileInput("in", strings.NewReader(""),
+	job := recipeOf(goav.Read("in", strings.NewReader(""),
 		goav.Name("mic"),
 		goav.MIME("audio/ogg"),
 		goav.Metadata(av.Metadata{"session": "demo"}),
@@ -135,7 +135,7 @@ func TestMediaOptionsConfigureBothDirections(t *testing.T) {
 // applies the same option vocabulary to an already-constructed input or
 // destination value and returns a configured copy.
 func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
-	input := goav.FileInput("in.ogg", strings.NewReader("")).With(goav.Name("mic"))
+	input := goav.Read("in.ogg", strings.NewReader("")).With(goav.Name("mic"))
 	output := goav.Write("out.ogg", io.Discard).With(goav.MIME("audio/ogg"))
 	report, _ := recordJob(input, output).Explain(context.Background())
 	if len(report.Inputs) != 1 || report.Inputs[0].Name != "mic" {
@@ -148,7 +148,7 @@ func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
 
 func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := recordJob(
-		goav.InputSpec{},
+		goav.Input{},
 		goav.Write("recording.ogg", io.Discard),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -163,7 +163,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 
 func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 	_, err := decodeJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Sink(nil),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -177,7 +177,7 @@ func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 
 func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 	_, err := decodeJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("frames", nil)),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -191,7 +191,7 @@ func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 
 func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	_, err := decodeJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Write("frames.ogg", io.Discard),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -206,7 +206,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 
 func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
@@ -217,7 +217,7 @@ func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 	var target goav.Destination
 	_, err := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		target,
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -233,7 +233,7 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 
 func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Write("recording.ogg", nil),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
@@ -244,7 +244,7 @@ func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 
 func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.Read("input.ivf", strings.NewReader("")),
 		goav.Write("", io.Discard),
 	).BuildLive(context.Background())
 
@@ -260,8 +260,8 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 
 func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.URI("", goav.Format(av.FormatIVF)),
+		goav.Read("input.ivf", strings.NewReader("")),
+		goav.ToURI("", goav.Format(av.FormatIVF)),
 	).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
@@ -276,7 +276,7 @@ func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 
 func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Read("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error { return nil })),
 	).UseRuntime(mustRuntime()).BuildLive(context.Background())
 
@@ -293,7 +293,7 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 
 func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	_, err := recordJob(
-		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
+		goav.Read("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("recording.mp4", io.Discard),
 	).UseRuntime(mustRuntime()).BuildLive(context.Background())
 
@@ -312,7 +312,7 @@ func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 }
 
 func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ivf", strings.NewReader("")).To(goav.Write("recording.ivf", io.Discard), goav.Write("recording.ivf", io.Discard)))
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ivf", strings.NewReader("")).To(goav.Write("recording.ivf", io.Discard), goav.Write("recording.ivf", io.Discard)))
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
@@ -326,7 +326,7 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 
 func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 	sink := func(context.Context, component.Message) error { return nil }
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Build(context.Background(), goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		To(goav.Sink(component.SinkFunc("frames", sink)), goav.Sink(component.SinkFunc("frames", sink))))
@@ -343,7 +343,7 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 
 func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 	target := goav.Write("voice.ogg", io.Discard)
-	_, err := mustRuntime().Describe(goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := mustRuntime().Describe(goav.Read("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -360,7 +360,7 @@ func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 
 func TestProviderRecipeRejectsNilProvider(t *testing.T) {
 	_, err := recordJob(
-		goav.Input(nil),
+		goav.From(nil),
 		goav.Write("recording.ogg", io.Discard),
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError

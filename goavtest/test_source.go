@@ -173,8 +173,8 @@ func (s *TestSource) appendScript(messages ...TestSourceMessage) {
 
 // Input adapts the source fixture into a goav recipe input. Apply recipe input
 // options with the returned value's With method.
-func (s *TestSource) Input() goav.InputSpec {
-	return goav.Input(s)
+func (s *TestSource) Input() goav.Input {
+	return goav.From(s)
 }
 
 // Name returns the source node name.

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/binary"
 	"errors"
 	"io"
 	"math"
 	"slices"
-	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -75,13 +75,12 @@ func pattern(n int) *av.Frame {
 
 // tone is audio frame n of a two-tone stereo signal.
 func tone(n int) *av.Frame {
-	pcm := make([]int16, audioFrame*channels)
+	data := make([]byte, audioFrame*channels*2)
 	for i := range audioFrame {
 		t := float64(n*audioFrame+i) / sampleRate
-		pcm[i*2] = int16(9000 * math.Sin(2*math.Pi*440*t))
-		pcm[i*2+1] = int16(9000 * math.Sin(2*math.Pi*660*t))
+		binary.LittleEndian.PutUint16(data[i*4:], uint16(int16(9000*math.Sin(2*math.Pi*440*t))))
+		binary.LittleEndian.PutUint16(data[i*4+2:], uint16(int16(9000*math.Sin(2*math.Pi*660*t))))
 	}
-	data := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(pcm))), len(pcm)*2)
 	base := av.TimeBase{Num: 1, Den: sampleRate}
 	return &av.Frame{
 		Type:     av.MediaAudio,
@@ -125,7 +124,11 @@ func stride(p av.Plane, w int) int {
 // pcm reads a decoded s16 frame's samples.
 func pcm(frame *av.Frame) []int16 {
 	data := frame.Planes[0].Buffer.Bytes[frame.Planes[0].Offset:]
-	return unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(data))), len(data)/2)
+	out := make([]int16, len(data)/2)
+	for i := range out {
+		out[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
+	}
+	return out
 }
 
 // timeline lays decoded audio frames out by PTS, sample for sample.

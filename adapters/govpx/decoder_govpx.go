@@ -263,12 +263,18 @@ func prepareI420Frame(frame *av.Frame, width, height int) error {
 	}
 	chromaWidth := (width + 1) / 2
 	chromaHeight := (height + 1) / 2
-	// Each picture decodes into new pooled planes, which the stage hands
-	// downstream by reference: the previous picture may still be queued.
+	lumaSize := width * height
+	chromaSize := chromaWidth * chromaHeight
+	// Each picture decodes into one pooled block carved into Y, U, and V planes
+	// (one pool round trip instead of three); each plane holds its own ref.
+	block := av.NewBuffer(lumaSize + 2*chromaSize)
+	block.Retain()
+	block.Retain()
+	bytes := block.Bytes
 	frame.Planes = frame.Planes[:3]
-	frame.Planes[0] = av.Plane{Buffer: av.NewBuffer(width * height), Stride: width}
-	frame.Planes[1] = av.Plane{Buffer: av.NewBuffer(chromaWidth * chromaHeight), Stride: chromaWidth}
-	frame.Planes[2] = av.Plane{Buffer: av.NewBuffer(chromaWidth * chromaHeight), Stride: chromaWidth}
+	frame.Planes[0] = av.Plane{Buffer: av.Buffer{Bytes: bytes[:lumaSize:lumaSize], Owner: block.Owner}, Stride: width}
+	frame.Planes[1] = av.Plane{Buffer: av.Buffer{Bytes: bytes[lumaSize : lumaSize+chromaSize : lumaSize+chromaSize], Owner: block.Owner}, Stride: chromaWidth}
+	frame.Planes[2] = av.Plane{Buffer: av.Buffer{Bytes: bytes[lumaSize+chromaSize:], Owner: block.Owner}, Stride: chromaWidth}
 	return nil
 }
 

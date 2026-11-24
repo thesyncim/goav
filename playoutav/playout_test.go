@@ -35,13 +35,13 @@ func TestScheduledPlayoutProviderRunsThroughGoavInput(t *testing.T) {
 	first.Planes[0].Buffer.Bytes[0] = 99
 
 	out := goavtest.NewCollector()
-	if err := goavtest.Runtime().Run(context.Background(), goav.Input(input).Audio().To(out.Sink())); err != nil {
+	if err := goavtest.Runtime().Run(context.Background(), goav.From(input).Audio().To(out.Sink())); err != nil {
 		t.Fatalf("run playout input: %v", err)
 	}
 	if got, want := out.S16(), [][]int16{{1, 2}, {3, 4}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("collected S16 = %v, want %v", got, want)
 	}
-	spec, err := goavtest.Runtime().Describe(goav.Input(input).Audio().To(out.Sink()))
+	spec, err := goavtest.Runtime().Describe(goav.From(input).Audio().To(out.Sink()))
 	if err != nil {
 		t.Fatalf("describe playout input: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestScheduledPlayoutPacketProviderKeepsTransportOutOfCore(t *testing.T) {
 	packet.Payload.Bytes[0] = 9
 
 	out := goavtest.NewCollector()
-	if err := goavtest.Runtime().Run(context.Background(), goav.Input(input).Audio().To(out.Sink())); err != nil {
+	if err := goavtest.Runtime().Run(context.Background(), goav.From(input).Audio().To(out.Sink())); err != nil {
 		t.Fatalf("run packet playout input: %v", err)
 	}
 	packets := out.Packets()
@@ -100,7 +100,7 @@ func TestPlayoutUsesRuntimeClock(t *testing.T) {
 	clock := goavtest.NewClock()
 	out := goavtest.NewCollector()
 	start := time.Now()
-	err := goavtest.Runtime(runconfig.WithClock(clock)).Run(context.Background(), goav.Input(input).
+	err := goavtest.Runtime(runconfig.WithClock(clock)).Run(context.Background(), goav.From(input).
 		Audio().
 		To(out.Sink()))
 	if err != nil {

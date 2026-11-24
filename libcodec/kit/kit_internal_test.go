@@ -146,7 +146,7 @@ func TestParamsReachEveryTaggedField(t *testing.T) {
 		t.Fatalf("applied %+v", dst)
 	}
 	desc := codec.Descriptor{ID: av.CodecH264, Backend: codec.BackendInfo{Name: "x"}, Knobs: []codec.Knob{}, RawKnobs: p.Knobs()}
-	if _, err := desc.ResolveKnobs(codec.CodecSettings{Custom: av.Metadata{"x-params": "iMode=300"}}, false); !errors.Is(err, codec.ErrInvalidSetting) {
+	if _, err := desc.ResolveKnobs(codec.Settings{Custom: av.Metadata{"x-params": "iMode=300"}}, false); !errors.Is(err, codec.ErrInvalidSetting) {
 		t.Fatalf("an int8 out of range = %v", err)
 	}
 }

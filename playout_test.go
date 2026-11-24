@@ -22,7 +22,7 @@ import (
 // push returns only after the frame cleared the playout gate and reached the
 // sink, so tests step delivery deterministically. A nil release pushes every
 // frame back to back.
-func playoutFrameSource(id av.StreamID, media av.MediaType, release chan struct{}, pts ...time.Duration) InputSpec {
+func playoutFrameSource(id av.StreamID, media av.MediaType, release chan struct{}, pts ...time.Duration) Input {
 	return Source(string(id),
 		shape.Frame(media, shape.Stream(id)),
 		func(sctx context.Context, push SourcePush) error {
@@ -420,7 +420,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 	}))
 	report, err := rt.Explain(ctx, playoutFrameSource("cam", av.MediaVideo, nil, 0).
 		Video().
-		Sync(flow.Sync("room", flow.SyncTolerance(40*time.Millisecond))).
+		Sync(flow.Sync("room").WithTolerance(40 * time.Millisecond)).
 		Playout(flow.Playout("preview").WithOffset(200*time.Millisecond)).
 		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))))
 	if err != nil {

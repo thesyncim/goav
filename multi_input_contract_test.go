@@ -29,7 +29,7 @@ func TestDuplicateInputNameErrorContract(t *testing.T) {
 	}
 
 	source := func(context.Context, SourcePush) error { return nil }
-	err = validateInputNames([]InputSpec{
+	err = validateInputNames([]Input{
 		Source("mic", shape.Frame(av.MediaAudio), source),
 		Source("camera", shape.Frame(av.MediaVideo), source),
 		Source("mic", shape.Frame(av.MediaAudio), source),

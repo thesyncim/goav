@@ -49,7 +49,7 @@ func buildBrokenCustomSource(ctx context.Context) error {
 	return err
 }
 
-func pcmSource(name string, sampleRate int, channels int, stats *sourceStats, frames ...[]int16) goav.InputSpec {
+func pcmSource(name string, sampleRate int, channels int, stats *sourceStats, frames ...[]int16) goav.Input {
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16), shape.Stream(av.StreamID(name))),
 		func(_ context.Context, push source.Push) error {

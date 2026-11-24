@@ -13,7 +13,7 @@ import (
 )
 
 // These guards pin the planned-join contract: a Mix/Composite/Select job is
-// compiled by the ONE recipe compile, so Job.Describe() (the planner spec) must
+// compiled by the ONE recipe compile, so rt.Describe(...) (the planner spec) must
 // equal the built graph node-for-node and edge-for-edge. No hand-assembled
 // join graph exists to drift from the plan.
 
@@ -77,8 +77,6 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	}
 }
 
-// TestJoinDescribeEqualsBuildComposite covers a composite with per-arm regions
-// delivered to a frame sink.
 // TestJoinDescribeEqualsBuildMixMultiDestination pins the variadic-join-To
 // contract: the planned spec keeps the encoded join fanning out to every
 // destination and equals the built graph.

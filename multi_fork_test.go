@@ -53,8 +53,8 @@ func TestForksAcrossSeveralInputs(t *testing.T) {
 // file's forks share that file's decode and first resize, and neither sees
 // the other's track 1.
 func TestForksOfTwoFiles(t *testing.T) {
-	a := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 8, 0, 0, 0)))
-	b := goav.FileInput("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 5, 0, 0, 0)))
+	a := goav.Read("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 8, 0, 0, 0)))
+	b := goav.Read("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 5, 0, 0, 0)))
 	// Each file's forks share its decode and its first resize.
 	av1, bv := a.Video().Decode().Resize(48, 36), b.Video().Decode().Resize(16, 12)
 	var aFull, aHalf, bFull, bHalf bytes.Buffer
@@ -86,9 +86,9 @@ func TestForksOfTwoFiles(t *testing.T) {
 // TestNamedStreamBesideAnotherInput pins a lone named stream in a run with
 // several inputs: its name reaches its nodes beside a second file's copy.
 func TestNamedStreamBesideAnotherInput(t *testing.T) {
-	a := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 6, 0, 0, 0)))
+	a := goav.Read("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 6, 0, 0, 0)))
 	bData := mfWebM(t, 0, 0, 0, 48_000, 2, 10)
-	b := goav.FileInput("b.webm", bytes.NewReader(bData))
+	b := goav.Read("b.webm", bytes.NewReader(bData))
 	var o bytes.Buffer
 	out := goav.Write("o.webm", &o)
 	outs := []goav.Output{a.Video().Decode().Resize(32, 24).Encode(codec.VP8()).As("cam").To(out), b.Audio().To(out)}

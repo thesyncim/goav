@@ -128,7 +128,7 @@ func lateOpusStream(id av.StreamID) av.Stream {
 // lateStreamSource is a custom source that pushes one packet for its declared
 // stream, announces a late stream, pumps that stream's packets until stopLate
 // closes, announces its removal, and waits for finish before EOS.
-func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, finish <-chan struct{}) InputSpec {
+func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, finish <-chan struct{}) Input {
 	return Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
@@ -171,7 +171,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	)
 }
 
-func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <-chan struct{}) InputSpec {
+func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <-chan struct{}) Input {
 	return Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
@@ -252,7 +252,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 
 	state := &syncObjectState{}
 	rt := mustNew(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
-	record := Writer("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
+	record := WriteFunc("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
 
 	var mainCount atomic.Int32
 	mainSink := Sink(SinkFunc("main", func(_ context.Context, msg Message) error {
@@ -575,7 +575,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	// opens first and must be aborted by the rollback.
 	rt := mustNew(withTestFormats())
 	state := &syncObjectState{}
-	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
+	bad := WriteFunc("late.ogg", state.open, Format(av.FormatOgg))
 
 	task, err := rt.Build(ctx,
 		input.OnStream(MatchMedia(av.MediaAudio)).As("bad").To(bad),
@@ -725,7 +725,7 @@ func TestOnStreamValidation(t *testing.T) {
 	ctx := context.Background()
 	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
 	main := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
-	source := func(name string) InputSpec {
+	source := func(name string) Input {
 		return Source(name,
 			shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 			func(context.Context, SourcePush) error { return nil },

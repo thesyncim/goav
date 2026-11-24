@@ -10,7 +10,7 @@ import (
 )
 
 // StreamOption narrows the stream selection made by the input selectors
-// ([InputSpec.Audio], [InputSpec.Video], [InputSpec.Stream]). Build one with
+// ([Input.Audio], [Input.Video], [Input.Stream]). Build one with
 // [StreamID] or [StreamIndex]. It is sealed: only goav option constructors
 // implement it.
 type StreamOption interface {

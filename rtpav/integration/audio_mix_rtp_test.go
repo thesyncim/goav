@@ -15,7 +15,7 @@ import (
 	"github.com/thesyncim/goav/source"
 )
 
-func mixTestAudioSource(id av.StreamID, samples ...int16) goav.InputSpec {
+func mixTestAudioSource(id av.StreamID, samples ...int16) goav.Input {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push source.Push) error {
@@ -42,7 +42,7 @@ func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
 	// case in the opener).
 	_, err := mustGoAVRuntime().Build(context.Background(), goav.Mix(
 		mixTestAudioSource("a", 1).Audio(),
-		goav.Input(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}})).Audio(),
+		goav.From(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}})).Audio(),
 	).
 		To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))))
 	var buildErr *goav.BuildError

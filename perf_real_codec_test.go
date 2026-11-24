@@ -98,7 +98,7 @@ func realVP8Payload(b *testing.B) []byte {
 
 // benchVideoPacketsPayload pushes n copies of one real encoded video keyframe,
 // PTS-stamped at 30fps, for real decoder throughput measurement.
-func benchVideoPacketsPayload(name string, n int, codecID av.CodecID, payload []byte) goav.InputSpec {
+func benchVideoPacketsPayload(name string, n int, codecID av.CodecID, payload []byte) goav.Input {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, codecID, shape.Video(benchVideoW, benchVideoH, av.PixelFormatI420)),
 		func(_ context.Context, push source.Push) error {

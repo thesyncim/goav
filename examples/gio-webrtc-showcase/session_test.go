@@ -163,7 +163,7 @@ func (t *controlCaptureTask) Attach(context.Context, ...goav.Output) (goav.Attac
 
 func (t *controlCaptureTask) Tap(string) goav.Stream { return goav.Stream{} }
 
-func (t *controlCaptureTask) Track(goav.InputSpec, av.Stream) goav.Stream { return goav.Stream{} }
+func (t *controlCaptureTask) Track(goav.Input, av.Stream) goav.Stream { return goav.Stream{} }
 
 func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
 	return nil
@@ -195,7 +195,7 @@ func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.Graph
 
 func (t *controlCaptureTask) Close() error { return nil }
 
-var _ goav.LiveTask = (*controlCaptureTask)(nil)
+var _ goav.Task = (*controlCaptureTask)(nil)
 
 func awaitState(t *testing.T, updates <-chan stateResponse) stateResponse {
 	t.Helper()

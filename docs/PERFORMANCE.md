@@ -27,8 +27,8 @@ Hot paths must keep allocation explicit and bounded:
   mutating earlier messages
 
 Once running, lower-level stages reuse caller-owned result structs, frame
-planes, packet buffers, and scratch storage, and take no graph-wide lock per
-message, and no lock at all: routing reads an atomically swapped snapshot and
+planes, packet buffers, and scratch storage, and take no lock per
+message: routing reads an atomically swapped snapshot and
 counts in per-node atomics, and a node serializes its input by ownership
 handoff (direct) or a lock-free ring (buffered), pinned by
 `TestDataPlaneTakesNoMutex` and `TestDataPlaneNoContendedMutex`. The intended
@@ -100,7 +100,7 @@ scripts/bench/ci-compare.sh BASE_REF  # CI PR-vs-base benchstat artifact
 `compare.sh` needs `go install golang.org/x/perf/cmd/benchstat@latest`.
 Timing numbers are machine-dependent, so only same-machine old-vs-new timing
 comparison is meaningful. The repo does commit
-`bench-results/reference/*.json` as a narrower D5 ratchet: CI enforces only
+`bench-results/reference/*.json` as a narrower allocation/byte ratchet: CI enforces only
 `allocs/op` and `B/op` ceilings from those files, while wall-clock metrics in
 the JSON remain provenance, not claims. Refresh those ceilings intentionally
 with `scripts/bench/baseline.sh generate`.
@@ -156,8 +156,9 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkSoakRecordDrift` | soak harness: long offline-paced record reporting heap drift, GC cycles, and total GC pause; run with a large `-benchtime` for an extended-stability artifact |
 
 SIMD builds: `GOEXPERIMENT=simd` (Go 1.27) is the gate's default build — CI,
-`scripts/bench/*`, and release binaries — and the repository carries no
-assembly (`TestNoRepositoryAssembly`). It selects goav's portable `simd` mix
+`scripts/bench/*`, and release binaries — and the core, codecs, and filters
+carry no assembly (`TestNoRepositoryAssembly`; `cameraav` has two narrowly
+exempted macOS C-ABI callback trampolines). It selects goav's portable `simd` mix
 kernel, bit-exact with scalar (`TestMixS16KernelMatchesScalarRandom`), and the
 Go SIMD paths in the `goav1`, `gopus`, and `govpx` backends. Importers that
 build without the experiment, and `-tags purego` builds, get the scalar paths,
@@ -173,7 +174,7 @@ real-codec time by a 45% geomean: `BenchmarkRealVP8Decode` 59.5→16.5 us/op,
 56 ns/op (2 arms), 313 ns/op (3 arms), and 675 ns/op (8 arms), against
 1.68, 2.24, and 5.3 us/op for scalar, all at 0 allocs/op.
 
-The composite/resample/resize D4 decision is scalar-retain until a Go SIMD
+Composite, resample, and resize stay scalar until a Go SIMD
 prototype beats the measured scalar rows by at least 1.5x. The current scalar
 baseline includes no-clipping composite row-copy, equal-rate resample
 copy/channel-remap, and identity-copy resize fast paths. On

@@ -744,10 +744,10 @@ func (e *Engine) Drained() bool {
 
 // Close releases queued frames and unblocks producers for good.
 func (e *Engine) Close() {
-	e.Flush()
 	e.mu.Lock()
 	e.closed = true
 	e.ended = true
+	e.flushLocked()
 	e.mu.Unlock()
 }
 
@@ -785,7 +785,8 @@ func audioChunkOf(f *av.Frame) (audioChunk, error) {
 		return audioChunk{}, fmt.Errorf("player: planar audio (%d planes) is not supported; resample to interleaved s16 with .Resample(%d, %d)", len(f.Planes), OutputRate, OutputChannels)
 	}
 	p := f.Planes[0]
-	data := p.Buffer.Bytes[min(p.Offset, len(p.Buffer.Bytes)):]
+	offset := max(0, min(p.Offset, len(p.Buffer.Bytes)))
+	data := p.Buffer.Bytes[offset:]
 	var width int
 	switch a.SampleFormat {
 	case av.SampleFormatS16, "":

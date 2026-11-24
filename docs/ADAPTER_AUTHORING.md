@@ -23,9 +23,9 @@ The copyable, separate-module examples are:
 - **`examples/custom-source`**: pushes application-owned S16 frames through
   `goav.Source` and checks `source.Push` accepted/dropped accounting.
 - **`examples/provider-source`**: implements `provider.Source`, opens a
-  `pipeline.Source`, and feeds goav through `goav.Input(provider)`.
+  `pipeline.Source`, and feeds goav through `goav.From(provider)`.
 - **`examples/custom-destination`**: opens a plain byte destination with
-  `goav.Writer` and checks the resolved `provider.Info`.
+  `goav.WriteFunc` and checks the resolved `provider.Info`.
 - **`examples/custom-filter`**: registers a frame filter with `runconfig.WithFilter`
   and drives it through `.Resample(...)`.
 - **`examples/custom-codec`**: registers a codec with `runconfig.WithEncoder` and
@@ -33,7 +33,7 @@ The copyable, separate-module examples are:
   `.Decode()`.
 - **`examples/custom-join`**: implements a `pipeline.Stage` consumed by
   `goav.Join(...)`.
-- **`examples/transactional-writer`**: opens a destination with `goav.Writer`
+- **`examples/transactional-writer`**: opens a destination with `goav.WriteFunc`
   and demonstrates `provider.TransactionalWriter` commit/abort semantics.
 - **`examples/control-plane-host`**: serves a live task with typed host methods
   (`ctlserver.Method`) and its own pipeline elements (`launch.Stage`, `Sink`,
@@ -127,7 +127,7 @@ Results: `DecodeResult`/`EncodeResult` are caller-owned scratch sized from
 `DecodeBounds` (merged from stream facts and source-provider bounds). Slot
 exhausted -> `codec.ErrResultFull`; preallocated plane/payload too small ->
 `codec.ErrOutputBufferTooSmall`. Honor `DecodeConfig.Bounds` when sizing
-internal arenas. Read `CodecSettings` at open: typed fields such as bitrate,
+internal arenas. Read `codec.Settings` at open: typed fields such as bitrate,
 cadence, profile, audio shape overrides, and `Custom` adapter-owned keys all
 arrive through the same settings value. The pipeline language's `encode`
 binds the common settings and passes any other `key=value` through as
@@ -327,7 +327,7 @@ Optional capabilities, discovered by type assertion: `Name() string` (node
 name in Describe; duplicates get "-1" suffixes), `Detail() string`, and
 `DecodeBounds(av.StreamID) codec.DecodeBounds` (seeds downstream decoder
 scratch). `rtpav.Receive`, `webrtcav.Track`, and `playoutav.New` are
-providers; yours plugs in identically via `goav.Input(provider).Video()`.
+providers; yours plugs in identically via `goav.From(provider).Video()`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
 `SourceShape()` is read before opening. Declare
@@ -386,7 +386,7 @@ Lifecycle (from `mux_destination.go`): `Contract()` is read during planning
 flag. The writer receives muxed bytes on the mux hot path. Teardown: the
 muxer finalizes, then `Commit` (run succeeded or drained detach) or `Abort`
 (run failed, mux write/close error, or build teardown), then `Close`; each
-exactly once. `goav.Writer(name, openFn)` is the contract-free shortcut;
+exactly once. `goav.WriteFunc(name, openFn)` is the contract-free shortcut;
 `goav.Write` wraps an open writer (closed once iff it implements `io.Closer`).
 Use via `.To(goav.Custom(name, p))`; the `Destination` value is the
 routing handle branches share.

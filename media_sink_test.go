@@ -215,7 +215,7 @@ func TestMediaSinkTakesARemux(t *testing.T) {
 	sink := newMediaSink(shape.Packet(av.MediaVideo, av.CodecH264), shape.Packet(av.MediaAudio, av.CodecAAC))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))); err != nil {
+	if err := offlineRuntime().Run(ctx, goav.Read("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))); err != nil {
 		t.Fatal(err)
 	}
 	sink.mu.Lock()
@@ -254,7 +254,7 @@ func TestLiveMediaSinkPacesAFile(t *testing.T) {
 	accepts := []shape.Spec{shape.Packet(av.MediaVideo, av.CodecH264), shape.Packet(av.MediaAudio, av.CodecAAC)}
 	run := func(sink pipeline.Sink) time.Duration {
 		t.Helper()
-		out := goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))
+		out := goav.Read("in.mp4", bytes.NewReader(data)).To(goav.Sink(sink))
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		start := time.Now()
@@ -264,7 +264,7 @@ func TestLiveMediaSinkPacesAFile(t *testing.T) {
 		return time.Since(start)
 	}
 	live := liveMediaSink{newMediaSink(accepts...)}
-	spec, err := offlineRuntime().Describe(goav.FileInput("in.mp4", bytes.NewReader(data)).To(goav.Sink(live)))
+	spec, err := offlineRuntime().Describe(goav.Read("in.mp4", bytes.NewReader(data)).To(goav.Sink(live)))
 	if err != nil || !spec.Realtime {
 		t.Fatalf("describe realtime=%v err=%v, want a realtime plan", spec.Realtime, err)
 	}

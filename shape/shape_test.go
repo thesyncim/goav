@@ -116,7 +116,7 @@ func TestSpecCompatibilityRejectsEachPinnedMismatch(t *testing.T) {
 		{name: "format", expected: shape.Spec{Format: av.FormatMP4}},
 		{name: "width", expected: shape.Spec{Width: 1920}},
 		{name: "height", expected: shape.Spec{Height: 1080}},
-		{name: "pixel", expected: shape.Spec{PixelFormat: av.PixelFormatYUV420P}},
+		{name: "pixel", expected: shape.Spec{PixelFormat: av.PixelFormatI422}},
 		{name: "sample rate", expected: shape.Spec{SampleRate: 44100}},
 		{name: "channels", expected: shape.Spec{Channels: 1}},
 		{name: "sample format", expected: shape.Spec{SampleFormat: av.SampleFormatS16}},
@@ -151,7 +151,7 @@ func TestPolicyConversionsMissingAndConstructors(t *testing.T) {
 
 	videoNeeded := shape.Conversions(
 		shape.Frame(av.MediaVideo, shape.Video(1280, 720, av.PixelFormatI420)),
-		shape.Frame(av.MediaVideo, shape.Video(1920, 1080, av.PixelFormatYUV420P)),
+		shape.Frame(av.MediaVideo, shape.Video(1920, 1080, av.PixelFormatI422)),
 	)
 	if got, want := videoNeeded.String(), "resize+convert"; got != want {
 		t.Fatalf("video conversions = %q, want %q", got, want)

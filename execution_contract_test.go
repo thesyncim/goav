@@ -122,8 +122,8 @@ func TestExecutionContractTimestampAdmissionMatchesRuntime(t *testing.T) {
 	data := mfWebM(t, 0, 0, 0, 48000, 2, 1)
 	for _, mode := range []string{"mixed_sources", "blocking_admitter", "wrapped_file"} {
 		t.Run(mode, func(t *testing.T) {
-			a := goav.FileInput("a.webm", bytes.NewReader(data))
-			b := goav.FileInput("b.webm", bytes.NewReader(data))
+			a := goav.Read("a.webm", bytes.NewReader(data))
+			b := goav.Read("b.webm", bytes.NewReader(data))
 			wantPlan, wantLive := "timestamp", "timestamp"
 			var outputs []goav.Output
 			switch mode {
@@ -133,7 +133,7 @@ func TestExecutionContractTimestampAdmissionMatchesRuntime(t *testing.T) {
 				outputs = []goav.Output{goav.Join("blockingjoin", executionAdmittingJoin{}, a.Audio().Decode(), b.Audio().Decode()).To(oracleSink("joined"))}
 				wantPlan, wantLive = "arrival", "arrival"
 			case "wrapped_file":
-				a = goav.WrapSource(a, func(s pipeline.Source) pipeline.Source { return s })
+				a = a.Wrap(func(s pipeline.Source) pipeline.Source { return s })
 				outputs = []goav.Output{a.Audio().To(oracleSink("a")), b.Audio().To(oracleSink("b"))}
 				wantPlan = "runtime"
 			}

@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"sync"
@@ -17,7 +18,6 @@ type SyncPolicy struct {
 	tolerance time.Duration
 	mode      syncMode
 	scheduler *syncScheduler
-	flags     syncPolicyFlags
 }
 
 type syncMode uint8
@@ -27,46 +27,31 @@ const (
 	syncDropLate
 )
 
-type syncPolicyFlags uint8
-
-const (
-	syncPolicyHasTolerance syncPolicyFlags = 1 << iota
-	syncPolicyHasMode
-)
-
 // Sync creates a shared media timeline policy. The default holds early media
-// until slower streams catch up; use SyncDropLate for preview-style branches
+// until slower streams catch up; call WithDropLate for preview-style branches
 // that should shed stale media instead.
-func Sync(name string, opts ...SyncPolicy) SyncPolicy {
-	policy := SyncPolicy{
-		name:      firstNonEmpty(strings.TrimSpace(name), "sync"),
+func Sync(name string) SyncPolicy {
+	return SyncPolicy{
+		name:      cmp.Or(strings.TrimSpace(name), "sync"),
 		mode:      syncHoldLate,
 		scheduler: newSyncScheduler(),
 	}
-	for i := range opts {
-		if opts[i].flags&syncPolicyHasTolerance != 0 {
-			policy.tolerance = opts[i].tolerance
-		}
-		if opts[i].flags&syncPolicyHasMode != 0 {
-			policy.mode = opts[i].mode
-		}
-	}
-	return policy
 }
 
-// SyncTolerance sets the allowed media-time skew before a sync gate holds or
+// WithTolerance sets the allowed media-time skew before a sync gate holds or
 // drops a message.
-func SyncTolerance(tolerance time.Duration) SyncPolicy {
-	if tolerance <= 0 {
-		return SyncPolicy{}
+func (p SyncPolicy) WithTolerance(tolerance time.Duration) SyncPolicy {
+	if tolerance > 0 {
+		p.tolerance = tolerance
 	}
-	return SyncPolicy{tolerance: tolerance, flags: syncPolicyHasTolerance}
+	return p
 }
 
-// SyncDropLate makes a sync gate drop messages that arrive behind the shared
+// WithDropLate makes a sync gate drop messages that arrive behind the shared
 // timeline by more than the tolerance.
-func SyncDropLate() SyncPolicy {
-	return SyncPolicy{mode: syncDropLate, flags: syncPolicyHasMode}
+func (p SyncPolicy) WithDropLate() SyncPolicy {
+	p.mode = syncDropLate
+	return p
 }
 
 // Normalize fills the default name and scheduler used by a zero SyncPolicy.
@@ -160,7 +145,7 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		return 0, false, nil
 	}
 	s.latest[stream] = pts
-	for s.tooEarlyLocked(stream, pts, tolerance) {
+	for s.tooEarlyLocked(pts, tolerance) {
 		if err := ctx.Err(); err != nil {
 			return 0, false, err
 		}
@@ -227,7 +212,7 @@ func (s *syncScheduler) minLocked() (time.Duration, bool) {
 	return min, true
 }
 
-func (s *syncScheduler) tooEarlyLocked(stream av.StreamID, pts time.Duration, tolerance time.Duration) bool {
+func (s *syncScheduler) tooEarlyLocked(pts time.Duration, tolerance time.Duration) bool {
 	if len(s.latest) <= 1 {
 		return false
 	}
@@ -236,13 +221,4 @@ func (s *syncScheduler) tooEarlyLocked(stream av.StreamID, pts time.Duration, to
 		return false
 	}
 	return pts > min+tolerance
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

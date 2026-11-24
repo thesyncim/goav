@@ -29,7 +29,7 @@ type Need struct {
 	// otherwise equal candidates.
 	Realtime bool
 	// Settings are the knob settings the request makes of whichever backend
-	// serves it (CodecSettings.KnobSettings): a backend that declares knobs
+	// serves it (Settings.KnobSettings): a backend that declares knobs
 	// serves only when it takes every one of them, with that value.
 	Settings map[string]string
 }

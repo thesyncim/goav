@@ -183,7 +183,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 // rebranchPacketSource is a phase-gated packet source: each receive on release
 // pushes one packet whose payload is the 1-based phase number, with the
 // keyframe flag taken from the phases slice.
-func rebranchPacketSource(phases []bool, release <-chan struct{}) InputSpec {
+func rebranchPacketSource(phases []bool, release <-chan struct{}) Input {
 	return Source("generated",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {

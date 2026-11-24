@@ -13,19 +13,18 @@ const (
 	Stereo = 2
 )
 
-// Option configures encoder/decoder settings. Options live in the codec package
-// (not the goav root) so the grammar stays small; goav's codec constructors
+// Option configures encoder/decoder settings. This package's codec constructors
 // (Opus, VP9, …) accept them.
-type Option func(*CodecSettings)
+type Option func(*Settings)
 
 // Bitrate sets the target encoder bitrate in bits per second.
 func Bitrate(bitsPerSecond int) Option {
-	return func(s *CodecSettings) { s.Bitrate = bitsPerSecond }
+	return func(s *Settings) { s.Bitrate = bitsPerSecond }
 }
 
 // FPS sets the encode frame cadence. den defaults to 1 (so FPS(30) is 30/1).
 func FPS(num int, den ...int) Option {
-	return func(s *CodecSettings) {
+	return func(s *Settings) {
 		rateDen := 1
 		if len(den) != 0 {
 			rateDen = den[0]
@@ -40,21 +39,21 @@ func FPS(num int, den ...int) Option {
 
 // KeyframeInterval sets the keyframe cadence in encoded frames.
 func KeyframeInterval(frames int) Option {
-	return func(s *CodecSettings) { s.KeyframeInterval = frames }
+	return func(s *Settings) { s.KeyframeInterval = frames }
 }
 
 // Profile requests a codec profile by its codec-specific name (VP9 "0",
 // H264 "baseline"); the adapter validates it at open and fails on values its
 // backend cannot honor. Empty leaves the adapter default.
 func Profile(profile string) Option {
-	return func(s *CodecSettings) { s.Profile = profile }
+	return func(s *Settings) { s.Profile = profile }
 }
 
 // Level requests a codec conformance level by its codec-specific name
 // (H264 "3.1"); the adapter validates it at open and fails on values its
 // backend cannot honor. Empty leaves the adapter default.
 func Level(level string) Option {
-	return func(s *CodecSettings) { s.Level = level }
+	return func(s *Settings) { s.Level = level }
 }
 
 // Backend makes one backend serve the codec, by its name (videotoolbox,
@@ -62,20 +61,20 @@ func Level(level string) Option {
 // that is not registered, or cannot meet the request, is refused with the
 // backends that can; selection never falls back on its own.
 func Backend(name string) Option {
-	return func(s *CodecSettings) { s.Backend = name }
+	return func(s *Settings) { s.Backend = name }
 }
 
 // BitDepth requests the coded sample bit depth (8, 10, 12); selection keeps
 // to the backends that declare it.
 func BitDepth(bits int) Option {
-	return func(s *CodecSettings) { s.BitDepth = bits }
+	return func(s *Settings) { s.BitDepth = bits }
 }
 
 // Setting records one adapter-specific string setting. Common knobs should use
 // the typed options above; Setting is for native/custom adapters that own their
 // own validation vocabulary.
 func Setting(key string, value string) Option {
-	return func(s *CodecSettings) {
+	return func(s *Settings) {
 		if key == "" {
 			return
 		}
@@ -88,7 +87,7 @@ func Setting(key string, value string) Option {
 
 // Channels sets the encoder output channel count (Mono/Stereo).
 func Channels(channels int) Option {
-	return func(s *CodecSettings) {
+	return func(s *Settings) {
 		s.Channels = channels
 		s.ChannelsSet = true
 		s.ChannelLayout = ""
@@ -103,7 +102,7 @@ func Channels(channels int) Option {
 
 // SampleRate sets the encoder output sample rate in Hz.
 func SampleRate(sampleRate int) Option {
-	return func(s *CodecSettings) {
+	return func(s *Settings) {
 		s.SampleRate = sampleRate
 		s.ClockRate = uint32(sampleRate)
 		s.SampleRateSet = true
@@ -112,7 +111,7 @@ func SampleRate(sampleRate int) Option {
 
 // ClockRate sets the RTP clock rate in Hz.
 func ClockRate(clockRate uint32) Option {
-	return func(s *CodecSettings) { s.ClockRate = clockRate }
+	return func(s *Settings) { s.ClockRate = clockRate }
 }
 
 // Control is the raw escape hatch: when the codec opens, the adapter calls fn
@@ -125,7 +124,7 @@ func ClockRate(clockRate uint32) Option {
 // A native value that is not a T fails the open, naming both types, as does
 // an error from fn.
 func Control[T any](fn func(T) error) Option {
-	return func(s *CodecSettings) {
+	return func(s *Settings) {
 		if fn == nil {
 			return
 		}

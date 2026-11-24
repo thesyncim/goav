@@ -2,26 +2,20 @@ package codec
 
 import "github.com/thesyncim/goav/av"
 
-// Spec is a fully-resolved codec choice: the codec id and media type, the
-// structural Parameters, the encoder Settings, and the Copy/Auto modes. Build it
-// with the constructors (VP9, VP8, Opus, H264, AV1, Codec) or Copy/Auto.
+// Spec is a resolved codec choice: the codec id and media type, structural
+// Parameters, and encoder Settings. Build it with the constructors (VP9, VP8,
+// Opus, AAC, H264, HEVC, AV1, or New).
 type Spec struct {
 	ID         av.CodecID         `json:"id,omitempty"`
 	Type       av.MediaType       `json:"type,omitempty"`
 	Parameters av.CodecParameters `json:"parameters,omitzero"`
-	Settings   CodecSettings      `json:"settings,omitzero"`
+	Settings   Settings           `json:"settings,omitzero"`
 	Copy       bool               `json:"copy,omitempty"`
 	Auto       bool               `json:"auto,omitempty"`
 }
 
-// Auto selects the codec automatically from the resolved stream.
-func Auto() Spec { return Spec{Auto: true} }
-
-// Copy preserves packets without re-encoding.
-func Copy() Spec { return Spec{Copy: true} }
-
-// Codec builds a spec for an explicit codec id and media type.
-func Codec(id av.CodecID, media av.MediaType, options ...Option) Spec {
+// New builds a spec for an explicit codec id and media type.
+func New(id av.CodecID, media av.MediaType, options ...Option) Spec {
 	return newCodecSpec(id, media, av.CodecParameters{ID: id, Type: media}, options...)
 }
 
@@ -29,6 +23,18 @@ func Codec(id av.CodecID, media av.MediaType, options ...Option) Spec {
 func Opus(options ...Option) Spec {
 	return newCodecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
+		Type:          av.MediaAudio,
+		ClockRate:     48000,
+		SampleRate:    48000,
+		Channels:      Stereo,
+		ChannelLayout: "stereo",
+	}, options...)
+}
+
+// AAC builds an AAC encoder spec (defaults to 48kHz stereo).
+func AAC(options ...Option) Spec {
+	return newCodecSpec(av.CodecAAC, av.MediaAudio, av.CodecParameters{
+		ID:            av.CodecAAC,
 		Type:          av.MediaAudio,
 		ClockRate:     48000,
 		SampleRate:    48000,
@@ -83,7 +89,7 @@ func AV1(options ...Option) Spec {
 }
 
 // applyEncodeCaps maps the audio caps set through options (Channels / SampleRate
-// / ClockRate, carried on CodecSettings) onto the structural Parameters the rest
+// / ClockRate, carried on Settings) onto the structural Parameters the rest
 // of the pipeline reads.
 func applyEncodeCaps(spec *Spec) {
 	s := spec.Settings

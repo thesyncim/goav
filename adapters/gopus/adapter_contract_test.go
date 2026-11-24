@@ -294,9 +294,6 @@ func TestDecoderInputValidationAndResetEvents(t *testing.T) {
 	if err := decoder.DecodeInto(ctx, &av.Packet{}, &result); !errors.Is(err, codec.ErrClosed) {
 		t.Fatalf("decode after close err = %v, want %v", err, codec.ErrClosed)
 	}
-	if got := bytesAsInt16(nil); got != nil {
-		t.Fatalf("empty bytesAsInt16 = %v, want nil", got)
-	}
 }
 
 func opusTestFramePtr() *av.Frame {

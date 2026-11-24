@@ -2,7 +2,7 @@
 // spirit of net/http/httptest: deterministic sources, a recording sink, a
 // fake clock, and passthrough codec and container fakes. Nothing here couples
 // to *testing.T and nothing asserts — every helper returns a real grammar
-// value (goav.InputSpec, goav.Destination, runconfig.Option, *goav.Runtime), so
+// value (goav.Input, goav.Destination, runconfig.Option, *goav.Runtime), so
 // test code is pipeline code.
 //
 // A complete pipeline test is three values and one Run:

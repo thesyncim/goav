@@ -11,7 +11,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-func lifecycleTestSource(fn SourceFunc) InputSpec {
+func lifecycleTestSource(fn SourceFunc) Input {
 	return Source("gen",
 		shape.Packet(av.MediaAudio, av.CodecOpus,
 			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),

@@ -19,7 +19,7 @@ import (
 
 // selectTestOneShotSource emits a single S16 frame on its stream then EOS, so the
 // static test can assert exactly which arm's frame reaches the sink.
-func selectTestOneShotSource(id av.StreamID, samples ...int16) InputSpec {
+func selectTestOneShotSource(id av.StreamID, samples ...int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
@@ -41,7 +41,7 @@ func selectTestOneShotSource(id av.StreamID, samples ...int16) InputSpec {
 
 // selectTestLiveSource floods one S16 sample on its stream until the context is
 // cancelled, so both arms always have live traffic while a test flips the switch.
-func selectTestLiveSource(id av.StreamID, sample int16) InputSpec {
+func selectTestLiveSource(id av.StreamID, sample int16) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(ctx context.Context, push SourcePush) error {

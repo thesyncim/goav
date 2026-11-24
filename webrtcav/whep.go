@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -32,7 +33,7 @@ var ErrWHEPDisconnected = errors.New("webrtcav: whep session disconnected")
 // goav.URIInput: whep://host/path plays over https, whep+http://host/path
 // over plain http. Register it under each name used:
 //
-//	runconfig.Scheme("whep", webrtcav.WHEP(webrtcav.WithToken(token)))
+//	runconfig.WithScheme("whep", webrtcav.WHEP(webrtcav.WithToken(token)))
 //
 // Opening the input POSTs an SDP offer with receive-only audio and video,
 // applies the answer, and starts once the first negotiated track flows; a
@@ -128,13 +129,14 @@ type whepSession struct {
 	// stream index.
 	declared map[string]int
 
-	mu        sync.Mutex
-	readers   []TrackReader
-	streams   []av.Stream
-	payloads  []rtpav.PayloadMap
-	closed    bool
-	closeOnce sync.Once
-	failOnce  sync.Once
+	mu           sync.Mutex
+	readers      []TrackReader
+	streams      []av.Stream
+	payloads     []rtpav.PayloadMap
+	closed       bool
+	closeOnce    sync.Once
+	failOnce     sync.Once
+	activeTracks atomic.Int32
 }
 
 // One bounded FIFO carries every configuration record and its packet. Each
@@ -377,20 +379,41 @@ func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
 	return nil
 }
 
-// pump moves one track's packets into the merged reader.
+// pump moves one track's packets into the merged reader. When one track in a
+// multi-track session hits io.EOF, it emits EventStreamRemoved so sibling
+// tracks keep playing instead of tearing down the whole session.
 func (s *whepSession) pump(reader TrackReader) {
+	s.activeTracks.Add(1)
 	for {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
-		if packet != nil {
-			packet = packet.Clone()
+		if err != nil {
+			remaining := s.activeTracks.Add(-1)
+			if errors.Is(err, io.EOF) && !s.isClosed() && remaining > 0 {
+				if streams, serr := reader.Streams(s.ctx); serr == nil && len(streams) > 0 {
+					stream := streams[0]
+					removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
+					select {
+					case s.events <- *cloneReadEvent(removed):
+					default:
+					}
+					select {
+					case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
+					case <-s.ctx.Done():
+					}
+				}
+				return
+			}
+			select {
+			case s.records <- whepRecord{packet: packet, event: cloneReadEvent(event), payloads: payloads, err: err}:
+			case <-s.ctx.Done():
+			}
+			return
 		}
 		event = cloneReadEvent(event)
 		select {
-		case s.records <- whepRecord{packet: packet, event: event, payloads: payloads, err: err}:
+		case s.records <- whepRecord{packet: packet, event: event, payloads: payloads}:
 		case <-s.ctx.Done():
-			return
-		}
-		if err != nil {
+			s.activeTracks.Add(-1)
 			return
 		}
 	}

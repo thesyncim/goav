@@ -41,7 +41,7 @@ func TestFileLadderWorkload(t *testing.T) {
 			if len(inputVideo) < 30 || len(inputAudio) == 0 {
 				t.Fatal("workload needs video GOPs and simultaneous audio")
 			}
-			in := goav.FileInput(size+".mp4", bytes.NewReader(data))
+			in := goav.Read(size+".mp4", bytes.NewReader(data))
 			meter := &ladderMeter{starts: make(map[time.Duration]ladderStart), latencies: make(map[string]*ladderLatencies)}
 			inputMeter := component.PacketFunc("packet-latency-start", func(_ context.Context, packet *av.Packet, emit component.Emit) error {
 				pts, _ := packet.PTS.ToDuration()

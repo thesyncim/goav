@@ -44,7 +44,7 @@ func TestValueAndGoldenHelpers(t *testing.T) {
 	expect.Equal(t, "accepted", 2, 2)
 	expect.DeepEqual(t, "frames", [][]int16{{1, 2}}, [][]int16{{1, 2}})
 	expect.Contains(t, "message", "goav: cannot build input", "build input")
-	expect.StringSliceContains(t, "suggestions", []string{"use goav.Input(provider)"}, "provider")
+	expect.StringSliceContains(t, "suggestions", []string{"use goav.From(provider)"}, "provider")
 	expect.GoldenString(t, golden, "frames: [[1 2]]\n")
 }
 

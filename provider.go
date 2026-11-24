@@ -33,8 +33,8 @@ type (
 //
 //	in := goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))
 //	err := rt.Run(ctx, in.Audio().To(out))
-func Input(src provider.Input, opts ...InputOption) InputSpec {
-	return applyInputOptions(inputSpecHandle(InputSpec{}.withProvider(src)), opts)
+func From(src provider.Input, opts ...InputOption) Input {
+	return applyInputOptions(inputSpecHandle(Input{}.withProvider(src)), opts)
 }
 
 var errProviderInputKind = errors.New("goav: provider input implements neither provider.Source (OpenSource) nor provider.ByteSource (OpenBytes)")
@@ -42,7 +42,7 @@ var errProviderInputKind = errors.New("goav: provider input implements neither p
 // withProvider binds src as the spec's input, keeping the naming facts a
 // URIInput already carries. A value that is both a Source and a ByteSource
 // opens as a Source.
-func (s InputSpec) withProvider(src provider.Input) InputSpec {
+func (s Input) withProvider(src provider.Input) Input {
 	if src == nil {
 		s.err = errNilSource
 		return s
@@ -226,7 +226,7 @@ func (s *renamedControllableSource) Control(ctx context.Context, msg *pipeline.M
 // source's values so Describe() ≡ Build() holds no matter what the decorator
 // reports. A decorator that delegates Name() and DescribeNode passes through
 // untouched, keeping every optional capability it implements visible.
-func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
+func (s Input) applySourceWraps(source pipeline.Source) pipeline.Source {
 	if len(s.wraps) == 0 || source == nil {
 		return source
 	}
@@ -245,7 +245,7 @@ func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
 
 // reconnecting wraps an opened live input in its reconnect policy, which
 // reopens it through the same open path.
-func (s InputSpec) reconnecting(build graphSourceBuild, reopen func(context.Context) (graphSourceBuild, error), clock av.Clock, report func(av.Event)) graphSourceBuild {
+func (s Input) reconnecting(build graphSourceBuild, reopen func(context.Context) (graphSourceBuild, error), clock av.Clock, report func(av.Event)) graphSourceBuild {
 	if s.reconnect == nil {
 		return build
 	}

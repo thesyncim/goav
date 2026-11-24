@@ -28,7 +28,7 @@ func (r *Runtime) Run(ctx context.Context, outs ...Output) error {
 }
 
 // Build builds the Outputs into one task without starting it.
-func (r *Runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
+func (r *Runtime) Build(ctx context.Context, outs ...Output) (Task, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ type recipeResolved struct {
 	recipe            recipeir.Recipe
 	runtime           *Runtime
 	graphPlan         graphPlan
-	inputAttachments  []InputSpec
+	inputAttachments  []Input
 	outputAttachments []destinationSpec
 	inputProbes       []format.ProbeResult
 	outputFormats     map[string]av.FormatID
@@ -171,7 +171,7 @@ func (g *recipeGraph) compileRuntime(rt *Runtime) *Runtime {
 }
 
 // inputsAreLive reports whether any input delivers on its own clock.
-func inputsAreLive(inputs []InputSpec) bool {
+func inputsAreLive(inputs []Input) bool {
 	for i := range inputs {
 		if inputs[i].realtime || inputs[i].input.Realtime {
 			return true
@@ -194,7 +194,7 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	return r.graphPlan.Describe()
 }
 
-func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
+func (r recipeResolved) Build(ctx context.Context) (Task, error) {
 	if !r.graphPlan.ready() {
 		return nil, publicError(compile.RecipeGraphUnsupportedRecipeError("build recipe", r.recipe))
 	}

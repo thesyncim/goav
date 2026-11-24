@@ -22,13 +22,46 @@ func hvc1Config(extra []byte) []byte {
 // length-prefixed NAL units, less the parameter sets the sample entry holds
 // (ISO/IEC 14496-15, 8.4.1).
 func appendHVC1(dst, src []byte) ([]byte, error) {
-	err := h264.ForEachNAL(src, func(nal []byte) error {
-		if hevc.ParameterSet(hevc.NALType(nal)) {
-			return nil
+	start, width := findAnnexBStartCode(src, 0)
+	if start < 0 {
+		return dst, h264.ErrInvalid
+	}
+	for i := range start {
+		if src[i] != 0 {
+			return dst, h264.ErrInvalid
 		}
-		dst = binary.BigEndian.AppendUint32(dst, uint32(len(nal)))
-		dst = append(dst, nal...)
-		return nil
-	})
-	return dst, err
+	}
+	for start >= 0 {
+		nalStart := start + width
+		next, nextWidth := findAnnexBStartCode(src, nalStart)
+		nalEnd := len(src)
+		if next >= 0 {
+			nalEnd = next
+		}
+		if nalStart >= nalEnd {
+			return dst, h264.ErrInvalid
+		}
+		nal := src[nalStart:nalEnd]
+		if !hevc.ParameterSet(hevc.NALType(nal)) {
+			dst = binary.BigEndian.AppendUint32(dst, uint32(len(nal)))
+			dst = append(dst, nal...)
+		}
+		start, width = next, nextWidth
+	}
+	return dst, nil
+}
+
+func findAnnexBStartCode(data []byte, offset int) (int, int) {
+	for i := offset; i+3 <= len(data); i++ {
+		if data[i] != 0 || data[i+1] != 0 {
+			continue
+		}
+		if data[i+2] == 1 {
+			return i, 3
+		}
+		if i+4 <= len(data) && data[i+2] == 0 && data[i+3] == 1 {
+			return i, 4
+		}
+	}
+	return -1, 0
 }

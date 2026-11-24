@@ -193,9 +193,9 @@ func TestCodecIntentNameContracts(t *testing.T) {
 		spec codec.Spec
 		want string
 	}{
-		{name: "auto", spec: codec.Auto(), want: "auto"},
-		{name: "copy", spec: codec.Copy(), want: "copy"},
-		{name: "custom", spec: codec.Codec(av.CodecID("x_custom"), av.MediaAudio), want: "x_custom"},
+		{name: "auto", spec: codec.Spec{Auto: true}, want: "auto"},
+		{name: "copy", spec: codec.Spec{Copy: true}, want: "copy"},
+		{name: "custom", spec: codec.New(av.CodecID("x_custom"), av.MediaAudio), want: "x_custom"},
 		{name: "zero", spec: codec.Spec{}, want: "none"},
 	}
 	for _, tt := range tests {

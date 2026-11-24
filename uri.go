@@ -19,15 +19,15 @@ import (
 
 // URIInput declares an input read from a URL: goav.URIInput("https://cdn.example/a.mp4").
 // The runtime resolves it while planning through the scheme registered for
-// the URL's scheme (runconfig.Scheme; bundle registers file, http, and
+// the URL's scheme (runconfig.WithScheme; bundle registers file, http, and
 // https), and a bare path is a file. The scheme decides what the input is —
 // container bytes the runtime probes and demuxes, as for an http resource,
 // or media a transport produces, as for whep — and whether it is live.
 // Describe, Explain, errors, events, and snapshots show the URL redacted:
 // no userinfo, and secret query values (token, key, password, signature)
 // replaced; only the scheme sees it verbatim.
-func URIInput(uri string, opts ...InputOption) InputSpec {
-	spec := InputSpec{}
+func FromURI(uri string, opts ...InputOption) Input {
+	spec := Input{}
 	if ref := parseURIRef(uri); ref != nil {
 		spec.uri = ref
 		spec.name = ref.name
@@ -40,7 +40,7 @@ func URIInput(uri string, opts ...InputOption) InputSpec {
 // resolved like URIInput through the runtime's schemes, which open the bytes
 // goav muxes once the format and streams are known. The container comes
 // from the URL's extension, Format, MIME, or the scheme's contract.
-func URI(uri string, opts ...DestinationOption) Destination {
+func ToURI(uri string, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(uriDestination(uri), opts))
 }
 
@@ -108,11 +108,11 @@ func (g *recipeGraph) bindSchemes(rt *Runtime) {
 	}
 }
 
-func (s InputSpec) uriBound() bool {
+func (s Input) uriBound() bool {
 	return s.provider != nil || s.bytes != nil || s.err != nil
 }
 
-func (r *Runtime) bindURIInput(spec InputSpec) InputSpec {
+func (r *Runtime) bindURIInput(spec Input) Input {
 	ref := spec.uri
 	node := spec.inputName(ref.name)
 	if ref.err != nil {
@@ -236,14 +236,15 @@ func cloneURL(u *url.URL) *url.URL {
 // schemeProviders names where each well-known scheme comes from, so an
 // unknown-scheme refusal can name the exact fix.
 var schemeProviders = map[string]string{
-	"file":      `register runconfig.Scheme("file", scheme.File()), or build the runtime with bundle.New`,
-	"http":      `register runconfig.Scheme("http", scheme.HTTP()), or build the runtime with bundle.New`,
-	"https":     `register runconfig.Scheme("https", scheme.HTTP()), or build the runtime with bundle.New`,
-	"whep":      `register runconfig.Scheme("whep", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
-	"whep+http": `register runconfig.Scheme("whep+http", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
-	"whip":      `register runconfig.Scheme("whip", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
-	"whips":     `register runconfig.Scheme("whips", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
-	"whip+http": `register runconfig.Scheme("whip+http", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
+	"file":      `register runconfig.WithScheme("file", scheme.File()), or build the runtime with bundle.New`,
+	"http":      `register runconfig.WithScheme("http", scheme.HTTP()), or build the runtime with bundle.New`,
+	"https":     `register runconfig.WithScheme("https", scheme.HTTP()), or build the runtime with bundle.New`,
+	"camera":    `register runconfig.WithScheme("camera", cameraav.Scheme()) from module github.com/thesyncim/goav/cameraav`,
+	"whep":      `register runconfig.WithScheme("whep", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whep+http": `register runconfig.WithScheme("whep+http", webrtcav.WHEP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whip":      `register runconfig.WithScheme("whip", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whips":     `register runconfig.WithScheme("whips", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
+	"whip+http": `register runconfig.WithScheme("whip+http", webrtcav.WHIP()) from module github.com/thesyncim/goav/webrtcav`,
 }
 
 func uriInvalidError(code errcode.Code, operation, node string, cause error) error {
@@ -265,7 +266,7 @@ func schemeUnsupportedError(code errcode.Code, operation, node, scheme string, c
 		fixes = append(fixes, scheme+": "+hint)
 	}
 	if !slices.Contains(registered, scheme) {
-		fixes = append(fixes, fmt.Sprintf("implement provider.Scheme and register it: runconfig.Scheme(%q, yourScheme)", scheme))
+		fixes = append(fixes, fmt.Sprintf("implement provider.Scheme and register it: runconfig.WithScheme(%q, yourScheme)", scheme))
 	}
 	if errors.Is(cause, errors.ErrUnsupported) {
 		fixes = append(fixes, "use the "+scheme+" URL on the end its scheme serves")

@@ -30,7 +30,7 @@ import (
 // so an RTP job through the provider seam stays byte-identical: the node is
 // named by rtpav.WithName and the detail is the rtpav receive summary.
 func TestProviderRTPDescribePinsLegacyConstructorStrings(t *testing.T) {
-	job := goav.Input(rtpav.Receive(&runtimeRTPReceiver{
+	job := goav.From(rtpav.Receive(&runtimeRTPReceiver{
 		streams: []av.Stream{{
 			ID:   "audio",
 			Type: av.MediaAudio,
@@ -102,7 +102,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		To(goav.Write("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
-	job := goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).To(goav.Write("recording.ogg", io.Discard, goav.Format(av.FormatOgg)))
+	job := goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).To(goav.Write("recording.ogg", io.Discard, goav.Format(av.FormatOgg)))
 
 	report, err := runtime.Explain(ctx, job)
 	if err != nil {
@@ -228,13 +228,13 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	target := goav.Writer("s3://bucket/call.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
+	target := goav.WriteFunc("s3://bucket/call.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 		state.opens++
 		state.info = info
 		return &writerDestinationWriteCloser{state: state}, nil
 	}, goav.Format(av.FormatOgg), goav.MIME("audio/ogg"))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		To(target))
 	if err != nil {
 		t.Fatal(err)
@@ -298,13 +298,13 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	metadata := av.Metadata{"storage": "hot"}
-	target := goav.Writer("s3://bucket/object.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
+	target := goav.WriteFunc("s3://bucket/object.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 		state.opens++
 		state.info = info
 		return &writerDestinationWriteCloser{state: state}, nil
 	}, goav.Format(av.FormatOgg), goav.MIME("audio/ogg"), goav.Metadata(metadata))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		To(target))
 	if err != nil {
 		t.Fatal(err)
@@ -362,7 +362,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 	))
 	writer := &fileDestinationWriteCloser{}
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		To(goav.Write("call.ogg", writer, goav.Format(av.FormatOgg))))
 	if err != nil {
 		t.Fatal(err)
@@ -422,8 +422,8 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
-		To(goav.Writer(
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+		To(goav.WriteFunc(
 			"s3://bucket/call.ogg",
 			func(context.Context, provider.Info) (io.WriteCloser, error) {
 				state.opens++
@@ -484,14 +484,14 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		Audio().
 		Tap("audio.packets").
 		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer := goav.Writer(
+	writer := goav.WriteFunc(
 		"s3://bucket/late.ogg",
 		func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 			state.opens++
@@ -572,7 +572,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		Audio().
 		Tap("audio.packets").
 		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))))
@@ -581,7 +581,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	}
 	defer task.Close()
 
-	writer := goav.Writer(
+	writer := goav.WriteFunc(
 		"s3://bucket/late.ogg",
 		func(context.Context, provider.Info) (io.WriteCloser, error) {
 			state.opens++
@@ -593,7 +593,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	// The second Output's writer fails to open after the first one opened, so
 	// the patch fails and rolls the first writer back.
 	errOpen := errors.New("open failed")
-	broken := goav.Writer("s3://bucket/broken.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
+	broken := goav.WriteFunc("s3://bucket/broken.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 		return nil, errOpen
 	}, goav.Format(av.FormatOgg))
 	_, err = task.Attach(ctx,
@@ -646,7 +646,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).
 		To(goav.Write("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
@@ -695,7 +695,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	}
 	var out bytes.Buffer
 	rt := bundle.MustNew()
-	job := goav.Input(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).To(goav.Write("recording.ivf", &out))
+	job := goav.From(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))).To(goav.Write("recording.ivf", &out))
 
 	planned, err := rt.Describe(job)
 	if err != nil {
@@ -792,8 +792,8 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	audioIn := goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))
-	videoIn := goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))
+	audioIn := goav.From(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))
+	videoIn := goav.From(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))
 	recording := goav.Write("recording.ogg", io.Discard)
 	task, err := runtime.Build(ctx, audioIn.To(recording), videoIn.To(recording))
 	if err != nil {
@@ -881,8 +881,8 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 		}
 		return nil
 	}))
-	policy := flow.Sync("rtp-room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
-	in := goav.Input(rtpav.Receive(receiver,
+	policy := flow.Sync("rtp-room").WithTolerance(5 * time.Millisecond).WithDropLate()
+	in := goav.From(rtpav.Receive(receiver,
 		rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(audio), rtpav.NewVP8Depacketizer(video)),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}),
 	))
@@ -946,7 +946,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 
-	task, err := runtime.Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
+	task, err := runtime.Build(ctx, goav.From(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))).
 		Audio().
 		Tap("audio.copied").
 		To(goav.Write("archive.ogg", io.Discard)))

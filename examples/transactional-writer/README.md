@@ -1,6 +1,6 @@
 # Transactional writer
 
-This module shows the object-store upload pattern: `goav.Writer` opens after
+This module shows the object-store upload pattern: `goav.WriteFunc` opens after
 the output format and streams are known, and a returned
 `provider.TransactionalWriter` receives `Commit` on success or `Abort` on
 failure.

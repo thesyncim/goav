@@ -29,7 +29,7 @@ import (
 // and a watch is an inspect subscription that sheds events rather than
 // block media when its client falls behind.
 type Server struct {
-	task     goav.LiveTask
+	task     goav.Task
 	files    launch.FileSystem
 	token    string
 	elements []launch.Element
@@ -51,7 +51,7 @@ type method struct {
 type Option func(*Server) error
 
 // New builds a server for a running task.
-func New(task goav.LiveTask, options ...Option) (*Server, error) {
+func New(task goav.Task, options ...Option) (*Server, error) {
 	if task == nil {
 		return nil, errors.New("ctlserver: no task to serve")
 	}
@@ -101,7 +101,7 @@ func Elements(elements ...launch.Element) Option {
 // Method adds a host method. Its params are T's fields, named by their json
 // tags; `ctl:"required"` marks a required one and `help:"..."` describes it.
 // A client's call runs fn and returns its result as JSON.
-func Method[T any](name, summary string, fn func(context.Context, goav.LiveTask, T) (any, error)) Option {
+func Method[T any](name, summary string, fn func(context.Context, goav.Task, T) (any, error)) Option {
 	return func(s *Server) error {
 		if name == "" || strings.ContainsAny(name, " \t\n") {
 			return fmt.Errorf("ctlserver: method name %q is not one word", name)
@@ -227,7 +227,14 @@ type session struct {
 	enc      *json.Encoder
 	watches  map[string]goav.Subscription
 	inflight map[string]context.CancelFunc
+	wg       *sync.WaitGroup
 }
+
+const (
+	maxBatchSize         = 64
+	maxWatchesPerSession = 16
+	authTimeout          = 5 * time.Second
+)
 
 // cancelMethod is the notification a client sends to cancel a call in
 // flight: {"method":"$/cancelRequest","params":{"id":7}}.
@@ -302,19 +309,27 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 	})
 	defer stop()
-	sess := &session{enc: json.NewEncoder(conn), watches: map[string]goav.Subscription{}, inflight: map[string]context.CancelFunc{}}
-	defer sess.close()
 	var calls sync.WaitGroup
+	sess := &session{enc: json.NewEncoder(conn), watches: map[string]goav.Subscription{}, inflight: map[string]context.CancelFunc{}, wg: &calls}
+	// LIFO teardown: cancel in-flight calls, close watch subscriptions so their
+	// pumps exit, wait for all call/watch goroutines, then close conn.
 	defer calls.Wait()
+	defer sess.close()
 	// A client that hangs up cancels its calls in flight.
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	dec := json.NewDecoder(conn)
+	if s.token != "" {
+		_ = conn.SetReadDeadline(time.Now().Add(authTimeout))
+	}
 	if !s.authenticate(sess, dec) {
 		if hc, ok := conn.(interface{ CloseWrite() error }); ok {
 			_ = hc.CloseWrite() // deliver the refusal before the close
 		}
 		return
+	}
+	if s.token != "" && ctx.Err() == nil {
+		_ = conn.SetReadDeadline(time.Time{})
 	}
 	slots := make(chan struct{}, maxInFlight)
 	for {
@@ -355,6 +370,9 @@ func (s *Server) handleMessage(ctx context.Context, sess *session, raw json.RawM
 	var batch []json.RawMessage
 	if err := json.Unmarshal(raw, &batch); err != nil || len(batch) == 0 {
 		return response{JSONRPC: "2.0", ID: nullID, Error: &Error{Code: CodeInvalidRequest, Message: "a batch is a non-empty array of requests"}}, true
+	}
+	if len(batch) > maxBatchSize {
+		return response{JSONRPC: "2.0", ID: nullID, Error: &Error{Code: CodeInvalidRequest, Message: "batch exceeds maximum size"}}, true
 	}
 	var replies []response
 	for _, one := range batch {

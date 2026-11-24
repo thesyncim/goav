@@ -2,7 +2,7 @@ package goav
 
 // DetachOption selects how a removed runtime branch's destinations are
 // finalized: [DrainBranch] commits them, [AbortBranch] aborts them, and with
-// neither they close without a recorded outcome. LiveTask.Detach takes it for
+// neither they close without a recorded outcome. Task.Detach takes it for
 // the detached branch and Attachment.Rebranch for the replaced one. It is
 // sealed: only goav option constructors implement it.
 type DetachOption interface {

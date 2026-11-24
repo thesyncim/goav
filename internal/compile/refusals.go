@@ -246,7 +246,7 @@ func DestinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Fixes: builderr.Fixes([]string{
-			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
+			"use goav.Write(...), goav.ToURI(...), or goav.Sink(...) for a real destination",
 			"pass one destination value to every chain that should share it",
 			"use distinct destination values for independent outputs",
 		}),

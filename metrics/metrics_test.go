@@ -13,7 +13,7 @@ import (
 )
 
 type fakeTask struct {
-	goav.LiveTask
+	goav.Task
 }
 
 func (fakeTask) Stats() pipeline.GraphStats {

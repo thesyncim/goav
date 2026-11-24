@@ -39,7 +39,7 @@ type Config struct {
 	ShapeDeltas      []ShapeDeltaContributor
 	QoSPolicy        func(av.Event) []control.Control
 	// Schemes maps lower-case URL schemes to the providers goav.URIInput
-	// and goav.URI resolve through (see Scheme).
+	// and goav.URI resolve through (see WithScheme and provider.Scheme).
 	Schemes map[string]provider.Scheme
 }
 
@@ -345,12 +345,10 @@ func WithQoSPolicy(policy func(av.Event) []control.Control) Option {
 	}
 }
 
-// WithRealtime(true) makes every job on the runtime realtime: file media is
-// delivered when its media time is due on the runtime clock (simulating a live
-// feed), graphs buffer between stages, and encoders use their low-latency
-// presets. Without it (the default) realtime follows the inputs: a job is
-// realtime when an input is live — a provider or push source whose shape
-// declares Realtime, such as RTP or WebRTC receive — and file-to-file work
+// WithRealtime controls whether every job on the runtime runs in realtime mode.
+// When true, file media is paced to the runtime clock, graphs buffer between
+// stages, and encoders use low-latency presets. When false (the default),
+// realtime follows the inputs: live sources run realtime and file-to-file work
 // runs as fast as the machine allows.
 func WithRealtime(realtime bool) Option {
 	return func(config *Config) error {
@@ -368,14 +366,14 @@ func WithClock(clock av.Clock) Option {
 	}
 }
 
-// Scheme registers the provider goav.URIInput and goav.URI resolve URLs of
+// WithScheme registers the provider goav.URIInput and goav.URI resolve URLs of
 // one scheme through (a provider.InputScheme, a provider.DestinationScheme,
-// or both), per runtime: runconfig.Scheme("whep", webrtcav.WHEP()).
+// or both), per runtime: runconfig.WithScheme("whep", webrtcav.WHEP()).
 // Names are case-insensitive RFC 3986 schemes, and the last registration of
 // a name wins, so a runtime can replace a bundled scheme (an https client
 // with its own transport, say). bundle.Schemes registers file, http, and
 // https.
-func Scheme(name string, scheme provider.Scheme) Option {
+func WithScheme(name string, scheme provider.Scheme) Option {
 	return func(config *Config) error {
 		_, input := scheme.(provider.InputScheme)
 		_, destination := scheme.(provider.DestinationScheme)

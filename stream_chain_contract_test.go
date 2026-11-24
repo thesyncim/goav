@@ -29,7 +29,7 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 		{
 			name: "copy through encode helper",
 			out: source.Audio().
-				Encode(codec.Copy()).
+				Encode(codec.Spec{Copy: true}).
 				To(sink),
 			code: encodeParameterInvalidCode,
 		},

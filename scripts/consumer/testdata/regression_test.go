@@ -190,7 +190,7 @@ func TestResolvedTaskRetainsFinalizationOutcome(t *testing.T) {
 	good := &finalizationWriter{}
 	bad := &finalizationWriter{commitErr: failure}
 	destination := func(name string, writer *finalizationWriter) goav.Destination {
-		return goav.Writer(name, func(context.Context, provider.Info) (io.WriteCloser, error) {
+		return goav.WriteFunc(name, func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return writer, nil
 		}, goav.Format(av.FormatOgg))
 	}

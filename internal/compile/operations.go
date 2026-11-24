@@ -234,7 +234,7 @@ func recipeIROperationShapeMismatchSuggestions(operation recipeir.Operation) []s
 }
 
 func OpCopy() recipeir.Operation {
-	return recipeir.Operation{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: codec.Copy()}
+	return recipeir.Operation{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: codec.Spec{Copy: true}}
 }
 
 // operationsAutoPolicy unions a stream's .Auto(...) policies; the second

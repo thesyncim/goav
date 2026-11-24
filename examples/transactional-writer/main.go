@@ -71,7 +71,7 @@ func runFailedUpload(ctx context.Context) (*memoryUpload, error) {
 }
 
 func uploadDestination(upload *memoryUpload, opened *provider.Info) goav.Destination {
-	return goav.Writer("mem://voice.ogg",
+	return goav.WriteFunc("mem://voice.ogg",
 		func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 			*opened = info
 			return upload, nil

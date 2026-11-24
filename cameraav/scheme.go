@@ -7,12 +7,15 @@ import (
 	"strconv"
 )
 
-// Scheme binds camera://default?width=1280&height=720&fps=30. Select a specific
-// opaque device ID with the percent-encoded device query parameter. Binding is
-// pure, so Describe and Explain neither enumerate nor activate cameras.
-type Scheme struct{}
+// Scheme returns a provider.InputScheme that binds
+// camera://default?width=1280&height=720&fps=30. Select a specific opaque
+// device ID with the percent-encoded device query parameter. Binding is pure,
+// so Describe and Explain neither enumerate nor activate cameras.
+func Scheme() provider.InputScheme { return cameraScheme{} }
 
-func (Scheme) Input(u *url.URL) (provider.Input, error) {
+type cameraScheme struct{}
+
+func (cameraScheme) Input(u *url.URL) (provider.Input, error) {
 	if u == nil || u.Scheme != "camera" || (u.Host != "default" && u.Host != "") || u.Path != "" || u.User != nil || u.Fragment != "" {
 		return nil, fmt.Errorf("cameraav: expected camera://default?device=ID&width=W&height=H&fps=N")
 	}

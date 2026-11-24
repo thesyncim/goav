@@ -4,7 +4,7 @@
 
 **Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>the core needs no cgo, no FFmpeg, and no system libraries.
 
-[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/COMPATIBILITY.md)
+[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
 
 </div>
 
@@ -41,11 +41,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer src.Close()
 	dst, err := os.Create("out.webm")
 	if err != nil {
 		log.Fatal(err)
 	}
-	video := goav.FileInput("in.webm", src).Video().
+	video := goav.Read("in.webm", src).Video().
 		Decode().
 		Resize(1280, 720).
 		Encode(codec.VP9(codec.Bitrate(2_000_000)))
@@ -55,7 +56,7 @@ func main() {
 }
 ```
 
-`goav.FileInput` takes any `io.Reader` and `goav.Write` any `io.Writer`; `bundle.Run` closes
+`goav.Read` takes any `io.Reader` and `goav.Write` any `io.Writer`; `bundle.Run` closes
 the writer when the run ends.
 
 <details>
@@ -76,7 +77,7 @@ before the fork runs once. Here one decode feeds two renditions, and one Opus en
 input's audio track is muxed into both files:
 
 ```go
-in := goav.FileInput("in.webm", src)
+in := goav.Read("in.webm", src)
 video := in.Video().Decode()
 audio := in.Audio().Decode().Encode(codec.Opus())
 hd, sd := goav.Write("hd.webm", hdFile), goav.Write("sd.webm", sdFile)
@@ -173,8 +174,9 @@ your own sources, codecs, and sinks plug in through small interfaces
   See [Flow control](docs/FLOW_CONTROL.md).
 - **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
   over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
-- **Fast without assembly.** Graph, codec, and filter stages allocate nothing per message,
-  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths (faster in our 128x96 microbenchmarks on one machine; not a general claim).
+- **Fast without codec assembly or `unsafe`.** The root module uses no `unsafe`
+  and no assembly; graph, codec, and filter stages allocate nothing per message,
+  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths.
   See [Performance](docs/PERFORMANCE.md).
 
 ## Modules
@@ -186,20 +188,20 @@ your own sources, codecs, and sinks plug in through small interfaces
 | [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
 | [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
+| [`goav/cameraav`](cameraav) | cgo-free camera capture with bounded zero-allocation frame delivery |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
 | [`goav/gplcodec`](gplcodec) | opt-in copyleft codecs: `gplcodec.AAC()`, a pure-Go AAC-LC decoder (GPL; your binary becomes GPL) |
-| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, ctl ([CLI](docs/CLI.md)) |
+| [`goav/cmd/goav`](cmd/goav) | the `goav` CLI: run, describe, explain, play, cameras, ctl ([CLI](docs/CLI.md)) |
 | [`goav/goavtest/expect`](goavtest/expect) | go-cmp assertions for pipeline tests |
 
 The core module never pulls in Pion.
 
 ## Status
 
-Pre-v1: breaking changes can land until the first tag. See [V1 scope](docs/COMPATIBILITY.md#v1-scope) and
-the [roadmap](docs/ROADMAP.md). Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
+Pre-v1: breaking changes can land until the first tag (see [Roadmap](docs/ROADMAP.md)).
+Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
 
 ---
 
-[All docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Adapter authoring](docs/ADAPTER_AUTHORING.md) ·
-[RTP & WebRTC](docs/RTP_WEBRTC.md) · [vs GStreamer](docs/GSTREAMER_ALTERNATIVE.md) ·
-[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Adapter authoring](docs/ADAPTER_AUTHORING.md) ·
+[RTP & WebRTC](docs/RTP_WEBRTC.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)

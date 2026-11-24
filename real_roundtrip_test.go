@@ -16,8 +16,8 @@ import (
 
 // TestRealOpusWebMRoundTripThroughGrammar is the zero-fake grammar path: PCM
 // frames are encoded by the real gopus encoder and muxed by the real WebM
-// muxer through From(...).Encode(...).To(Write(...)), then the produced bytes
-// are read back through From(FileInput(...)).Decode() — real WebM demuxer,
+// muxer through Source(...).Encode(...).To(Write(...)), then the produced bytes
+// are read back through Read(...).Audio().Decode() — real WebM demuxer,
 // real gopus decoder. Most grammar tests run against goavtest/fake codecs for
 // determinism; this one proves the registered default adapters compose end to
 // end and that the audio that comes back carries the format and roughly the
@@ -106,7 +106,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 		}
 		return nil
 	}))
-	decodeTask, err := testBundleRuntime(WithRealtime(false)).Build(ctx, FileInput("roundtrip.webm", bytes.NewReader(data)).
+	decodeTask, err := testBundleRuntime(WithRealtime(false)).Build(ctx, Read("roundtrip.webm", bytes.NewReader(data)).
 		Audio().
 		Decode().
 		To(sink))

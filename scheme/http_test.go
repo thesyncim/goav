@@ -36,7 +36,7 @@ func indexAtEndMP4(t *testing.T, pad int) []byte {
 		t.Fatal(err)
 	}
 	var out seekBuffer
-	if err := bundle.Run(context.Background(), goav.FileInput("in.mp4", bytes.NewReader(src)).To(goav.Write("out.mp4", &out))); err != nil {
+	if err := bundle.Run(context.Background(), goav.Read("in.mp4", bytes.NewReader(src)).To(goav.Write("out.mp4", &out))); err != nil {
 		t.Fatal(err)
 	}
 	data := out.buf
@@ -90,7 +90,7 @@ func (b *seekBuffer) Seek(offset int64, whence int) (int64, error) {
 }
 
 // digest demuxes an input's video and audio and fingerprints every packet.
-func digest(t *testing.T, rt *goav.Runtime, in goav.InputSpec) (string, error) {
+func digest(t *testing.T, rt *goav.Runtime, in goav.Input) (string, error) {
 	t.Helper()
 	video, audio := goavtest.NewCollector(), goavtest.NewCollector()
 	if err := rt.Run(context.Background(), in.Video().To(video.Sink()), in.Audio().To(audio.Sink())); err != nil {
@@ -159,7 +159,7 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 // range requests that skip the gap, each after the first carrying If-Range.
 func TestHTTPRangedReadSeeksAnIndexAtTheEnd(t *testing.T) {
 	data := indexAtEndMP4(t, 1<<20)
-	want, err := digest(t, bundle.Default(), goav.FileInput("local.mp4", bytes.NewReader(data)))
+	want, err := digest(t, bundle.Default(), goav.Read("local.mp4", bytes.NewReader(data)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestHTTPRangedReadSeeksAnIndexAtTheEnd(t *testing.T) {
 	srv := httptest.NewServer(server)
 	defer srv.Close()
 
-	got, err := digest(t, bundle.Default(), goav.URIInput(srv.URL+"/movie.mp4?token=SECRET"))
+	got, err := digest(t, bundle.Default(), goav.FromURI(srv.URL+"/movie.mp4?token=SECRET"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,14 +200,14 @@ func TestHTTPRangedReadSeeksAnIndexAtTheEnd(t *testing.T) {
 // and again from the start, since the samples fell out of the window.
 func TestHTTPProgressiveReadWithoutRanges(t *testing.T) {
 	data := indexAtEndMP4(t, 3<<20)
-	want, err := digest(t, bundle.Default(), goav.FileInput("local.mp4", bytes.NewReader(data)))
+	want, err := digest(t, bundle.Default(), goav.Read("local.mp4", bytes.NewReader(data)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &fileServer{data: data, etag: `"v1"`}
 	srv := httptest.NewServer(server)
 	defer srv.Close()
-	got, err := digest(t, bundle.Default(), goav.URIInput(srv.URL+"/movie.mp4"))
+	got, err := digest(t, bundle.Default(), goav.FromURI(srv.URL+"/movie.mp4"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestHTTPRefusesAResourceThatChanges(t *testing.T) {
 		server.mu.Unlock()
 	}))
 	defer srv.Close()
-	_, err := digest(t, bundle.Default(), goav.URIInput(srv.URL+"/movie.mp4"))
+	_, err := digest(t, bundle.Default(), goav.FromURI(srv.URL+"/movie.mp4"))
 	if !errors.Is(err, scheme.ErrChanged) {
 		t.Fatalf("err = %v, want scheme.ErrChanged", err)
 	}
@@ -263,12 +263,12 @@ func TestHTTPStatusAndRedirects(t *testing.T) {
 	defer srv.Close()
 
 	sink := goavtest.NewCollector()
-	err := bundle.Run(context.Background(), goav.URIInput(srv.URL+"/missing.mp4?token=SECRET").Video().To(sink.Sink()))
+	err := bundle.Run(context.Background(), goav.FromURI(srv.URL+"/missing.mp4?token=SECRET").Video().To(sink.Sink()))
 	if err == nil || !strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("err = %v, want a redacted 404", err)
 	}
 
-	if _, err := digest(t, bundle.Default(), goav.URIInput(srv.URL+"/old.mp4")); err != nil {
+	if _, err := digest(t, bundle.Default(), goav.FromURI(srv.URL+"/old.mp4")); err != nil {
 		t.Fatal(err)
 	}
 	requests, _ := server.log()
@@ -276,7 +276,7 @@ func TestHTTPStatusAndRedirects(t *testing.T) {
 		t.Fatalf("redirects = %d, ranged requests = %d: want one redirect, then the final URL", redirects, len(requests))
 	}
 
-	err = bundle.Run(context.Background(), goav.URIInput(srv.URL+"/loop.mp4").Video().To(sink.Sink()))
+	err = bundle.Run(context.Background(), goav.FromURI(srv.URL+"/loop.mp4").Video().To(sink.Sink()))
 	if err == nil || !strings.Contains(err.Error(), "stopped after 10 redirects") || loops != 10 {
 		t.Fatalf("loop err = %v after %d requests, want the redirect cap", err, loops)
 	}
@@ -295,8 +295,8 @@ func TestHTTPStatusAndRedirects(t *testing.T) {
 		http.Redirect(w, r, target, http.StatusFound)
 	}))
 	defer front.Close()
-	rt := bundle.MustNew(runconfig.Scheme("http", scheme.HTTP(scheme.Header("X-Api-Key", "k1"))))
-	if _, err := digest(t, rt, goav.URIInput(front.URL+"/movie.mp4")); err != nil {
+	rt := bundle.MustNew(runconfig.WithScheme("http", scheme.HTTP(scheme.Header("X-Api-Key", "k1"))))
+	if _, err := digest(t, rt, goav.FromURI(front.URL+"/movie.mp4")); err != nil {
 		t.Fatal(err)
 	}
 	if sent != "k1" || leaked != "" {
@@ -412,11 +412,11 @@ func TestHTTPLiveStreamReconnects(t *testing.T) {
 	}))
 	defer srv.Close()
 	video := goavtest.NewCollector()
-	err := bundle.Run(context.Background(), goav.URIInput(srv.URL+"/live.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
+	err := bundle.Run(context.Background(), goav.FromURI(srv.URL+"/live.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
 	if err == nil || !strings.Contains(err.Error(), "gave up after 1 reconnect attempts") || len(video.Packets()) != 2 {
 		t.Fatalf("err = %v, packets = %d: want two sessions, then the cap", err, len(video.Packets()))
 	}
-	err = bundle.Run(context.Background(), goav.URIInput(srv.URL+"/file.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
+	err = bundle.Run(context.Background(), goav.FromURI(srv.URL+"/file.ivf", goav.Reconnect(1, time.Millisecond)).Video().To(video.Sink()))
 	if err == nil || !strings.Contains(err.Error(), "opened as a finite resource") {
 		t.Fatalf("finite err = %v, want the live-only refusal", err)
 	}

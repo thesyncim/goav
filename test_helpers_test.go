@@ -82,7 +82,7 @@ func (d *tapArmTestDecoder) FlushInto(context.Context, *codec.DecodeResult) erro
 func (d *tapArmTestDecoder) HandleEvent(context.Context, *av.Event) error         { return nil }
 func (d *tapArmTestDecoder) Close() error                                         { return nil }
 
-func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16) InputSpec {
+func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16) Input {
 	payload := make([]byte, len(samples)*2)
 	for i := range samples {
 		payload[i*2] = byte(samples[i])

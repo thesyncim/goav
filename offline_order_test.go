@@ -67,7 +67,7 @@ func offlineOrderFixtures(t *testing.T) *orderFixtureSet {
 // shiftedWebM re-encodes one track of a WebM with every frame time moved by.
 func shiftedWebM(t *testing.T, data []byte, media av.MediaType, by time.Duration) []byte {
 	t.Helper()
-	in := goav.FileInput("shift.webm", bytes.NewReader(data))
+	in := goav.Read("shift.webm", bytes.NewReader(data))
 	stream, spec := in.Video(), codec.VP8()
 	if media == av.MediaAudio {
 		stream, spec = in.Audio(), codec.Opus()
@@ -138,8 +138,8 @@ var offlineOrderFirst sync.Map
 // a reader that jitters which goroutine gets ahead.
 func TestOfflineJoinsAndLaddersWriteTheSameBytes(t *testing.T) {
 	f := offlineOrderFixtures(t)
-	in := func(name string, data []byte) goav.InputSpec {
-		return goav.FileInput(name, jitterReader{bytes.NewReader(data)})
+	in := func(name string, data []byte) goav.Input {
+		return goav.Read(name, jitterReader{bytes.NewReader(data)})
 	}
 	type outputs func(out func(string) goav.Destination) []goav.Output
 	cases := []struct {
@@ -298,14 +298,14 @@ func TestOfflineOrderHoldsAnInputFarAhead(t *testing.T) {
 	f := offlineOrderFixtures(t)
 	for _, tc := range []struct {
 		name    string
-		outputs func(early, ahead goav.InputSpec) []goav.Output
+		outputs func(early, ahead goav.Input) []goav.Output
 		ahead   []byte
 	}{
-		{"buffered mux", func(early, ahead goav.InputSpec) []goav.Output {
+		{"buffered mux", func(early, ahead goav.Input) []goav.Output {
 			o := goav.Write("o.webm", io.Discard)
 			return []goav.Output{early.Video().Buffer(flow.Blocking(4)).To(o), ahead.Audio().To(o)}
 		}, f.audioAhead},
-		{"ByPTS composite", func(early, ahead goav.InputSpec) []goav.Output {
+		{"ByPTS composite", func(early, ahead goav.Input) []goav.Output {
 			return []goav.Output{goav.Composite(early.Video().Decode(), goav.At(ahead.Video().Decode(), 8, 8), goav.ByPTS()).Encode(codec.VP8()).To(goav.Write("o.webm", io.Discard))}
 		}, f.videoAhead},
 	} {
@@ -314,7 +314,7 @@ func TestOfflineOrderHoldsAnInputFarAhead(t *testing.T) {
 			var readAtEarlyEnd atomic.Int64
 			readAtEarlyEnd.Store(-1)
 			early := &countingReader{r: bytes.NewReader(f.videoLong), atEOF: func() { readAtEarlyEnd.Store(ahead.read.Load()) }}
-			mfRun(t, tc.outputs(goav.FileInput("a.webm", early), goav.FileInput("b.webm", ahead))...)
+			mfRun(t, tc.outputs(goav.Read("a.webm", early), goav.Read("b.webm", ahead))...)
 			got := readAtEarlyEnd.Load()
 			if got < 0 || ahead.read.Load() != int64(len(tc.ahead)) {
 				t.Fatalf("early file reached EOF: %v; later file read %d of %d bytes", got >= 0, ahead.read.Load(), len(tc.ahead))

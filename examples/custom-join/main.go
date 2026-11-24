@@ -116,7 +116,7 @@ func (s *interleaveStage) roundReady() bool {
 
 func (s *interleaveStage) Close() error { return nil }
 
-func s16Source(id av.StreamID, frames ...[]int16) goav.InputSpec {
+func s16Source(id av.StreamID, frames ...[]int16) goav.Input {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push source.Push) error {

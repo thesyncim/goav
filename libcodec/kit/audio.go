@@ -2,11 +2,11 @@ package kit
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
 	"strconv"
-	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -60,6 +60,7 @@ type audioEncoder struct {
 	carry   codec.EncodeResult
 	closed  bool
 	emitFn  func(*Packet) error
+	pcm     []int16
 }
 
 func (e *audioEncoder) Descriptor() codec.Descriptor { return e.desc }
@@ -113,7 +114,7 @@ func (e *audioEncoder) EncodeInto(ctx context.Context, frame *av.Frame, out *cod
 	if err := e.ready(ctx, out); err != nil || frame == nil {
 		return err
 	}
-	pcm, err := framePCM(frame, e.config.Channels)
+	pcm, err := e.framePCM(frame)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", e.c.ID, e.c.Backend, err)
 	}
@@ -126,8 +127,10 @@ func (e *audioEncoder) EncodeInto(ctx context.Context, frame *av.Frame, out *cod
 	}, e.emitFn)
 }
 
-// framePCM views a goav s16 audio frame's interleaved samples.
-func framePCM(frame *av.Frame, channels int) ([]int16, error) {
+// framePCM decodes a goav s16 audio frame's interleaved little-endian samples
+// into the encoder's reusable scratch buffer.
+func (e *audioEncoder) framePCM(frame *av.Frame) ([]int16, error) {
+	channels := e.config.Channels
 	if frame.Audio == nil || len(frame.Planes) == 0 {
 		return nil, fmt.Errorf("%w: want an interleaved s16 audio frame", codec.ErrUnsupportedFormat)
 	}
@@ -137,7 +140,11 @@ func framePCM(frame *av.Frame, channels int) ([]int16, error) {
 	if frame.Audio.Channels != 0 && frame.Audio.Channels != channels {
 		return nil, fmt.Errorf("%w: %d channels, the encoder opened with %d", codec.ErrUnsupportedFormat, frame.Audio.Channels, channels)
 	}
-	data := frame.Planes[0].Buffer.Bytes[frame.Planes[0].Offset:]
+	plane := frame.Planes[0]
+	if plane.Offset < 0 || plane.Offset > len(plane.Buffer.Bytes) {
+		return nil, fmt.Errorf("%w: plane offset %d out of range for %d bytes", codec.ErrUnsupportedFormat, plane.Offset, len(plane.Buffer.Bytes))
+	}
+	data := plane.Buffer.Bytes[plane.Offset:]
 	samples := len(data) / 2
 	if frame.Audio.Samples > 0 {
 		samples = frame.Audio.Samples * channels
@@ -148,7 +155,14 @@ func framePCM(frame *av.Frame, channels int) ([]int16, error) {
 	if samples == 0 {
 		return nil, nil
 	}
-	return unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(data))), samples), nil
+	if cap(e.pcm) < samples {
+		e.pcm = make([]int16, samples)
+	}
+	pcm := e.pcm[:samples]
+	for i := range samples {
+		pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
+	}
+	return pcm, nil
 }
 
 func (e *audioEncoder) ready(ctx context.Context, out *codec.EncodeResult) error {
@@ -353,7 +367,9 @@ func (d *audioDecoder) emitSamples(s *Samples) error {
 	frame := &d.out.Frames[n]
 	frame.Reset()
 	buffer := av.NewBuffer(len(s.PCM) * 2)
-	copy(unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(buffer.Bytes))), len(s.PCM)), s.PCM)
+	for i, sample := range s.PCM {
+		binary.LittleEndian.PutUint16(buffer.Bytes[i*2:], uint16(sample))
+	}
 	if cap(frame.Planes) < 1 {
 		frame.Planes = make([]av.Plane, 1)
 	}

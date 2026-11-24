@@ -205,7 +205,7 @@ func (s *firstArmStage) Close() error { return nil }
 // --- fixtures ----------------------------------------------------------------
 
 // toyPacketArm declares a packet-domain source pushing toy-codec packets.
-func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
+func toyPacketArm(id av.StreamID, frames ...[]int16) goav.Input {
 	return goav.Source(string(id),
 		shape.Packet(av.MediaAudio, toyCodecID, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push source.Push) error {
@@ -234,7 +234,7 @@ func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 
 // s16FrameArm declares a frame-domain S16 source — the arm shape that joins
 // without a decode stage.
-func s16FrameArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
+func s16FrameArm(id av.StreamID, frames ...[]int16) goav.Input {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push source.Push) error {

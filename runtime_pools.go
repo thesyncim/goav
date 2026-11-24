@@ -48,9 +48,7 @@ func (p *mediaPools) putMetadata(metadata av.Metadata) {
 	if p == nil || metadata == nil {
 		return
 	}
-	for key := range metadata {
-		delete(metadata, key)
-	}
+	clear(metadata)
 	p.mu.Lock()
 	if len(p.metadata) < mediaPoolMaxEntries {
 		p.metadata = append(p.metadata, metadata)
@@ -59,9 +57,6 @@ func (p *mediaPools) putMetadata(metadata av.Metadata) {
 }
 
 func takeMediaPlanes(pools *mediaPools, count int) []av.Plane {
-	if pools == nil {
-		return make([]av.Plane, count)
-	}
 	return pools.takePlanes(count)
 }
 

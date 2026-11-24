@@ -352,3 +352,52 @@ func TestMuxRefusesHEVCWithoutAnHVCC(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestFragmentedMuxerSteadyStateAllocs(t *testing.T) {
+	streams := []av.Stream{{
+		ID:       "v",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP9,
+			Type:      av.MediaVideo,
+			Width:     64,
+			Height:    48,
+			ClockRate: 90000,
+		},
+	}}
+	m := &FormatMuxer{}
+	if err := m.Open(context.Background(), format.Output{Writer: io.Discard}, streams, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.Close() }()
+
+	// Minimal valid VP9 keyframe header (frame_marker=2, profile=0, show_existing=0,
+	// keyframe=0, show=1, error_resilient=0, sync code 0x49 0x83 0x42, etc.).
+	payload := []byte{0x82, 0x49, 0x83, 0x42, 0x00, 0x03, 0xf0, 0x02, 0xf0, 0x00, 0x00, 0x00}
+	ctx := context.Background()
+	pts := int64(0)
+	step := func() {
+		pkt := av.Packet{
+			StreamID: "v",
+			Type:     av.MediaVideo,
+			Keyframe: true,
+			PTS:      av.Timestamp{Value: pts, Base: streams[0].TimeBase},
+			DTS:      av.Timestamp{Value: pts, Base: streams[0].TimeBase},
+			Duration: av.Duration{Value: 3000, Base: streams[0].TimeBase},
+			Payload:  av.Buffer{Bytes: payload},
+		}
+		pts += 3000
+		if err := m.Write(ctx, &pkt, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Warm up header + reusable buffers.
+	for range 5 {
+		step()
+	}
+	allocs := testing.AllocsPerRun(50, step)
+	if allocs != 0 {
+		t.Fatalf("fragmented mp4 Write+flushFragment allocs = %v, want 0", allocs)
+	}
+}
