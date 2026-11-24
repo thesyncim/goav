@@ -300,6 +300,14 @@ func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, fr
 	if err != nil {
 		return err
 	}
+	switch pixelFormat {
+	case "yuv420p":
+		pixelFormat = av.PixelFormatI420
+	case "yuv422p":
+		pixelFormat = av.PixelFormatI422
+	case "yuv444p":
+		pixelFormat = av.PixelFormatI444
+	}
 
 	// goh264 hands back a fresh copy of each picture that it never touches
 	// again, so the planes are published as they are, without a pool copy.

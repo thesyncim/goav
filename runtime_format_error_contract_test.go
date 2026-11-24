@@ -46,7 +46,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 			suggestionAny: []string{
 				"its first bytes",
 				"register a format adapter",
-				"goav.Input(provider)",
+				"goav.From(provider)",
 			},
 		},
 		{
