@@ -589,6 +589,6 @@ type faultingSink struct {
 	err  error
 }
 
-func (s *faultingSink) Name() string                         { return s.name }
+func (s *faultingSink) Name() string                           { return s.name }
 func (s *faultingSink) Handle(context.Context, *Message) error { return s.err }
-func (s *faultingSink) Close() error                         { return nil }
+func (s *faultingSink) Close() error                           { return nil }
