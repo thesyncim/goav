@@ -1,7 +1,0 @@
-- Fix `codec.Settings` handling (`Backend`, `BitDepth`, and `Custom` map cloning/merging) across `mergeCodecSettings`, `codecSpecHasDecodeIntent`, `codecSettingsEqual`, and `CloneCodecSettings`.
-- Add URL support (`https://`, `http://`, `whep://`, `camera://`, `file://`) and `--control*` flag support to `goav play`, and avoid building a discarded runtime when `play` is used in `goav run`.
-- Add `ctlserver.URIs(schemes ...string)` so control-plane clients can attach URI-backed branches.
-- Simplify `goav.Custom(dest, opts...)` by removing the redundant leading `name` parameter (`dest.Name()` is used by default; override with `goav.Name(...)`).
-- Fix `webrtcav` WHEP `activeTracks` startup race in multi-track sessions.
-- Simplify `bundle` and `player` option APIs to one coherent style: remove redundant `bundle.Options()` (keep `bundle.All()`) and replace `player.Window.RuntimeOptions()` with `RuntimeOption() runconfig.Option`.
-- Clean up stale pre-unification godoc comments, fix `goav.New` default realtime doc, flatten double-wrapped `runconfig.With*` closures, clean up failed HLS rename temp files in `launch/hls.go`, delete dead `tap.go`/`tap_ref.go` helpers, and fold 4 tiny root micro-files.

@@ -13,6 +13,8 @@ methodology changes, and migration notes.
 
 Entries since 2026-10-19 live in changelog.d/ until release.
 
+## v0.2.0
+
 - Fix: the offline order now also covers nested joins and joins with a
   Select arm, on either runner: a join bounds its arms at the turn, passing
   over a file whose arm it holds back, instead of blocking a delivery in
@@ -943,6 +945,336 @@ Entries since 2026-10-19 live in changelog.d/ until release.
 - The dynamic audio room example sizes its event buffers above its teardown
   burst. Watch sheds when a buffer is full, and the demo asserts every
   lifecycle event, so it failed intermittently under load.
+- **Dependencies**: bump `github.com/thesyncim/goav1` to `v0.2.0`, `github.com/thesyncim/gopus` to `v0.2.11`, `github.com/thesyncim/govpx` to `v0.3.2`, and repin nested/example modules to `github.com/thesyncim/goav` `v0.1.0-alpha.9`.
+- Add optional cameraav live video capture for macOS, Linux, and Windows without
+  cgo, with exact mode selection, bounded native queues, and fixed Go frame storage.
+  Register camera:// inputs in the CLI, add camera device listing, and provide a
+  macOS permission-bundle helper. See cameraav/README.md for supported formats,
+  allocation guarantees, access requirements, and hardware-validation limits.
+- Add `scripts/camera/go-run-macos.sh` so the cgo-free CLI can request
+  macOS camera access through `go run -exec`, with matching setup instructions
+  for camera listing and capture.
+- Changelog entries now go in per-PR `changelog.d/` fragments instead of
+  `CHANGELOG.md`, so parallel PRs stop conflicting.
+### Changed
+
+- Fixed `player` CI `staticcheck` SA1019 failure on deprecated `(*oto.Player).Close()` by pausing the player and clearing the engine device callback via `SetDevice(nil, 0)`.
+- Removed `unsafe` completely from `player` (`player/latency_darwin.go` now uses typed `purego` bindings) and `libcodec/proof/extbackend`.
+- Added Go 1.27 portable `simd` kernels to `adapters/resize` (bit-exact single-pass 2x2 box downscale + in-register SIMD vertical pass, plus unrolled 3-tap/4-tap horizontal fast paths), cutting half-scale I420 resize time by >6x vs the previous 2-pass scalar path (~1.7x vs single-pass scalar) at 0 allocs/op.
+- Skipped redundant full-canvas black/chroma fill in `video_composite.go` when a participating arm already covers the entire canvas (e.g. PiP backgrounds), and fixed `BenchmarkCompositeI420BlitKernel` to release its pooled canvas each iteration.
+- Folded the zero-dependency `playoutav` package into the root `github.com/thesyncim/goav` module (import path unchanged) and consolidated the 9 core-only examples under a single `examples/go.mod`, reducing repository `go.mod` count from 22 to 13.
+- Repinned all nested and example modules to `github.com/thesyncim/goav@v0.1.0-alpha.8`, added the missing local `replace` directive to `cameraav/go.mod`, and added `/cameraav` to Dependabot.
+- Added `scripts/repin.sh` and `scripts/test-all-modules.sh` to automate cross-module root repinning and workspace-wide build/vet/test checks.
+- Split the `container/matroska` `demuxer.go` (6,670 lines) and `muxer.go` (4,809 lines) monoliths and root `runtime_attach.go` (1,730 lines) into focused, domain-scoped files, and consolidated 8 micro root contract test files into `helper_contracts_test.go`.
+- Consolidated 17 sprawling `docs/*.md` files (3,732 lines) into 8 concise, non-overlapping reference docs (`README.md`, `GUIDE.md`, `EXTENDING.md`, `REALTIME.md`, `CLI.md`, `ARCHITECTURE.md`, `PERFORMANCE.md`, `RELEASING.md` — 499 lines total) and added an upfront platform/license codec availability matrix to `README.md`.
+- **Core runtime, control plane & pipeline hardening**:
+  - `pipeline`: implement `NodeInjector`, `CanControlSource`, and event-driven gate draining on `directRunner`, and export `ContextCloser`, `NodeRemoverContext`, `SourceControlProber`, and `DownstreamFlusher`.
+  - `goav`: keep `Runtime` strictly immutable by moving per-task clock, realtime, buffer, QoS, and control seams onto `builder`/`task`; unify attach lowering setup via `task.newLoweringBuilder`; fail fast with `*BuildError` when a single-use `goav.Read` or `goav.Write` handle is reused across builds.
+  - `av` / `control` / `codec`: add `av.EventSelectActive` (replacing `av.EventStats` overloading) and typed `Event.Bitrate`, `Event.Rate`, and `Event.End` fields with `Metadata` fallback.
+  - `provider` / `format`: export optional capability interfaces (`Named`, `Detailed`, `ProtocolProvider`, `ClockUser`, `DecodeBoundsProvider`, `Sized`, `LiveReporter`, `InputShaper`, `ControlUser`, `StreamOpener`, `format.SeekChecker`).
+- Bump `github.com/thesyncim/{goav1,gopus,govpx}` across the root and nested modules
+  and migrate `adapters/goav1` to `goav1`'s simplified public `Decoder` API with
+  zero-allocation steady-state packet decoding and full AV1 post-filtering.
+- Accept `yuv420p` alongside `i420` in `goav.Composite` and `adapters/govpx`
+  descriptors so camera, H.264, and resize outputs compose without runtime pixel
+  format errors.
+- Harden VideoToolbox pixel-buffer locking and padded height bounds, `player`
+  `Engine.Close` shutdown ordering and speaker cleanup, WHIP/WHEP answer body error
+  propagation, `rtpav.Send.OpenStreams` atomicity, `gopus`/`goh264` multi-frame
+  metadata pointer aliasing, `ctlserver` auth timeout/batch/watch caps and HTTP
+  413 handling, MP4 demuxer 64-bit box/fragment overflow checks and pooled buffer
+  reset ordering, and HLS atomic publish abort/cleanup, invalid box rejection, and
+  LL-HLS end-of-stream announcements.
+- Eliminate per-fragment allocations and full-fragment media double-copy in fragmented
+  MP4 muxing (pinned at 0 allocs/op), avoid per-packet allocations in AV1/H.264/HEVC
+  MP4 sample framing and WHEP receive pumping, carve I420 output planes from a single
+  pooled block in `govpx` and `resize`, optimize `cameraav` NV12/YUYV pixel copies
+  and `player` 720p+ YUV→RGBA conversion (0 allocs/frame with pooled row workers and
+  2×2 I420 blocks), skip per-request timer/query allocations in `hls.Server`, and
+  remove per-message reflection and redundant fanout/depth work in `pipeline` and
+  join stages.
+- Remove all remaining `unsafe` usage from the root module (`adapters/gopus`) and
+  all avoidable non-FFI `unsafe` from `cameraav/pool.go`, `gplcodec`, and
+  `libcodec/kit` using reusable scratch buffers and `encoding/binary` (zero
+  allocations in steady state).
+- Pre-v1 API unification for one coherent way to do each thing:
+  - Collapse `goav.LiveTask` into a single `goav.Task` interface.
+  - Make root input & destination constructors symmetric: `goav.Input` (was
+    `InputSpec`), `goav.Read`/`goav.Write` (was `FileInput`/`Write`),
+    `goav.FromURI`/`goav.ToURI` (was `URIInput`/`URI`), `goav.From` (was
+    `Input(...)`), `goav.WriteFunc` (was `Writer`), and method `Input.Wrap`
+    (was `WrapSource`).
+  - Canonicalize `av.PixelFormatYUV420P`/`YUV422P`/`YUV444P` to
+    `av.PixelFormatI420`/`I422`/`I444`.
+  - Remove duplicate `component.New*`/`Must*` wrappers (keep `PacketFunc`,
+    `FrameFunc`, `EventFunc`, `SinkFunc`).
+  - Export `goav.ResizeOption` and `goav.ResampleOption` on `Stream.Resize` /
+    `Stream.Resample`.
+  - Replace `provider.Writer` with standard `io.WriteCloser`.
+  - Unify `flow.Sync` with `flow.Playout`'s fluent style
+    (`flow.Sync(name).WithTolerance(d).WithDropLate()`), rename
+    `runconfig.Scheme` → `runconfig.WithScheme`, make `cameraav.Scheme()` a
+    constructor function, rename `codec.CodecSettings` → `codec.Settings` and
+    `codec.Codec` → `codec.New`, remove dead `codec.Auto`/`codec.Copy`
+    constructors, and add `bundle.All()` and `bundle.Probe(...)`.
+- Optimize `adapters/resample` with zero-division incremental stepping and Q16
+  fixed-point interpolation (plus mono/stereo fast paths), and handle
+  single-track `io.EOF` in `webrtcav` WHEP sessions with `av.EventStreamRemoved`
+  instead of tearing down sibling tracks.
+- Remove archived planning docs (`docs/history/`) and redundant/stale governance
+  docs (`API_SURFACE.md`, `COMPATIBILITY.md`, `GSTREAMER_ALTERNATIVE.md`,
+  `RUNTIME_CONTRACTS.md`), slim `ROADMAP.md`, and align `README.md`, `docs/`,
+  and code comments with the current API and Go 1.27.4.
+- Fix `codec.Settings` handling (`Backend`, `BitDepth`, and `Custom` map cloning/merging) across `mergeCodecSettings`, `codecSpecHasDecodeIntent`, `codecSettingsEqual`, and `CloneCodecSettings`.
+- Add URL support (`https://`, `http://`, `whep://`, `camera://`, `file://`) and `--control*` flag support to `goav play`, and avoid building a discarded runtime when `play` is used in `goav run`.
+- Add `ctlserver.URIs(schemes ...string)` so control-plane clients can attach URI-backed branches.
+- Simplify `goav.Custom(dest, opts...)` by removing the redundant leading `name` parameter (`dest.Name()` is used by default; override with `goav.Name(...)`).
+- Fix `webrtcav` WHEP `activeTracks` startup race in multi-track sessions.
+- Simplify `bundle` and `player` option APIs to one coherent style: remove redundant `bundle.Options()` (keep `bundle.All()`) and replace `player.Window.RuntimeOptions()` with `RuntimeOption() runconfig.Option`.
+- Clean up stale pre-unification godoc comments, fix `goav.New` default realtime doc, flatten double-wrapped `runconfig.With*` closures, clean up failed HLS rename temp files in `launch/hls.go`, delete dead `tap.go`/`tap_ref.go` helpers, and fold 4 tiny root micro-files.
+- RTP and WebRTC egress follow-ups. A media sink may report `Live`, and RTP
+  `Send`, WHIP, and `webrtcav.LocalTrack` do: a recipe ending in one plans
+  realtime, so `file in.mp4 ! uri "whips://…"` publishes at the file's media
+  time instead of in one burst. REMB and TWCC bitrate targets stay between
+  64 kb/s and the encoder's configured bitrate (2.5 Mb/s when none is set). A
+  NACK is answered as it arrives, not on the next packet. WHIP and WHEP follow
+  only 307/308 redirects (a 301/302/303 is refused rather than replayed as a
+  GET), and a trickle PATCH sends `If-Match: *` when the server gave no
+  entity-tag. `LocalTrack` reopens when its branch reattaches, continuing the
+  track's RTP sequence; the runtime ladder example uses it.
+- Breaking (webrtcav): the WHEP/WHIP options are `WithToken`,
+  `WithHTTPClient`, and `WithSession`.
+- **Zero-cost explicit state machines across runtime, pipeline, containers, RTP/WebRTC, player, and codecs**:
+  - `goav` / `format` / `flow` / `scheme` / `ctlserver`: replace scattered lifecycle booleans with inline `uint8` / `atomic.Uint32` enums on `task`, `runtimeAttachment`, `destinationTransaction`, `switchGate`, and `ctlserver.Client`, guarding duplicate `Run()`, drain-vs-close commit/abort races, post-close timeline controls, torn `Snapshot()` reads, reconnect backoff cancellation, EOS-once delivery, and progressive HTTP body release.
+  - `pipeline`: introduce inline `runPhase` and `nodePhase` enums (`ErrAlreadyRunning` on concurrent `Run()`, `runDraining` guards on `Inject`/`InjectSource`/`CanControlSource`, readiness dynamic-sink isolation, `Spec()`/`Stats()` name collision fixes during drain, and `DropUntilSync` flush/race fixes).
+  - `rtpav` / `webrtcav`: replace scattered flags in video depacketizers (`VP8`/`VP9`/`H264`/`AV1`), `sender` (fixing `WithHistory(0)`), `JitterRing`, `Source`, `whepSession` (fixing `adopt()`-vs-`pumpTracked()` teardown race), `egress`/`trackOut`, `trackReader`, `signaling`, and `whipSession`.
+  - `container`: add explicit state enums to `hls.writer`, `hls` store file writers, `mp4.FormatMuxer`, `matroska.Muxer`/`Demuxer`, and `FormatDemuxer` adapters.
+  - `player` / `adapters` / `libcodec` / `cameraav`: replace scattered flags in `player/internal/engine` (`Engine`, `extClock`, `seekCutState`), `player.game`, `gopus`, `govpx`, `goav1`, `goh264`, `ivf`, `resample`, `libcodec/kit`, and `audiotoolbox`, fixing nil-pointer panics, infinite flush loops, native handle leaks, and seek/resume edge cases.
+- Fix a data race in `source.Push` when multiple goroutines push concurrently on the same `Push` value by pooling `pipeline.Message` envelopes in a `sync.Pool` instead of mutating a shared field on `Push`, keeping `Push.Packet` and `Push.Frame` at `0 allocs/op`.
+- Break: the default `bundle` no longer links GPL code. The pure-Go AAC-LC
+  decoder (goaac, a FAAD2 translation under GPL-2.0-or-later) moved to the new
+  opt-in nested module `github.com/thesyncim/goav/gplcodec`:
+  `bundle.New(gplcodec.AAC())`. Without it, AAC decodes through
+  `libcodec.AudioToolbox()` on macOS, and a refused AAC decode names both
+  options. The root module now requires only permissively licensed backends
+  (and LGPL goh264, linked only with `-tags goav_goh264`), pinned with their
+  licenses and the import graph by `TestRootModuleDependencyPurity`; the
+  modernc runtime left the root module graph. The CLI no longer decodes AAC.
+- The README's codec table is true on every platform it claims, pinned by
+  `TestReadmeCodecTableMatchesBundle` against the bundle's active backends,
+  and `docs/ADAPTERS.md#licenses` states every backend's license and what
+  linking it means (LGPL goh264's relinking duty, GPL gplcodec).
+- The release workflow can pass: tags are verified through GitHub's signature
+  check (`scripts/verify-release-signature.sh`, shared by `ci.yml` and
+  `release.yml`) instead of `git verify-tag` against an empty runner keyring;
+  `workflow_dispatch` with `dry_run` rehearses every step on any branch without
+  a tag or release; a nested tag pinning a goav module at a pseudo-version is
+  refused; `gplcodec` and `goavtest/expect` tags are recognized.
+- Removed a committed 3.7 MB benchmark helper binary; `TestNoCommittedBinaries`
+  refuses any tracked ELF, Mach-O, or PE file.
+- Attaching `task.Tap(name)` for a tap the task does not have is refused as
+  `runtime_branch_tap_missing` even when the branch encodes or resamples,
+  instead of a misleading packet-domain shape error.
+- A seek or segment control on a source that cannot reposition is refused when
+  it is asked, wrapping `format.ErrNotSeekable` with the fix, and the task plays
+  on; it used to return nil and then stop the task. A demuxer whose seeking
+  depends on its input reports it through `CanSeek() bool` (Matroska and WebM
+  do, and probe the reader, so a pipe behind an `*os.File` counts as
+  unseekable). CLI `file` inputs open when the run starts and keep the file's
+  capabilities, so `goav ctl seek` works on them; a `provider.ByteSource` may
+  also implement `Protocol() av.ProtocolID`.
+- Input formats are detected from content: an input's first bytes are probed
+  when it opens (MP4, WebM/Matroska, IVF, Annex B, Ogg, FLV, and ADTS, MP3,
+  FLAC, WAV, which are named in the refusal when no demuxer reads them), and
+  the name, URI, and MIME type are hints, so a misnamed or extensionless file
+  works. Probing keeps the reader's capabilities (a file still seeks); an HTTP
+  input re-reads its first 4 KiB without a second request.
+- A muxer is never handed a stream it would drop: when a destination opens,
+  the streams an input turned out to have are checked against the container
+  like planned ones, so a whole two-stream file into IVF is refused as
+  `destination_mux_incompatible` naming the stream to route, instead of
+  silently losing the audio.
+- An input its demuxer cannot open is refused as `input_invalid` (phase
+  `open`) naming the input, the detected format, and what is wrong (empty,
+  truncated, not that format) instead of a bare `EOF` or `matroska: invalid
+  data`; a read failure mid-run names its source node.
+- The control plane authenticates: `ctlserver.Token(t)` makes every
+  connection authenticate first (`$/authenticate`; `Dial` sends it from
+  `tcp://TOKEN@host:port`) and every HTTP request carry `Authorization: Bearer`,
+  answering others `CodeUnauthorized` (-32001); `ListenAndServe` refuses tcp
+  without a Token. `goav run --control tcp://127.0.0.1:PORT` writes a random
+  token owner-only to `--control-token FILE` (default: per address, in the
+  config directory) that `goav ctl` reads, refuses a non-loopback address
+  without `--control-remote`, and confines attached programs to
+  `--control-dir` (default `.`). Program output files are created when their
+  destination opens, so a refused path fails the build or attach.
+- Picture-in-picture works: a Composite (or Mix) arm may `.Resize` (or
+  `.Resample`) itself after `.Decode()`, so
+  `goav.Composite(cam, goav.At(screen.Video().Decode().Resize(480, 270), 1420, 790))`
+  insets the screen on a camera-sized canvas, from frame sources and from
+  files whose size is known only when they open (`composite(a, b ! resize
+  480x270 ! at 1420 790)` in the CLI). Arm transforms are planned, checked
+  against the registered filters, and shown in Describe; work an arm cannot
+  lower is refused with the fix.
+- `docs/ERROR_CATALOG.md` lists every code a goav refusal can carry (90, by
+  family), generated from the source and pinned complete by
+  `TestErrorCatalogDocMatchesErrcodeCatalog`, instead of 13 of them.
+- Opus and AV1 encode are allocation-pinned (`TestOpusEncodeAllocs`,
+  `TestAV1EncodeAllocs`: 0 per frame), as PERFORMANCE.md already claimed.
+- Docs say what the code does: the default bundle's concrete VP8/VP9/AV1
+  codecs (not "descriptor-only"), `goav.Write` (not `File`), no `From`, 13
+  benchmark workloads, the real buffer options, a WebM custom-destination
+  example the bundle can run, live provider transcode as working, RTP and
+  WebRTC as in-and-out modules, and every nested module in the README.
+- CI runs the suite on Windows, fuzz-smokes the CLI language (`FuzzCompile`),
+  the Matroska demuxer, the EBML reader, and the RTP packetizers too, and pins
+  govulncheck; the repository gains `.gitattributes` (LF), Dependabot,
+  CODEOWNERS, and a bug-report form.
+
+Control token files are replaced atomically with owner-only permissions, including when an existing path is world-readable or a symlink. A failed launch on an occupied control port preserves the running server's token.
+- Make `source.Push.Packet` and `source.Push.Frame` zero-allocation (`0 allocs/op`) by reusing a `pipeline.Message` slot on `Push` instead of escaping a fresh `pipeline.Message` to the heap per packet/frame (dropping `BenchmarkResize`, `BenchmarkResample`, and `BenchmarkSourcePush` to `0 allocs/op`).
+- Bump `github.com/thesyncim/govpx` to `v0.1.1-0.20261124220323-9327953bd8dc` across root and all nested modules referencing it.
+- Added HEVC: `av.CodecHEVC`, `codec.HEVC()`, and hvc1 in MP4 (the hvcC
+  comes from the stream or the first keyframe's parameter sets).
+- libcodec: a damaged unit no longer ends a decode (the kit drops it and asks
+  for one keyframe); VideoToolbox no longer double-releases pictures after a
+  dropped one. Runtimes share library bindings and hardware probes, so
+  building one no longer leaks or re-probes. Backends declare an ABI window,
+  a license (`kit.License`: class, notice, terms), and releases as plain
+  values (`libcodec.Declarations`); statuses are active, not-installed,
+  disabled, outside-window. `GOAV_LIBCODEC_DISABLE` turns backends off.
+  Explain reports a backend's notice (`AdapterRequirement.Notice`).
+  VideoToolbox HEVC no longer claims main10. Break: `kit.Codec` drops
+  `Module` and `Package` (read from the constructors), `kit.Library` takes
+  `System` paths, `kit.Find`, `kit.Releases`, and `kit.CodecHEVC` are gone,
+  and a backend declaring no knobs takes no settings.
+- A setting no backend takes is refused with each backend's reason and the
+  nearest name, not as an unsupported codec.
+- Added the `libcodec` nested module: codecs in shared libraries and OS
+  frameworks, bound at run time through purego with `CGO_ENABLED=0`.
+  `libcodec.VideoToolbox()` (H.264 and HEVC, hardware encode and decode,
+  macOS), `libcodec.AudioToolbox()` (AAC-LC, macOS), and `libcodec.OpenH264()`
+  (H.264, every OS; Cisco's binary carries the H.264 patent license). A
+  library binds when the runtime is built; one that is missing registers its
+  backend as `not-installed` and `kit.Probe` returns the fix. `libcodec/kit`
+  declares a backend in one struct from any module (`libcodec/proof/extbackend`
+  is a complete one in 104 lines), and `libcodec/codectest.Run` is its
+  conformance suite.
+- The codec registry holds many backends per codec. Selection takes the backend
+  a request names (`codec.Backend("openh264")`, `encode h264 backend=openh264`,
+  `decode backend=...`), else the most preferred one whose capabilities and
+  settings fit: hardware, then shared libraries, then pure Go, reordered per
+  codec and mode with `runconfig.WithCodecPreference`. Describe names the
+  backend on each encode node; Explain reports it with the reason,
+  alternatives, and knobs. Backends declare their settings as `codec.Knob`s,
+  checked when a recipe is planned, with a common vocabulary (`rc`, `quality`,
+  `qp`, `speed`, `threads`, `tune`, ...). Break: the descriptor struct
+  `codec.Backend` is now `codec.BackendInfo` (with a `Kind`: hardware, lib,
+  go), and goav1's encoder backend is named `goav1`. Migration:
+  `Backend: codec.Backend{...}` becomes `Backend: codec.BackendInfo{...}`.
+- Fixed: goav1's encoder leaked its worker goroutines on Close and on every
+  reset; gopus decodes after Close return `codec.ErrClosed`.
+Removed graph nodes remain owned after a drain timeout and are closed exactly
+once when their work finishes. Shutdown also waits for pending removals, and
+`GraphStats.PendingCleanup` exposes resources still retiring. Attach rollback
+transfers ownership on successful installation and never directly closes an
+installed sink during handling.
+
+Control-client deadlines now cover queued and active writes. Cancellation and
+watch cleanup return without depending on a blocked peer. WebRTC local-track
+attachments share one sender-lifetime RTCP reader and unsubscribe on close;
+remote-track replacement interrupts and retries an idle old read.
+
+Native video decoders discard stale pictures and backend state on seek or
+configuration changes, adopt the new epoch and configuration, and continue to
+drain valid pictures at EOS. Shared native conformance now tests these transitions.
+
+External-consumer gates test resolved behavior and player/bundle dependency
+isolation. Release archives distinguish headless and desktop CLIs. Opt-in
+720p/1080p file-ladder and real WebRTC mutation workloads record evidence, with
+an hour-scale manual and weekly extended CI lane.
+Control clients preserve a received response when the peer closes immediately afterward, so authentication refusals no longer intermittently surface as EOF. VideoToolbox decoders request native NV12 output and use the codec kit's pooled I420 conversion, avoiding the platform scaler that can fail on virtual macOS hosts while retaining the same public frame format.
+- Every nested module now requires the main commit with libcodec and WHIP egress, so installing the CLI, rtpav, webrtcav, player or libcodec resolves a root that has them.
+- Every nested module now requires the main commit with the libcodec follow-ups (HEVC, notices, per-backend refusals).
+- RTP and WebRTC egress. `rtpav.NewPacketizer` packetizes H264 (single NAL,
+  STAP-A, FU-A, with SPS/PPS before every IDR), VP8, VP9, AV1, and Opus with no
+  allocation per packet, each round-tripping through its depacketizer.
+  `rtpav.Send` is an RTP output over a `PacketWriter` (`rtpav.DialUDP`) with
+  sender reports, NACK retransmission, and PLI/FIR and REMB turned into keyframe
+  and bitrate controls on the encoder feeding the stream.
+  `webrtcav.LocalTrack` sends a stream on a Pion local track, and
+  `webrtcav.WHIP` is an RFC 9725 client for `goav.URI("whip://…")` (also
+  `whips`, `whip+http`): Bearer auth, trickle PATCH, Link ice-server, TWCC
+  bandwidth estimates, and DELETE on close. `goav run` grants whip URLs.
+- Media destinations (a `pipeline.Sink` behind `goav.Sink` or a URL scheme)
+  may declare what they take (`InputShapes`), learn their streams
+  (`OpenStreams`), and use the task's control path (`UseControl`). The planner
+  encodes frames routed to one to its first codec with a registered encoder,
+  and refuses other packets with the exact fix.
+- Breaking (webrtcav): WHEP's options are now shared with WHIP:
+  `WHEPToken`/`WHEPClient`/`WHEPSession` are `Token`/`HTTPClient`/`PeerConfig`
+  (type `Option`), and a refused request is a `*webrtcav.StatusError`.
+- Fix `rtpav.Source.closed` data race (`atomic.Bool` + `CompareAndSwap` in `Close`), guard RTCP REMB `NaN`/`Inf`/`int64` overflow in `rtpav/send.go`, and maintain O(1) `JitterRing.count` instead of O(capacity) scanning per RTP packet.
+- Fix `playoutav` 100% CPU busy-spin on `ErrBackpressure`, check `closed`/`ctx.Err()` in trailing EOS emission, and check `len(streams) == 1` in `resolveStream` so adding a stream cannot pick a random stream for empty IDs.
+- Return `pipeline.ErrClosed` from `Connect`/`Disconnect`/`SetNodePaused` on closed graphs, and avoid double `startFaultDomains` setup in `directRunner.Run`.
+- Harden `cmd/goav`: handle `SIGTERM` alongside `SIGINT` for graceful muxer/HLS finalization, update `--control tcp://...:0` with the actual bound port, guard `files.written` under `files.mu`, report missing files directly in `goav play` with cancelable probing, and return an explicit error on trailing `--control-token` without a path value.
+- Fix `adapters/resample` out-of-bounds panic on empty/short audio planes (`inputSampleCount`), remove dead rate-conversion code, and benchmark the live `Filter.FilterInto` path; fix `filter.Stage` pooled-buffer refcount leak on `FilterInto`/`FlushInto` errors.
+- Fix `webrtcav` WHIP/WHEP `Close()` shutdown order so local teardown runs before HTTP `DELETE`, and close the split-lock window in `trackReader.updateTrack` so `WriteRTCP` never routes to stale `Feedback`.
+- Harden `container/mp4` (`parseStz2` `fieldSize` check before budget/alloc, checked `co64`/DTS/CTS/offset arithmetic in progressive tables, restore `io.Seeker` position in `sizeOf`) and `launch` (`parseRate` `NaN`/overflow/zero guards, `testsrc` negative arg and `< 50 Hz` audio rate guards); fold `buffer_policy.go` into `attach_plan.go`.
+- Fix `codec.DecoderStage`/`EncoderStage` pooled-buffer refcount leaks on error and `mergeCapabilities` dropping `SampleRates`; fix `adapters/resize` `planeReady` stride overflow; fix `container/webm` `Prober` losing to `matroska` on `.webm` files, `container/matroska` H.265 `00 00 03 03` RBSP stripping, partial `FormatMuxer.Open` state, and index-scan seeker desync on error; fix `container/ebml` `FinishSizedElement` seeker corruption on VINT overflow; pass cancellable `ctx` into `player` controls and wake `Engine.WaitPicture` on `Close`/`End`.
+- Separate execution success from actual output finalization. Retain per-node and
+  per-destination outcomes, honor concurrent CloseContext deadlines, and distinguish
+  caller wait timeouts from durable cleanup errors. Early Close deterministically
+  abandons active outputs; nontransactional abandonment reports Closed. Unfinished
+  branch drains abort on task Close or incomplete retirement. Explicit drains
+  require the optional RunErrorReporter graph capability; unsupported custom
+  graphs are refused before mutation.
+- Add opt-in Output.OnFailure(IsolateBranch), with FailTask as the default. Validate
+  exclusive suffixes before opening resources, retire failed branches automatically,
+  and retain failure/cleanup snapshots while healthy siblings continue.
+- Report actual execution queues and admission mode from shared planning rules,
+  including Select's pinned lossless queue and timestamp ordering constraints.
+- Require atomic four-result RTP reads, preserve per-track configuration through
+  decorators, jitter, and bounded WHEP aggregation, and add a fixed-configuration
+  legacy adapter. PacketReader, JitterBuffer, and custom pipeline.Graph implementations
+  require migration; see docs/RUNTIME_CONTRACTS.md.
+- Extend published-consumer validation to WebRTC ordered records and refresh
+  nested module pins so installed player and CLI consumers receive these contracts.
+- Preserve unrelated input media during seek: flush only source-exclusive queues,
+  including same-source forks/rejoins, and retain the bounded tail after a shared join.
+- Security hardening across network, IPC, and container parsing surfaces:
+  - Bound Matroska/EBML metadata/unknown payload and content-encoded block allocations (`16 MiB` / `64 MiB`) and read large payloads incrementally so tiny truncated streams cannot OOM.
+  - Bound `ctlserver` TCP/Unix JSON request decoding to `maxRequestBytes` (pre-auth and post-auth), add a write deadline in `session.send` to prevent stalled-client goroutine wedging, require the `Bearer ` prefix on HTTP `Authorization`, and cap concurrent SSE watches.
+  - Prevent WHIP/WHEP Bearer token leakage and scheme downgrades when servers return cross-origin or `https`→`http` `Location` URLs.
+  - Reject `Content-Range` `int64` overflow (`end == math.MaxInt64`), negative `ReadAt` offsets, and `https`→`http` credential header leaks in `scheme.HTTP`.
+  - Cap non-seekable MP4 input buffering (`256 MiB`) and per-sample allocations (`64 MiB`), and fix 32-bit signed length overflow in `internal/h264.AppendAnnexB`.
+  - Confine `hls.Dir` store paths to prevent `..` / absolute path traversal, and abort failed playlist writes in `hls.Ladder` and `launch.hlsFile` instead of publishing truncated files.
+- Reliability fixes:
+  - Fix send-on-closed-channel race in `webrtcav` WHEP single-track EOF handling.
+  - Preserve backend `ExtraData` in `libcodec/kit` `videoEncoder.Open`, guard nil `e.session` in `HandleEvent`, and guard empty packets in AudioToolbox `decoder.Decode`.
+  - Fix fMP4 `parseTrun` overwriting per-sample flags on sample 0 when `first_sample_flags` is absent.
+  - Fix `launch` `testsrc` busy-spin on `ErrBackpressure` and missing `ctx.Err()` check, and guard non-positive video dimensions in `player`.
+### Fixed
+
+- Native audio decoders now recreate sessions on discontinuity and codec changes, discard old delayed samples, adopt updated stream metadata, and rescale packet timestamps into the sample clock. EOS still drains valid delayed samples.
+- WebRTC configuration changes reach RTP sources at a reliable packet boundary, independently of bounded observer channels. Already-started reads and buffered RTP retain their original configuration.
+- Deferred node finalization failures survive reclamation and observer shutdown and remain discoverable through later graph/task Close calls with errors.Is and node context.
+
+### Testing
+
+- Added native AAC transition fixtures, concurrent WebRTC update coverage, and delayed cleanup failure regressions, including the external consumer gate.
+- File workloads report separate per-rendition packet-input and post-decode latency. WebRTC probes label their trailing quantile window and retain whole-run maxima; a new Task soak verifies repeated attach/detach, decodable A/V, remote PLI, and recording finalization.
+- Fix `libcodec/internal/videotoolbox` data race by giving each registered `kit.Codec` its own `frameworks` struct; fix `libcodec/kit` native session/handle leaks when `Open` is called on an already-open video/audio encoder or decoder; fix `libcodec/internal/audiotoolbox` 7.1 AAC `channelConfig == 7` mapping, reserved `8..15` rejection, `esds` base-128 length encoding for >100-byte `ExtraData`, encoder priming loop, and unbounded `Flush` draining; guard `libcodec/internal/openh264` `dst[1]`/`dst[2]` and dimensions before `unsafe.Slice`.
+- Fix `gplcodec/internal/goaac` aliased `av.AudioFrame` pointer overwritten across decodes.
+- Fix `internal/compile` `CodecMedia` missing `CodecAAC`/`CodecVorbis`/`CodecFLAC` and `sinkEncode` out-of-order `NodeOutput` bounds check.
+- Fix `flow.Sync` hold-late deadlock when one stream ends earlier (`EventEndOfStream` now removes the finished stream from `syncScheduler.latest`) and remove dead `closed` field.
+- Fix `join_sync.go` premature EOS on stream-less/unknown `EventEndOfStream` and recycle unknown-stream frames instead of leaking pooled buffers; fix `audio_mix.go` ignoring input `Plane.Offset` and copying it onto 0-offset mixed buffers.
+- Fix `format.StaticProber` checking MIME before magic bytes and `DemuxSource.Start` leaking pooled packet payloads on early return.
+- Use exact 192-bit unsigned intermediate arithmetic (`math/bits`) in `av.RescaleValue` so valid large timestamp conversions don't overflow prematurely.
+- Fix `goavtest.TestSource` reuse after `Close()` and backpressure busy-spin on close, and include `av.CodecHEVC` in `goavtest.Runtime()`.
+- Repin nested module `go.mod` files to `v0.1.0-alpha.4`.
+- Harden `rtpav`: fix 16-bit `SequenceDetector` cycle increment after gap landing on `0xffff`; fix `videoFrameAssembler` single-packet fast path (`started` reset and `maxFrameSize` guard); preserve H.264 SPS/PPS during loss recovery and drop on unterminated FU-A / mid-packet errors; reject truncated AV1 packets when `W > 0`; fix `FeedbackResult` pointer aliasing across repeated calls while preserving 0 allocs/op; loop `Source.flushJitter` on `ErrResultFull` and forward flush feedback; `clear` removed depacketizers/streams so 4–8 MiB buffers aren't retained; fix `JitterRing.Stats().Reordered` and `ErrResultFull` lost-count mutation; round NACK history to power of 2 to avoid wraparound aliasing.
+- Harden `webrtcav`: block `https`→`http` downgrade on 307/308 redirects; fix `sdpFragment` multi-m-line `SDPMid`/`SDPMLineIndex` grouping, session-level ICE creds fallback, and empty candidate handling; make `Accept-Patch` and `Link` `rel="ice-server"` matching case-insensitive with escaped-quote support and update `ETag` on 2xx PATCH; reject `a=inactive` in WHIP `refusedCodecs`; fix WHEP declared-track updates, duplicate `OnTrack` handling, pending-track EOF lifecycle, `EventStreamRemoved` cleanup, and `ReadRTP`/`WriteRTCP` context/closed checks; fix `peerConnectionSession.emitTrackAdded` empty `StreamID`, `TrackSet.AcceptRemote` TOCTOU race, `mergeCodecParameters` stale fields on codec switch, `trackReader` redundant hot-path lock and `expired` retention, `trackOut.write` per-packet alloc + monotonic clock continuity, `h264ProfileLevelID` 7-byte Annex B bound, and `trackInput` error-path reader close.
 
 ## Pre-v1 consolidation - 2026-06-26
 

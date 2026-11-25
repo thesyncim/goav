@@ -1,1 +1,0 @@
-- Fix a data race in `source.Push` when multiple goroutines push concurrently on the same `Push` value by pooling `pipeline.Message` envelopes in a `sync.Pool` instead of mutating a shared field on `Push`, keeping `Push.Packet` and `Push.Frame` at `0 allocs/op`.

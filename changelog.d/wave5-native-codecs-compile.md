@@ -1,3 +1,0 @@
-- Fix `libcodec/internal/videotoolbox` data race by giving each registered `kit.Codec` its own `frameworks` struct; fix `libcodec/kit` native session/handle leaks when `Open` is called on an already-open video/audio encoder or decoder; fix `libcodec/internal/audiotoolbox` 7.1 AAC `channelConfig == 7` mapping, reserved `8..15` rejection, `esds` base-128 length encoding for >100-byte `ExtraData`, encoder priming loop, and unbounded `Flush` draining; guard `libcodec/internal/openh264` `dst[1]`/`dst[2]` and dimensions before `unsafe.Slice`.
-- Fix `gplcodec/internal/goaac` aliased `av.AudioFrame` pointer overwritten across decodes.
-- Fix `internal/compile` `CodecMedia` missing `CodecAAC`/`CodecVorbis`/`CodecFLAC` and `sinkEncode` out-of-order `NodeOutput` bounds check.

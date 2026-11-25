@@ -1,5 +1,0 @@
-- **Core runtime, control plane & pipeline hardening**:
-  - `pipeline`: implement `NodeInjector`, `CanControlSource`, and event-driven gate draining on `directRunner`, and export `ContextCloser`, `NodeRemoverContext`, `SourceControlProber`, and `DownstreamFlusher`.
-  - `goav`: keep `Runtime` strictly immutable by moving per-task clock, realtime, buffer, QoS, and control seams onto `builder`/`task`; unify attach lowering setup via `task.newLoweringBuilder`; fail fast with `*BuildError` when a single-use `goav.Read` or `goav.Write` handle is reused across builds.
-  - `av` / `control` / `codec`: add `av.EventSelectActive` (replacing `av.EventStats` overloading) and typed `Event.Bitrate`, `Event.Rate`, and `Event.End` fields with `Metadata` fallback.
-  - `provider` / `format`: export optional capability interfaces (`Named`, `Detailed`, `ProtocolProvider`, `ClockUser`, `DecodeBoundsProvider`, `Sized`, `LiveReporter`, `InputShaper`, `ControlUser`, `StreamOpener`, `format.SeekChecker`).
