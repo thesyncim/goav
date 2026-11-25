@@ -145,9 +145,16 @@ DOT and Mermaid.
 
 Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
 runtime with only the adapters you choose, and there is no global registry.
-AAC comes from [`libcodec`](libcodec) (AudioToolbox, macOS) or the opt-in [`gplcodec`](gplcodec)
-(pure Go, arm64 only, GPL). Everything `bundle` links is permissive, except LGPL H.264 under
-its tag; see [licenses](docs/ADAPTERS.md#licenses).
+
+| Need | Default (`bundle`, pure Go) | Opt-in / native (`libcodec`, `gplcodec`, tags) |
+| --- | --- | --- |
+| VP8 / VP9 / AV1 / Opus | Decode + encode (all OS, permissive) | — |
+| H.264 decode | Not registered by default | `-tags goav_goh264` (LGPL, pure Go) or `libcodec` (VideoToolbox on macOS, OpenH264 on macOS/Linux/Windows) |
+| H.264 encode | Descriptor-only (`codec.ErrUnavailable`) | `libcodec` (VideoToolbox on macOS, OpenH264 on macOS/Linux/Windows) |
+| AAC decode / encode | Not in `bundle` | `libcodec` AudioToolbox (macOS decode/encode) or `gplcodec.AAC()` (arm64-only decode, **GPL**) |
+
+Everything `bundle` links is permissive, except LGPL H.264 under its tag; see
+[licenses](docs/ADAPTERS.md#licenses).
 
 ## Recipes
 
@@ -183,10 +190,9 @@ your own sources, codecs, and sinks plug in through small interfaces
 
 | Module | Adds |
 | --- | --- |
-| `github.com/thesyncim/goav` | recipes, planner, runtime; bundled adapters in [`bundle`](bundle) |
+| `github.com/thesyncim/goav` | recipes, planner, runtime, scheduled playout ([`playoutav`](playoutav)); bundled adapters in [`bundle`](bundle) |
 | [`goav/rtpav`](rtpav) | RTP in and out: jitter buffer, (de)packetizers, RTCP feedback (Pion) |
 | [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
-| [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/cameraav`](cameraav) | cgo-free camera capture with bounded zero-allocation frame delivery |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |

@@ -48,6 +48,7 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/thesyncim/goav v0.1.0-alpha.4 h1:nP0IYwDfSseKHFfKHHO7g2BIVOIVS7/td74D8NI7QfI=
 github.com/thesyncim/goav v0.1.0-alpha.4/go.mod h1:EwHR8nS8ygr9+ywy5skj8FSl7lzzV1JIKqdors+m118=
+github.com/thesyncim/goav v0.1.0-alpha.8/go.mod h1:USvofmfE9JuTj0w2hllaxkWzwxsAd2qWiIEo3eKNHgg=
 github.com/thesyncim/goav/cameraav v0.0.0-20261124213030-4062f221251b h1:KU76jeSx2nbBjqnfPBCLzva7wXdOMd/ZbmZ2odUluTk=
 github.com/thesyncim/goav/cameraav v0.0.0-20261124213030-4062f221251b/go.mod h1:43w6Hc9UQ1NqS7sa7osL02EjTU7pZnn97quJ/xGAmuY=
 github.com/thesyncim/goav/player v0.0.0-20261124213030-4062f221251b h1:blzKTk0Lo7Tn0VNVRrJznnlHw0YYFDII3Mkc05opYb8=

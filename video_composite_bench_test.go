@@ -59,6 +59,7 @@ func BenchmarkCompositeI420BlitKernel(b *testing.B) {
 				if _, err := compositeI420FramesInto(frames, layout, 0, 0, "out", dst, video); err != nil {
 					b.Fatal(err)
 				}
+				dst.Release()
 			}
 		})
 	}

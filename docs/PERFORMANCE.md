@@ -174,19 +174,25 @@ real-codec time by a 45% geomean: `BenchmarkRealVP8Decode` 59.5→16.5 us/op,
 56 ns/op (2 arms), 313 ns/op (3 arms), and 675 ns/op (8 arms), against
 1.68, 2.24, and 5.3 us/op for scalar, all at 0 allocs/op.
 
-Composite, resample, and resize stay scalar until a Go SIMD
-prototype beats the measured scalar rows by at least 1.5x. The current scalar
-baseline includes no-clipping composite row-copy, equal-rate resample
-copy/channel-remap, and identity-copy resize fast paths. On
-the same arm64 host (`-benchtime=300ms -count=3`), representative rows measured:
-`BenchmarkCompositeI420BlitKernel/two_arms/160x90` about 1.4-1.5 us/op,
-`BenchmarkResampleS16Kernel/stereo44100_to_mono48000/20ms` about
-4.8-5.1 us/op, and `BenchmarkScaleI420Kernel/320x180_to_half` about
-62 us/op, all at 0 allocs/op. The amd64 VirtualApple runs measured
-about 2.0 us/op, 8.9-10.0 us/op, and 68 us/op for those same rows,
-also at 0 allocs/op. Resize replaced point sampling with area averaging (6x
-the old nearest-neighbor time) so downscaled renditions do not alias; it is
-the strongest SIMD candidate of the three.
+Resize now uses Go 1.27 portable `simd` kernels under `GOEXPERIMENT=simd`
+(without `-tags purego`), bit-exact with the scalar Q14 reference
+(`TestScaleFastPathsMatchScalarReference`): a single-pass 2x2 box downscale for
+exact half-size renditions and an in-register SIMD vertical pass for arbitrary
+ratios. On the same Apple M4 Max (`darwin/arm64`, `-benchtime=300ms`),
+`BenchmarkScaleI420Kernel/320x180_to_half` dropped from ~62-78 us/op (2-pass
+scalar) to ~18.5 us/op (single-pass scalar) and ~11.0 us/op (SIMD, 1.68x over
+single-pass scalar / >6x over 2-pass scalar); `640x360_to_half` measured
+~43.0 us/op SIMD vs ~72.7 us/op single-pass scalar; `1280x720_to_half` measured
+~167 us/op SIMD vs ~295 us/op single-pass scalar (~2.0 GB/s), all at 0 allocs/op.
+
+Composite and resample stay scalar until a Go SIMD prototype beats the measured
+scalar rows by at least 1.5x. The current scalar baseline includes no-clipping
+composite row-copy (plus skipping the full-canvas black fill when a participating
+arm covers the canvas), equal-rate resample copy/channel-remap, and identity-copy
+resize fast paths. On the same arm64 host (`-benchtime=300ms`), representative
+rows measured: `BenchmarkCompositeI420BlitKernel/two_arms/160x90` about
+1.5 us/op and `BenchmarkResampleS16Kernel/stereo44100_to_mono48000/20ms` about
+4.8-6.2 us/op, all at 0 allocs/op.
 
 The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,

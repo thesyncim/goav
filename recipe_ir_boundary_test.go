@@ -227,7 +227,7 @@ var compileBoundary = map[string][]string{
 	"DiagnosticStreamRule":            {"recipe_explain.go"},
 	"PlanDecision":                    {"recipe_explain.go"},
 	"WorkBranch":                      {"recipe_explain.go"},
-	"WorkDestination":                 {"attach_plan.go", "branch_failure.go", "destination_outcome.go", "recipe_explain.go", "runtime.go", "runtime_attach.go"},
+	"WorkDestination":                 {"attach_plan.go", "branch_failure.go", "destination_outcome.go", "recipe_explain.go", "runtime.go", "runtime_attach.go", "runtime_attachment.go"},
 	"OpenedMuxRefusal":                {"mux_destination.go"},
 	"WorkDestinationID":               {"attach_plan.go"},
 	"WorkDestinationNameByID":         {"recipe_explain.go"},

@@ -1,7 +1,6 @@
 package resize
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -49,20 +48,29 @@ func BenchmarkScalePlaneKernel(b *testing.B) {
 }
 
 func BenchmarkScaleI420Kernel(b *testing.B) {
-	for _, width := range []int{320, 640} {
-		height := width * 9 / 16
-		b.Run(fmt.Sprintf("%dx%d_to_half", width, height), func(b *testing.B) {
-			src := resizeBenchI420Planes(width, height)
-			dstW, dstH := width/2, height/2
+	for _, tt := range []struct {
+		name string
+		srcW int
+		srcH int
+		dstW int
+		dstH int
+	}{
+		{name: "320x180_to_half", srcW: 320, srcH: 180, dstW: 160, dstH: 90},
+		{name: "640x360_to_half", srcW: 640, srcH: 360, dstW: 320, dstH: 180},
+		{name: "1280x720_to_half", srcW: 1280, srcH: 720, dstW: 640, dstH: 360},
+		{name: "1920x1080_to_1280x720", srcW: 1920, srcH: 1080, dstW: 1280, dstH: 720},
+	} {
+		b.Run(tt.name, func(b *testing.B) {
+			src := resizeBenchI420Planes(tt.srcW, tt.srcH)
 			dst := []av.Plane{
-				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH)}, Stride: dstW},
-				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH/4)}, Stride: dstW / 2},
-				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH/4)}, Stride: dstW / 2},
+				{Buffer: av.Buffer{Bytes: make([]byte, tt.dstW*tt.dstH)}, Stride: tt.dstW},
+				{Buffer: av.Buffer{Bytes: make([]byte, tt.dstW*tt.dstH/4)}, Stride: tt.dstW / 2},
+				{Buffer: av.Buffer{Bytes: make([]byte, tt.dstW*tt.dstH/4)}, Stride: tt.dstW / 2},
 			}
-			g := geometry{inputWidth: width, outputWidth: dstW, outputHeight: dstH, cropWidth: width, cropHeight: height}
+			g := geometry{inputWidth: tt.srcW, outputWidth: tt.dstW, outputHeight: tt.dstH, cropWidth: tt.srcW, cropHeight: tt.srcH}
 			var f Filter
 			b.ReportAllocs()
-			b.SetBytes(int64(dstW * dstH * 3 / 2))
+			b.SetBytes(int64(tt.dstW * tt.dstH * 3 / 2))
 			for i := 0; i < b.N; i++ {
 				f.scaleI420(dst, src, g)
 			}

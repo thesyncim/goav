@@ -145,6 +145,14 @@ type planeScaler struct {
 // the dstWidth x dstHeight plane dst, using tmp (grown as needed) as the
 // intermediate. It returns tmp for reuse.
 func (p *planeScaler) scale(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int, tmp []uint16) []uint16 {
+	if srcWidth == 2*dstWidth && srcHeight == 2*dstHeight {
+		scaleHalfBox(dst, dstStride, src, srcStride, srcX, srcY, dstWidth, dstHeight)
+		return tmp
+	}
+	return p.scaleGeneral(dst, dstStride, src, srcStride, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight, tmp)
+}
+
+func (p *planeScaler) scaleGeneral(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int, tmp []uint16) []uint16 {
 	p.x.reset(srcWidth, dstWidth)
 	p.y.reset(srcHeight, dstHeight)
 	tmp = grow(tmp, srcHeight*dstWidth)
@@ -154,6 +162,26 @@ func (p *planeScaler) scale(dst []byte, dstStride int, src []byte, srcStride int
 		p.x.filterRow(tmp[r*dstWidth:(r+1)*dstWidth], src[base:base+srcWidth])
 	}
 
+	p.scaleVertical(dst, dstStride, tmp, dstWidth, dstHeight)
+	return tmp
+}
+
+// scaleHalfBoxScalar computes the exact 2x2 box downscale in a single pass.
+// Because Q14 weights for a 2:1 ratio are [8192, 8192] on both axes, the
+// separable two-pass result is bit-identical to (s00 + s01 + s10 + s11 + 2) >> 2.
+func scaleHalfBoxScalar(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, dstWidth, dstHeight int) {
+	for y := range dstHeight {
+		s0 := src[(srcY+2*y)*srcStride+srcX:]
+		s1 := src[(srcY+2*y+1)*srcStride+srcX:]
+		out := dst[y*dstStride : y*dstStride+dstWidth]
+		for x := range dstWidth {
+			sx := 2 * x
+			out[x] = byte((uint32(s0[sx]) + uint32(s0[sx+1]) + uint32(s1[sx]) + uint32(s1[sx+1]) + 2) >> 2)
+		}
+	}
+}
+
+func (p *planeScaler) scaleVerticalScalar(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHeight int) {
 	// The vertical pass accumulates whole intermediate rows into one output
 	// row, so every read and write walks memory in order.
 	const round = 1 << (weightBits + intermediateBits - 1)
@@ -180,7 +208,6 @@ func (p *planeScaler) scale(dst []byte, dstStride int, src []byte, srcStride int
 			out[x] = byte(v >> (weightBits + intermediateBits))
 		}
 	}
-	return tmp
 }
 
 // filterRow filters one source row into the intermediate, keeping
@@ -194,6 +221,24 @@ func (a *axisFilter) filterRow(out []uint16, line []byte) {
 			w := a.weights[2*i : 2*i+2 : 2*i+2]
 			s := line[b : b+2 : b+2]
 			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + half) >> shift)
+		}
+		return
+	}
+	if a.taps == 3 {
+		for i := range out {
+			b := int(a.start[i])
+			w := a.weights[3*i : 3*i+3 : 3*i+3]
+			s := line[b : b+3 : b+3]
+			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + int32(s[2])*w[2] + half) >> shift)
+		}
+		return
+	}
+	if a.taps == 4 {
+		for i := range out {
+			b := int(a.start[i])
+			w := a.weights[4*i : 4*i+4 : 4*i+4]
+			s := line[b : b+4 : b+4]
+			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + int32(s[2])*w[2] + int32(s[3])*w[3] + half) >> shift)
 		}
 		return
 	}

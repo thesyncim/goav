@@ -34,14 +34,10 @@ repository page should say meanwhile.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec gplcodec; do
-     (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
-   done
-   for mod in examples/*/go.mod; do
-     dir="$(dirname "$mod")"
-     (cd "$dir" && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test ./...)
-   done
+   scripts/test-all-modules.sh --race
    ```
+
+   (`scripts/test-all-modules.sh` runs `go build`, `go vet`, and `go test` across the root module, `cameraav`, `rtpav`, `webrtcav`, `player`, `libcodec`, `gplcodec`, `goavtest/expect`, `cmd/goav`, and `examples/go.mod` plus every `examples/*/go.mod`.)
 
 4. Confirm the minimum Go version in every module that will be tagged.
 5. Write the release notes: public API changes, behavior changes, adapter
@@ -55,7 +51,7 @@ say why.
 
 | Gate | Required evidence |
 |---|---|
-| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `goavtest/expect`, `rtpav`, `webrtcav`, `playoutav`, and every `examples/*/go.mod` module. |
+| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `cameraav`, `goavtest/expect`, `rtpav`, `webrtcav`, `player`, `libcodec`, `gplcodec`, `examples/go.mod`, and every `examples/*/go.mod` module (`scripts/test-all-modules.sh`). |
 | Race coverage | `CGO_ENABLED=1 go test -race` passes for the governed runtime packages and nested transport modules. |
 | Static analysis and formatting | `CGO_ENABLED=0 go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, and `test -z "$(gofmt -l .)"` pass. |
 | README and docs examples | `TestReadmeGoExamplesCompile`, the doc-citation pins in `docs_citation_contract_test.go`, package-doc smoke, and example-module tests pass. |
@@ -67,18 +63,17 @@ say why.
 
 ## Nested-module root pin
 
-`rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`, `gplcodec`, and
-`goavtest/expect` require the root at a pseudo-version of a commit on `main`
+`cameraav`, `rtpav`, `webrtcav`, `player`, `libcodec`, `gplcodec`, and
+`goavtest/expect` require the root at a tagged or pseudo-version of a commit on `main`
 (and `webrtcav` requires `rtpav` the same way), with a `replace` for local development. Consumers ignore `replace`, so
 the pin must resolve. The CI job `consumer-install` fetches every nested module
 at the PR head into an empty directory with `GOWORK=off` and builds it.
 
-Bump the pin when a nested module needs newer root behavior or API, and before each tag
-(see Tags):
+Bump the root pin across every nested and example module in one shot with `scripts/repin.sh`:
 
 ```sh
-go list -m -json github.com/thesyncim/goav@main        # Version = new pin
-go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
+scripts/repin.sh v0.1.0-alpha.8
+go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav when rtpav changes
 ```
 
 Edit the `require` lines (keep the `replace`), then run the module's tests.
@@ -121,14 +116,14 @@ git push origin v0.1.0
 Nested modules use prefixed tags:
 
 ```sh
+git tag -s cameraav/v0.1.0 -m "cameraav v0.1.0"
 git tag -s rtpav/v0.1.0 -m "rtpav v0.1.0"
 git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
-git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
-Tag order follows dependencies: root first, then `goavtest/expect`, `rtpav`,
-`webrtcav`, `playoutav`, `player`, `libcodec`, and `gplcodec`, then `cmd/goav`
-(it pins `player` and `webrtcav`).
+Tag order follows dependencies: root first, then `goavtest/expect`, `cameraav`, `rtpav`,
+`webrtcav`, `player`, `libcodec`, and `gplcodec`, then `cmd/goav`
+(it pins `cameraav`, `player`, and `webrtcav`).
 
 Before tagging a nested module, pin each goav module it requires to a tag
 (not a `main` pseudo-version), drop its `replace`, run its tests, commit, then

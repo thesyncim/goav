@@ -249,8 +249,8 @@ caller-owned `filter.Result`; production hot paths should reuse provided
 buffers and return `filter.ErrOutputBufferTooSmall` or `filter.ErrResultFull`
 instead of allocating.
 
-Copy `examples/custom-filter` for a complete module with README, `go.mod`,
-test, expected output, and a build-time failure example.
+Copy `examples/custom-filter` (part of `examples/go.mod`) for a complete example
+with README, test, expected output, and a build-time failure example.
 
 ## Custom Codec
 
@@ -357,7 +357,7 @@ package pins its hot paths with allocation guards next to the contract;
 | `filter` | `Registry`, `FrameFilter`, `SimpleRegistry` (descriptor metadata for `Explain`), `Stage` (frame transforms preserving events, flushing before EOS), caller-owned `Result` | - |
 | `rtpav` | `Source` (Pion RTP reader -> packets/events with payload maps, loss/timestamp tracking, depacketizers, EOS, feedback), `StaticPayloadMap`, `SequenceDetector` (allocation-free loss detection), `Depacketizer` and the Opus/VP8/VP9/H264/AV1 depacketizers, `FeedbackWriter` | `JitterBuffer` |
 | `webrtcav` | `TrackReader` (Pion `TrackRemote` as a packet reader) | `TrackSet` (track acceptance, same-stream replacement, codec updates) |
-| `playoutav` | - | `Input`: scheduled packets, frames, and events through `provider.Source`, in a nested module so playout does not widen the root dependency graph |
+| `playoutav` | - | `Input`: scheduled packets, frames, and events through `provider.Source` (dependency-free, in the root module) |
 | adapters | `adapters/gopus`, `govpx`, `goav1`, `ivf`, `annexb` | `adapters/goh264` (descriptor-only without `-tags goav_goh264`), `resample`, `resize`, AAC in `gplcodec`; see [`ADAPTERS.md`](ADAPTERS.md) |
 
 These are the shapes recipes compile toward and that `expert.Graph(runtime)`

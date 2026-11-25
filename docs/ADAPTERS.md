@@ -11,10 +11,10 @@ Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
 
 The root module requires only the four permissively licensed codec backends
 ([Licenses](#licenses)), pinned with their licenses by
-`TestRootModuleDependencyPurity`. `rtpav`, `webrtcav`, `playoutav`, `player`, `cameraav`,
+`TestRootModuleDependencyPurity`. `rtpav`, `webrtcav`, `player`, `cameraav`,
 `libcodec`, `gplcodec`, `goavtest/expect`, and `cmd/goav` are nested modules with their own `go.mod`; RTP/WebRTC carry the
-Pion dependency tree, the player Ebitengine and oto, library codecs and macOS camera capture purego,
-while playout is dependency-light. Importing goav alone never pulls them in.
+Pion dependency tree, the player Ebitengine and oto, library codecs and macOS camera capture purego.
+`playoutav` has no external dependencies and ships in the root module. Importing goav alone never pulls the nested modules in.
 Import paths are unchanged.
 
 To write an adapter, use `docs/ADAPTER_AUTHORING.md` for the extension
@@ -61,8 +61,8 @@ same as built-ins.
 ## Current Adapters
 
 `playoutav` is the third source-provider proof: it adapts scheduled packets,
-frames, and events through `provider.Source` as a nested module, with no core
-runtime/provider changes beyond docs and CI enumeration.
+frames, and events through `provider.Source` with zero external dependencies and
+no core runtime/provider changes.
 
 ### Player
 
