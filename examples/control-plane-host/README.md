@@ -14,7 +14,7 @@ control), through a tap named `live`. The host adds:
   through `codec.Control`.
 
 Attached programs may write files only under `--files` (default: the temp
-directory), through `launch.Dir`. See [CONTROL_PLANE.md](../../docs/CONTROL_PLANE.md)
+directory), through `launch.Dir`. See [REALTIME.md](../../docs/REALTIME.md#control-plane-ctlserver--goav-ctl)
 for the API and the protocol.
 
 ```sh

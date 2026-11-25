@@ -4,7 +4,7 @@
 
 **Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>the core needs no cgo, no FFmpeg, and no system libraries.
 
-[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
+[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/ARCHITECTURE.md#pre-v1-status--codec-decisions)
 
 </div>
 
@@ -132,7 +132,7 @@ Suggestions:
   - leave out .Decode() to copy the packets: input.Video().To(output)
 ```
 
-See [Errors](docs/ERRORS.md) for matching on codes; [`graphrender`](graphrender) also renders
+See [Errors & Error Catalog](docs/GUIDE.md#errors--error-catalog) for matching on codes; [`graphrender`](graphrender) also renders
 DOT and Mermaid.
 
 ## What's in the box
@@ -154,7 +154,7 @@ runtime with only the adapters you choose, and there is no global registry.
 | AAC decode / encode | Not in `bundle` | `libcodec` AudioToolbox (macOS decode/encode) or `gplcodec.AAC()` (arm64-only decode, **GPL**) |
 
 Everything `bundle` links is permissive, except LGPL H.264 under its tag; see
-[licenses](docs/ADAPTERS.md#licenses).
+[licenses](docs/EXTENDING.md#licenses).
 
 ## Recipes
 
@@ -168,22 +168,22 @@ Everything `bundle` links is permissive, except LGPL H.264 under its tag; see
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 
-RTP and WebRTC, in and out, live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
+RTP and WebRTC, in and out, live in their own modules ([Realtime](docs/REALTIME.md)), and
 your own sources, codecs, and sinks plug in through small interfaces
-([Extension cookbook](docs/EXTENSION_COOKBOOK.md)). More in [Use cases](docs/USE_CASES.md),
-[Operations](docs/OPERATIONS.md), and [`examples/`](examples), including a browser
+([Adapters & Extending](docs/EXTENDING.md)). More in the [Developer Guide](docs/GUIDE.md)
+and [`examples/`](examples), including a browser
 [WebRTC ladder](examples/webrtc-runtime-ladder) and a native [Gio control room](examples/gio-webrtc-showcase).
 
 ## Built for live services
 
 - **One clock per task.** Pacing, playout, pause and resume, seek, and rate share one
   timeline. Each fork can backpressure or drop on its own, and every drop is counted.
-  See [Flow control](docs/FLOW_CONTROL.md).
+  See [Flow control](docs/GUIDE.md#flow-control--backpressure).
 - **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
-  over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
+  over a control socket ([Control plane](docs/REALTIME.md#control-plane-ctlserver--goav-ctl)).
 - **Fast without codec assembly or `unsafe`.** The root module uses no `unsafe`
   and no assembly; graph, codec, and filter stages allocate nothing per message,
-  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths.
+  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec and resize paths.
   See [Performance](docs/PERFORMANCE.md).
 
 ## Modules
@@ -204,10 +204,11 @@ The core module never pulls in Pion.
 
 ## Status
 
-Pre-v1: breaking changes can land until the first tag (see [Roadmap](docs/ROADMAP.md)).
+Pre-v1: breaking changes can land until the first tag (see [Architecture & Roadmap](docs/ARCHITECTURE.md#pre-v1-status--codec-decisions)).
 Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
 
 ---
 
-[Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Adapter authoring](docs/ADAPTER_AUTHORING.md) ·
-[RTP & WebRTC](docs/RTP_WEBRTC.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Docs](docs/README.md) · [Guide](docs/GUIDE.md) · [Extending](docs/EXTENDING.md) ·
+[Realtime](docs/REALTIME.md) · [Architecture](docs/ARCHITECTURE.md) · [Performance](docs/PERFORMANCE.md) ·
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)

@@ -1,29 +1,16 @@
 # Documentation
 
-The [project README](../README.md) is the front door. Each topic below has one
-owning doc.
+Everything you need to build, extend, operate, and tune `goav` pipelines:
 
-## Guides
+| Doc | What's in it |
+| --- | --- |
+| [`GUIDE.md`](GUIDE.md) | Developer handbook: recipes, multi-input joins, live attach/detach, flow control, `*goav.BuildError` handling & generated error catalog, operations |
+| [`EXTENDING.md`](EXTENDING.md) | Bundled codecs/containers/licenses, `libcodec`/`gplcodec`/`player`, and interfaces for custom sources, codecs, filters, joins, and sinks |
+| [`REALTIME.md`](REALTIME.md) | RTP (`rtpav`), WebRTC/WHIP/WHEP (`webrtcav`), and the live control-plane socket (`ctlserver` / `goav ctl`) |
+| [`CLI.md`](CLI.md) | The `goav` CLI and `launch` pipeline string grammar |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Pipeline model, package boundaries, pure-Go & pre-v1 roadmap decisions |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | Proven allocation pins, SIMD kernels, measured benchmarks, and perf-lab harness |
+| [`RELEASING.md`](RELEASING.md) | Module pinning (`scripts/repin.sh`), multi-module checks (`scripts/test-all-modules.sh`), and signed tags |
 
-- [`USE_CASES.md`](USE_CASES.md): recipe shapes for common media workflows.
-- [`OPERATIONS.md`](OPERATIONS.md): what each operation consumes, produces, inserts, or refuses.
-- [`MULTI_INPUT.md`](MULTI_INPUT.md): combining streams with `Mix`, `Composite`, `Select`, and custom `Join`.
-- [`FLOW_CONTROL.md`](FLOW_CONTROL.md): buffering, backpressure, playout, sync, and branch isolation.
-- [`CONTROL_PLANE.md`](CONTROL_PLANE.md): inspecting and steering a running task (`ctlserver`, `goav ctl`).
-- [`RTP_WEBRTC.md`](RTP_WEBRTC.md): RTP and WebRTC ingest/egress through Pion.
-- [`CLI.md`](CLI.md): the `goav` CLI (`run`, `describe`, `explain`, `play`, `cameras`, `ctl`).
-
-## Extending
-
-- [`EXTENSION_COOKBOOK.md`](EXTENSION_COOKBOOK.md): copyable patterns for custom sources, destinations, stages, filters, codecs, and joins.
-- [`ADAPTER_AUTHORING.md`](ADAPTER_AUTHORING.md): lifecycle, ownership rules, and test contracts for custom adapters.
-- [`ADAPTERS.md`](ADAPTERS.md): bundled codecs, containers, filters, and licenses.
-
-## Reference
-
-- [`ERRORS.md`](ERRORS.md): handling `*goav.BuildError` and runtime errors.
-- [`ERROR_CATALOG.md`](ERROR_CATALOG.md): generated index of every `errcode.Code`.
-- [`PERFORMANCE.md`](PERFORMANCE.md): allocation pins, benchmarks, and methodology.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): internal layering from recipe IR through planner to runtime graph.
-- [`ROADMAP.md`](ROADMAP.md): stability status, codec decisions, and v1 checklist.
-- [`RELEASING.md`](RELEASING.md): release checklist and nested-module tagging.
+Runnable examples live in [`examples/`](../examples). For security reporting and
+contribution checks, see [`SECURITY.md`](../SECURITY.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md).

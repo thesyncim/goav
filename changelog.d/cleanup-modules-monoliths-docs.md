@@ -8,4 +8,4 @@
 - Repinned all nested and example modules to `github.com/thesyncim/goav@v0.1.0-alpha.8`, added the missing local `replace` directive to `cameraav/go.mod`, and added `/cameraav` to Dependabot.
 - Added `scripts/repin.sh` and `scripts/test-all-modules.sh` to automate cross-module root repinning and workspace-wide build/vet/test checks.
 - Split the `container/matroska` `demuxer.go` (6,670 lines) and `muxer.go` (4,809 lines) monoliths and root `runtime_attach.go` (1,730 lines) into focused, domain-scoped files, and consolidated 8 micro root contract test files into `helper_contracts_test.go`.
-- Added an upfront platform/license codec availability matrix to `README.md` and updated `docs/PERFORMANCE.md` with the new resize SIMD measurements.
+- Consolidated 17 sprawling `docs/*.md` files (3,732 lines) into 8 concise, non-overlapping reference docs (`README.md`, `GUIDE.md`, `EXTENDING.md`, `REALTIME.md`, `CLI.md`, `ARCHITECTURE.md`, `PERFORMANCE.md`, `RELEASING.md` — 499 lines total) and added an upfront platform/license codec availability matrix to `README.md`.
