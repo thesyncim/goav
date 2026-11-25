@@ -124,23 +124,26 @@ func (g *directRunner) Run(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	g.mu.RLock()
+	g.mu.Lock()
 	if g.closed {
-		g.mu.RUnlock()
+		g.mu.Unlock()
 		return ErrClosed
+	}
+	if !g.running.CompareAndSwap(false, true) {
+		g.mu.Unlock()
+		return ErrAlreadyRunning
 	}
 	g.armReadinessLocked()
 	var sourceStack [8]directSourceRun
 	sources := sourceStack[:0]
 	for _, index := range g.sources {
 		node := g.nodes[index]
-		if !node.active {
+		if !node.isActive() {
 			continue
 		}
 		sources = append(sources, directSourceRun{source: node.source, emitter: &node.emitter})
 	}
-	g.running.Store(true)
-	g.mu.RUnlock()
+	g.mu.Unlock()
 	defer g.running.Store(false)
 
 	switch len(sources) {
@@ -228,11 +231,11 @@ func (g *directRunner) remove(ctx context.Context, ref NodeRef) (*directNode, er
 		g.mu.Unlock()
 		return nil, err
 	}
-	node.active = false
+	node.phase = nodeRetired
 	node.routes = nil
 	if node.kind == nodeSink {
 		// A sink leaving before its first media message stops gating readiness.
-		g.noteSinkMedia(&node.sawMedia)
+		g.noteSinkMedia(&node.nodeBase)
 	}
 	g.rebuildLocked()
 	g.mu.Unlock()

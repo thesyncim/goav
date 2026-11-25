@@ -300,7 +300,7 @@ func (g *directRunner) handle(ctx context.Context, dst *directNode, msg *Message
 		return true, nil
 	case nodeSink:
 		if (msg.Kind == MessagePacket || msg.Kind == MessageFrame) && !dst.sawMedia.Load() {
-			g.noteSinkMedia(&dst.sawMedia)
+			g.noteSinkMedia(&dst.nodeBase)
 		}
 		if err := dst.sink.Handle(ctx, msg); err != nil {
 			return false, g.nodeError(parent, &dst.nodeBase, err)

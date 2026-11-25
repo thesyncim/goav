@@ -86,7 +86,7 @@ func TestCloseDeadlineWhileDrainDetachOwnsAttachmentLock(t *testing.T) {
 			for {
 				tx := draining.(*runtimeAttachment).transactions[0]
 				tx.mu.Lock()
-				accepted := tx.succeeded
+				accepted := tx.decision == txSucceeded
 				tx.mu.Unlock()
 				if accepted {
 					break

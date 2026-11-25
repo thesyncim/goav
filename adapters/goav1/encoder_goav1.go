@@ -30,6 +30,14 @@ func (EncoderFactory) NewEncoder(ctx context.Context, config codec.EncodeConfig)
 	return encoder, nil
 }
 
+type goav1EncoderState uint8
+
+const (
+	goav1EncoderUnopened goav1EncoderState = iota
+	goav1EncoderOpen
+	goav1EncoderClosed
+)
+
 type Encoder struct {
 	encoder          *backend.VideoEncoder
 	config           codec.EncodeConfig
@@ -39,7 +47,7 @@ type Encoder struct {
 	keyframeInterval int
 	frameCount       int
 	forceKey         bool
-	closed           bool
+	state            goav1EncoderState
 }
 
 func (e *Encoder) Descriptor() codec.Descriptor {
@@ -56,6 +64,9 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	}
 	config.Stream = stream
 	config.Parameters = stream.Codec
+	if err := e.resetEncoder(config, width, height); err != nil {
+		return err
+	}
 	e.config = config
 	e.stream = stream
 	e.width = width
@@ -63,8 +74,8 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	e.keyframeInterval = config.Settings.KeyframeInterval
 	e.frameCount = 0
 	e.forceKey = true
-	e.closed = false
-	return e.resetEncoder()
+	e.state = goav1EncoderOpen
+	return nil
 }
 
 func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.EncodeResult) error {
@@ -74,13 +85,13 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == goav1EncoderClosed {
 		return codec.ErrClosed
 	}
 	if frame == nil {
 		return nil
 	}
-	if e.encoder == nil {
+	if e.state == goav1EncoderUnopened {
 		return codec.ErrUnsupportedFormat
 	}
 	if len(out.Packets) == cap(out.Packets) {
@@ -126,7 +137,7 @@ func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error 
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == goav1EncoderClosed {
 		return codec.ErrClosed
 	}
 	return nil
@@ -139,8 +150,11 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if e.closed {
+	switch e.state {
+	case goav1EncoderClosed:
 		return codec.ErrClosed
+	case goav1EncoderUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventKeyframeRequired:
@@ -150,14 +164,16 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 		if !ok {
 			return fmt.Errorf("goav1: bitrate event needs positive %s metadata in bits per second", av.MetadataBitrate)
 		}
-		e.config.Settings.Bitrate = bitsPerSecond
-		if err := e.resetEncoder(); err != nil {
+		nextConfig := e.config
+		nextConfig.Settings.Bitrate = bitsPerSecond
+		if err := e.resetEncoder(nextConfig, e.width, e.height); err != nil {
 			return err
 		}
+		e.config = nextConfig
 		e.forceKey = true
 		e.frameCount = 0
 	case av.EventCodecChanged, av.EventDiscontinuity:
-		if err := e.resetEncoder(); err != nil {
+		if err := e.resetEncoder(e.config, e.width, e.height); err != nil {
 			return err
 		}
 		e.forceKey = true
@@ -167,10 +183,10 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 }
 
 func (e *Encoder) Close() error {
-	if e.closed {
+	if e.state == goav1EncoderClosed {
 		return nil
 	}
-	e.closed = true
+	e.state = goav1EncoderClosed
 	if e.encoder == nil {
 		return nil
 	}
@@ -180,12 +196,12 @@ func (e *Encoder) Close() error {
 	return err
 }
 
-func (e *Encoder) resetEncoder() error {
-	nativeConfig, err := av1EncoderConfig(e.config, e.width, e.height)
+func (e *Encoder) resetEncoder(config codec.EncodeConfig, width, height int) error {
+	nativeConfig, err := av1EncoderConfig(config, width, height)
 	if err != nil {
 		return err
 	}
-	if control := e.config.Settings.Control; control != nil {
+	if control := config.Settings.Control; control != nil {
 		if err := control(&nativeConfig); err != nil {
 			return err
 		}

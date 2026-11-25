@@ -47,14 +47,14 @@ func (m *contextMutex) Unlock() { <-m.gate }
 func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
-	if t.closeStarted {
+	if t.phase >= taskClosing {
 		return false
 	}
 	if t.activeAttachments == nil {
 		t.activeAttachments = make(map[*runtimeAttachment]struct{})
 	}
 	t.activeAttachments[a] = struct{}{}
-	if t.finished {
+	if t.phase == taskRunDone {
 		for _, tx := range a.transactions {
 			if t.runErr == nil {
 				tx.Succeed()
@@ -69,22 +69,29 @@ func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
 func (t *task) setAttachmentDisposition(a *runtimeAttachment, disposition oldBranchDisposition) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
-	if disposition == oldBranchDrain {
-		a.draining = true
-		if t.closeStarted {
+	switch disposition {
+	case oldBranchDrain:
+		if t.phase >= taskClosing || a.phase == attachAborting {
+			a.phase = attachAborting
 			disposition = oldBranchAbort
+		} else {
+			a.phase = attachDraining
 		}
+	case oldBranchAbort:
+		a.phase = attachAborting
 	}
 	a.applyDetachDisposition(disposition)
 }
 
 // An accepted drain remains owned until removal finishes. A racing whole-task
 // Close must still abandon it if upstream work has not finished draining.
-func (t *task) endAttachmentLifecycle(a *runtimeAttachment) {
+func (t *task) endAttachmentLifecycle(a *runtimeAttachment) (aborted bool) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
-	a.draining = false
+	aborted = a.phase == attachAborting
+	a.phase = attachStopped
 	delete(t.activeAttachments, a)
+	return aborted
 }
 
 // attachDestination is one validated destination of an attaching branch: stable
@@ -497,7 +504,7 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 	}
 	defer t.attachMu.Unlock()
 	t.lifecycleMu.Lock()
-	closing := t.closeStarted
+	closing := t.phase >= taskClosing
 	t.lifecycleMu.Unlock()
 	if closing {
 		return nil, runtimeBranchGraphError("attach branch", input.name, pipeline.ErrClosed)

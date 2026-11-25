@@ -13,16 +13,23 @@ type JitterConfig struct {
 	Capacity int
 }
 
+type jitterState uint8
+
+const (
+	jitterEmpty jitterState = iota
+	jitterActive
+)
+
 // JitterRing is a fixed-capacity, allocation-free JitterBuffer: packets slot
 // by their distance from the next expected sequence number and release in
 // order, with loss and reordering surfaced as events and stats. Positioning
 // is relative to expected, never raw sequence modulo capacity, so any
 // capacity orders correctly across the uint16 wrap.
 type JitterRing struct {
-	slots       []jitterSlot
-	initialized bool
-	ssrc        uint32
-	expected    uint16
+	slots    []jitterSlot
+	state    jitterState
+	ssrc     uint32
+	expected uint16
 	// head is the slot holding expected; it moves only with expected.
 	head  int
 	count int
@@ -50,7 +57,7 @@ func (b *JitterRing) Reset() {
 	for i := range b.slots {
 		b.slots[i] = jitterSlot{}
 	}
-	b.initialized = false
+	b.state = jitterEmpty
 	b.ssrc = 0
 	b.expected = 0
 	b.head = 0
@@ -66,15 +73,17 @@ func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterR
 	}
 	var lossBefore bool
 	var discontinuous bool
-	if !b.initialized {
+	switch b.state {
+	case jitterEmpty:
 		b.init(pkt)
-	}
-	if pkt.SSRC != b.ssrc {
-		b.Reset()
-		b.init(pkt)
-		discontinuous = true
-		if err := appendJitterEvent(out, av.Event{Type: av.EventDiscontinuity}); err != nil {
-			return err
+	case jitterActive:
+		if pkt.SSRC != b.ssrc {
+			if err := appendJitterEvent(out, av.Event{Type: av.EventDiscontinuity}); err != nil {
+				return err
+			}
+			b.Reset()
+			b.init(pkt)
+			discontinuous = true
 		}
 	}
 
@@ -128,7 +137,7 @@ func (b *JitterRing) PopInto(ctx context.Context, pkt *rtp.Packet) (bool, error)
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if !b.initialized {
+	if b.state == jitterEmpty {
 		return false, nil
 	}
 	slot := &b.slots[b.head]
@@ -180,7 +189,7 @@ func (b *JitterRing) Stats() JitterStats {
 }
 
 func (b *JitterRing) init(pkt *rtp.Packet) {
-	b.initialized = true
+	b.state = jitterActive
 	b.ssrc = pkt.SSRC
 	b.expected = pkt.SequenceNumber
 	b.head = 0

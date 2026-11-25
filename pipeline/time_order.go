@@ -140,7 +140,7 @@ func (t *topology[P]) executionAdmission() string {
 	sources, timed := 0, 0
 	for _, n := range t.nodes {
 		b := n.base()
-		if b.active && b.source != nil {
+		if b.isActive() && b.source != nil {
 			sources++
 			if byTime(b.source) {
 				timed++

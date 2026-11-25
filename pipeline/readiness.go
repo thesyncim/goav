@@ -20,17 +20,14 @@ type readiness struct {
 // ready as it starts: sinks exist and every one already saw media. With no
 // sinks there is nothing to wait for, so a sink-less graph never reports.
 func (r *readiness) arm(sinks, unfed int64) bool {
+	r.fired.Store(false)
 	r.remaining.Store(unfed)
 	return sinks > 0 && unfed == 0
 }
 
-// note counts a sink out exactly once (the CAS keeps the countdown
-// single-shot per sink) and reports whether it was the last — the caller
-// publishes readiness.
-func (r *readiness) note(sawMedia *atomic.Bool) bool {
-	if !sawMedia.CompareAndSwap(false, true) {
-		return false
-	}
+// note decrements the readiness countdown for a sink that was armed at Run
+// start and reports whether it was the last — the caller publishes readiness.
+func (r *readiness) note() bool {
 	return r.remaining.Add(-1) == 0
 }
 

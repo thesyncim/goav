@@ -103,16 +103,28 @@ func Send(writer PacketWriter, options ...SendOption) pipeline.Sink {
 	return &sender{writer: writer, config: newSendConfig(options)}
 }
 
+type senderState uint8
+
+const (
+	senderUnopened senderState = iota
+	senderOpen
+	senderClosed
+)
+
 type sender struct {
 	writer  PacketWriter
 	config  sendConfig
 	control atomic.Pointer[func(context.Context, control.Control) error]
 
-	// streams is set once by OpenStreams, before the first Handle and the
-	// feedback loop; after that only Handle touches their send state.
-	streams []*sendStream
-	result  PacketizeResult
+	// atomicState mirrors state for lock-free hot-path checks in Handle.
+	atomicState atomic.Uint32
 
+	mu sync.Mutex
+	// state, streams, cancel, and done are synchronized by mu for OpenStreams/Close.
+	// streams is set once by OpenStreams before atomicState transitions to senderOpen.
+	state     senderState
+	streams   []*sendStream
+	result    PacketizeResult
 	cancel    context.CancelFunc
 	done      chan struct{}
 	closeOnce sync.Once
@@ -196,7 +208,12 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 	if s.writer == nil {
 		return ErrNilWriter
 	}
-	if s.streams != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch s.state {
+	case senderClosed:
+		return ErrClosed
+	case senderOpen:
 		return errors.New("rtpav: Send opened twice")
 	}
 	used := map[uint32]bool{0: true}
@@ -232,6 +249,8 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 	s.streams = built
 	loop, cancel := context.WithCancel(context.Background())
 	s.cancel, s.done = cancel, make(chan struct{})
+	s.state = senderOpen
+	s.atomicState.Store(uint32(senderOpen))
 	go s.feedback(loop)
 	return nil
 }
@@ -241,8 +260,11 @@ func (s *sender) Handle(ctx context.Context, msg *pipeline.Message) error {
 	if msg == nil || msg.Kind != pipeline.MessagePacket || msg.Packet == nil {
 		return nil
 	}
-	if s.streams == nil {
+	switch senderState(s.atomicState.Load()) {
+	case senderUnopened:
 		return errors.New("rtpav: Send received a packet before OpenStreams")
+	case senderClosed:
+		return ErrClosed
 	}
 	stream := s.streamFor(msg.Packet.StreamID)
 	if stream == nil {
@@ -272,24 +294,33 @@ func (s *sender) Handle(ctx context.Context, msg *pipeline.Message) error {
 }
 
 func (s *sender) Close() error {
+	s.mu.Lock()
+	wasOpen := s.state == senderOpen
+	s.state = senderClosed
+	s.atomicState.Store(uint32(senderClosed))
+	cancel := s.cancel
+	done := s.done
+	streams := s.streams
+	s.mu.Unlock()
+
 	s.closeOnce.Do(func() {
-		if s.cancel != nil {
-			s.cancel()
+		if cancel != nil {
+			cancel()
 		}
-		if s.config.reports > 0 && len(s.streams) != 0 {
+		if wasOpen && s.config.reports > 0 && len(streams) != 0 {
 			bye := &rtcp.Goodbye{}
-			for _, stream := range s.streams {
+			for _, stream := range streams {
 				bye.Sources = append(bye.Sources, stream.ssrc)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, byeCancel := context.WithTimeout(context.Background(), time.Second)
 			_ = s.writer.WriteRTCP(ctx, []rtcp.Packet{bye})
-			cancel()
+			byeCancel()
 		}
 		if s.writer != nil {
 			s.closeErr = s.writer.Close()
 		}
-		if s.done != nil {
-			<-s.done
+		if done != nil {
+			<-done
 		}
 	})
 	return s.closeErr
@@ -331,6 +362,9 @@ func (s *sender) payloadFor(id av.CodecID) (PayloadCodec, bool) {
 // newHistory rounds slots up to a power of two (capped at 65536) so uint16
 // sequence wraparound never aliases slots in the ring.
 func newHistory(slots int, mtu int) []sentPacket {
+	if slots <= 0 {
+		return nil
+	}
 	size := 1
 	for size < slots && size < 1<<16 {
 		size <<= 1

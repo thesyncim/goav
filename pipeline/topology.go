@@ -15,6 +15,9 @@ import (
 
 // Graph and flow-control sentinels, matched with errors.Is.
 var (
+	// ErrAlreadyRunning reports a concurrent Run call on a graph that is
+	// already executing or draining.
+	ErrAlreadyRunning = errors.New("pipeline: already running")
 	// ErrBackpressure reports a strict (non-dropping) queue that is full: the
 	// message was not delivered and a pacing producer should slow down.
 	ErrBackpressure = errors.New("pipeline: backpressure")
@@ -58,21 +61,33 @@ const (
 	nodeSink
 )
 
+type nodePhase uint8
+
+const (
+	nodeActive    nodePhase = iota + 1 // live in index, Spec/Stats, and routing snapshot
+	nodeDraining                       // detached from index/Spec/Stats, still emitting its queued tail
+	nodeRetired                        // routeless and inactive in snapshot, awaiting finalization
+	nodeFinalized                      // closed and reclaimed
+)
+
 // nodeBase is the part of a node both runners share: identity, the node
 // itself, its routes, and the per-node state the topology reads. A runner's
 // node type embeds it and adds how messages reach the node.
 type nodeBase struct {
-	// Retirement removes routing before finalization. A timeout only stops
-	// the caller's wait; the graph continues owning the node until Close.
-	retiring  bool // guarded by topology.mu
-	deferred  bool // a caller stopped waiting; retain the eventual outcome
-	finalized bool
-	reported  bool // deferred close error recorded, guarded by topology.mu
-	closeOnce sync.Once
-	reapOnce  sync.Once
-	closeErr  error
-	name      string
-	id        uint64
+	// phase tracks the node's lifecycle under topology.mu. Retirement removes
+	// routing before finalization; a timeout only stops the caller's wait, and
+	// the graph continues owning the node until Close.
+	phase    nodePhase // guarded by topology.mu
+	deferred bool      // a caller stopped waiting; retain the eventual outcome
+	reported bool      // deferred close error recorded, guarded by topology.mu
+	// sinkCounted is set by armReadinessLocked for unfed sinks present at Run
+	// start, so dynamically added sinks do not decrement readiness for them.
+	sinkCounted bool
+	closeOnce   sync.Once
+	reapOnce    sync.Once
+	closeErr    error
+	name        string
+	id          uint64
 	// index is the node's position in topology.nodes, fixed for its life; a
 	// retired node's index is reused once nothing can deliver into it.
 	index  int
@@ -81,9 +96,8 @@ type nodeBase struct {
 	stage  Stage
 	admit  Admitter // stage's Admitter capability, resolved once at add
 	sink   Sink
-	// active and routes change under topology.mu only; the data plane reads
-	// the copies in the routing snapshot.
-	active   bool
+	// routes changes under topology.mu only; the data plane reads the copies in
+	// the routing snapshot.
 	routes   []nodeRoute
 	counters *nodeCounters
 	// paused, when set, makes the producer skip this node, so a single branch
@@ -96,6 +110,10 @@ type nodeBase struct {
 	policy   BufferPolicy
 	domain   atomic.Pointer[FaultDomain]
 }
+
+func (b *nodeBase) isActive() bool   { return b.phase == nodeActive }
+func (b *nodeBase) isRoutable() bool { return b.phase == nodeActive || b.phase == nodeDraining }
+func (b *nodeBase) isRetiring() bool { return b.phase == nodeDraining || b.phase == nodeRetired }
 
 // graphNode is a runner's node type: a pointer to a struct embedding nodeBase.
 type graphNode interface {
@@ -218,7 +236,7 @@ func (t *topology[P]) rebuildLocked() {
 		n := t.nodes[i].base()
 		sn := &snap.nodes[i]
 		sn.node = t.nodes[i]
-		sn.active = n.active
+		sn.active = n.isRoutable()
 		if len(n.routes) == 0 {
 			continue
 		}
@@ -297,7 +315,7 @@ func (t *topology[P]) add(n P) (NodeRef, error) {
 	b.index = index
 	t.nextNodeID++
 	b.id = t.nextNodeID
-	b.active = true
+	b.phase = nodeActive
 	b.counters = &nodeCounters{}
 	t.index[b.name] = index
 	if b.kind == nodeSource {
@@ -325,7 +343,7 @@ func (t *topology[P]) Connect(route Route) error {
 		return err
 	}
 	from, ok := t.index[route.From]
-	if !ok || !t.nodes[from].base().active {
+	if !ok || !t.nodes[from].base().isActive() {
 		return ErrUnknownNode
 	}
 	if t.nodes[from].base().kind == nodeSink {
@@ -335,7 +353,7 @@ func (t *topology[P]) Connect(route Route) error {
 	destinations := make([]int, 0, len(route.To))
 	for i := range route.To {
 		to, ok := t.index[route.To[i]]
-		if !ok || !t.nodes[to].base().active {
+		if !ok || !t.nodes[to].base().isActive() {
 			return ErrUnknownNode
 		}
 		if t.nodes[to].base().kind == nodeSource {
@@ -375,7 +393,7 @@ func (t *topology[P]) Disconnect(route Route) error {
 		return err
 	}
 	from, ok := t.index[route.From]
-	if !ok || !t.nodes[from].base().active {
+	if !ok || !t.nodes[from].base().isActive() {
 		return ErrUnknownNode
 	}
 	destinations := make(map[int]struct{}, len(route.To))
@@ -441,7 +459,7 @@ func (t *topology[P]) detachLocked(ref NodeRef) (P, error) {
 		return zero, err
 	}
 	index, ok := t.index[ref.String()]
-	if !ok || !t.nodes[index].base().active {
+	if !ok || !t.nodes[index].base().isActive() {
 		return zero, ErrUnknownNode
 	}
 	n := t.nodes[index]
@@ -449,10 +467,10 @@ func (t *topology[P]) detachLocked(ref NodeRef) (P, error) {
 		return zero, ErrInvalidLink
 	}
 	delete(t.index, ref.String())
-	n.base().retiring = true
+	n.base().phase = nodeDraining
 	for i := range t.nodes {
 		b := t.nodes[i].base()
-		if !b.active {
+		if !b.isRoutable() {
 			continue
 		}
 		routes := b.routes[:0]
@@ -487,7 +505,7 @@ func (t *topology[P]) finalStats(n *nodeBase) NodeStats {
 // worker or in-flight deliveries are done. Caller holds t.mu (write).
 func (t *topology[P]) reclaimLocked(n P) {
 	b := n.base()
-	if b.active || b.index < 0 || b.index >= len(t.nodes) || t.nodes[b.index].base() != b {
+	if b.isRoutable() || b.index < 0 || b.index >= len(t.nodes) || t.nodes[b.index].base() != b {
 		return
 	}
 	t.reusable = append(t.reusable, b.index)
@@ -501,9 +519,8 @@ func (t *topology[P]) finalize(n P) error {
 	b.closeOnce.Do(func() {
 		b.closeErr = b.close()
 		t.mu.Lock()
-		b.active = false
+		b.phase = nodeFinalized
 		b.routes = nil
-		b.finalized = true
 		var outcome error
 		if b.closeErr != nil {
 			outcome = &FinalizationError{ID: b.id, Node: NodeRef(b.name), Cause: b.closeErr}
@@ -550,7 +567,7 @@ func (t *topology[P]) reap(n P) {
 // rememberDeferredLocked retains the failure before PendingCleanup reaches
 // zero or the slot can be reused. Events are supplementary and may be closed.
 func (t *topology[P]) rememberDeferredLocked(b *nodeBase) {
-	if !b.deferred || !b.finalized || b.reported || b.closeErr == nil {
+	if !b.deferred || b.phase != nodeFinalized || b.reported || b.closeErr == nil {
 		return
 	}
 	b.reported = true
@@ -570,7 +587,7 @@ func (t *topology[P]) Spec() Spec {
 	spec.Execution.Admission = t.executionAdmission()
 	for i := range t.nodes {
 		node := t.nodes[i].base()
-		if !node.active {
+		if !node.isActive() {
 			continue
 		}
 		specNode := node.spec()
@@ -580,7 +597,7 @@ func (t *topology[P]) Spec() Spec {
 			route := &node.routes[j]
 			for k := range route.to {
 				to := t.nodes[route.to[k]].base()
-				if !to.active {
+				if !to.isActive() {
 					continue
 				}
 				spec.Edges = append(spec.Edges, EdgeSpec{
@@ -610,7 +627,7 @@ func (t *topology[P]) Stats() GraphStats {
 	reported := make([]uint64, len(t.nodes)+1)
 	for i := range t.nodes {
 		n := t.nodes[i].base()
-		if n.active {
+		if n.isActive() {
 			names[i] = n.name
 		}
 		nodes[i] = n.counters
@@ -620,7 +637,7 @@ func (t *topology[P]) Stats() GraphStats {
 	reported[len(t.nodes)] = t.retired.reported
 	stats := snapshotStats(&t.cold, names, nodes, reported)
 	for _, n := range t.nodes {
-		if b := n.base(); b.retiring && b.index >= 0 {
+		if b := n.base(); b.isRetiring() && b.index >= 0 {
 			stats.PendingCleanup++
 		}
 	}
@@ -637,7 +654,7 @@ func (t *topology[P]) SetNodePaused(ref NodeRef, paused bool) error {
 		return ErrClosed
 	}
 	index, ok := t.index[ref.String()]
-	if !ok || index < 0 || index >= len(t.nodes) || !t.nodes[index].base().active {
+	if !ok || index < 0 || index >= len(t.nodes) || !t.nodes[index].base().isActive() {
 		return ErrUnknownNode
 	}
 	t.nodes[index].base().paused.Store(paused)
@@ -692,8 +709,7 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 			first = cmp.Or(first, err)
 			n.stuck = true
 		}
-		b.active = false
-		b.retiring = true
+		b.phase = nodeRetired
 		nodes = append(nodes, n)
 	}
 	t.mu.Unlock()
@@ -737,17 +753,20 @@ func (t *topology[P]) CloseContext(ctx context.Context) error {
 }
 
 // armReadinessLocked snapshots the readiness set at Run start: the active
-// sinks that have not yet seen media. Caller must hold t.mu.
+// sinks that have not yet seen media. Caller must hold t.mu (write).
 func (t *topology[P]) armReadinessLocked() {
 	var sinks, unfed int64
 	for i := range t.nodes {
 		node := t.nodes[i].base()
-		if !node.active || node.kind != nodeSink {
+		if !node.isActive() || node.kind != nodeSink {
 			continue
 		}
 		sinks++
 		if !node.sawMedia.Load() {
+			node.sinkCounted = true
 			unfed++
+		} else {
+			node.sinkCounted = false
 		}
 	}
 	if t.ready.arm(sinks, unfed) {
@@ -757,8 +776,14 @@ func (t *topology[P]) armReadinessLocked() {
 
 // noteSinkMedia counts a sink out of the readiness set (first media delivery,
 // or removal before any media); the last count publishes readiness.
-func (t *topology[P]) noteSinkMedia(sawMedia *atomic.Bool) {
-	if t.ready.note(sawMedia) {
+func (t *topology[P]) noteSinkMedia(node *nodeBase) {
+	if !node.sawMedia.CompareAndSwap(false, true) {
+		return
+	}
+	if !node.sinkCounted {
+		return
+	}
+	if t.ready.note() {
 		t.publishReady()
 	}
 }

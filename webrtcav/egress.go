@@ -8,7 +8,6 @@ import (
 	"math/rand/v2"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -39,8 +38,7 @@ func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pip
 	}
 	id, media := codecIDFromMIME(capability.MimeType)
 	// One sequence across the senders that feed the track, one per attach.
-	continued := &continuity{clock: max(capability.ClockRate, 1), epoch: time.Now()}
-	continued.seq.Store(rand.Uint32())
+	continued := &continuity{clock: max(capability.ClockRate, 1), epoch: time.Now(), seq: rand.Uint32()}
 	return &egress{
 		name:    "webrtc-track",
 		detail:  "webrtc send, codec=" + string(id),
@@ -63,6 +61,14 @@ func LocalTrack(track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) pip
 	}
 }
 
+type egressState uint8
+
+const (
+	egressUnopened egressState = iota
+	egressOpen
+	egressClosed
+)
+
 // egress is the media sink LocalTrack and WHIP share: it takes the codecs it
 // can send, and once it knows its streams opens its transport and an rtpav
 // sender over it, which does the packetizing and the feedback.
@@ -71,8 +77,12 @@ type egress struct {
 	detail  string
 	accepts shape.Set
 	open    func(context.Context, []av.Stream) (*trackWriter, []rtpav.SendOption, error)
-	control func(context.Context, control.Control) error
-	sender  pipeline.Sink
+
+	mu       sync.Mutex
+	state    egressState
+	closeGen uint64
+	control  func(context.Context, control.Control) error
+	sender   pipeline.Sink
 }
 
 func (e *egress) Name() string { return e.name }
@@ -87,12 +97,27 @@ func (e *egress) InputShapes() shape.Set { return e.accepts }
 // file routed to it.
 func (e *egress) Live() bool { return true }
 
-func (e *egress) UseControl(fn func(context.Context, control.Control) error) { e.control = fn }
+func (e *egress) UseControl(fn func(context.Context, control.Control) error) {
+	e.mu.Lock()
+	e.control = fn
+	sender := e.sender
+	e.mu.Unlock()
+	if sender != nil && fn != nil {
+		sender.(interface {
+			UseControl(func(context.Context, control.Control) error)
+		}).UseControl(fn)
+	}
+}
 
 func (e *egress) OpenStreams(ctx context.Context, streams []av.Stream) error {
-	if e.sender != nil {
+	e.mu.Lock()
+	if e.state == egressOpen {
+		e.mu.Unlock()
 		return errors.New("webrtcav: " + e.name + " opened twice")
 	}
+	gen := e.closeGen
+	e.mu.Unlock()
+
 	writer, options, err := e.open(ctx, streams)
 	if err != nil {
 		return err
@@ -100,6 +125,18 @@ func (e *egress) OpenStreams(ctx context.Context, streams []av.Stream) error {
 	// Pion's interceptors retransmit and report; the sender only reacts.
 	options = append(options, rtpav.WithHistory(0), rtpav.WithReportInterval(0))
 	sender := rtpav.Send(writer, options...)
+
+	e.mu.Lock()
+	if e.closeGen != gen {
+		e.mu.Unlock()
+		writer.Close()
+		return ErrClosed
+	}
+	if e.state == egressOpen {
+		e.mu.Unlock()
+		writer.Close()
+		return errors.New("webrtcav: " + e.name + " opened twice")
+	}
 	if e.control != nil {
 		sender.(interface {
 			UseControl(func(context.Context, control.Control) error)
@@ -108,24 +145,37 @@ func (e *egress) OpenStreams(ctx context.Context, streams []av.Stream) error {
 	if err := sender.(interface {
 		OpenStreams(context.Context, []av.Stream) error
 	}).OpenStreams(ctx, streams); err != nil {
+		e.mu.Unlock()
 		writer.Close()
 		return err
 	}
 	e.sender = sender
+	e.state = egressOpen
+	e.mu.Unlock()
 	return nil
 }
 
 func (e *egress) Handle(ctx context.Context, msg *pipeline.Message) error {
-	if e.sender == nil {
+	e.mu.Lock()
+	state, sender := e.state, e.sender
+	e.mu.Unlock()
+	switch state {
+	case egressUnopened:
 		return errors.New("webrtcav: " + e.name + " received media before OpenStreams")
+	case egressClosed:
+		return ErrClosed
 	}
-	return e.sender.Handle(ctx, msg)
+	return sender.Handle(ctx, msg)
 }
 
 // Close closes the sender; the egress opens again for a reattached branch.
 func (e *egress) Close() error {
+	e.mu.Lock()
+	e.closeGen++
 	sender := e.sender
 	e.sender = nil
+	e.state = egressClosed
+	e.mu.Unlock()
 	if sender == nil {
 		return nil
 	}
@@ -137,7 +187,7 @@ func (e *egress) Close() error {
 // senders' RTCP is read into one feed.
 type trackWriter struct {
 	pc       *webrtc.PeerConnection
-	tracks   []trackOut
+	tracks   []*trackOut
 	feedback chan []rtcp.Packet
 	closed   chan struct{}
 	// failed closes when the peer connection fails; writes then refuse.
@@ -148,6 +198,7 @@ type trackWriter struct {
 }
 
 type trackOut struct {
+	mu    sync.Mutex
 	ssrc  uint32
 	track *webrtc.TrackLocalStaticRTP
 	// continuity, when set, renumbers the packets onto the track's own
@@ -163,35 +214,42 @@ type trackOut struct {
 // senders that feed it in turn, so a reattached branch continues the stream
 // the remote peer already plays instead of jumping to a new one.
 type continuity struct {
+	mu      sync.Mutex
 	clock   uint32
 	epoch   time.Time
-	started atomic.Bool
-	seq     atomic.Uint32
-	lastTS  atomic.Uint32
-	lastAt  atomic.Int64
+	started bool
+	seq     uint32
+	lastTS  uint32
+	lastAt  int64
 }
 
 // write sends packet on the track, renumbered and shifted onto it.
 func (out *trackOut) write(packet *rtp.Packet) error {
+	out.mu.Lock()
+	defer out.mu.Unlock()
 	c := out.continuity
 	if c == nil {
 		return out.track.WriteRTP(packet)
 	}
 	nowMono := int64(time.Since(c.epoch))
+	c.mu.Lock()
 	if !out.shifted {
 		out.shifted = true
-		if c.started.Load() {
-			elapsed := time.Duration(max(nowMono-c.lastAt.Load(), 0))
-			next := c.lastTS.Load() + uint32(elapsed.Seconds()*float64(c.clock)) + 1
+		if c.started {
+			elapsed := time.Duration(max(nowMono-c.lastAt, 0))
+			next := c.lastTS + uint32(elapsed.Seconds()*float64(c.clock)) + 1
 			out.shift = next - packet.Timestamp
 		}
 	}
+	c.seq++
+	seq := uint16(c.seq)
 	out.sent = *packet
-	out.sent.SequenceNumber = uint16(c.seq.Add(1))
+	out.sent.SequenceNumber = seq
 	out.sent.Timestamp += out.shift
-	c.lastTS.Store(out.sent.Timestamp)
-	c.lastAt.Store(nowMono)
-	c.started.Store(true)
+	c.lastTS = out.sent.Timestamp
+	c.lastAt = nowMono
+	c.started = true
+	c.mu.Unlock()
 	return out.track.WriteRTP(&out.sent)
 }
 
@@ -201,7 +259,7 @@ func newTrackWriter(pc *webrtc.PeerConnection, failed <-chan struct{}) *trackWri
 
 // add routes ssrc to track and subscribes to the sender's feedback.
 func (w *trackWriter) add(ssrc uint32, track *webrtc.TrackLocalStaticRTP, sender *webrtc.RTPSender) {
-	w.tracks = append(w.tracks, trackOut{ssrc: ssrc, track: track})
+	w.tracks = append(w.tracks, &trackOut{ssrc: ssrc, track: track})
 	if sender == nil {
 		return
 	}
@@ -210,13 +268,15 @@ func (w *trackWriter) add(ssrc uint32, track *webrtc.TrackLocalStaticRTP, sender
 
 func (w *trackWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
 	select {
+	case <-w.closed:
+		return ErrClosed
 	case <-w.failed:
 		return ErrWHIPDisconnected
 	default:
 	}
-	for i := range w.tracks {
-		if w.tracks[i].ssrc == packet.SSRC {
-			return w.tracks[i].write(packet)
+	for _, out := range w.tracks {
+		if out.ssrc == packet.SSRC {
+			return out.write(packet)
 		}
 	}
 	return fmt.Errorf("webrtcav: no track sends ssrc %d", packet.SSRC)

@@ -35,12 +35,12 @@ func (g *bufferedRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) 
 		g.mu.RUnlock()
 		return ErrClosed
 	}
-	if !g.running {
+	if g.phase != runActive {
 		g.mu.RUnlock()
 		return ErrDynamicGraphUnsupported
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
@@ -89,7 +89,7 @@ func (g *directRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) er
 		return ErrDynamicGraphUnsupported
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}

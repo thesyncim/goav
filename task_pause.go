@@ -34,9 +34,9 @@ func (t *task) Resume(ctx context.Context) error {
 
 func (t *task) timelineControlRefusal(operation string) error {
 	t.lifecycleMu.Lock()
-	closed := t.closed
+	closing := t.phase >= taskClosing
 	t.lifecycleMu.Unlock()
-	if closed {
+	if closing {
 		return fmt.Errorf("goav: %s: task is closed: %w", operation, control.ErrNotRunning)
 	}
 	if t.timeline == nil || !t.timeline.paced() {

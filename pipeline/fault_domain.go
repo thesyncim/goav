@@ -185,7 +185,7 @@ func (t *topology[P]) IsolateFaults(id string, members []NodeRef) (*FaultDomain,
 			return nil, fmt.Errorf("%w: %s", ErrUnknownNode, ref)
 		}
 		b := t.nodes[i].base()
-		if !b.active || b.kind == nodeSource || b.admit != nil || b.domain.Load() != nil || set[i] {
+		if !b.isActive() || b.kind == nodeSource || b.admit != nil || b.domain.Load() != nil || set[i] {
 			return nil, fmt.Errorf("%w: %s", ErrUnsafeFaultDomain, ref)
 		}
 		set[i] = true
@@ -238,7 +238,7 @@ func (t *topology[P]) recordNodeError(ctx context.Context, b *nodeBase, err erro
 	// commit incomplete work. Retirement skips nodes already owned by Remove
 	// and checks index identity before touching any same-named replacement.
 	t.mu.RLock()
-	if b.finalized || d.Failed() {
+	if b.phase == nodeFinalized || d.Failed() {
 		t.mu.RUnlock()
 		return nil
 	}
@@ -269,17 +269,18 @@ func (t *topology[P]) retireFaultDomain(d *FaultDomain) {
 	set := map[int]bool{}
 	for i, n := range t.nodes {
 		b := n.base()
-		if b.domain.Load() != d || b.retiring || b.finalized || b.index < 0 {
+		if b.domain.Load() != d || !b.isActive() || b.index < 0 {
 			continue
 		}
 		set[i] = true
 		if index, ok := t.index[b.name]; ok && index == i {
 			delete(t.index, b.name)
 		}
-		b.active, b.retiring, b.deferred = false, true, true
+		b.phase = nodeRetired
+		b.deferred = true
 		b.routes = nil
 		if b.kind == nodeSink {
-			t.noteSinkMedia(&b.sawMedia)
+			t.noteSinkMedia(b)
 		}
 		_, _ = t.strategy.stopLocked(context.Background(), n)
 		nodes = append(nodes, n)

@@ -146,6 +146,16 @@ func (p *packager) Open(ctx context.Context, info provider.Info) (io.WriteCloser
 	return &writer{packager: p, dir: dir, file: file, base: base, timescales: map[uint32]uint32{}}, nil
 }
 
+type writerState uint8
+
+const (
+	writerAwaitingInit writerState = iota // before ftyp/moov
+	writerGotFtyp                         // ftyp buffered, awaiting moov
+	writerReady                           // init segment published, accepting media fragments
+	writerClosed                          // cleanly finalized
+	writerFailed                          // sticky error recorded in err
+)
+
 // writer splits the fragmented MP4 byte stream into the init segment and
 // media segments, and keeps the playlist.
 type writer struct {
@@ -156,6 +166,8 @@ type writer struct {
 	buf             []byte
 	init            []byte
 	err             error
+	state           writerState
+	inFragment      bool
 
 	// timescales maps each track to its media timescale; anchor is the
 	// track whose times place fragments: the first video track, else the
@@ -203,23 +215,32 @@ type part struct {
 
 func (s segment) duration() float64 { return s.end - s.start }
 
+func (w *writer) fail(err error) error {
+	w.err = err
+	w.state = writerFailed
+	return err
+}
+
 // Write takes the next bytes of the fragmented MP4 stream.
 func (w *writer) Write(p []byte) (int, error) {
-	if w.err != nil {
+	switch w.state {
+	case writerFailed:
 		return 0, w.err
+	case writerClosed:
+		return 0, errors.New("hls: writer is closed")
 	}
 	w.buf = append(w.buf, p...)
 	for {
 		box, size, ok, err := nextBox(w.buf)
 		if err != nil {
-			w.err = err
+			w.fail(err)
 			return 0, err
 		}
 		if !ok {
 			break
 		}
 		if err := w.handle(box); err != nil {
-			w.err = err
+			w.fail(err)
 			return 0, err
 		}
 		w.buf = w.buf[:copy(w.buf, w.buf[size:])]
@@ -254,10 +275,17 @@ func (w *writer) handle(box []byte) error {
 	switch string(box[4:8]) {
 	case "ftyp":
 		w.init = append(w.init, box...)
+		if w.state == writerAwaitingInit {
+			w.state = writerGotFtyp
+		}
 	case "moov":
 		w.init = append(w.init, box...)
 		w.readTracks(box)
-		return w.publishFile(w.base+"-init.mp4", w.init)
+		if err := w.publishFile(w.base+"-init.mp4", w.init); err != nil {
+			return err
+		}
+		w.state = writerReady
+		return nil
 	case "moof":
 		start, end, independent, ok := w.fragmentTimes(box)
 		if !ok {
@@ -273,22 +301,24 @@ func (w *writer) handle(box []byte) error {
 				return err
 			}
 		}
-		if w.open == nil {
-			w.open = &segment{number: w.next, name: fmt.Sprintf("%s-%05d.m4s", w.base, w.next), start: start, end: start}
-			w.next++
-			w.seg = w.seg[:0]
-		}
-		w.open.end = max(w.open.end, end)
 		w.part = append(w.part[:0], box...)
 		w.partStart, w.partEnd, w.partKey = start, end, independent
+		w.inFragment = true
 	default: // mdat, which ends the fragment, and anything else of it
-		if w.open == nil {
+		if !w.inFragment {
 			return nil
 		}
 		w.part = append(w.part, box...)
 		if string(box[4:8]) != "mdat" {
 			return nil
 		}
+		w.inFragment = false
+		if w.open == nil {
+			w.open = &segment{number: w.next, name: fmt.Sprintf("%s-%05d.m4s", w.base, w.next), start: w.partStart, end: w.partStart}
+			w.next++
+			w.seg = w.seg[:0]
+		}
+		w.open.end = max(w.open.end, w.partEnd)
 		w.seg = append(w.seg, w.part...)
 		if w.parts > 0 {
 			return w.publishPart()
@@ -557,21 +587,32 @@ func (w *writer) publishFile(name string, data []byte) error {
 
 // Close ends the last segment and publishes the finished playlist.
 func (w *writer) Close() error {
-	if w.err != nil {
+	switch w.state {
+	case writerClosed:
+		return nil
+	case writerFailed:
 		w.announceEnded()
 		return w.err
 	}
 	if w.open != nil {
 		if err := w.finishSegment(); err != nil {
+			w.fail(err)
 			w.announceEnded()
 			return err
 		}
 	}
-	if w.init == nil {
+	if w.state != writerReady {
+		w.state = writerClosed
 		w.announceEnded()
 		return nil
 	}
-	return w.publishPlaylist(true)
+	if err := w.publishPlaylist(true); err != nil {
+		w.fail(err)
+		w.announceEnded()
+		return err
+	}
+	w.state = writerClosed
+	return nil
 }
 
 func (w *writer) announceEnded() {

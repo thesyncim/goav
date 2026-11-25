@@ -49,10 +49,10 @@ func (c *dropController) decide(full bool, msg *Message) bufferAction {
 
 	if c.droppingUntilSync.Load() {
 		if messageIsSync(msg) {
-			c.droppingUntilSync.Store(false)
 			if full {
 				return bufferDropOldest
 			}
+			c.droppingUntilSync.Store(false)
 			return bufferAdmit
 		}
 		return bufferDropIncoming

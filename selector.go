@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -35,6 +36,7 @@ type selectorStage struct {
 	out         av.StreamID
 	activeIndex atomic.Int32
 	eos         map[av.StreamID]struct{}
+	eosEmitted  bool
 	frame       av.Frame
 	packet      av.Packet
 	message     pipeline.Message
@@ -127,8 +129,20 @@ func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 			return s.SetActive(msg.Event.StreamID)
 		}
 		if msg.Event.Type == av.EventEndOfStream {
-			s.eos[msg.Event.StreamID] = struct{}{}
+			if s.eosEmitted {
+				return nil
+			}
+			if msg.Event.StreamID == "" {
+				for _, id := range s.inputs {
+					s.eos[id] = struct{}{}
+				}
+			} else if slices.Contains(s.inputs, msg.Event.StreamID) {
+				s.eos[msg.Event.StreamID] = struct{}{}
+			} else {
+				return nil
+			}
 			if len(s.eos) >= len(s.inputs) {
+				s.eosEmitted = true
 				out := av.Event{Type: av.EventEndOfStream, StreamID: s.out}
 				return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 			}

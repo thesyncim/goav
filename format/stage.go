@@ -68,7 +68,7 @@ type DemuxSource struct {
 	disc    av.Event
 	streams []av.Stream
 	events  []av.Event
-	closed  bool
+	closed  atomic.Bool
 }
 
 // timeControlRequest is one recorded reposition: a seek position, plus an
@@ -176,6 +176,9 @@ type controllableDemuxSource struct {
 // clock the pacer sleeps on — so av.EventRate is refused like any other
 // unsupported source control.
 func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Message) error {
+	if s.closed.Load() {
+		return pipeline.ErrClosed
+	}
 	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
 		return fmt.Errorf("format: %s: only event controls are supported", s.name)
 	}
@@ -254,7 +257,7 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if s.closed {
+	if s.closed.Load() {
 		return pipeline.ErrClosed
 	}
 	if err := s.emitStreamEvents(ctx, emitter); err != nil {
@@ -274,6 +277,9 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		s.result.Reset()
 		if err := s.demuxer.ReadInto(ctx, &s.result); err != nil {
 			if errors.Is(err, io.EOF) {
+				if s.pending.Load() != nil {
+					continue
+				}
 				return s.emitEndOfStream(ctx, emitter)
 			}
 			if ctx.Err() != nil {
@@ -450,10 +456,9 @@ func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pi
 
 // Close closes the wrapped demuxer once.
 func (s *DemuxSource) Close() error {
-	if s.closed {
+	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	s.closed = true
 	return s.demuxer.Close()
 }
 

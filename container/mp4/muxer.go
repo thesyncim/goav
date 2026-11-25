@@ -33,6 +33,17 @@ const movieTimescale = 1000
 // fragment; a file with video cuts a fragment at each video keyframe.
 const fragmentSpan = time.Second
 
+type muxState uint8
+
+const (
+	muxUnopened muxState = iota
+	muxProgressive
+	muxFragmentedPreHeader
+	muxFragmentedStreaming
+	muxFailed
+	muxClosed
+)
+
 // FormatMuxer writes MP4 (ISO/IEC 14496-12 and -14). To a seekable output it
 // writes a progressive file: ftyp, every sample in one mdat, then moov with
 // the sample tables, patching the mdat size at Close. To any other output,
@@ -49,16 +60,15 @@ type FormatMuxer struct {
 	byStream map[av.StreamID]*muxTrack
 	offset   int64 // bytes written
 	err      error
-	closed   bool
+	state    muxState
 
 	// Progressive: where the mdat header is, and the track the last sample
 	// went to, which a chunk continues.
 	mdatAt int64
 	last   *muxTrack
 
-	// Fragmented: whether ftyp and moov are written, the fragment sequence,
-	// and the track whose keyframes (or spans) cut fragments.
-	headerDone bool
+	// Fragmented: the fragment sequence, and the track whose keyframes
+	// (or spans) cut fragments.
 	sequence   uint32
 	anchor     *muxTrack
 	box        boxWriter
@@ -91,9 +101,11 @@ type muxTrack struct {
 	// Fragmented: the samples of the fragment being built, and their bytes.
 	data []byte
 	// startDTS is the decode time media time zero stands for; startPTS the
-	// earliest presentation; endPTS where presentation ends. All in ticks.
-	startDTS, startPTS, endPTS int64
-	started                    bool
+	// earliest presentation; endPTS where presentation ends; lastDTS the
+	// most recently added sample's decode time (persisted across fragment
+	// flushes so non-monotonic DTS across fragments is caught). All in ticks.
+	startDTS, startPTS, endPTS, lastDTS int64
+	started                             bool
 	// based marks startDTS fixed by a fragmented header written before the
 	// track's first sample: media time zero is the movie's origin.
 	based         bool
@@ -125,24 +137,36 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 	if output.Writer == nil {
 		return fmt.Errorf("%w: no writer", ErrInvalidData)
 	}
-	*m = FormatMuxer{w: output.Writer, byStream: make(map[av.StreamID]*muxTrack, len(streams)), fragment: output.Fragment}
+	tracks := make([]*muxTrack, 0, len(streams))
+	byStream := make(map[av.StreamID]*muxTrack, len(streams))
+	var anchor *muxTrack
 	for i := range streams {
 		track, err := newMuxTrack(streams[i], uint32(i+1))
 		if err != nil {
+			*m = FormatMuxer{}
 			return err
 		}
-		m.tracks = append(m.tracks, track)
-		m.byStream[streams[i].ID] = track
-		if m.anchor == nil || track.media == av.MediaVideo && m.anchor.media != av.MediaVideo {
-			m.anchor = track
+		tracks = append(tracks, track)
+		byStream[streams[i].ID] = track
+		if anchor == nil || track.media == av.MediaVideo && anchor.media != av.MediaVideo {
+			anchor = track
 		}
+	}
+	*m = FormatMuxer{
+		w:        output.Writer,
+		tracks:   tracks,
+		byStream: byStream,
+		anchor:   anchor,
+		fragment: output.Fragment,
+		state:    muxFragmentedPreHeader,
 	}
 	if seeker, ok := output.Writer.(io.Seeker); ok && !output.Realtime && !options.Realtime && output.Fragment == 0 {
 		if at, err := seeker.Seek(0, io.SeekCurrent); err == nil {
 			m.seeker, m.offset = seeker, at
+			m.state = muxProgressive
 		}
 	}
-	if m.seeker != nil {
+	if m.state == muxProgressive {
 		var w boxWriter
 		writeFtyp(&w, m.tracks, false)
 		m.mdatAt = m.offset + int64(len(w.b))
@@ -197,11 +221,13 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	if packet == nil {
 		return ErrNilPacket
 	}
-	if m.closed {
+	switch m.state {
+	case muxClosed:
 		return ErrClosed
-	}
-	if m.err != nil {
+	case muxFailed:
 		return m.err
+	case muxUnopened:
+		return fmt.Errorf("%w: muxer not opened", ErrInvalidData)
 	}
 	t, ok := m.byStream[packet.StreamID]
 	if !ok {
@@ -224,7 +250,7 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	}
 	sync := packet.Keyframe || t.media != av.MediaVideo
 	t.closeLast(dts)
-	if m.seeker == nil && t == m.anchor && t.cuts(sync, dts, m.fragment) {
+	if m.state != muxProgressive && t == m.anchor && t.cuts(sync, dts, m.fragment) {
 		if err := m.flushFragment(false); err != nil {
 			return err
 		}
@@ -232,7 +258,7 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	t.add(dts, pts, duration, sync)
 	s := &t.samples[len(t.samples)-1]
 	s.size = uint32(len(data))
-	if m.seeker == nil {
+	if m.state != muxProgressive {
 		s.offset = int64(len(t.data))
 		t.data = append(t.data, data...)
 		return nil
@@ -258,8 +284,8 @@ func (t *muxTrack) times(packet *av.Packet) (dts, pts int64, err error) {
 	if !ok || !packet.DTS.Base.Valid() {
 		d = p
 	}
-	if n := len(t.samples); n != 0 && d.Value < t.samples[n-1].dts {
-		return 0, 0, fmt.Errorf("%w: stream %q decode time goes back (%d after %d ticks)", ErrInvalidData, t.stream.ID, d.Value, t.samples[n-1].dts)
+	if t.started && d.Value < t.lastDTS {
+		return 0, 0, fmt.Errorf("%w: stream %q decode time goes back (%d after %d ticks)", ErrInvalidData, t.stream.ID, d.Value, t.lastDTS)
 	}
 	return d.Value, p.Value, nil
 }
@@ -285,6 +311,7 @@ func (t *muxTrack) add(dts, pts, duration int64, sync bool) {
 		// The first sample since the last fragment flushed starts the next.
 		t.fragmentStart = dts
 	}
+	t.lastDTS = dts
 	t.startPTS = min(t.startPTS, pts)
 	end := pts
 	if duration > 0 {
@@ -325,55 +352,67 @@ func (t *muxTrack) finish() {
 	t.endPTS = max(t.endPTS, t.samples[n-1].dts+t.samples[n-1].cts+t.samples[n-1].duration)
 }
 
+func (m *FormatMuxer) fail(err error) error {
+	m.err = err
+	m.state = muxFailed
+	return err
+}
+
 // Close finalizes the file: the moov of a progressive file, or a fragmented
 // file's last fragment. It does not close the writer.
 func (m *FormatMuxer) Close() error {
-	if m.closed {
+	switch m.state {
+	case muxClosed:
 		return nil
-	}
-	m.closed = true
-	if m.err != nil {
+	case muxUnopened:
+		m.state = muxClosed
+		return nil
+	case muxFailed:
 		return m.err
 	}
-	if m.w == nil {
-		return nil
-	}
+	mode := m.state
 	for _, t := range m.tracks {
 		t.finish()
 	}
-	if m.seeker == nil {
-		return m.flushFragment(true)
+	var err error
+	if mode == muxProgressive {
+		err = m.finishProgressive()
+	} else {
+		err = m.flushFragment(true)
 	}
-	return m.finishProgressive()
+	if err != nil {
+		return m.fail(err)
+	}
+	m.state = muxClosed
+	return nil
 }
 
 func (m *FormatMuxer) write(b []byte) error {
 	n, err := m.w.Write(b)
 	m.offset += int64(n)
 	if err != nil {
-		m.err = err
+		return m.fail(err)
 	}
-	return err
+	return nil
 }
 
 func (m *FormatMuxer) finishProgressive() error {
 	for _, t := range m.tracks {
 		if err := t.ready(); err != nil {
-			m.err = err
-			return err
+			return m.fail(err)
 		}
 	}
 	end := m.offset
 	var size [8]byte
 	binary.BigEndian.PutUint64(size[:], uint64(end-m.mdatAt))
 	if _, err := m.seeker.Seek(m.mdatAt+8, io.SeekStart); err != nil {
-		return err
+		return m.fail(err)
 	}
 	if _, err := m.w.Write(size[:]); err != nil {
-		return err
+		return m.fail(err)
 	}
 	if _, err := m.seeker.Seek(end, io.SeekStart); err != nil {
-		return err
+		return m.fail(err)
 	}
 	var w boxWriter
 	m.writeMoov(&w, false)
@@ -383,11 +422,10 @@ func (m *FormatMuxer) finishProgressive() error {
 // flushFragment writes the samples whose durations are known as one
 // fragment (at Close, all of them), writing ftyp and moov first.
 func (m *FormatMuxer) flushFragment(last bool) error {
-	if !m.headerDone {
+	if m.state == muxFragmentedPreHeader {
 		for _, t := range m.tracks {
 			if err := t.ready(); err != nil {
-				m.err = err
-				return err
+				return m.fail(err)
 			}
 		}
 		var w boxWriter
@@ -396,7 +434,7 @@ func (m *FormatMuxer) flushFragment(last bool) error {
 		if err := m.write(w.b); err != nil {
 			return err
 		}
-		m.headerDone = true
+		m.state = muxFragmentedStreaming
 		originNS := m.originNS()
 		for _, t := range m.tracks {
 			if !t.started {

@@ -94,12 +94,20 @@ func (r trackRemoteRTPReader) SetReadDeadline(deadline time.Time) error {
 	return r.track.SetReadDeadline(deadline)
 }
 
+type trackReaderState uint8
+
+const (
+	trackIdle trackReaderState = iota
+	trackInFlight
+	trackClosed
+)
+
 type trackReader struct {
 	mu      sync.RWMutex
 	remote  RemoteTrack
 	reader  trackRTPReader
 	events  chan av.Event
-	closed  bool
+	state   trackReaderState
 	streams []av.Stream
 
 	// Read interruption. The reader owns its transport read: Close, or the
@@ -177,7 +185,7 @@ func (r *trackReader) ReadRTP(ctx context.Context) (*rtp.Packet, *av.Event, rtpa
 func (r *trackReader) beginRead(ctx context.Context) (trackReadState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closed {
+	if r.state == trackClosed {
 		return trackReadState{}, ErrClosed
 	}
 	if r.reader == nil {
@@ -205,6 +213,7 @@ func (r *trackReader) beginRead(ctx context.Context) (trackReadState, error) {
 		r.expired = nil
 	}
 	r.inflight = r.reader
+	r.state = trackInFlight
 	return trackReadState{r.reader, r.remote.Stream, r.remote.Payloads, r.readerGen, r.configGen}, nil
 }
 
@@ -219,9 +228,10 @@ func (r *trackReader) endRead(ctx context.Context, state *trackReadState, packet
 		r.expired = nil
 	}
 	r.inflight = nil
-	if r.closed {
+	if r.state == trackClosed {
 		return nil, false, ErrClosed
 	}
+	r.state = trackIdle
 	if err := ctx.Err(); err != nil {
 		return nil, replaced, err
 	}
@@ -271,12 +281,13 @@ func (r *trackReader) Events() <-chan av.Event {
 func (r *trackReader) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closed {
+	if r.state == trackClosed {
 		return nil
 	}
-	r.closed = true
+	r.state = trackClosed
 	close(r.events)
 	r.expireLocked()
+	r.expired = nil
 	if r.stopArm != nil {
 		r.stopArm()
 		r.stopArm = nil
@@ -339,7 +350,7 @@ func (r *trackReader) updateTrack(ctx context.Context, remote RemoteTrack, repla
 func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trackRTPReader, remote *RemoteTrack) (av.Stream, rtpav.PayloadMap, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closed {
+	if r.state == trackClosed {
 		return av.Stream{}, nil, ErrClosed
 	}
 	current := r.remote.Stream
@@ -348,9 +359,6 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 	}
 	next := streamFromCodecUpdate(current, update)
 	next = cloneReadStream(next)
-	if next.Epoch <= current.Epoch {
-		return av.Stream{}, nil, ErrInvalidCodecUpdate
-	}
 	payloads := update.Payloads
 	if payloads == nil {
 		codec := update.Codec
@@ -366,7 +374,7 @@ func (r *trackReader) applyCodecUpdate(update TrackCodecUpdate, replacement trac
 		r.remote.Codec = update.Codec
 	}
 	if replacement != nil {
-		if r.inflight == nil {
+		if r.state != trackInFlight {
 			r.expired = nil
 		}
 		r.expireLocked()
@@ -392,7 +400,7 @@ func (r *trackReader) WriteRTCP(ctx context.Context, packets []rtcp.Packet) erro
 		return err
 	}
 	r.mu.RLock()
-	if r.closed {
+	if r.state == trackClosed {
 		r.mu.RUnlock()
 		return ErrClosed
 	}
@@ -407,7 +415,7 @@ func (r *trackReader) WriteRTCP(ctx context.Context, packets []rtcp.Packet) erro
 func (r *trackReader) emit(event av.Event) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.closed {
+	if r.state == trackClosed {
 		return
 	}
 	select {

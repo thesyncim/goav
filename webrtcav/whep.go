@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -111,6 +110,29 @@ func (in *whepInput) offer(ctx context.Context, config webrtc.Configuration) (*w
 	return s, nil
 }
 
+type whepState uint8
+
+const (
+	whepInit whepState = iota
+	whepStreaming
+	whepFailed
+	whepClosed
+)
+
+type declaredTrackState uint8
+
+const (
+	declaredPending declaredTrackState = iota
+	declaredActive
+	declaredEnded
+)
+
+type declaredTrack struct {
+	streamID av.StreamID
+	reader   TrackReader
+	state    declaredTrackState
+}
+
 // whepSession is one negotiated WHEP session: the peer connection, its
 // signaling, and its tracks merged into one rtpav.PacketReader.
 type whepSession struct {
@@ -125,21 +147,16 @@ type whepSession struct {
 	records chan whepRecord
 	// events announces a track the answer did not declare (av.EventStreamAdded).
 	events chan av.Event
-	// declared maps the answer's sending media sections (by mid) to their
-	// declared stream ID.
-	declared map[string]av.StreamID
 
-	mu              sync.Mutex
-	declaredReaders map[string]TrackReader
-	pendingDeclared int
-	started         bool
-	readers         []TrackReader
-	streams         []av.Stream
-	payloads        []rtpav.PayloadMap
-	closed          bool
-	closeOnce       sync.Once
-	failOnce        sync.Once
-	activeTracks    atomic.Int32
+	mu           sync.Mutex
+	state        whepState
+	declared     map[string]declaredTrack
+	readers      []TrackReader
+	streams      []av.Stream
+	payloads     []rtpav.PayloadMap
+	activeTracks int
+	closeOnce    sync.Once
+	failOnce     sync.Once
 }
 
 // One bounded FIFO carries every configuration record and its packet. Each
@@ -173,10 +190,21 @@ func newWHEPSession(config signalConfig, pc *webrtc.PeerConnection) *whepSession
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		// Disconnected may recover; failed and closed do not.
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
-			s.failOnce.Do(func() { close(s.failed) })
+			s.markFailed()
 		}
 	})
 	return s
+}
+
+func (s *whepSession) markFailed() {
+	s.mu.Lock()
+	if s.state == whepClosed || s.state == whepFailed {
+		s.mu.Unlock()
+		return
+	}
+	s.state = whepFailed
+	s.mu.Unlock()
+	s.failOnce.Do(func() { close(s.failed) })
 }
 
 // offer POSTs a receive-only audio and video offer and applies the answer.
@@ -213,8 +241,7 @@ func (s *whepSession) declare(answer string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.declared = map[string]av.StreamID{}
-	s.declaredReaders = map[string]TrackReader{}
+	s.declared = make(map[string]declaredTrack, len(parsed.MediaDescriptions))
 	for _, media := range parsed.MediaDescriptions {
 		_, sendonly := media.Attribute("sendonly")
 		_, sendrecv := media.Attribute("sendrecv")
@@ -234,11 +261,10 @@ func (s *whepSession) declare(answer string) {
 		}
 		codec := sdpCodec(media.Attributes, kind, media.MediaName.Formats[0])
 		stream := streamFromRemoteTrack(RemoteTrack{Codec: codec, Stream: av.Stream{ID: av.StreamID(id), Name: id}})
-		s.declared[mid] = stream.ID
+		s.declared[mid] = declaredTrack{streamID: stream.ID, state: declaredPending}
 		s.streams = append(s.streams, stream)
 		s.payloads = append(s.payloads, trackPayloadMap(stream, rtpav.NewStaticPayloadMap(stream.Epoch, []rtpav.PayloadCodec{payloadCodecFromWebRTC(codec, stream.Codec)})))
 	}
-	s.pendingDeclared = len(s.streams)
 }
 
 // sdpCodec is the codec a media section's first payload type names.
@@ -294,7 +320,9 @@ func (s *whepSession) awaitTracks(ctx context.Context) error {
 		return ctx.Err()
 	}
 	s.mu.Lock()
-	s.started = true
+	if s.state == whepInit {
+		s.state = whepStreaming
+	}
 	s.mu.Unlock()
 	go s.adoptLate()
 	return nil
@@ -329,8 +357,9 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		}
 	}
 	s.mu.Lock()
-	declaredID, declared := s.declared[mid]
-	existingReader := s.declaredReaders[mid]
+	dt, declared := s.declared[mid]
+	declaredID := dt.streamID
+	existingReader := dt.reader
 	remote := RemoteTrack{Track: a.track, Feedback: s}
 	if declared {
 		remote.Stream = av.Stream{ID: declaredID, Name: string(declaredID)}
@@ -339,7 +368,7 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		}
 	}
 	s.mu.Unlock()
-	if declared && existingReader != nil {
+	if declared && dt.state == declaredActive && existingReader != nil {
 		if err := existingReader.UpdateTrack(ctx, remote); err != nil {
 			return err
 		}
@@ -363,7 +392,7 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		return ErrUnknownStream
 	}
 	s.mu.Lock()
-	if s.closed {
+	if s.state == whepClosed {
 		s.mu.Unlock()
 		reader.Close()
 		return ErrClosed
@@ -376,15 +405,15 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 	s.readers = append(s.readers, reader)
 	var added *av.Event
 	if declared {
-		if s.pendingDeclared > 0 {
-			s.pendingDeclared--
-		}
-		s.declaredReaders[mid] = reader
+		dt = s.declared[mid]
+		dt.reader = reader
+		dt.state = declaredActive
+		s.declared[mid] = dt
 		if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == declaredID }); idx >= 0 {
 			oldCodec := s.streams[idx].Codec.ID
 			s.streams[idx] = streams[0]
 			s.payloads[idx] = reader.PayloadMap()
-			if s.started && oldCodec != "" && streams[0].Codec.ID != "" && oldCodec != streams[0].Codec.ID {
+			if s.state == whepStreaming && oldCodec != "" && streams[0].Codec.ID != "" && oldCodec != streams[0].Codec.ID {
 				stream := streams[0]
 				added = &av.Event{Type: av.EventCodecChanged, StreamID: stream.ID, Stream: &stream, Codec: &stream.Codec, Epoch: stream.Epoch}
 			}
@@ -404,21 +433,38 @@ func (s *whepSession) adopt(ctx context.Context, a arrival) error {
 		default:
 		}
 	}
+	// Atomically count this track active under s.mu alongside transitioning
+	// declaredPending -> declaredActive so a concurrent EOF on a sibling track
+	// never observes a window where this track is neither pending nor active.
+	s.activeTracks++
 	s.mu.Unlock()
-	return s.startTrack(reader, added)
+	return s.startTrackTracked(reader, added, true)
 }
 
 // startTrack publishes a late stream before starting its packet pump. Queue
 // backpressure applies to configuration too; cancellation releases both waits.
 func (s *whepSession) startTrack(reader TrackReader, added *av.Event) error {
+	return s.startTrackTracked(reader, added, false)
+}
+
+func (s *whepSession) startTrackTracked(reader TrackReader, added *av.Event, preCounted bool) error {
 	if added != nil {
 		select {
 		case s.records <- whepRecord{event: cloneReadEvent(added), payloads: reader.PayloadMap()}:
 		case <-s.ctx.Done():
+			if preCounted {
+				s.mu.Lock()
+				s.activeTracks--
+				s.mu.Unlock()
+			}
 			return ErrClosed
 		}
 	}
-	s.activeTracks.Add(1)
+	if !preCounted {
+		s.mu.Lock()
+		s.activeTracks++
+		s.mu.Unlock()
+	}
 	go s.pumpTracked(reader, true)
 	return nil
 }
@@ -432,21 +478,23 @@ func (s *whepSession) pump(reader TrackReader) {
 
 func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 	if !preCounted {
-		s.activeTracks.Add(1)
+		s.mu.Lock()
+		s.activeTracks++
+		s.mu.Unlock()
 	}
 	for {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
 		if err != nil {
-			remaining := s.activeTracks.Add(-1)
 			s.mu.Lock()
-			keepAlive := remaining > 0 || s.pendingDeclared > 0
+			s.activeTracks--
+			keepAlive := s.activeTracks > 0 || s.hasPendingDeclaredLocked()
 			s.mu.Unlock()
 			if errors.Is(err, io.EOF) && keepAlive {
 				if streams, serr := reader.Streams(s.ctx); serr == nil && len(streams) > 0 {
 					stream := streams[0]
 					removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
 					s.mu.Lock()
-					closed := s.closed
+					closed := s.state == whepClosed
 					if !closed {
 						s.removeReaderLocked(reader, stream.ID)
 						select {
@@ -478,10 +526,21 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 		select {
 		case s.records <- whepRecord{packet: packet, event: event, payloads: payloads}:
 		case <-s.ctx.Done():
-			s.activeTracks.Add(-1)
+			s.mu.Lock()
+			s.activeTracks--
+			s.mu.Unlock()
 			return
 		}
 	}
+}
+
+func (s *whepSession) hasPendingDeclaredLocked() bool {
+	for _, dt := range s.declared {
+		if dt.state == declaredPending {
+			return true
+		}
+	}
+	return false
 }
 
 // Streams, PayloadMap, ReadRTP, Events, WriteRTCP, and Close make the
@@ -506,9 +565,11 @@ func (s *whepSession) removeReaderLocked(reader TrackReader, id av.StreamID) {
 	if idx := slices.Index(s.readers, reader); idx >= 0 {
 		s.readers = slices.Delete(s.readers, idx, idx+1)
 	}
-	for mid, r := range s.declaredReaders {
-		if r == reader {
-			delete(s.declaredReaders, mid)
+	for mid, dt := range s.declared {
+		if dt.reader == reader {
+			dt.reader = nil
+			dt.state = declaredEnded
+			s.declared[mid] = dt
 		}
 	}
 	if idx := slices.IndexFunc(s.streams, func(st av.Stream) bool { return st.ID == id }); idx >= 0 {
@@ -563,7 +624,7 @@ func (s *whepSession) WriteRTCP(ctx context.Context, packets []rtcp.Packet) erro
 func (s *whepSession) isClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.closed
+	return s.state == whepClosed
 }
 
 // Close ends the session: stop local readers and peer connection, then DELETE
@@ -572,17 +633,23 @@ func (s *whepSession) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
-		s.closed = true
+		s.state = whepClosed
 		readers := append([]TrackReader(nil), s.readers...)
-		close(s.events)
+		if s.events != nil {
+			close(s.events)
+		}
 		s.mu.Unlock()
 		s.cancel()
 		for _, reader := range readers {
 			reader.Close()
 		}
-		err = s.pc.Close()
-		if sigErr := s.sig.close(); err == nil {
-			err = sigErr
+		if s.pc != nil {
+			err = s.pc.Close()
+		}
+		if s.sig != nil {
+			if sigErr := s.sig.close(); err == nil {
+				err = sigErr
+			}
 		}
 	})
 	return err

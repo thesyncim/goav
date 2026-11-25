@@ -34,7 +34,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 		return ErrClosed
 	}
 	start, ok := g.index[ref.String()]
-	if !ok || !g.nodes[start].active {
+	if !ok || !g.nodes[start].isActive() {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
@@ -54,7 +54,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 				}
 				visited[to] = true
 				next := g.nodes[to]
-				if !next.active {
+				if !next.isActive() {
 					continue
 				}
 				frontier = append(frontier, to)
@@ -68,12 +68,12 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 	// queue even if another path from this source reaches it first.
 	shared := make([]bool, len(g.nodes))
 	for from, node := range g.nodes {
-		if !node.active || visited[from] {
+		if !node.isActive() || visited[from] {
 			continue
 		}
 		for _, route := range node.routes {
 			for _, to := range route.to {
-				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].active {
+				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].isActive() {
 					shared[to] = true
 					frontier = append(frontier, to)
 				}
@@ -85,7 +85,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 		frontier = frontier[1:]
 		for _, route := range g.nodes[from].routes {
 			for _, to := range route.to {
-				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].active {
+				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].isActive() {
 					shared[to] = true
 					frontier = append(frontier, to)
 				}
@@ -94,7 +94,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 	}
 	var targets []*bufferedNode
 	for i, node := range g.nodes {
-		if i != start && visited[i] && !shared[i] && node.active && node.kind != nodeSource && node.opened {
+		if i != start && visited[i] && !shared[i] && node.isActive() && node.kind != nodeSource && node.opened {
 			targets = append(targets, node)
 		}
 	}
@@ -158,6 +158,8 @@ func (g *bufferedRunner) flushNodeQueue(node *bufferedNode) {
 			runtime.Gosched()
 		}
 	}
+	// Clear any stale DropUntilSync state from the flushed backlog.
+	node.drop.droppingUntilSync.Store(false)
 	q.unlock()
 	node.wakeWorker()
 	node.spaceLine.wakeAll()

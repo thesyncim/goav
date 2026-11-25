@@ -73,8 +73,7 @@ type Engine struct {
 	pos       float64
 	queued    time.Duration
 	lastPTS   time.Duration
-	playing   bool
-	waitSet   bool
+	audio     audioPhase
 	waitStart int64
 	segs      [segments]segment
 	segHead   int
@@ -91,20 +90,13 @@ type Engine struct {
 	ext      extClock
 	rate     float64
 	paused   bool
-	ended    bool
-	closed   bool
+	phase    enginePhase
 	sawAudio bool
-	// seeking is set while a seek cuts the old position's media (BeginSeek):
-	// per kind, cutting marks a kind still on the old timeline and cutAt the
-	// newest PTS it had queued; seekBudget is the unpaused device time left,
-	// as of seekAt. newest and have track the current epoch's queued media.
-	seeking    bool
-	seekBudget time.Duration
-	seekAt     time.Duration
-	cutAt      [kinds]time.Duration
-	cutting    [kinds]bool
-	newest     [kinds]time.Duration
-	have       [kinds]bool
+	// seek cuts the old position's media after a seek (BeginSeek); newest and
+	// have track the current epoch's queued media.
+	seek   seekCutState
+	newest [kinds]time.Duration
+	have   [kinds]bool
 	// played records that the current epoch has been heard or shown, and
 	// pictured that it has queued a picture.
 	played, pictured bool
@@ -134,21 +126,156 @@ type segment struct {
 	epoch      uint64
 }
 
+// enginePhase is the lifecycle state of an Engine.
+type enginePhase uint8
+
+const (
+	engineActive enginePhase = iota
+	engineEnded
+	engineClosed
+)
+
+// audioPhase is the state of the audio renderer's preroll/play cycle.
+type audioPhase uint8
+
+const (
+	audioEmpty audioPhase = iota
+	audioPrerolling
+	audioPlaying
+)
+
+// extClockState is the state of the fallback external media clock.
+type extClockState uint8
+
+const (
+	extClockUnset extClockState = iota
+	extClockRunning
+	extClockPaused
+)
+
 // extClock is the media clock video follows when no audio is audible: it is
 // resynchronized to the heard position whenever audio plays and runs freely
 // (at the playback rate, on the device clock) otherwise.
 type extClock struct {
-	valid   bool
-	running bool
-	base    time.Duration
-	at      time.Duration
+	state extClockState
+	base  time.Duration
+	at    time.Duration
+}
+
+func (c *extClock) set(pts, at time.Duration, paused bool) {
+	c.base, c.at = pts, at
+	if paused {
+		c.state = extClockPaused
+	} else {
+		c.state = extClockRunning
+	}
 }
 
 func (c *extClock) now(t time.Duration, rate float64) time.Duration {
-	if !c.running {
+	if c.state != extClockRunning {
 		return c.base
 	}
 	return c.base + time.Duration(float64(t-c.at)*rate)
+}
+
+func (c *extClock) setPaused(paused bool, at time.Duration, rate float64) {
+	if c.state == extClockUnset {
+		return
+	}
+	c.set(c.now(at, rate), at, paused)
+}
+
+func (c *extClock) reanchor(at time.Duration, rate float64) {
+	if c.state == extClockUnset {
+		return
+	}
+	c.base, c.at = c.now(at, rate), at
+}
+
+func (c *extClock) reset() {
+	*c = extClock{}
+}
+
+// seekMode is the state of the post-seek stale-media cut.
+type seekMode uint8
+
+const (
+	seekIdle seekMode = iota
+	seekCutting
+)
+
+// seekCutState tracks the per-kind stale-media cut after a seek: cutting marks
+// each kind still on the old timeline and cutAt the newest PTS it had queued;
+// budget is the unpaused device time left, as of at.
+type seekCutState struct {
+	mode    seekMode
+	budget  time.Duration
+	at      time.Duration
+	cutAt   [kinds]time.Duration
+	cutting [kinds]bool
+}
+
+func (s *seekCutState) begin(newest [kinds]time.Duration, have [kinds]bool, now time.Duration) {
+	if have == [kinds]bool{} {
+		*s = seekCutState{}
+		return
+	}
+	*s = seekCutState{
+		mode:    seekCutting,
+		budget:  seekWait,
+		at:      now,
+		cutAt:   newest,
+		cutting: have,
+	}
+}
+
+func (s *seekCutState) reset() {
+	*s = seekCutState{}
+}
+
+func (s *seekCutState) pause(now time.Duration) {
+	if s.mode != seekCutting {
+		return
+	}
+	s.budget -= max(now-s.at, 0)
+	s.at = now
+	if s.budget <= 0 {
+		s.reset()
+	}
+}
+
+func (s *seekCutState) resume(now time.Duration) {
+	if s.mode == seekCutting {
+		s.at = now
+	}
+}
+
+func (s *seekCutState) stale(kind int, pts, now time.Duration, paused bool) bool {
+	if s.mode != seekCutting {
+		return false
+	}
+	if !paused {
+		s.budget -= max(now-s.at, 0)
+	}
+	s.at = now
+	if s.budget <= 0 {
+		s.reset()
+		return false
+	}
+	if !s.cutting[kind] {
+		return false
+	}
+	if pts >= s.cutAt[kind]-staleBehind && pts <= s.cutAt[kind]+staleAhead {
+		// Still the old timeline: follow it, so a run of in-flight media
+		// stays recognized however far it reaches.
+		s.cutAt[kind] = max(s.cutAt[kind], pts)
+		return true
+	}
+	s.cutting[kind] = false
+	if s.cutting == [kinds]bool{} {
+		s.reset()
+	}
+	return false
 }
 
 // New returns an engine holding latency of audio before playback starts;
@@ -207,14 +334,14 @@ func (e *Engine) Fill(out []byte) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	start := e.written.Load()
-	if !e.paused && !e.playing && len(e.chunks) > 0 {
+	if !e.paused && e.audio == audioPrerolling && len(e.chunks) > 0 {
 		waited := framesToDuration(start-e.waitStart, OutputRate)
-		if e.queuedLocked() >= e.latency || e.ended || waited >= 2*e.latency {
-			e.playing = true
+		if e.queuedLocked() >= e.latency || e.phase != engineActive || waited >= 2*e.latency {
+			e.audio = audioPlaying
 		}
 	}
 	rendered := 0
-	if e.playing && !e.paused {
+	if e.audio == audioPlaying && !e.paused {
 		pts0 := e.headPTSLocked()
 		rendered = e.renderLocked(out, n)
 		if rendered > 0 {
@@ -223,9 +350,8 @@ func (e *Engine) Fill(out []byte) int {
 			e.played = true
 		}
 		if rendered < n {
-			e.playing = false
-			e.waitSet = false
-			if !e.ended {
+			e.audio = audioEmpty
+			if e.phase == engineActive {
 				e.underruns++
 			}
 		}
@@ -355,16 +481,16 @@ func (e *Engine) heardLocked(dev int64) (time.Duration, bool) {
 // clock reading.
 func (e *Engine) masterLocked(now time.Duration) (time.Duration, bool) {
 	if pts, ok := e.heardLocked(durationToFrames(now)); ok {
-		e.ext = extClock{valid: true, running: !e.paused, base: pts, at: now}
+		e.ext.set(pts, now, e.paused)
 		e.position = pts
 		return pts, true
 	}
-	if !e.ext.valid && len(e.vpts) > 0 && !e.sawAudio && now-e.firstVideoAt >= e.latency {
+	if e.ext.state == extClockUnset && len(e.vpts) > 0 && !e.sawAudio && now-e.firstVideoAt >= e.latency {
 		// Video only: start the external clock at the first frame once the
 		// latency has passed without any audio arriving.
-		e.ext = extClock{valid: true, running: !e.paused, base: e.vpts[0], at: now}
+		e.ext.set(e.vpts[0], now, e.paused)
 	}
-	if !e.ext.valid {
+	if e.ext.state == extClockUnset {
 		return 0, false
 	}
 	e.position = e.ext.now(now, e.rate)
@@ -455,18 +581,18 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 	}
 	e.mu.Lock()
 	epoch := e.epoch
-	e.sawAudio = true
 	e.mu.Unlock()
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.staleLocked(kindAudio, chunk.pts, now) {
+		if e.phase == engineClosed || e.epoch != epoch || e.seek.stale(kindAudio, chunk.pts, now, e.paused) {
 			e.mu.Unlock()
 			return nil
 		}
+		e.sawAudio = true
 		if e.queuedLocked() < e.latency+readAhead {
-			if !e.playing && !e.waitSet {
-				e.waitSet, e.waitStart = true, e.written.Load()
+			if e.audio == audioEmpty {
+				e.audio, e.waitStart = audioPrerolling, e.written.Load()
 			}
 			e.chunks = append(e.chunks, chunk)
 			e.newest[kindAudio], e.have[kindAudio] = max(e.newest[kindAudio], chunk.pts), true
@@ -509,7 +635,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.staleLocked(kindVideo, pts, now) {
+		if e.phase == engineClosed || e.epoch != epoch || e.seek.stale(kindVideo, pts, now, e.paused) {
 			e.mu.Unlock()
 			ref.Release()
 			return nil
@@ -523,7 +649,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 		} else if len(e.vpts) > 0 {
 			ahead = pts - e.vpts[0]
 		}
-		audioNeedsData := e.sawAudio && !e.ended && e.queuedLocked() < e.latency
+		audioNeedsData := e.sawAudio && e.phase == engineActive && e.queuedLocked() < e.latency
 		if len(e.video) < videoHardCap && (ahead < e.latency+readAhead || audioNeedsData) {
 			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
 			e.queuedPictureLocked()
@@ -596,46 +722,14 @@ func (e *Engine) BeginSeek() {
 func (e *Engine) beginSeekLocked(now time.Duration) {
 	newest, have := e.newest, e.have
 	e.flushLocked()
-	e.seeking, e.seekBudget, e.seekAt = true, seekWait, now
-	e.cutAt, e.cutting = newest, have
+	e.seek.begin(newest, have, now)
 }
 
 // EndSeek stops cutting after a refused seek.
 func (e *Engine) EndSeek() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.seeking = false
-}
-
-// staleLocked reports whether media of kind at pts is the old position's,
-// arriving after a seek. The cut's wait is charged only while playing, so a
-// seek made while paused holds however long the pause lasts.
-func (e *Engine) staleLocked(kind int, pts, now time.Duration) bool {
-	if !e.seeking {
-		return false
-	}
-	if !e.paused {
-		e.seekBudget -= max(now-e.seekAt, 0)
-	}
-	e.seekAt = now
-	if e.seekBudget <= 0 {
-		e.seeking = false
-		return false
-	}
-	if !e.cutting[kind] {
-		return false
-	}
-	if pts >= e.cutAt[kind]-staleBehind && pts <= e.cutAt[kind]+staleAhead {
-		// Still the old timeline: follow it, so a run of in-flight media
-		// stays recognized however far it reaches.
-		e.cutAt[kind] = max(e.cutAt[kind], pts)
-		return true
-	}
-	e.cutting[kind] = false
-	if e.cutting == [kinds]bool{} {
-		e.seeking = false
-	}
-	return false
+	e.seek.reset()
 }
 
 // Discontinuity handles a timeline break arriving at the sink. Every branch
@@ -647,7 +741,7 @@ func (e *Engine) Discontinuity() {
 	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if !e.seeking && e.played {
+	if e.seek.mode == seekIdle && e.played {
 		e.beginSeekLocked(now)
 	}
 }
@@ -669,7 +763,7 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 	for {
 		e.mu.Lock()
 		ready := e.pictured
-		closed := e.closed
+		closed := e.phase == engineClosed
 		wake := e.wake
 		e.mu.Unlock()
 		if ready {
@@ -689,7 +783,11 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 }
 
 func (e *Engine) flushLocked() {
-	e.seeking, e.played, e.pictured = false, false, false
+	e.seek.reset()
+	e.played, e.pictured = false, false
+	if e.phase == engineEnded {
+		e.phase = engineActive
+	}
 	e.newest, e.have = [kinds]time.Duration{}, [kinds]bool{}
 	e.epoch++
 	for _, f := range e.video {
@@ -697,8 +795,8 @@ func (e *Engine) flushLocked() {
 	}
 	e.video, e.vpts = nil, nil
 	e.chunks, e.pos, e.queued = nil, 0, 0
-	e.playing, e.waitSet = false, false
-	e.ext = extClock{}
+	e.audio = audioEmpty
+	e.ext.reset()
 	e.firstVideoSet, e.presentedFresh = false, false
 	e.signalLocked()
 }
@@ -713,8 +811,11 @@ func (e *Engine) SetPaused(paused bool) {
 	if paused == e.paused {
 		return
 	}
-	if e.ext.valid {
-		e.ext = extClock{valid: true, running: !paused, base: e.ext.now(now, e.rate), at: now}
+	e.ext.setPaused(paused, now, e.rate)
+	if paused {
+		e.seek.pause(now)
+	} else {
+		e.seek.resume(now)
 	}
 	e.paused = paused
 	e.signalLocked()
@@ -728,9 +829,7 @@ func (e *Engine) SetRate(rate float64) {
 	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.ext.valid {
-		e.ext = extClock{valid: true, running: e.ext.running, base: e.ext.now(now, e.rate), at: now}
-	}
+	e.ext.reanchor(now, e.rate)
 	e.rate = rate
 }
 
@@ -739,7 +838,9 @@ func (e *Engine) SetRate(rate float64) {
 func (e *Engine) End() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.ended = true
+	if e.phase == engineActive {
+		e.phase = engineEnded
+	}
 	e.signalLocked()
 }
 
@@ -748,14 +849,13 @@ func (e *Engine) End() {
 func (e *Engine) Drained() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.ended && len(e.chunks) == 0 && len(e.video) == 0 && e.playedFrames() >= e.audibleTo
+	return e.phase != engineActive && len(e.chunks) == 0 && len(e.video) == 0 && e.playedFrames() >= e.audibleTo
 }
 
 // Close releases queued frames and unblocks producers for good.
 func (e *Engine) Close() {
 	e.mu.Lock()
-	e.closed = true
-	e.ended = true
+	e.phase = engineClosed
 	e.flushLocked()
 	e.mu.Unlock()
 }

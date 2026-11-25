@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -133,7 +132,6 @@ type destinationWriterMuxer struct {
 	format.Muxer
 	writer      io.WriteCloser
 	transaction *destinationTransaction
-	failed      atomic.Bool
 }
 
 func (m *destinationWriterMuxer) Write(ctx context.Context, packet *av.Packet, result *format.WriteResult) error {
@@ -145,7 +143,6 @@ func (m *destinationWriterMuxer) Write(ctx context.Context, packet *av.Packet, r
 }
 
 func (m *destinationWriterMuxer) MarkFailed() {
-	m.failed.Store(true)
 	m.transaction.Fail()
 }
 
@@ -156,7 +153,7 @@ func (m *destinationWriterMuxer) Close() error {
 	}
 	transactionErr := error(nil)
 	state := DestinationCommitted
-	if m.failed.Load() || m.transaction.ShouldAbort() {
+	if m.transaction.ShouldAbort() {
 		state = DestinationAborted
 	}
 	if transactional, ok := m.writer.(provider.TransactionalWriter); ok {

@@ -223,10 +223,6 @@ func (s *DecoderState) ensureDecoder(seedPayloads [][]byte) error {
 	if s == nil {
 		return codec.ErrUnsupportedFormat
 	}
-	if s.dec != nil {
-		s.dec.Close()
-		s.dec = nil
-	}
 	seeds := make([][]byte, 0, len(seedPayloads)+1)
 	seeds = append(seeds, seedPayloads...)
 	if len(s.paddingSeed) > 0 {
@@ -240,6 +236,9 @@ func (s *DecoderState) ensureDecoder(seedPayloads [][]byte) error {
 	dec, err := backend.NewDecoderFromRTPPayloads(seeds, opts...)
 	if err != nil {
 		return err
+	}
+	if s.dec != nil {
+		s.dec.Close()
 	}
 	s.dec = dec
 	return nil
@@ -268,6 +267,18 @@ func (s *DecoderState) packetizeLowOverhead(payload []byte, keyframe bool) ([]by
 		return nil, nil
 	}
 	return s.rtpScratch[:n], nil
+}
+
+func (s *DecoderState) appendInitFragment(payload []byte) bool {
+	maxBytes := max(s.bounds.MaxPayloadBytes+s.bounds.MaxRetainedBytes, defaultRTPSeedBytes)
+	if len(s.initPayloads) >= maxAV1PayloadEvents || len(s.initBuf)+len(payload) > maxBytes {
+		s.resetInitFragments()
+		return false
+	}
+	start := len(s.initBuf)
+	s.initBuf = append(s.initBuf, payload...)
+	s.initPayloads = append(s.initPayloads, s.initBuf[start:])
+	return true
 }
 
 func (s *DecoderState) resetInitFragments() {

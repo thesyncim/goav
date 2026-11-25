@@ -41,6 +41,14 @@ func (Factory) NewFilter(ctx context.Context, config filter.Config) (filter.Fram
 	return resampler, nil
 }
 
+type resampleState uint8
+
+const (
+	resampleIdle resampleState = iota
+	resampleStreaming
+	resampleFlushed
+)
+
 type Filter struct {
 	stream          av.Stream
 	inputRate       int
@@ -64,7 +72,7 @@ type Filter struct {
 	inPos    int64
 	outPos   int64
 	last     []int
-	started  bool
+	state    resampleState
 	startPTS av.Timestamp
 	// identity carries the stream id and codec epoch of the latest input frame
 	// onto the flushed tail.
@@ -154,7 +162,7 @@ func (f *Filter) Open(ctx context.Context, config filter.Config) error {
 // resetStream restarts the rate-conversion timeline: the next frame becomes
 // the new origin.
 func (f *Filter) resetStream() {
-	f.inPos, f.outPos, f.started = 0, 0, false
+	f.inPos, f.outPos, f.state = 0, 0, resampleIdle
 	clear(f.last)
 }
 
@@ -195,9 +203,12 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 		return nil
 	}
 
-	if !f.started {
+	if f.state != resampleStreaming {
+		if f.state == resampleFlushed {
+			f.resetStream()
+		}
 		f.startPTS = f.outputTimeline(frame.PTS)
-		f.started = true
+		f.state = resampleStreaming
 	}
 	f.identity.StreamID, f.identity.CodecEpoch = frame.StreamID, frame.CodecEpoch
 	end := f.inPos + int64(inputSamples)
@@ -381,12 +392,16 @@ func (f *Filter) FlushInto(ctx context.Context, out *filter.Result) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !f.started || f.inPos == 0 || out == nil || len(out.Frames) == cap(out.Frames) {
+	if f.state != resampleStreaming || f.inPos == 0 {
 		return nil
 	}
 	count := int(ceilDiv(f.inPos*int64(f.outputRate), int64(f.inputRate)) - f.outPos)
 	if count <= 0 {
+		f.state = resampleFlushed
 		return nil
+	}
+	if out == nil || len(out.Frames) == cap(out.Frames) {
+		return filter.ErrResultFull
 	}
 	dst, err := f.nextOutput(&f.identity, out, count, f.positionPTS())
 	if err != nil {
@@ -398,6 +413,7 @@ func (f *Filter) FlushInto(ctx context.Context, out *filter.Result) error {
 		}
 	}
 	f.outPos += int64(count)
+	f.state = resampleFlushed
 	return nil
 }
 

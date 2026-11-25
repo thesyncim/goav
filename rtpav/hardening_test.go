@@ -139,13 +139,13 @@ func TestVideoFrameAssemblerSinglePacketFastPathResetsStartedAndChecksMaxSize(t 
 		t.Fatalf("oversized single packet err = %v, want ErrFrameTooLarge", err)
 	}
 
-	// Valid 2-byte VP8 keyframe must leave assembler.started == false after emit.
+	// Valid 2-byte VP8 keyframe must leave assembler.state == asmIdle after emit.
 	small := []byte{0x10, 0x00, 0x01}
 	out.Reset()
 	if err := d.PushInto(ctx, &rtp.Packet{Header: rtp.Header{Timestamp: 2000, Marker: true}, Payload: small}, pc, &out); err != nil {
 		t.Fatal(err)
 	}
-	if d.assembler.started {
-		t.Fatal("assembler.started remained true after single-packet fast-path emit")
+	if d.assembler.state != asmIdle {
+		t.Fatalf("assembler.state = %v after single-packet fast-path emit, want asmIdle", d.assembler.state)
 	}
 }

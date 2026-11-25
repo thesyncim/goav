@@ -68,12 +68,12 @@ func (g *bufferedRunner) InjectSource(ctx context.Context, ref NodeRef, msg *Mes
 		g.mu.RUnlock()
 		return ErrClosed
 	}
-	if !g.running {
+	if g.phase != runActive {
 		g.mu.RUnlock()
 		return ErrDynamicGraphUnsupported
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
@@ -104,11 +104,11 @@ func (g *bufferedRunner) CanControlSource(ref NodeRef) error {
 	if g.closed {
 		return ErrClosed
 	}
-	if !g.running {
+	if g.phase != runActive {
 		return ErrDynamicGraphUnsupported
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		return ErrUnknownNode
 	}
 	node := g.nodes[index]
@@ -140,7 +140,7 @@ func (g *directRunner) InjectSource(ctx context.Context, ref NodeRef, msg *Messa
 		return ErrClosed
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
@@ -168,7 +168,7 @@ func (g *directRunner) CanControlSource(ref NodeRef) error {
 		return ErrClosed
 	}
 	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].isActive() {
 		return ErrUnknownNode
 	}
 	node := g.nodes[index]

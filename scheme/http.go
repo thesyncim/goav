@@ -276,6 +276,11 @@ func (r *httpReader) open() error {
 	case http.StatusOK:
 		r.size = resp.ContentLength
 		r.live = r.size < 0 || icecast(resp.Header)
+		if r.live {
+			// A live stream has no finite EOF boundary even if a relay reports
+			// a placeholder Content-Length.
+			r.size = -1
+		}
 		r.attach(resp, 0, -1)
 	case http.StatusRequestedRangeNotSatisfiable:
 		// Only an empty resource refuses bytes=0-.
@@ -374,6 +379,9 @@ func (r *httpReader) ReadAt(p []byte, off int64) (int, error) {
 func (r *httpReader) Seek(offset int64, whence int) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return 0, errors.New("http: seek after close")
+	}
 	switch whence {
 	case io.SeekStart:
 	case io.SeekCurrent:
@@ -586,21 +594,25 @@ func (r *httpReader) fromWindow(p []byte, off int64) (int, bool) {
 }
 
 func (r *httpReader) progressiveFailure(err error) error {
-	if err == io.EOF && r.ctx.Err() == nil && !r.body.guard.stalled.Load() {
+	b := r.body
+	if err == io.EOF && r.ctx.Err() == nil && !b.guard.stalled.Load() {
 		if r.live {
 			// A live stream does not end: its end is a dropped connection,
 			// which goav.Reconnect recovers from.
+			r.release()
 			return errLiveEnded
 		}
 		if r.size < 0 {
-			r.size = r.body.at
+			r.size = b.at
 		}
-		if r.body.at < r.size {
+		if b.at < r.size {
+			r.release()
 			return io.ErrUnexpectedEOF
 		}
 		return io.EOF
 	}
-	return r.bodyFailure(r.body, err)
+	r.release()
+	return r.bodyFailure(b, err)
 }
 
 // keep records bytes the progressive body passed in the window.

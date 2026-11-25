@@ -34,7 +34,7 @@ type VP8Encoder struct {
 	width           int
 	height          int
 	defaultDuration uint64
-	closed          bool
+	state           vpxState
 }
 
 func (e *VP8Encoder) Descriptor() codec.Descriptor {
@@ -49,12 +49,15 @@ func (e *VP8Encoder) Open(ctx context.Context, config codec.EncodeConfig) error 
 	if err != nil {
 		return err
 	}
+	if err := e.resetEncoder(config, width, height); err != nil {
+		return err
+	}
 	e.stream = stream
 	e.width = width
 	e.height = height
 	e.defaultDuration = defaultEncodeDuration(config)
-	e.closed = false
-	return e.resetEncoder(config)
+	e.state = vpxOpen
+	return nil
 }
 
 func (e *VP8Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.EncodeResult) error {
@@ -64,13 +67,13 @@ func (e *VP8Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == vpxClosed {
 		return codec.ErrClosed
 	}
 	if frame == nil {
 		return nil
 	}
-	if e.encoder == nil {
+	if e.state == vpxUnopened {
 		return codec.ErrUnsupportedFormat
 	}
 	if len(out.Packets) == cap(out.Packets) {
@@ -119,7 +122,7 @@ func (e *VP8Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) err
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == vpxClosed {
 		return codec.ErrClosed
 	}
 	return nil
@@ -132,8 +135,11 @@ func (e *VP8Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if e.closed {
+	switch e.state {
+	case vpxClosed:
 		return codec.ErrClosed
+	case vpxUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventKeyframeRequired:
@@ -168,32 +174,37 @@ func applyEventBitrate(setBitrateKbps func(int) error, event *av.Event) error {
 }
 
 func (e *VP8Encoder) Close() error {
-	if e.closed {
+	if e.state == vpxClosed {
 		return nil
 	}
-	e.closed = true
+	e.state = vpxClosed
 	if e.encoder == nil {
 		return nil
 	}
-	if err := e.encoder.Close(); err != nil && !errors.Is(err, govpxlib.ErrClosed) {
+	err := e.encoder.Close()
+	e.encoder = nil
+	if err != nil && !errors.Is(err, govpxlib.ErrClosed) {
 		return err
 	}
-	e.encoder = nil
 	return nil
 }
 
-func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig) error {
-	encoder, err := govpxlib.NewVP8Encoder(vp8EncoderOptions(config, e.width, e.height))
+func (e *VP8Encoder) resetEncoder(config codec.EncodeConfig, width, height int) error {
+	encoder, err := govpxlib.NewVP8Encoder(vp8EncoderOptions(config, width, height))
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
-	e.encoder = encoder
 	// Tier-3 raw control: hand the caller the concrete *govpxlib.VP8Encoder.
 	if control := config.Settings.Control; control != nil {
 		if err := control(encoder); err != nil {
+			_ = encoder.Close()
 			return err
 		}
 	}
+	if e.encoder != nil {
+		_ = e.encoder.Close()
+	}
+	e.encoder = encoder
 	return nil
 }
 

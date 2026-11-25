@@ -100,6 +100,14 @@ func durationIn(d av.Duration, base av.TimeBase) int64 {
 	return 0
 }
 
+type encoderLifecycle uint8
+
+const (
+	encUnopened encoderLifecycle = iota
+	encOpen
+	encClosed
+)
+
 type videoEncoder struct {
 	c        *Codec
 	desc     codec.Descriptor
@@ -112,7 +120,7 @@ type videoEncoder struct {
 	sets     [][]byte
 	scratch  []byte
 	forceKey bool
-	closed   bool
+	state    encoderLifecycle
 	emitFn   func(*Packet) error
 	// carry holds packets a restart outside EncodeInto drained, until the
 	// next call can hand them on.
@@ -143,10 +151,15 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if e.session != nil {
+	if e.state == encOpen {
 		_ = e.Close()
 	}
-	e.closed = false
+	e.state = encUnopened
+	e.releaseCarry()
+	clear(e.pending)
+	e.pending = e.pending[:0]
+	e.sets = nil
+	e.out = nil
 	e.settings = config.Settings
 	e.config = VideoConfig{
 		Width:         width,
@@ -173,6 +186,7 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err := e.start(); err != nil {
 		return err
 	}
+	e.state = encOpen
 	return nil
 }
 
@@ -237,9 +251,14 @@ func (e *videoEncoder) EncodeInto(ctx context.Context, frame *av.Frame, out *cod
 	if err != nil {
 		return err
 	}
+	if e.c.Pixels != "" && e.c.Pixels != NV12 && !samePlanar(e.c.Pixels, pic.Format) {
+		return fmt.Errorf("%w: %s %s encodes %s, not %s", codec.ErrUnsupportedFormat, e.c.ID, e.c.Backend, e.c.Pixels, pic.Format)
+	}
 	if pic.Width != e.config.Width || pic.Height != e.config.Height {
 		// A new geometry starts a new session: drain the old one first.
-		if err := e.restart(out, func() { e.config.Width, e.config.Height = pic.Width, pic.Height }); err != nil {
+		next := e.config
+		next.Width, next.Height = pic.Width, pic.Height
+		if err := e.restart(out, next); err != nil {
 			return err
 		}
 		e.stream.Codec.Width, e.stream.Codec.Height = pic.Width, pic.Height
@@ -252,11 +271,8 @@ func (e *videoEncoder) EncodeInto(ctx context.Context, frame *av.Frame, out *cod
 	}
 	pic.Keyframe, e.forceKey = e.forceKey, false
 	e.pending.push(timing{pts: pic.PTS, duration: pic.Duration, metadata: frame.Metadata})
-	switch {
-	case e.c.Pixels == NV12 && (pic.Format == av.PixelFormatI420 || pic.Format == av.PixelFormatYUV420P):
+	if e.c.Pixels == NV12 && (pic.Format == av.PixelFormatI420 || pic.Format == av.PixelFormatYUV420P) {
 		pic, e.scratch = toNV12(pic, e.scratch)
-	case e.c.Pixels != "" && e.c.Pixels != NV12 && !samePlanar(e.c.Pixels, pic.Format):
-		return fmt.Errorf("%w: %s %s encodes %s, not %s", codec.ErrUnsupportedFormat, e.c.ID, e.c.Backend, e.c.Pixels, pic.Format)
 	}
 	e.out = out
 	return e.session.Encode(&pic, e.emitFn)
@@ -269,28 +285,48 @@ func (e *videoEncoder) ready(ctx context.Context, out *codec.EncodeResult) error
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed || e.session == nil {
+	if e.state != encOpen {
 		return codec.ErrClosed
 	}
 	out.Packets = takeCarried(out.Packets, &e.carry)
 	return nil
 }
 
-// restart drains and closes the session, applies change, and opens a new
+// restart drains and closes the session, applies next, and opens a new
 // one that starts on a keyframe.
-func (e *videoEncoder) restart(out *codec.EncodeResult, change func()) error {
+func (e *videoEncoder) restart(out *codec.EncodeResult, next VideoConfig) error {
 	e.out = out
 	if err := e.session.Flush(e.emitFn); err != nil {
+		_ = e.session.Close()
+		e.session = nil
+		e.releaseCarry()
+		e.state = encClosed
 		return err
 	}
 	err := e.session.Close()
 	e.session = nil
 	if err != nil {
+		e.releaseCarry()
+		e.state = encClosed
 		return err
 	}
-	change()
+	prev := e.config
+	e.config = next
 	e.forceKey = true
-	return e.start()
+	if err := e.start(); err != nil {
+		e.config = prev
+		e.releaseCarry()
+		e.state = encClosed
+		return err
+	}
+	e.state = encOpen
+	return nil
+}
+
+func (e *videoEncoder) releaseCarry() {
+	releasePackets(e.carry.Packets)
+	clear(e.carry.Packets)
+	e.carry.Packets = e.carry.Packets[:0]
 }
 
 func (e *videoEncoder) emit(p *Packet) error {
@@ -372,7 +408,7 @@ func (e *videoEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if e.closed || e.session == nil {
+	if e.state != encOpen {
 		return codec.ErrClosed
 	}
 	switch event.Type {
@@ -437,16 +473,17 @@ func (e *videoEncoder) set(name, value string) error {
 		e.config.Knobs = knobs
 		return nil
 	}
-	return e.restart(&e.carry, func() { e.config.Knobs = knobs })
+	next := e.config
+	next.Knobs = knobs
+	return e.restart(&e.carry, next)
 }
 
 func (e *videoEncoder) Close() error {
-	if e.closed {
+	if e.state == encClosed {
 		return nil
 	}
-	e.closed = true
-	releasePackets(e.carry.Packets)
-	e.carry.Packets = nil
+	e.state = encClosed
+	e.releaseCarry()
 	if e.session == nil {
 		return nil
 	}

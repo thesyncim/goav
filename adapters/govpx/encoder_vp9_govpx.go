@@ -34,7 +34,7 @@ type VP9Encoder struct {
 	stream  av.Stream
 	width   int
 	height  int
-	closed  bool
+	state   vpxState
 }
 
 func (e *VP9Encoder) Descriptor() codec.Descriptor {
@@ -49,12 +49,15 @@ func (e *VP9Encoder) Open(ctx context.Context, config codec.EncodeConfig) error 
 	if err != nil {
 		return err
 	}
+	if err := e.resetEncoder(config, width, height); err != nil {
+		return err
+	}
 	e.config = config
 	e.stream = stream
 	e.width = width
 	e.height = height
-	e.closed = false
-	return e.resetEncoder()
+	e.state = vpxOpen
+	return nil
 }
 
 func (e *VP9Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.EncodeResult) error {
@@ -64,13 +67,13 @@ func (e *VP9Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == vpxClosed {
 		return codec.ErrClosed
 	}
 	if frame == nil {
 		return nil
 	}
-	if e.encoder == nil {
+	if e.state == vpxUnopened {
 		return codec.ErrUnsupportedFormat
 	}
 	if len(out.Packets) == cap(out.Packets) {
@@ -119,7 +122,7 @@ func (e *VP9Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) err
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == vpxClosed {
 		return codec.ErrClosed
 	}
 	return nil
@@ -132,8 +135,11 @@ func (e *VP9Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if e.closed {
+	switch e.state {
+	case vpxClosed:
 		return codec.ErrClosed
+	case vpxUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventKeyframeRequired:
@@ -141,7 +147,7 @@ func (e *VP9Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	case av.EventBitrateChanged:
 		return applyEventBitrate(e.encoder.SetBitrateKbps, event)
 	case av.EventCodecChanged, av.EventDiscontinuity:
-		if err := e.resetEncoder(); err != nil {
+		if err := e.resetEncoder(e.config, e.width, e.height); err != nil {
 			return err
 		}
 		e.encoder.ForceKeyFrame()
@@ -150,29 +156,30 @@ func (e *VP9Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 }
 
 func (e *VP9Encoder) Close() error {
-	if e.closed {
+	if e.state == vpxClosed {
 		return nil
 	}
-	e.closed = true
+	e.state = vpxClosed
 	return e.closeEncoder()
 }
 
-func (e *VP9Encoder) resetEncoder() error {
-	if err := e.closeEncoder(); err != nil {
-		return err
-	}
-	encoder, err := govpxlib.NewVP9Encoder(vp9EncoderOptions(e.config, e.width, e.height))
+func (e *VP9Encoder) resetEncoder(config codec.EncodeConfig, width, height int) error {
+	encoder, err := govpxlib.NewVP9Encoder(vp9EncoderOptions(config, width, height))
 	if err != nil {
 		return mapGovpxEncodeError(err)
 	}
-	e.encoder = encoder
 	// Tier-3 raw control: hand the caller the concrete *govpxlib.VP9Encoder so it
 	// can apply anything the library exposes beyond the common typed settings.
-	if control := e.config.Settings.Control; control != nil {
+	if control := config.Settings.Control; control != nil {
 		if err := control(encoder); err != nil {
+			_ = encoder.Close()
 			return err
 		}
 	}
+	if e.encoder != nil {
+		_ = e.encoder.Close()
+	}
+	e.encoder = encoder
 	return nil
 }
 
@@ -253,10 +260,11 @@ func (e *VP9Encoder) closeEncoder() error {
 	if e.encoder == nil {
 		return nil
 	}
-	if err := e.encoder.Close(); err != nil && !errors.Is(err, govpxlib.ErrClosed) {
+	err := e.encoder.Close()
+	e.encoder = nil
+	if err != nil && !errors.Is(err, govpxlib.ErrClosed) {
 		return err
 	}
-	e.encoder = nil
 	return nil
 }
 

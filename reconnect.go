@@ -98,9 +98,10 @@ type reconnectingSource struct {
 	streams   []av.Stream
 	qualifier string
 
-	mu      sync.Mutex
-	current pipeline.Source
-	closed  bool
+	mu        sync.Mutex
+	current   pipeline.Source
+	closed    bool
+	stopRetry context.CancelFunc
 
 	message pipeline.Message
 	event   av.Event
@@ -139,6 +140,22 @@ func (s *reconnectingSource) DescribeNode() pipeline.NodeSpec {
 }
 
 func (s *reconnectingSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	loopCtx, cancelLoop := context.WithCancel(ctx)
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cancelLoop()
+		return nil
+	}
+	s.stopRetry = cancelLoop
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.stopRetry = nil
+		s.mu.Unlock()
+		cancelLoop()
+	}()
+
 	failures := 0
 	var ids map[av.StreamID]av.StreamID
 	for {
@@ -147,7 +164,7 @@ func (s *reconnectingSource) Start(ctx context.Context, emitter pipeline.Emitter
 			return nil
 		}
 		session := sessionEmitter(emitter, ids)
-		err := source.Start(ctx, session)
+		err := source.Start(loopCtx, session)
 		if err == nil || ctx.Err() != nil || s.isClosed() {
 			return err
 		}
@@ -155,6 +172,9 @@ func (s *reconnectingSource) Start(ctx context.Context, emitter pipeline.Emitter
 			failures = 0
 		}
 		for {
+			if s.isClosed() {
+				return err
+			}
 			failures++
 			if s.policy.attempts > 0 && failures > s.policy.attempts {
 				return fmt.Errorf("goav: %s: gave up after %d reconnect attempts: %w", s.name, s.policy.attempts, err)
@@ -169,10 +189,13 @@ func (s *reconnectingSource) Start(ctx context.Context, emitter pipeline.Emitter
 					"delay":   delay.String(),
 				},
 			})
-			if sleepErr := s.clock.Sleep(ctx, delay); sleepErr != nil {
+			if sleepErr := s.clock.Sleep(loopCtx, delay); sleepErr != nil {
 				return err
 			}
-			next, openErr := s.reopen(ctx)
+			if s.isClosed() {
+				return err
+			}
+			next, openErr := s.reopen(loopCtx)
 			if openErr == nil {
 				if !s.swap(next.source) {
 					return nil
@@ -184,12 +207,12 @@ func (s *reconnectingSource) Start(ctx context.Context, emitter pipeline.Emitter
 					recovered["drift"] = drift.String()
 				}
 				s.publish(av.Event{Type: av.EventReconnect, Reason: s.name + " reconnected", Metadata: recovered})
-				if emitErr := s.announce(ctx, emitter, drift); emitErr != nil {
+				if emitErr := s.announce(loopCtx, emitter, drift); emitErr != nil {
 					return emitErr
 				}
 				break
 			}
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || s.isClosed() {
 				return err
 			}
 			err = openErr
@@ -342,7 +365,11 @@ func (s *reconnectingSource) Close() error {
 	}
 	s.closed = true
 	current := s.current
+	stopRetry := s.stopRetry
 	s.mu.Unlock()
+	if stopRetry != nil {
+		stopRetry()
+	}
 	return current.Close()
 }
 
@@ -352,7 +379,11 @@ type controllableReconnectingSource struct {
 
 // Control reaches the source running now.
 func (s *controllableReconnectingSource) Control(ctx context.Context, msg *pipeline.Message) error {
-	controllable, ok := s.source().(pipeline.ControllableSource)
+	src := s.source()
+	if src == nil {
+		return pipeline.ErrClosed
+	}
+	controllable, ok := src.(pipeline.ControllableSource)
 	if !ok {
 		return fmt.Errorf("goav: %s: the reconnected source takes no controls", s.name)
 	}
