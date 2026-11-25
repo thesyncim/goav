@@ -14,11 +14,14 @@ your service still ships as one static binary.
 
 ```sh
 go get github.com/thesyncim/goav@latest   # Go 1.27+
-GOEXPERIMENT=simd go build ./...         # always: enables the SIMD codec paths
+GOEXPERIMENT=simd go build ./...         # enables Go 1.27 portable SIMD kernels
 ```
 
-Build, test, and run with `GOEXPERIMENT=simd`. It switches the codecs onto Go 1.27's
-portable SIMD paths; without it they fall back to scalar code. On one machine (Apple M4 Max, 128x96 test clips) that cut codec benchmark time by roughly half; treat it as a direction, not a guarantee ([measurements and scope](docs/PERFORMANCE.md)).
+Build, test, and run with `GOEXPERIMENT=simd` to enable Go 1.27 portable SIMD
+paths for codecs, audio mix, and I420 resize (without it, everything falls back
+to bit-exact scalar code). On an Apple M4 Max, SIMD cuts codec benchmark time by
+~45% geomean and pushes 720p half-scale I420 resize past 2 GB/s at 0 allocs/op
+([measurements and scope](docs/PERFORMANCE.md)).
 
 ## Quick start
 
@@ -143,18 +146,19 @@ DOT and Mermaid.
 | Audio | Opus | Opus (in WebM, Matroska, or MP4) |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, MP4 (progressive or fragmented), IVF, Annex B (H.264) |
 
-Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
-runtime with only the adapters you choose, and there is no global registry.
+Plus `Resize` (area-averaged SIMD downscale, linear upscale) and `Resample`.
+`bundle` registers all of these; `goav.New(...)` builds a runtime with only the
+adapters you choose, with no global registry.
 
-| Need | Default (`bundle`, pure Go) | Opt-in / native (`libcodec`, `gplcodec`, tags) |
+**Need H.264 or AAC?**
+
+| Codec | Default (`bundle`, pure Go) | Opt-in / native |
 | --- | --- | --- |
-| VP8 / VP9 / AV1 / Opus | Decode + encode (all OS, permissive) | — |
-| H.264 decode | Not registered by default | `-tags goav_goh264` (LGPL, pure Go) or `libcodec` (VideoToolbox on macOS, OpenH264 on macOS/Linux/Windows) |
-| H.264 encode | Descriptor-only (`codec.ErrUnavailable`) | `libcodec` (VideoToolbox on macOS, OpenH264 on macOS/Linux/Windows) |
-| AAC decode / encode | Not in `bundle` | `libcodec` AudioToolbox (macOS decode/encode) or `gplcodec.AAC()` (arm64-only decode, **GPL**) |
+| H.264 decode | Opt-in via `-tags goav_goh264` (LGPL) | [`libcodec`](libcodec): VideoToolbox (macOS), OpenH264 (macOS/Linux/Windows) |
+| H.264 encode | Descriptor-only (`codec.ErrUnavailable`) | [`libcodec`](libcodec): VideoToolbox (macOS), OpenH264 (macOS/Linux/Windows) |
+| AAC | Not in `bundle` | [`libcodec`](libcodec) AudioToolbox (macOS) or [`gplcodec`](gplcodec) (arm64 decode, **GPL**) |
 
-Everything `bundle` links is permissive, except LGPL H.264 under its tag; see
-[licenses](docs/EXTENDING.md#licenses).
+Everything `bundle` links by default is permissive; see [Adapters & Licenses](docs/EXTENDING.md#licenses).
 
 ## Recipes
 
@@ -176,15 +180,9 @@ and [`examples/`](examples), including a browser
 
 ## Built for live services
 
-- **One clock per task.** Pacing, playout, pause and resume, seek, and rate share one
-  timeline. Each fork can backpressure or drop on its own, and every drop is counted.
-  See [Flow control](docs/GUIDE.md#flow-control--backpressure).
-- **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
-  over a control socket ([Control plane](docs/REALTIME.md#control-plane-ctlserver--goav-ctl)).
-- **Fast without codec assembly or `unsafe`.** The root module uses no `unsafe`
-  and no assembly; graph, codec, and filter stages allocate nothing per message,
-  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec and resize paths.
-  See [Performance](docs/PERFORMANCE.md).
+- **One clock per task.** Pacing, playout, pause/resume, seek, and rate share one timeline. Each fork backpressures or drops independently, with every drop counted ([Flow control](docs/GUIDE.md#flow-control--backpressure)).
+- **Mutate while running.** Attach and detach outputs, switch inputs, and drive tasks over a JSON-RPC control socket ([Control plane](docs/REALTIME.md#control-plane-ctlserver--goav-ctl)).
+- **Zero `unsafe` and zero assembly in core.** Hot-path graph, codec, and filter stages allocate 0 B/op per message, pinned by CI tests, with Go 1.27 SIMD acceleration ([Performance](docs/PERFORMANCE.md)).
 
 ## Modules
 
