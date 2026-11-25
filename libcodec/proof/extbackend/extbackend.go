@@ -5,7 +5,6 @@ package extbackend
 
 import (
 	"encoding/binary"
-	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -79,7 +78,10 @@ func (s *encoder) Encode(p *kit.Picture, emit func(*kit.Packet) error) error {
 	s.out = append(s.out[:0], make([]byte, 4+n)...)
 	binary.BigEndian.PutUint16(s.out, uint16(p.Width))
 	binary.BigEndian.PutUint16(s.out[2:], uint16(p.Height))
-	if status := s.sym.compress(&s.out[4], &n, unsafe.SliceData(s.raw), uint64(len(s.raw)), s.level); status != 0 {
+	if len(s.raw) == 0 {
+		return kit.Fail("zlib", "encode", "empty picture", -1)
+	}
+	if status := s.sym.compress(&s.out[4], &n, &s.raw[0], uint64(len(s.raw)), s.level); status != 0 {
 		return kit.Fail("zlib", "encode", "compress2", int64(status))
 	}
 	return emit(&kit.Packet{Data: s.out[:4+n], PTS: p.PTS, DTS: p.PTS, Keyframe: true})
@@ -92,8 +94,11 @@ func (s *decoder) Decode(u *kit.Packet, emit func(*kit.Picture) error) error {
 	w, h := int(binary.BigEndian.Uint16(u.Data)), int(binary.BigEndian.Uint16(u.Data[2:]))
 	cw, ch := (w+1)/2, (h+1)/2
 	n := uint64(w*h + 2*cw*ch)
+	if n == 0 {
+		return kit.Fail("zlib", "decode", "empty frame", -1)
+	}
 	s.raw = append(s.raw[:0], make([]byte, n)...)
-	if status := s.sym.uncompress(unsafe.SliceData(s.raw), &n, &u.Data[4], uint64(len(u.Data)-4)); status != 0 || n != uint64(len(s.raw)) {
+	if status := s.sym.uncompress(&s.raw[0], &n, &u.Data[4], uint64(len(u.Data)-4)); status != 0 || n != uint64(len(s.raw)) {
 		return kit.Fail("zlib", "decode", "uncompress", int64(status))
 	}
 	return emit(&kit.Picture{

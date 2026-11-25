@@ -175,6 +175,8 @@ func (e *Engine) Clock() *DeviceClock { return e.clock }
 func (e *Engine) SetDevice(buffered func() int, latency time.Duration) {
 	if buffered != nil {
 		e.device.Store(&buffered)
+	} else {
+		e.device.Store(nil)
 	}
 	e.latencyFrames.Store(durationToFrames(max(latency, 0)))
 }

@@ -1,3 +1,5 @@
+github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/thesyncim/goav1 v0.0.0-20261124221443-8f29f0adb550 h1:+R9iFAAoNZQZZqyLDYvbL3gqhpC9LayZ3p2UPq5LK0g=
 github.com/thesyncim/goav1 v0.0.0-20261124221443-8f29f0adb550/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=

@@ -14,9 +14,13 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 	}
 	indexText := string(index)
 	for _, fragment := range []string{
-		"[`ROADMAP.md`](ROADMAP.md)",
+		"[`GUIDE.md`](GUIDE.md)",
+		"[`EXTENDING.md`](EXTENDING.md)",
+		"[`REALTIME.md`](REALTIME.md)",
 		"[`CLI.md`](CLI.md)",
-		"[`CONTROL_PLANE.md`](CONTROL_PLANE.md)",
+		"[`ARCHITECTURE.md`](ARCHITECTURE.md)",
+		"[`PERFORMANCE.md`](PERFORMANCE.md)",
+		"[`RELEASING.md`](RELEASING.md)",
 	} {
 		if !strings.Contains(indexText, fragment) {
 			t.Fatalf("docs/README.md missing %q", fragment)
@@ -57,7 +61,7 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 }
 
 func TestRoadmapDocumentsH264DecodeOnlyDecision(t *testing.T) {
-	roadmap, err := os.ReadFile(filepath.Join("docs", "ROADMAP.md"))
+	roadmap, err := os.ReadFile(filepath.Join("docs", "ARCHITECTURE.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +74,7 @@ func TestRoadmapDocumentsH264DecodeOnlyDecision(t *testing.T) {
 		"`runconfig.WithEncoder`",
 	} {
 		if !strings.Contains(text, fragment) {
-			t.Fatalf("docs/ROADMAP.md missing H264 decode-only decision fragment %q", fragment)
+			t.Fatalf("docs/ARCHITECTURE.md missing H264 decode-only decision fragment %q", fragment)
 		}
 	}
 }

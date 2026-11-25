@@ -17,10 +17,12 @@ scripts/bench/run.sh
 ```
 
 Use `staticcheck ./...` and `govulncheck ./...` when those tools are
-installed. Transport modules are nested modules; run their checks from
-`rtpav/`, `webrtcav/`, `playoutav/`, `player/`, `libcodec/`, and `gplcodec/` when a change touches them,
-and `cmd/goav` in a workspace (`go work init . ./player ./cmd/goav`). Vector
-kernels use the Go `simd` package with a scalar fallback — no assembly.
+installed. Transport, player, camera, and native-codec packages are nested
+modules; run `scripts/test-all-modules.sh` (pass `--race` for race coverage) to
+check the root module, `cameraav/`, `rtpav/`, `webrtcav/`, `player/`,
+`libcodec/`, `gplcodec/`, `goavtest/expect/`, `cmd/goav/`, and all examples in
+one command. Vector kernels use the Go `simd` package with a scalar fallback —
+no assembly.
 
 Add a `changelog.d/<slug>.md` fragment for user-visible work. Internal-only
 pull requests may use the `skip-changelog` label; CI treats the label as an

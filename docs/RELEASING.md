@@ -1,196 +1,45 @@
 # Releasing
 
-Releases are tag-driven. CI can validate a tag and create the GitHub release,
-but the maintainer owns the compatibility decision and signed tag. Treat this
-as a release-day checklist: it tells you what evidence to refresh before a tag
-exists, what automation is expected after the tag is pushed, and what the
-repository page should say meanwhile.
+Releases are signed, tag-driven, and automated by `.github/workflows/release.yml`.
 
-## Before Tagging
+## Pre-Release Checklist
 
-1. Run `scripts/changelog-release.sh VERSION` to fold `Unreleased` and
-   `changelog.d/` into a versioned section.
-2. Run the local gates:
-
+1. Fold `changelog.d/` fragments into `CHANGELOG.md`:
    ```sh
-   CGO_ENABLED=0 go test ./...
-   CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./ctlserver ./launch ./graphrender
-   CGO_ENABLED=0 go vet ./...
-   staticcheck ./...
-   govulncheck ./...
-   test -z "$(gofmt -l .)"
-   scripts/bench/run.sh
+   scripts/changelog-release.sh VERSION
+   ```
+2. Run local checks across root, nested modules, and examples:
+   ```sh
+   export GOEXPERIMENT=simd
+   scripts/test-all-modules.sh --race
+   staticcheck ./... && govulncheck ./... && test -z "$(gofmt -l .)"
+   scripts/bench/baseline.sh check
+   ```
+3. For release-quality performance evidence, generate a perf-lab manifest (note `PERF_GO_TEST_TIMEOUT` defaults to `0` in release-quality mode):
+   ```sh
    PERF_RELEASE_QUALITY=true PERF_BENCHTIME=2000x PERF_SOAK_BENCHTIME=1h PERF_LIVE_ROOM_CHURN_BENCHTIME=1h PERF_LIVE_ROOM_CHURN_INTERVAL=100ms scripts/bench/perf-lab.sh
    ```
-
-   `PERF_RELEASE_QUALITY=true` rejects fixed-count soak benchtimes; keep the
-   soak knobs duration-based so the manifest cannot label a smoke run as
-   release evidence. In release-quality mode those knobs feed wall-clock soak
-   tests, and `PERF_GO_TEST_TIMEOUT` defaults to `0` so Go's default 10-minute
-   test timeout does not kill hour-scale soaks; set it explicitly when you want
-   a bounded watchdog. `PERF_LIVE_ROOM_CHURN_INTERVAL` paces the attach/detach
-   churn loop and is recorded in the generated JSON.
-
-3. Run nested modules and examples:
-
+4. Verify external consumer resolution against a published commit:
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec gplcodec; do
-     (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
-   done
-   for mod in examples/*/go.mod; do
-     dir="$(dirname "$mod")"
-     (cd "$dir" && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test ./...)
-   done
+   bash scripts/check-consumers.sh PUBLISHED_CANDIDATE_SHA
    ```
 
-4. Confirm the minimum Go version in every module that will be tagged.
-5. Write the release notes: public API changes, behavior changes, adapter
-   changes, and migration notes.
+## Module Pinning
 
-## Acceptance Gate Matrix
+Nested modules (`cameraav`, `rtpav`, `webrtcav`, `player`, `libcodec`, `gplcodec`, `goavtest/expect`) and examples (`examples`, `examples/gio-webrtc-showcase`, `examples/webrtc-runtime-ladder`) pin the root module at a resolvable version (with `replace` for local dev; `cmd/goav` has no `replace` so `go install ...@version` works).
 
-The signed tag should not be cut until each row has fresh evidence from CI or a
-clean local runner. If a row is intentionally skipped, the release notes should
-say why.
-
-| Gate | Required evidence |
-|---|---|
-| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `goavtest/expect`, `rtpav`, `webrtcav`, `playoutav`, and every `examples/*/go.mod` module. |
-| Race coverage | `CGO_ENABLED=1 go test -race` passes for the governed runtime packages and nested transport modules. |
-| Static analysis and formatting | `CGO_ENABLED=0 go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, and `test -z "$(gofmt -l .)"` pass. |
-| README and docs examples | `TestReadmeGoExamplesCompile`, the doc-citation pins in `docs_citation_contract_test.go`, package-doc smoke, and example-module tests pass. |
-| Error catalog | `TestErrorCatalogDocMatchesErrcodeCatalog` pins the catalog to every code a refusal can carry; the acceptance tests own the public constants. |
-| Hot-path allocations | Allocation guard tests and benchmark smoke pass without documented regressions. |
-| Public API restraint | CI package-doc smoke and `go vet ./...` show no undocumented or broken public exports. |
-| CI artifacts | Coverage, fuzz-smoke, benchmark/perf-lab, benchstat, CodeQL, govulncheck, and release artifacts are present for the release candidate. |
-| Performance claims | `docs/PERFORMANCE.md` classifies claims as proven, measured, experimental, or not proven; release notes avoid comparative leadership without reproducible numbers; any release performance claim cites a perf-lab manifest generated with `PERF_RELEASE_QUALITY=true`. |
-
-## Nested-module root pin
-
-`rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`, `gplcodec`, and
-`goavtest/expect` require the root at a pseudo-version of a commit on `main`
-(and `webrtcav` requires `rtpav` the same way), with a `replace` for local development. Consumers ignore `replace`, so
-the pin must resolve. The CI job `consumer-install` fetches every nested module
-at the PR head into an empty directory with `GOWORK=off` and builds it.
-
-Bump the pin when a nested module needs newer root behavior or API, and before each tag
-(see Tags):
+Repin every module to a new root version in one command:
 
 ```sh
-go list -m -json github.com/thesyncim/goav@main        # Version = new pin
-go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
+scripts/repin.sh v0.1.0-alpha.8
 ```
 
-Edit the `require` lines (keep the `replace`), then run the module's tests.
-`cmd/goav` pins the root, `player`, and `webrtcav` (so `rtpav`) the same way but has no `replace` (so
-`go install ...@version` works); gate it in a workspace over the checkout.
-Use a published commit containing the fixes, then refresh pins after the merge
-if the merge changes those implementations. A published candidate commit is
-resolvable before merge; an unpushed local commit is not a valid dependency pin.
+## Signing & Tag Order
 
-Workspace tests verify integration of the checkout. They do not verify what
-an installed CLI or a player consumer receives. Run the external gate against
-the published candidate after repinning:
+Use signed, annotated tags (`git tag -s`):
 
-```sh
-bash scripts/check-consumers.sh PUBLISHED_CANDIDATE_SHA
-```
+1. Root first: `vX.Y.Z`
+2. Nested modules in dependency order: `goavtest/expect/vX.Y.Z`, `cameraav/vX.Y.Z`, `rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`, `player/vX.Y.Z`, `libcodec/vX.Y.Z`, `gplcodec/vX.Y.Z`
+3. CLI last: `cmd/goav/vX.Y.Z` (pins `cameraav`, `player`, `webrtcav`)
 
-It creates fresh modules with `GOWORK=off`, leaves the root version selected
-by each consumer, and exercises completed replies before EOF, blocked writes
-with deadlines, and eventual cleanup after removal timeouts, including retained finalization
-failures after the observer channel closes. It also resolves the WebRTC consumer and checks atomic RTP decorators plus
-independent same-codec track epochs. It builds
-the documented `player + bundle` combination on Linux amd64 and arm64 and
-rejects reachability of the opt-in AAC implementation. CI runs these probes
-in addition to the workspace suite. The root release workflow runs them before
-packaging binaries; a successful build alone is insufficient release evidence.
-
-## Tags
-
-Use signed, annotated tags. CI verifies a tag through GitHub, which checks the
-signature against the keys on the tagger's account, so register your GPG or SSH
-signing key there first (Settings, SSH and GPG keys); a lightweight or
-unverified tag is refused:
-
-```sh
-git tag -s v0.1.0 -m "goav v0.1.0"
-git push origin v0.1.0
-```
-
-Nested modules use prefixed tags:
-
-```sh
-git tag -s rtpav/v0.1.0 -m "rtpav v0.1.0"
-git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
-git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
-```
-
-Tag order follows dependencies: root first, then `goavtest/expect`, `rtpav`,
-`webrtcav`, `playoutav`, `player`, `libcodec`, and `gplcodec`, then `cmd/goav`
-(it pins `player` and `webrtcav`).
-
-Before tagging a nested module, pin each goav module it requires to a tag
-(not a `main` pseudo-version), drop its `replace`, run its tests, commit, then
-tag; the release workflow refuses a nested tag whose `go.mod` still has either.
-The `replace` can return on `main` afterwards.
-
-## Automation
-
-`.github/workflows/release.yml` runs on release tags and on manual dispatch for
-an existing tag. It validates the tag shape, has GitHub verify its signature, checks out
-that tag, runs tests and vet in the tagged module directory, then creates a
-GitHub release with generated notes.
-
-For root tags (`vX.Y.Z`) the workflow also builds pure-Go `goav` CLI archives
-for Linux and macOS on amd64/arm64, with explicit `headless` (`goav_noplay`)
-and `desktop` archive names. All in-repository modules are bound to the tagged
-tree during artifact builds. The CLI is a deliberately narrow demo and
-smoke-test utility (`docs/CLI.md`) — the library is the product; the archives
-exist so the release pipeline exercises real cross-platform builds. It uploads:
-
-- `SHA256SUMS`
-- `sbom-go-modules.json` from `go list -m -json all`
-- `provenance.txt` with tag, commit, workflow run, and Go toolchain details
-- one `*.buildinfo.txt` file per binary from `go version -m`
-
-Nested-module tags create source releases only, but they still run tests and
-vet in the matching nested module before release creation.
-
-Manual dispatch defaults to a draft release. Tag pushes create ready releases;
-use manual draft mode when rehearsing release notes before announcing.
-Rehearse the whole pipeline without a tag or a release:
-`gh workflow run release.yml --ref BRANCH -f dry_run=true` checks the commit's
-signature (warning only), tests, builds the CLI archives, and uploads them as
-the run's `release-dry-run` artifact.
-
-## Repository trust
-
-No release is published until the maintainer cuts a signed v0.x or v1 tag. An
-empty release list is expected while the README says pre-v1 and
-[`ROADMAP.md`](ROADMAP.md) keeps the release decision open; the evidence a
-release needs is the checklist and gate matrix above.
-
-```sh
-gh release list --repo thesyncim/goav --limit 10
-```
-
-Expected GitHub metadata:
-
-- Description: `Pure-Go media workflow runtime for validated, inspectable, in-process audio/video pipelines`
-- Homepage: `https://pkg.go.dev/github.com/thesyncim/goav`
-- Topics: `audio`, `codecs`, `go`, `media`, `pure-go`, `realtime`, `rtp`,
-  `streaming`, `video`, `webrtc`
-
-```sh
-gh repo view thesyncim/goav \
-  --json description,homepageUrl,repositoryTopics,latestRelease \
-  --jq '{description, homepageUrl, topics: [.repositoryTopics[].name], latestRelease}'
-```
-
-The local trust files are part of the adoption surface and should agree with
-this page: [`README.md`](../README.md) (status, badges, doc links),
-`CHANGELOG.md` (release notes), [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-(workflow and changelog rules), [`SECURITY.md`](../SECURITY.md) (private
-vulnerability reporting), `SUPPORT.md` (pre-v1 support expectations), and
-`.github/PULL_REQUEST_TEMPLATE.md` (reviewer evidence checklist).
+Before tagging a nested module, pin its `goav` dependencies to tags (not pseudo-versions), drop its `replace` directive, commit, and tag; `.github/workflows/release.yml` refuses nested tags with `replace` directives. Rehearse a release without tagging via `gh workflow run release.yml --ref BRANCH -f dry_run=true`.

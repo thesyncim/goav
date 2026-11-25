@@ -7,9 +7,9 @@ updates:
   - package-ecosystem: gomod
     directories:
       - /
+      - /cameraav
       - /rtpav
       - /webrtcav
-      - /playoutav
       - /player
       - /libcodec
       - /gplcodec

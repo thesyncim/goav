@@ -79,7 +79,7 @@ so `live` test sources run as fast as the graph allows; `test` is the
 `goavtest` runtime with fake codecs. `goav describe` prints the graph a program
 builds and `goav explain` its plan, without opening or creating any file.
 
-A program routed to `play` runs on the [player](ADAPTERS.md#player)'s speaker clock in a
+A program routed to `play` runs on the [player](EXTENDING.md#native--opt-in-modules)'s speaker clock in a
 window; `goav play FILE` plays a file, and the summary adds what was shown.
 
 ## Serving HLS
@@ -99,7 +99,7 @@ for HTTP/2, which LL-HLS players expect.
 ## Control
 
 With `--control unix://PATH` (a bare path means unix), `goav run` serves the
-running task through [`ctlserver`](CONTROL_PLANE.md) until it stops, and
+running task through [`ctlserver`](REALTIME.md#control-plane-ctlserver--goav-ctl) until it stops, and
 `goav ctl` calls its methods, one per invocation. Attached programs touch files
 only under `--control-dir` (default `.`). `tcp://127.0.0.1:PORT` writes a token,
 owner-only, to `--control-token FILE` (default: per address, in the config

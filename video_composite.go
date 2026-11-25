@@ -263,10 +263,14 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compile.CompositeLayou
 	y, u, v := i420Canvas(canvasW*canvasH, chromaW*chromaH)
 	yPlane, uPlane, vPlane := y.Bytes, u.Bytes, v.Bytes
 	// Paint the uncovered canvas video black (Y=16, U=V=128 in limited range).
-	// Zeroed chroma would render every gap between arms green.
-	fillPlane(yPlane, compositeBlackLuma)
-	fillPlane(uPlane, compositeNeutralChroma)
-	fillPlane(vPlane, compositeNeutralChroma)
+	// Zeroed chroma would render every gap between arms green. Skip the full
+	// canvas fill when a participating arm already covers the entire canvas
+	// (for example, a full-frame PiP background).
+	if !compositeCoversCanvas(frames, layout, canvasW, canvasH) {
+		fillPlane(yPlane, compositeBlackLuma)
+		fillPlane(uPlane, compositeNeutralChroma)
+		fillPlane(vPlane, compositeNeutralChroma)
+	}
 
 	for i := range frames {
 		f := frames[i]
@@ -304,6 +308,22 @@ func firstCompositeFrame(frames []*av.Frame) *av.Frame {
 		}
 	}
 	return nil
+}
+
+// compositeCoversCanvas reports whether at least one participating arm fully
+// covers (0,0)..(canvasW,canvasH), making the background black fill redundant.
+func compositeCoversCanvas(frames []*av.Frame, layout []compile.CompositeLayout, canvasW, canvasH int) bool {
+	for i, f := range frames {
+		if f == nil || f.Video == nil {
+			continue
+		}
+		dstX := layout[i].X &^ 1
+		dstY := layout[i].Y &^ 1
+		if dstX <= 0 && dstY <= 0 && dstX+f.Video.Width >= canvasW && dstY+f.Video.Height >= canvasH {
+			return true
+		}
+	}
+	return false
 }
 
 // copyPlane copies a tightly-packed source plane region into a tightly-packed

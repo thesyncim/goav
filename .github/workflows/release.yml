@@ -4,9 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+      - 'cameraav/v*'
       - 'rtpav/v*'
       - 'webrtcav/v*'
-      - 'playoutav/v*'
       - 'player/v*'
       - 'libcodec/v*'
       - 'gplcodec/v*'
@@ -75,7 +75,7 @@ jobs:
             DRY_RUN=true scripts/verify-release-signature.sh commit "${GITHUB_SHA}"
           fi
           case "$tag" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|cameraav/v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|player/v[0-9]*.[0-9]*.[0-9]*|libcodec/v[0-9]*.[0-9]*.[0-9]*|gplcodec/v[0-9]*.[0-9]*.[0-9]*|goavtest/expect/v[0-9]*.[0-9]*.[0-9]*|cmd/goav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: $tag" >&2
@@ -88,9 +88,9 @@ jobs:
             git checkout --detach "$tag"
           fi
           case "$tag" in
+            cameraav/*) module_dir="cameraav" ;;
             rtpav/*) module_dir="rtpav" ;;
             webrtcav/*) module_dir="webrtcav" ;;
-            playoutav/*) module_dir="playoutav" ;;
             player/*) module_dir="player" ;;
             libcodec/*) module_dir="libcodec" ;;
             gplcodec/*) module_dir="gplcodec" ;;

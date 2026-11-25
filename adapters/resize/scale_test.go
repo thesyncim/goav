@@ -67,3 +67,79 @@ func TestScaleSeparableAxes(t *testing.T) {
 		t.Fatalf("2x2 -> 1x4 = %v, want %v", dst, want)
 	}
 }
+
+// TestScaleFastPathsMatchScalarReference pins that both the single-pass 2x2
+// box kernel and the vectorized vertical pass produce bit-identical output to
+// the full scalar Q14 separable reference across aligned, unaligned, strided,
+// cropped, downscaled, and upscaled planes.
+func TestScaleFastPathsMatchScalarReference(t *testing.T) {
+	cases := []struct {
+		name      string
+		srcW      int
+		srcH      int
+		srcX      int
+		srcY      int
+		cropW     int
+		cropH     int
+		dstW      int
+		dstH      int
+		srcStride int
+		dstStride int
+	}{
+		{name: "half_small_odd", srcW: 14, srcH: 6, cropW: 14, cropH: 6, dstW: 7, dstH: 3},
+		{name: "half_vector_unaligned", srcW: 150, srcH: 42, cropW: 150, cropH: 42, dstW: 75, dstH: 21},
+		{name: "half_cropped_strided", srcW: 160, srcH: 60, srcX: 12, srcY: 6, cropW: 138, cropH: 46, dstW: 69, dstH: 23, srcStride: 192, dstStride: 80},
+		{name: "arbitrary_downscale", srcW: 127, srcH: 53, cropW: 127, cropH: 53, dstW: 71, dstH: 29},
+		{name: "hd_ratio_downscale", srcW: 192, srcH: 108, cropW: 192, cropH: 108, dstW: 128, dstH: 72},
+		{name: "upscale", srcW: 37, srcH: 19, cropW: 37, cropH: 19, dstW: 83, dstH: 41},
+		{name: "mixed_axes", srcW: 99, srcH: 17, cropW: 99, cropH: 17, dstW: 45, dstH: 39},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srcStride := tc.srcStride
+			if srcStride == 0 {
+				srcStride = tc.srcW
+			}
+			dstStride := tc.dstStride
+			if dstStride == 0 {
+				dstStride = tc.dstW
+			}
+			src := make([]byte, tc.srcH*srcStride)
+			// Deterministic non-periodic pattern covering 0..255 extremes.
+			var x uint32 = 0x12345678
+			for i := range src {
+				x = x*1664525 + 1013904223
+				src[i] = byte(x >> 24)
+			}
+
+			got := make([]byte, tc.dstH*dstStride)
+			want := make([]byte, tc.dstH*dstStride)
+
+			var fast planeScaler
+			fast.scale(got, dstStride, src, srcStride, tc.srcX, tc.srcY, tc.cropW, tc.cropH, tc.dstW, tc.dstH, nil)
+
+			// Full scalar two-pass Q14 reference.
+			var ref planeScaler
+			ref.x.reset(tc.cropW, tc.dstW)
+			ref.y.reset(tc.cropH, tc.dstH)
+			tmp := make([]uint16, tc.cropH*tc.dstW)
+			for r := range tc.cropH {
+				base := (tc.srcY+r)*srcStride + tc.srcX
+				ref.x.filterRow(tmp[r*tc.dstW:(r+1)*tc.dstW], src[base:base+tc.cropW])
+			}
+			ref.scaleVerticalScalar(want, dstStride, tmp, tc.dstW, tc.dstH)
+
+			if !bytes.Equal(got, want) {
+				for y := range tc.dstH {
+					for col := range tc.dstW {
+						idx := y*dstStride + col
+						if got[idx] != want[idx] {
+							t.Fatalf("mismatch at (%d,%d): got %d, want %d", col, y, got[idx], want[idx])
+						}
+					}
+				}
+			}
+		})
+	}
+}

@@ -4,7 +4,7 @@
 
 **Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>the core needs no cgo, no FFmpeg, and no system libraries.
 
-[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
+[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/ARCHITECTURE.md#pre-v1-status--codec-decisions)
 
 </div>
 
@@ -14,11 +14,14 @@ your service still ships as one static binary.
 
 ```sh
 go get github.com/thesyncim/goav@latest   # Go 1.27+
-GOEXPERIMENT=simd go build ./...         # always: enables the SIMD codec paths
+GOEXPERIMENT=simd go build ./...         # enables Go 1.27 portable SIMD kernels
 ```
 
-Build, test, and run with `GOEXPERIMENT=simd`. It switches the codecs onto Go 1.27's
-portable SIMD paths; without it they fall back to scalar code. On one machine (Apple M4 Max, 128x96 test clips) that cut codec benchmark time by roughly half; treat it as a direction, not a guarantee ([measurements and scope](docs/PERFORMANCE.md)).
+Build, test, and run with `GOEXPERIMENT=simd` to enable Go 1.27 portable SIMD
+paths for codecs, audio mix, and I420 resize (without it, everything falls back
+to bit-exact scalar code). On an Apple M4 Max, SIMD cuts codec benchmark time by
+~45% geomean and pushes 720p half-scale I420 resize past 2 GB/s at 0 allocs/op
+([measurements and scope](docs/PERFORMANCE.md)).
 
 ## Quick start
 
@@ -132,7 +135,7 @@ Suggestions:
   - leave out .Decode() to copy the packets: input.Video().To(output)
 ```
 
-See [Errors](docs/ERRORS.md) for matching on codes; [`graphrender`](graphrender) also renders
+See [Errors & Error Catalog](docs/GUIDE.md#errors--error-catalog) for matching on codes; [`graphrender`](graphrender) also renders
 DOT and Mermaid.
 
 ## What's in the box
@@ -143,11 +146,19 @@ DOT and Mermaid.
 | Audio | Opus | Opus (in WebM, Matroska, or MP4) |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, MP4 (progressive or fragmented), IVF, Annex B (H.264) |
 
-Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
-runtime with only the adapters you choose, and there is no global registry.
-AAC comes from [`libcodec`](libcodec) (AudioToolbox, macOS) or the opt-in [`gplcodec`](gplcodec)
-(pure Go, arm64 only, GPL). Everything `bundle` links is permissive, except LGPL H.264 under
-its tag; see [licenses](docs/ADAPTERS.md#licenses).
+Plus `Resize` (area-averaged SIMD downscale, linear upscale) and `Resample`.
+`bundle` registers all of these; `goav.New(...)` builds a runtime with only the
+adapters you choose, with no global registry.
+
+**Need H.264 or AAC?**
+
+| Codec | Default (`bundle`, pure Go) | Opt-in / native |
+| --- | --- | --- |
+| H.264 decode | Opt-in via `-tags goav_goh264` (LGPL) | [`libcodec`](libcodec): VideoToolbox (macOS), OpenH264 (macOS/Linux/Windows) |
+| H.264 encode | Descriptor-only (`codec.ErrUnavailable`) | [`libcodec`](libcodec): VideoToolbox (macOS), OpenH264 (macOS/Linux/Windows) |
+| AAC | Not in `bundle` | [`libcodec`](libcodec) AudioToolbox (macOS) or [`gplcodec`](gplcodec) (arm64 decode, **GPL**) |
+
+Everything `bundle` links by default is permissive; see [Adapters & Licenses](docs/EXTENDING.md#licenses).
 
 ## Recipes
 
@@ -161,32 +172,25 @@ its tag; see [licenses](docs/ADAPTERS.md#licenses).
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 
-RTP and WebRTC, in and out, live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
+RTP and WebRTC, in and out, live in their own modules ([Realtime](docs/REALTIME.md)), and
 your own sources, codecs, and sinks plug in through small interfaces
-([Extension cookbook](docs/EXTENSION_COOKBOOK.md)). More in [Use cases](docs/USE_CASES.md),
-[Operations](docs/OPERATIONS.md), and [`examples/`](examples), including a browser
+([Adapters & Extending](docs/EXTENDING.md)). More in the [Developer Guide](docs/GUIDE.md)
+and [`examples/`](examples), including a browser
 [WebRTC ladder](examples/webrtc-runtime-ladder) and a native [Gio control room](examples/gio-webrtc-showcase).
 
 ## Built for live services
 
-- **One clock per task.** Pacing, playout, pause and resume, seek, and rate share one
-  timeline. Each fork can backpressure or drop on its own, and every drop is counted.
-  See [Flow control](docs/FLOW_CONTROL.md).
-- **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
-  over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
-- **Fast without codec assembly or `unsafe`.** The root module uses no `unsafe`
-  and no assembly; graph, codec, and filter stages allocate nothing per message,
-  and `GOEXPERIMENT=simd` enables Go 1.27 SIMD codec paths.
-  See [Performance](docs/PERFORMANCE.md).
+- **One clock per task.** Pacing, playout, pause/resume, seek, and rate share one timeline. Each fork backpressures or drops independently, with every drop counted ([Flow control](docs/GUIDE.md#flow-control--backpressure)).
+- **Mutate while running.** Attach and detach outputs, switch inputs, and drive tasks over a JSON-RPC control socket ([Control plane](docs/REALTIME.md#control-plane-ctlserver--goav-ctl)).
+- **Zero `unsafe` and zero assembly in core.** Hot-path graph, codec, and filter stages allocate 0 B/op per message, pinned by CI tests, with Go 1.27 SIMD acceleration ([Performance](docs/PERFORMANCE.md)).
 
 ## Modules
 
 | Module | Adds |
 | --- | --- |
-| `github.com/thesyncim/goav` | recipes, planner, runtime; bundled adapters in [`bundle`](bundle) |
+| `github.com/thesyncim/goav` | recipes, planner, runtime, scheduled playout ([`playoutav`](playoutav)); bundled adapters in [`bundle`](bundle) |
 | [`goav/rtpav`](rtpav) | RTP in and out: jitter buffer, (de)packetizers, RTCP feedback (Pion) |
 | [`goav/webrtcav`](webrtcav) | WebRTC tracks in and out, WHEP and WHIP (Pion) |
-| [`goav/playoutav`](playoutav) | scheduled packet, frame, and event playout |
 | [`goav/player`](player) | a playback window, synced to the speaker: `play` in programs, `goav play FILE` |
 | [`goav/cameraav`](cameraav) | cgo-free camera capture with bounded zero-allocation frame delivery |
 | [`goav/libcodec`](libcodec) | codecs in shared libraries and OS frameworks, no cgo: VideoToolbox, AudioToolbox, OpenH264 |
@@ -198,10 +202,11 @@ The core module never pulls in Pion.
 
 ## Status
 
-Pre-v1: breaking changes can land until the first tag (see [Roadmap](docs/ROADMAP.md)).
+Pre-v1: breaking changes can land until the first tag (see [Architecture & Roadmap](docs/ARCHITECTURE.md#pre-v1-status--codec-decisions)).
 Not related to `github.com/giorgisio/goav`, a cgo binding to FFmpeg.
 
 ---
 
-[Docs](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Adapter authoring](docs/ADAPTER_AUTHORING.md) ·
-[RTP & WebRTC](docs/RTP_WEBRTC.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Docs](docs/README.md) · [Guide](docs/GUIDE.md) · [Extending](docs/EXTENDING.md) ·
+[Realtime](docs/REALTIME.md) · [Architecture](docs/ARCHITECTURE.md) · [Performance](docs/PERFORMANCE.md) ·
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)

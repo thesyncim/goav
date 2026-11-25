@@ -73,18 +73,18 @@ func TestErrorCatalogDocMatchesErrcodeCatalog(t *testing.T) {
 		codes := slices.Sorted(slices.Values(families[family]))
 		b.WriteString("| `" + string(family) + "` | `" + strings.Join(codes, "`, `") + "` |\n")
 	}
-	path := filepath.Join("docs", "ERROR_CATALOG.md")
+	path := filepath.Join("docs", "GUIDE.md")
 	doc, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(doc)
 	if !strings.Contains(text, "TestErrorCatalogDocMatchesErrcodeCatalog") {
-		t.Fatal("docs/ERROR_CATALOG.md no longer names this test")
+		t.Fatal("docs/GUIDE.md no longer names this test")
 	}
 	start, stop := strings.Index(text, begin), strings.Index(text, end)
 	if start < 0 || stop < start {
-		t.Fatalf("docs/ERROR_CATALOG.md has no %q ... %q block", strings.TrimSpace(begin), end)
+		t.Fatalf("docs/GUIDE.md has no %q ... %q block", strings.TrimSpace(begin), end)
 	}
 	if got, want := text[start:stop], b.String(); got != want {
 		if os.Getenv("GOAV_UPDATE_GOLDEN") == "1" {
@@ -93,7 +93,7 @@ func TestErrorCatalogDocMatchesErrcodeCatalog(t *testing.T) {
 			}
 			return
 		}
-		t.Errorf("docs/ERROR_CATALOG.md code table differs from the source (regenerate with GOAV_UPDATE_GOLDEN=1):\n got:\n%s\nwant:\n%s", got, want)
+		t.Errorf("docs/GUIDE.md code table differs from the source (regenerate with GOAV_UPDATE_GOLDEN=1):\n got:\n%s\nwant:\n%s", got, want)
 	}
 }
 

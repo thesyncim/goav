@@ -4,7 +4,6 @@ package player
 
 import (
 	"time"
-	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
@@ -35,32 +34,40 @@ func hardwareLatency() (latency time.Duration) {
 	if err != nil {
 		return 0
 	}
-	var get func(object uint32, address *audioObjectPropertyAddress, qualifierSize uint32, qualifier unsafe.Pointer, size *uint32, data unsafe.Pointer) int32
-	purego.RegisterLibFunc(&get, lib, "AudioObjectGetPropertyData")
-	read := func(object uint32, selector, scope string, data unsafe.Pointer, size uint32) bool {
+	var getU32 func(object uint32, address *audioObjectPropertyAddress, qualifierSize uint32, qualifier uintptr, size *uint32, data *uint32) int32
+	var getF64 func(object uint32, address *audioObjectPropertyAddress, qualifierSize uint32, qualifier uintptr, size *uint32, data *float64) int32
+	purego.RegisterLibFunc(&getU32, lib, "AudioObjectGetPropertyData")
+	purego.RegisterLibFunc(&getF64, lib, "AudioObjectGetPropertyData")
+	readU32 := func(object uint32, selector, scope string, data *uint32) bool {
 		address := audioObjectPropertyAddress{selector: fourCC(selector), scope: fourCC(scope), element: mainElement}
-		return get(object, &address, 0, nil, &size, data) == 0
+		size := uint32(4)
+		return getU32(object, &address, 0, 0, &size, data) == 0
+	}
+	readF64 := func(object uint32, selector, scope string, data *float64) bool {
+		address := audioObjectPropertyAddress{selector: fourCC(selector), scope: fourCC(scope), element: mainElement}
+		size := uint32(8)
+		return getF64(object, &address, 0, 0, &size, data) == 0
 	}
 	const systemObject = 1
 	var device uint32
-	if !read(systemObject, "dOut", "glob", unsafe.Pointer(&device), 4) || device == 0 {
+	if !readU32(systemObject, "dOut", "glob", &device) || device == 0 {
 		return 0
 	}
 	var rate float64
-	if !read(device, "nsrt", "glob", unsafe.Pointer(&rate), 8) || rate <= 0 {
+	if !readF64(device, "nsrt", "glob", &rate) || rate <= 0 {
 		return 0
 	}
 	var frames uint32
 	for _, selector := range []string{"ltnc", "saft", "fsiz"} {
 		var v uint32
-		if read(device, selector, "outp", unsafe.Pointer(&v), 4) {
+		if readU32(device, selector, "outp", &v) {
 			frames += v
 		}
 	}
 	var stream uint32 // the first output stream
-	if read(device, "stm#", "outp", unsafe.Pointer(&stream), 4) && stream != 0 {
+	if readU32(device, "stm#", "outp", &stream) && stream != 0 {
 		var v uint32
-		if read(stream, "ltnc", "glob", unsafe.Pointer(&v), 4) {
+		if readU32(stream, "ltnc", "glob", &v) {
 			frames += v
 		}
 	}
