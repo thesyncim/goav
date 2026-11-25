@@ -84,7 +84,38 @@ func (t *destinationTransaction) finalize(state DestinationState, err error) {
 		state = DestinationFailed
 	}
 	t.state, t.err = state, err
-	callback := t.onFinalized
+	var callback func(DestinationState, error)
+	if !t.notified && t.onFinalized != nil {
+		t.notified = true
+		callback = t.onFinalized
+	}
+	t.mu.Unlock()
+	if callback != nil {
+		callback(state, err)
+	}
+}
+
+func (t *destinationTransaction) finalizeFromSinkClose(err error) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	if t.state != "" {
+		t.mu.Unlock()
+		return
+	}
+	state := DestinationClosed
+	if err != nil {
+		state = DestinationFailed
+	} else if !t.failedLocked() && t.decision == txSucceeded {
+		state = DestinationCommitted
+	}
+	t.state, t.err = state, err
+	var callback func(DestinationState, error)
+	if !t.notified && t.onFinalized != nil {
+		t.notified = true
+		callback = t.onFinalized
+	}
 	t.mu.Unlock()
 	if callback != nil {
 		callback(state, err)
@@ -117,9 +148,14 @@ func (t *task) bindDestination(tx *destinationTransaction, attachment *runtimeAt
 		}
 		t.publishDestinationLifecycleEvent(kind, tx.Name(), attachment, err)
 	}
-	state, err, callback := tx.state, tx.err, tx.onFinalized
+	var callback func(DestinationState, error)
+	state, err := tx.state, tx.err
+	if state != "" && !tx.notified {
+		tx.notified = true
+		callback = tx.onFinalized
+	}
 	tx.mu.Unlock()
-	if state != "" {
+	if callback != nil {
 		callback(state, err)
 	}
 }
@@ -170,15 +206,6 @@ func (s trackedDestinationSink) Handle(ctx context.Context, msg *pipeline.Messag
 
 func (s trackedDestinationSink) Close() error {
 	err := s.namedSink.Close()
-	state := DestinationClosed
-	s.transaction.mu.Lock()
-	switch {
-	case s.transaction.failedLocked():
-		state = DestinationClosed
-	case s.transaction.succeeded:
-		state = DestinationCommitted
-	}
-	s.transaction.mu.Unlock()
-	s.transaction.finalize(state, err)
+	s.transaction.finalizeFromSinkClose(err)
 	return err
 }

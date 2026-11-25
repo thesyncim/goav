@@ -973,7 +973,7 @@ func writeAttachedFile(w *ebml.Writer, attachment Attachment) error {
 func (m *Muxer) startCluster(timecode int64) error {
 	if m.clusterSized {
 		if err := m.ebml.FinishSizedElement(m.clusterPatch); err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.clusterSized = false
 	}
@@ -984,19 +984,19 @@ func (m *Muxer) startCluster(timecode int64) error {
 	if !m.options.Streaming && m.seekable {
 		patch, err := m.ebml.StartSizedElement(idCluster, ebml.MaxSizeWidth)
 		if err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.clusterPatch = patch
 		m.clusterSized = true
 	} else {
 		if err := m.ebml.WriteUnknownHeader(idCluster, ebml.MaxSizeWidth); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if err := m.ebml.WriteUInt(idTimestamp, uint64(timecode)); err != nil {
-		return err
+		return m.fail(err)
 	}
-	m.clusterOpen = true
+	m.state = matroskaInCluster
 	m.clusterTimecode = timecode
 	m.clusterBlock = 0
 	return nil
@@ -1402,7 +1402,7 @@ func (m *Muxer) relativeSegmentPosition() uint64 {
 }
 
 func (m *Muxer) relativeClusterPosition() uint64 {
-	if !m.clusterOpen {
+	if m.state != matroskaInCluster {
 		return 0
 	}
 	offset := m.ebml.Offset()

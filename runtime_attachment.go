@@ -157,7 +157,11 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 	defer attachment.stopMu.Unlock()
 	if attachment.stopped {
 		delete(t.attachments, attachment)
-		return errors.Join(first, attachment.waitRetirement(ctx))
+		waitErr := attachment.waitRetirement(ctx)
+		if waitErr == nil && attachment.detachOutcome.Load() == DestinationFinalizing {
+			attachment.detachOutcome.Store(DestinationAborted)
+		}
+		return errors.Join(first, waitErr)
 	}
 	t.setAttachmentDisposition(attachment, disposition)
 	err := attachment.stopLocked(ctx, t.graph)
@@ -171,7 +175,10 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 	if err != nil {
 		t.setAttachmentDisposition(attachment, oldBranchAbort)
 	}
-	t.endAttachmentLifecycle(attachment)
+	aborted := t.endAttachmentLifecycle(attachment)
+	if aborted {
+		disposition = oldBranchAbort
+	}
 	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
 	t.pruneIsolatedLocked()
@@ -321,6 +328,15 @@ func (t *task) childAttachmentLocked(parent *runtimeAttachment, skip map[*runtim
 	return nil
 }
 
+type attachmentPhase uint8
+
+const (
+	attachActive attachmentPhase = iota
+	attachDraining
+	attachAborting
+	attachStopped
+)
+
 type runtimeAttachment struct {
 	id           string
 	name         string
@@ -338,8 +354,8 @@ type runtimeAttachment struct {
 	isolated     []*isolatedBranch
 	stopMu       sync.Mutex
 	stopped      bool
-	// draining is protected by owner.lifecycleMu, including during Close.
-	draining bool
+	// phase is protected by owner.lifecycleMu, including during Close.
+	phase attachmentPhase
 	// detachOutcome records the DestinationState a disposition detach
 	// (DrainBranch/AbortBranch) chose for this branch's destinations;
 	// snapshots report it instead of the plain DestinationClosed.

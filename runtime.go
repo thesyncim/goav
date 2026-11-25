@@ -426,17 +426,25 @@ type task struct {
 	// attachMu may be acquired before lifecycleMu; the reverse is forbidden.
 	lifecycleMu            sync.Mutex
 	closeGate              chan struct{}
-	started                bool
-	finished               bool
+	phase                  taskPhase
+	runActive              bool
+	closeAbandoned         bool
+	attachmentClosePending bool
 	runErr                 error
 	closeErr               error
-	closeStarted           bool
-	closeReturned          bool
-	closed                 bool
-	closeAbandoned         bool
 	activeAttachments      map[*runtimeAttachment]struct{}
-	attachmentClosePending bool
 }
+
+type taskPhase uint8
+
+const (
+	taskBuilt taskPhase = iota
+	taskRunning
+	taskRunDone
+	taskClosing
+	taskFinalizing
+	taskClosed
+)
 
 func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinationTransaction) *task {
 	return newTaskWithRootDestinations(graph, runtime, nil, destinations...)
@@ -607,15 +615,21 @@ func clonePipelineSpec(spec pipeline.Spec) pipeline.Spec {
 
 func (t *task) Run(ctx context.Context) error {
 	t.lifecycleMu.Lock()
-	if t.closeStarted {
+	switch t.phase {
+	case taskBuilt:
+		t.phase = taskRunning
+		t.runActive = true
+		t.lifecycleMu.Unlock()
+	case taskRunning, taskRunDone:
+		t.lifecycleMu.Unlock()
+		return errors.New("goav: task already started")
+	default:
 		t.lifecycleMu.Unlock()
 		return pipeline.ErrClosed
 	}
-	t.started = true
-	t.lifecycleMu.Unlock()
 	err := t.graph.Run(ctx)
 	t.lifecycleMu.Lock()
-	if t.closeStarted {
+	if t.phase >= taskClosing {
 		err = withoutShutdownError(err)
 	}
 	// Caller cancellation remains observable even when the graph's own
@@ -624,8 +638,11 @@ func (t *task) Run(ctx context.Context) error {
 		err = ctxErr
 	}
 	t.finishDestinationsLocked(err)
-	t.finished = true
+	t.runActive = false
 	t.runErr = err
+	if t.phase == taskRunning {
+		t.phase = taskRunDone
+	}
 	t.lifecycleMu.Unlock()
 	return err
 }
@@ -647,13 +664,11 @@ func (t *task) Snapshot() TaskSnapshot {
 	stats := t.Stats()
 	cleanupErr := taskGraphCleanupError(t.graph)
 	t.lifecycleMu.Lock()
-	if t.closeReturned && !t.attachmentClosePending && stats.PendingCleanup == 0 {
-		t.closed = true
-	}
 	t.closeErr = cleanupErr
+	t.promoteClosedLocked(stats.PendingCleanup)
 	outcome := errors.Join(t.runErr, t.closeErr)
+	state, destinationState := t.lifecycleStatesLocked(outcome)
 	t.lifecycleMu.Unlock()
-	state, destinationState := t.lifecycleStates()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	t.pruneIsolatedLocked()
@@ -686,30 +701,47 @@ func (t *task) Snapshot() TaskSnapshot {
 	}
 }
 
-// lifecycleStates derives the typed task state and the matching state of the
-// task's still-open destinations from the recorded run/close progress. The
-// Run only determines whether finalization may commit. Close and the individual
-// destination ledgers record what actually happened.
+func (t *task) promoteClosedLocked(pendingCleanup int) {
+	if t.phase != taskFinalizing && t.phase != taskClosing {
+		return
+	}
+	if !t.attachmentClosePending && pendingCleanup == 0 {
+		t.phase = taskClosed
+	}
+}
+
 func (t *task) lifecycleStates() (TaskState, DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
-	switch {
-	case t.started && !t.finished:
-		if t.closeStarted {
+	return t.lifecycleStatesLocked(errors.Join(t.runErr, t.closeErr))
+}
+
+// lifecycleStatesLocked derives the typed task state and the matching state of
+// the task's still-open destinations from the explicit taskPhase under
+// lifecycleMu. Run only determines whether finalization may commit; Close and
+// the individual destination ledgers record what actually happened.
+func (t *task) lifecycleStatesLocked(outcome error) (TaskState, DestinationState) {
+	switch t.phase {
+	case taskBuilt:
+		return TaskBuilt, DestinationOpen
+	case taskRunning:
+		return TaskRunning, DestinationOpen
+	case taskRunDone, taskClosing, taskFinalizing:
+		if outcome != nil {
+			return TaskFailed, DestinationFinalizing
+		}
+		return TaskFinalizing, DestinationFinalizing
+	case taskClosed:
+		if t.runActive {
+			if outcome != nil {
+				return TaskFailed, DestinationFinalizing
+			}
 			return TaskFinalizing, DestinationFinalizing
 		}
-		return TaskRunning, DestinationOpen
-	case t.runErr != nil || t.closeErr != nil:
-		if t.closed {
+		if outcome != nil {
 			return TaskFailed, DestinationClosed
 		}
-		return TaskFailed, DestinationFinalizing
-	case t.closed:
 		return TaskClosed, DestinationClosed
-	case t.finished || t.closeStarted:
-		return TaskFinalizing, DestinationFinalizing
-	case t.started:
-		return TaskRunning, DestinationOpen
 	default:
 		return TaskBuilt, DestinationOpen
 	}
@@ -860,8 +892,12 @@ func (t *task) finishAttachmentShutdown() {
 		cancel()
 		_ = t.stopAttachmentsLocked(ctx)
 		t.attachMu.Unlock()
+		stats := t.graph.Stats()
 		t.lifecycleMu.Lock()
 		t.attachmentClosePending = false
+		if t.phase == taskFinalizing && stats.PendingCleanup == 0 {
+			t.phase = taskClosed
+		}
 		t.lifecycleMu.Unlock()
 	}()
 }
@@ -893,9 +929,9 @@ func (t *task) CloseContext(ctx context.Context) error {
 		return errorsJoinUnique(taskGraphCleanupError(t.graph), err)
 	}
 	t.lifecycleMu.Lock()
-	if !t.closeStarted {
-		t.closeStarted = true
-		t.closeAbandoned = !t.finished
+	if t.phase < taskClosing {
+		t.closeAbandoned = t.phase != taskRunDone
+		t.phase = taskClosing
 		// One ordered decision covers roots and every still-owned attachment,
 		// including a patch being installed or a drain still waiting for
 		// queued work. Completed detachments have relinquished ownership.
@@ -905,7 +941,8 @@ func (t *task) CloseContext(ctx context.Context) error {
 			}
 		}
 		for attachment := range t.activeAttachments {
-			if t.closeAbandoned || attachment.draining {
+			if t.closeAbandoned || attachment.phase == attachDraining {
+				attachment.phase = attachAborting
 				attachment.applyDetachDisposition(oldBranchAbort)
 			}
 		}
@@ -923,8 +960,11 @@ func (t *task) CloseContext(ctx context.Context) error {
 	stats := t.graph.Stats()
 	cleanupErr := taskGraphCleanupError(t.graph)
 	t.lifecycleMu.Lock()
-	t.closed = !t.attachmentClosePending && stats.PendingCleanup == 0
-	t.closeReturned = true
+	if !t.attachmentClosePending && stats.PendingCleanup == 0 {
+		t.phase = taskClosed
+	} else if t.phase == taskClosing {
+		t.phase = taskFinalizing
+	}
 	t.closeErr = cleanupErr
 	outcome := errorsJoinUnique(t.closeErr, closeCallError(first, t.closeErr))
 	outcome = errorsJoinUnique(outcome, ctx.Err())
@@ -1012,6 +1052,14 @@ func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination s
 	t.watch.publish(event)
 }
 
+type txDecision uint8
+
+const (
+	txUndecided txDecision = iota
+	txSucceeded
+	txFailed
+)
+
 type destinationTransaction struct {
 	mu             sync.Mutex
 	name           string
@@ -1019,8 +1067,8 @@ type destinationTransaction struct {
 	node           pipeline.NodeRef
 	domain         *pipeline.FaultDomain
 	requireSuccess bool
-	succeeded      bool
-	failed         bool
+	decision       txDecision
+	notified       bool
 	state          DestinationState
 	err            error
 	onFinalized    func(DestinationState, error)
@@ -1041,7 +1089,9 @@ func (t *destinationTransaction) Succeed() {
 		return
 	}
 	t.mu.Lock()
-	t.succeeded = true
+	if t.state == "" && t.decision == txUndecided {
+		t.decision = txSucceeded
+	}
 	t.mu.Unlock()
 }
 
@@ -1050,7 +1100,9 @@ func (t *destinationTransaction) Fail() {
 		return
 	}
 	t.mu.Lock()
-	t.failed = true
+	if t.state == "" {
+		t.decision = txFailed
+	}
 	t.mu.Unlock()
 }
 
@@ -1060,7 +1112,7 @@ func (t *destinationTransaction) ShouldAbort() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.failedLocked() || (t.requireSuccess && !t.succeeded)
+	return t.failedLocked() || (t.requireSuccess && t.decision != txSucceeded)
 }
 
 func (t *destinationTransaction) Failed() bool {
@@ -1076,7 +1128,7 @@ func (t *destinationTransaction) Failed() bool {
 // error before Run finishes waiting for a slow source, so explicit branch
 // success cannot commit work after an already-observed execution failure.
 func (t *destinationTransaction) failedLocked() bool {
-	return t.failed || t.domain.Failed() || (t.runError != nil && t.runError() != nil)
+	return t.decision == txFailed || t.domain.Failed() || (t.runError != nil && t.runError() != nil)
 }
 
 // compileEnv is the view of the runtime the compiler reads.

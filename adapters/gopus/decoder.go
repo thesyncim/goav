@@ -52,6 +52,14 @@ func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig)
 	return decoder, nil
 }
 
+type decoderState uint8
+
+const (
+	decoderUnopened decoderState = iota
+	decoderOpen
+	decoderClosed
+)
+
 type Decoder struct {
 	decoder    *gopuslib.Decoder
 	stream     av.Stream
@@ -61,6 +69,7 @@ type Decoder struct {
 	audioMeta  []av.AudioFrame
 	pcm        []int16
 	pendingPLC int
+	state      decoderState
 
 	// Pre-skip (RFC 7845 §4.2): the first samples a stream decodes are encoder
 	// lookahead, not audio. Packet PTS is the time of a packet's first decoded
@@ -125,6 +134,7 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	d.preSkip = int(int64(opusPreSkip(config.Stream.Codec.ExtraData.Bytes)) * int64(sampleRate) / opusHeadRate)
 	d.skip = d.preSkip
 	d.resync = false
+	d.state = decoderOpen
 	return nil
 }
 
@@ -135,11 +145,14 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.decoder == nil {
+	switch d.state {
+	case decoderClosed:
 		return codec.ErrClosed
+	case decoderUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	for d.pendingPLC > 0 {
-		if err := d.decodeOne(nil, av.Timestamp{}, out); err != nil {
+		if err := d.decodeOne(nil, av.Timestamp{}, false, out); err != nil {
 			return err
 		}
 		d.pendingPLC--
@@ -151,10 +164,16 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 		d.resync = false
 		d.skip = d.samplesBeforeZero(pkt.PTS)
 	}
-	return d.decodeOne(pkt.Payload.Bytes, pkt.PTS, out)
+	return d.decodeOne(pkt.Payload.Bytes, pkt.PTS, true, out)
 }
 
-func (d *Decoder) FlushInto(context.Context, *codec.DecodeResult) error {
+func (d *Decoder) FlushInto(ctx context.Context, _ *codec.DecodeResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d.state == decoderClosed {
+		return codec.ErrClosed
+	}
 	return nil
 }
 
@@ -165,19 +184,21 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
+	switch d.state {
+	case decoderClosed:
+		return codec.ErrClosed
+	case decoderUnopened:
+		return codec.ErrUnsupportedFormat
+	}
 	switch event.Type {
 	case av.EventPacketLoss:
 		d.pendingPLC++
 	case av.EventCodecChanged:
-		if d.decoder != nil {
-			d.decoder.Reset()
-		}
+		d.decoder.Reset()
 		d.pendingPLC = 0
 		d.skip, d.resync = d.preSkip, false
 	case av.EventDiscontinuity:
-		if d.decoder != nil {
-			d.decoder.Reset()
-		}
+		d.decoder.Reset()
 		d.pendingPLC = 0
 		d.skip, d.resync = 0, d.preSkip > 0
 	}
@@ -185,12 +206,19 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 }
 
 func (d *Decoder) Close() error {
+	if d.state == decoderClosed {
+		return nil
+	}
+	d.state = decoderClosed
 	d.decoder = nil
+	d.pendingPLC = 0
+	d.skip = 0
+	d.resync = false
 	return nil
 }
 
-func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResult) error {
-	if d.decoder == nil {
+func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, applySkip bool, out *codec.DecodeResult) error {
+	if d.state != decoderOpen {
 		return codec.ErrUnsupportedFormat
 	}
 	if len(out.Frames) == cap(out.Frames) {
@@ -226,7 +254,7 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 		return err
 	}
 
-	if d.skip > 0 {
+	if applySkip && d.skip > 0 {
 		drop := min(d.skip, samples)
 		d.skip -= drop
 		samples -= drop

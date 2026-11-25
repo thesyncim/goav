@@ -27,12 +27,13 @@ const joinSyncNSUnset = math.MinInt64
 // still participate, then the remaining arms keep joining without it; the
 // joined stream ends only when every arm has ended.
 type joinSyncState struct {
-	mode    compile.JoinSyncMode
-	inputs  []av.StreamID
-	pending map[av.StreamID][]*av.Frame
-	eos     map[av.StreamID]struct{}
-	frames  []*av.Frame
-	recycle func(*av.Frame)
+	mode       compile.JoinSyncMode
+	inputs     []av.StreamID
+	pending    map[av.StreamID][]*av.Frame
+	eos        map[av.StreamID]struct{}
+	eosEmitted bool
+	frames     []*av.Frame
+	recycle    func(*av.Frame)
 
 	// nextNS is the expected start of the next PTS step — the end of the last
 	// emitted step on the common nanosecond clock.
@@ -194,28 +195,41 @@ func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.Strea
 }
 
 // buffer queues one arm frame (already cloned by the stage), recycling frames
-// whose StreamID does not belong to any declared arm.
+// whose StreamID does not belong to any declared arm or whose arm already ended.
 func (s *joinSyncState) buffer(frame *av.Frame) {
-	if !slices.Contains(s.inputs, frame.StreamID) {
+	if s.eosEmitted || !slices.Contains(s.inputs, frame.StreamID) {
+		s.recycleFrame(frame)
+		return
+	}
+	if _, ended := s.eos[frame.StreamID]; ended {
 		s.recycleFrame(frame)
 		return
 	}
 	s.pending[frame.StreamID] = append(s.pending[frame.StreamID], frame)
 }
 
-// markEOS records an arm's end of stream and reports whether every arm ended.
-// A stream-less EOS marks every declared arm ended; unknown stream IDs are ignored.
+// markEOS records an arm's end of stream and reports whether every arm ended
+// for the first time. A stream-less EOS marks every declared arm ended; unknown
+// stream IDs are ignored.
 func (s *joinSyncState) markEOS(id av.StreamID) bool {
+	if s.eosEmitted {
+		return false
+	}
 	if id == "" {
 		for _, arm := range s.inputs {
 			s.eos[arm] = struct{}{}
 		}
+		s.eosEmitted = true
 		return true
 	}
 	if slices.Contains(s.inputs, id) {
 		s.eos[id] = struct{}{}
 	}
-	return len(s.eos) >= len(s.inputs)
+	if len(s.eos) >= len(s.inputs) {
+		s.eosEmitted = true
+		return true
+	}
+	return false
 }
 
 // discontinuity flushes the named arm's pending queue (every arm when the

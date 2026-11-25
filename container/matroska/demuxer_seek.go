@@ -149,9 +149,7 @@ func (d *Demuxer) seekToClusterPosition(position uint64) (ebml.Header, error) {
 		int64(position) > math.MaxInt64-d.segmentData {
 		return ebml.Header{}, ErrInvalidData
 	}
-	d.pendingHeader = ebml.Header{}
-	d.pendingHeaderSet = false
-	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
+	prevOffset := d.reader.Offset()
 	offset := d.segmentData + int64(position)
 	if _, err := d.seeker.Seek(offset, io.SeekStart); err != nil {
 		return ebml.Header{}, err
@@ -165,12 +163,21 @@ func (d *Demuxer) seekToClusterPosition(position uint64) (ebml.Header, error) {
 	d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, offset)
 	header, err := d.reader.ReadHeader()
 	if err != nil {
+		_, _ = d.seeker.Seek(prevOffset, io.SeekStart)
+		d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, prevOffset)
 		return ebml.Header{}, err
 	}
 	if header.ID != idCluster {
+		_, _ = d.seeker.Seek(prevOffset, io.SeekStart)
+		d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, prevOffset)
 		return ebml.Header{}, ErrInvalidData
 	}
+	d.pendingHeader = ebml.Header{}
+	d.pendingHeaderSet = false
+	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
 	if err := d.enterCluster(header); err != nil {
+		_, _ = d.seeker.Seek(prevOffset, io.SeekStart)
+		d.reader.ResetAt(d.seeker, ebml.ReaderOptions{MaxElementSize: d.options.MaxElementSize}, prevOffset)
 		return ebml.Header{}, err
 	}
 	d.clearLace()
@@ -468,7 +475,7 @@ func (d *Demuxer) scanCuedPacket(cue CuePoint, position CueTrackPosition, trackI
 			}
 			return nil
 		}
-		if !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd && d.laceFrameIndex >= d.laceFrameCount {
+		if d.cluster == clusterSized && d.reader.Offset() >= d.clusterEnd && d.laceFrameIndex >= d.laceFrameCount {
 			return ErrInvalidData
 		}
 	}
@@ -708,7 +715,7 @@ func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
 	return nil
 }
 
-func (d *Demuxer) ensurePacketIndex() (retErr error) {
+func (d *Demuxer) ensurePacketIndex() error {
 	if d.packetIndexBuilt {
 		if len(d.packetIndex) == 0 {
 			return ErrInvalidData
@@ -725,9 +732,7 @@ func (d *Demuxer) ensurePacketIndex() (retErr error) {
 	}
 	saved := d.reader.Offset()
 	defer func() {
-		if retErr != nil {
-			_, _ = d.seeker.Seek(saved, io.SeekStart)
-		}
+		_, _ = d.seeker.Seek(saved, io.SeekStart)
 	}()
 	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
 		return err
@@ -1160,7 +1165,7 @@ func (d *Demuxer) clusterForTime(timeNS int64) (clusterIndexEntry, error) {
 	return d.clusterIndex[index-1], nil
 }
 
-func (d *Demuxer) ensureClusterIndex() (retErr error) {
+func (d *Demuxer) ensureClusterIndex() error {
 	if d.clusterIndexBuilt {
 		if len(d.clusterIndex) == 0 {
 			return ErrInvalidData
@@ -1173,9 +1178,7 @@ func (d *Demuxer) ensureClusterIndex() (retErr error) {
 	d.clusterIndex = d.clusterIndex[:0]
 	saved := d.reader.Offset()
 	defer func() {
-		if retErr != nil {
-			_, _ = d.seeker.Seek(saved, io.SeekStart)
-		}
+		_, _ = d.seeker.Seek(saved, io.SeekStart)
 	}()
 	if _, err := d.seeker.Seek(d.segmentData, io.SeekStart); err != nil {
 		return err

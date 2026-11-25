@@ -48,6 +48,14 @@ type FormatMuxer struct {
 	closed bool
 }
 
+type formatDemuxState uint8
+
+const (
+	formatDemuxUnopened formatDemuxState = iota
+	formatDemuxOpen
+	formatDemuxClosed
+)
+
 // FormatDemuxer adapts a Matroska-family demuxer to format.Demuxer. The zero
 // value reads Matroska; NewFormatDemuxer reads a profile through its own
 // demuxer.
@@ -57,7 +65,7 @@ type FormatDemuxer struct {
 	demuxer TrackDemuxer
 	streams []av.Stream
 	tracks  []formatTrack
-	closed  bool
+	state   formatDemuxState
 }
 
 // NewFormatMuxer returns the adapter writing format through the muxer open
@@ -286,12 +294,12 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 		d.streams = append(d.streams, stream)
 		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS, opus: tracks[i].Codec == CodecOpus})
 	}
-	d.closed = false
+	d.state = formatDemuxOpen
 	return nil
 }
 
 func (d *FormatDemuxer) Streams() []av.Stream {
-	if len(d.streams) == 0 {
+	if d.state != formatDemuxOpen || len(d.streams) == 0 {
 		return nil
 	}
 	streams := make([]av.Stream, len(d.streams))
@@ -315,8 +323,11 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if out == nil || out.Packet == nil {
 		return format.ErrNilPacket
 	}
-	if d.closed {
+	switch d.state {
+	case formatDemuxClosed:
 		return io.EOF
+	case formatDemuxUnopened:
+		return ErrNilReader
 	}
 	if d.demuxer == nil {
 		return ErrNilReader
@@ -354,7 +365,7 @@ var _ format.Seeker = (*FormatDemuxer)(nil)
 // CanSeek reports whether the opened input can reposition (format.Seeker):
 // the track demuxer's CanSeek when it has one.
 func (d *FormatDemuxer) CanSeek() bool {
-	if d == nil || d.demuxer == nil {
+	if d == nil || d.state != formatDemuxOpen || d.demuxer == nil {
 		return false
 	}
 	checker, ok := d.demuxer.(interface{ CanSeek() bool })
@@ -370,8 +381,11 @@ func (d *FormatDemuxer) Seek(ctx context.Context, position time.Duration) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if d.closed {
+	switch d.state {
+	case formatDemuxClosed:
 		return ErrClosed
+	case formatDemuxUnopened:
+		return ErrNilReader
 	}
 	if d.demuxer == nil {
 		return ErrNilReader
@@ -392,8 +406,10 @@ func (d *FormatDemuxer) Close() error {
 	if d == nil {
 		return nil
 	}
-	d.closed = true
+	d.state = formatDemuxClosed
 	d.demuxer = nil
+	d.streams = d.streams[:0]
+	d.tracks = d.tracks[:0]
 	return nil
 }
 

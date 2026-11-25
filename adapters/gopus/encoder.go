@@ -25,12 +25,23 @@ func (EncoderFactory) NewEncoder(ctx context.Context, config codec.EncodeConfig)
 	return encoder, nil
 }
 
+type encoderState uint8
+
+const (
+	encoderUnopened encoderState = iota
+	encoderOpen
+	encoderEncoding
+	encoderFlushing
+	encoderFlushed
+	encoderClosed
+)
+
 type Encoder struct {
 	encoder    *gopuslib.Encoder
 	stream     av.Stream
 	sampleRate int
 	channels   int
-	closed     bool
+	state      encoderState
 
 	// Re-framing: Opus encodes only fixed frame durations (2.5-120 ms), but
 	// decoders and resamplers deliver whatever they produce (AAC's 1024
@@ -96,7 +107,7 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	e.head = opusHead(channels, sampleRate, e.delay*opusHeadRate/sampleRate)
 	e.sampleRate = sampleRate
 	e.channels = channels
-	e.closed = false
+	e.state = encoderOpen
 	e.frameSize = 0
 	// Room for the longest Opus-sized input (120 ms) plus one partial frame,
 	// so steady-state re-framing never grows the buffer.
@@ -113,13 +124,13 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	if e.state == encoderClosed {
 		return codec.ErrClosed
 	}
 	if frame == nil {
 		return nil
 	}
-	if e.encoder == nil {
+	if e.state == encoderUnopened {
 		return codec.ErrUnsupportedFormat
 	}
 	if len(out.Packets) == cap(out.Packets) {
@@ -134,6 +145,7 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 			return err
 		}
 	}
+	e.state = encoderEncoding
 	// An exact frame with nothing pending encodes in place and keeps the
 	// input's own timestamps — the zero-copy path for Opus-native sources.
 	if len(e.pending) == 0 && samples == e.frameSize {
@@ -183,6 +195,9 @@ func (e *Encoder) timelinePTS(pts av.Timestamp) av.Timestamp {
 // cover the input frame size.
 func (e *Encoder) drain(metadata av.Metadata, out *codec.EncodeResult) error {
 	step := e.frameSize * e.channels
+	if step <= 0 {
+		return nil
+	}
 	duration := av.SamplesDuration(e.frameSize, e.sampleRate)
 	consumed := 0
 	for len(e.pending)-consumed >= step && len(out.Packets) < cap(out.Packets) {
@@ -238,23 +253,30 @@ func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error 
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed {
+	switch e.state {
+	case encoderClosed:
 		return codec.ErrClosed
+	case encoderUnopened, encoderOpen, encoderFlushed:
+		return nil
+	case encoderEncoding:
+		if len(e.pending) == 0 {
+			e.pendingPTS = e.end
+		}
+		e.state = encoderFlushing
 	}
 	if err := e.drain(nil, out); err != nil {
 		return err
 	}
-	if e.frameSize == 0 {
+	if e.frameSize <= 0 {
+		e.state = encoderFlushed
 		return nil
-	}
-	if len(e.pending) == 0 {
-		e.pendingPTS = e.end
 	}
 	for len(out.Packets) < cap(out.Packets) {
 		// The next packet presents delay before pendingPTS; valid counts its
 		// decoded samples that still carry input.
 		valid := e.end.Value - (e.pendingPTS.Value - int64(e.delay))
 		if valid <= 0 {
+			e.state = encoderFlushed
 			return nil
 		}
 		for len(e.pending) < e.frameSize*e.channels {
@@ -293,8 +315,11 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if e.closed {
+	switch e.state {
+	case encoderClosed:
 		return codec.ErrClosed
+	case encoderUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventBitrateChanged:
@@ -314,16 +339,18 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 		// the re-framing timeline from its own timestamp.
 		e.encoder.Reset()
 		e.pending = e.pending[:0]
+		e.state = encoderOpen
 	}
 	return nil
 }
 
 func (e *Encoder) Close() error {
-	if e.closed {
+	if e.state == encoderClosed {
 		return nil
 	}
-	e.closed = true
+	e.state = encoderClosed
 	e.encoder = nil
+	e.pending = nil
 	return nil
 }
 

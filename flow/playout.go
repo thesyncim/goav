@@ -134,15 +134,15 @@ func newPlayoutScheduler() *playoutScheduler {
 }
 
 func (s *playoutScheduler) admit(ctx context.Context, clock av.Clock, pts time.Duration, offset time.Duration, tolerance time.Duration, mode playoutMode) (time.Duration, bool, error) {
+	now := clock.Now()
 	s.mu.Lock()
 	if !s.anchored {
 		s.anchored = true
 		s.pts0 = pts
-		s.now0 = clock.Now()
+		s.now0 = now
 	}
 	due := s.now0 + (pts - s.pts0) + offset
 	s.mu.Unlock()
-	now := clock.Now()
 	late := now - due
 	if mode == playoutDropLate && late > tolerance {
 		return late, true, nil

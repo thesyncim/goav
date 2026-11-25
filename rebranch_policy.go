@@ -155,16 +155,20 @@ func (g *switchGroup) gateClosed() {
 	}
 }
 
+const (
+	switchGateGated uint32 = iota
+	switchGateOpen
+	switchGateClosed
+)
+
 // switchGate is the head stage of a replacement branch during a boundary
 // rebranch: it sheds media messages until the switch boundary arrives, then
 // opens permanently. The hot path is lock-free — one atomic load per message —
-// and the open flip is decided inside the node's serial Handle on the first
-// boundary message, so no mutex ever guards delivery. Events always pass so
+// and the single state word prevents opening after close. Events always pass so
 // EOS and stream events reach the replacement's destinations while gated.
 type switchGate struct {
-	group  *switchGroup
-	open   atomic.Bool
-	closed atomic.Bool
+	group *switchGroup
+	state atomic.Uint32
 }
 
 func (g *switchGate) Name() string {
@@ -175,24 +179,40 @@ func (g *switchGate) Handle(ctx context.Context, msg *pipeline.Message, emitter 
 	if msg == nil {
 		return nil
 	}
-	if !g.open.Load() {
+	switch g.state.Load() {
+	case switchGateOpen:
+		return emitter.Emit(ctx, msg)
+	case switchGateClosed:
+		return nil
+	default:
 		if msg.Kind == pipeline.MessageEvent {
 			return emitter.Emit(ctx, msg)
 		}
 		if !switchGroupBoundaryReached(g.group, msg) {
 			return nil
 		}
-		g.open.Store(true)
-		g.group.markOpen()
+		if !g.state.CompareAndSwap(switchGateGated, switchGateOpen) {
+			if g.state.Load() == switchGateClosed {
+				return nil
+			}
+		} else {
+			g.group.markOpen()
+		}
+		return emitter.Emit(ctx, msg)
 	}
-	return emitter.Emit(ctx, msg)
 }
 
 func (g *switchGate) Close() error {
-	if g.closed.CompareAndSwap(false, true) {
-		g.group.gateClosed()
+	for {
+		cur := g.state.Load()
+		if cur == switchGateClosed {
+			return nil
+		}
+		if g.state.CompareAndSwap(cur, switchGateClosed) {
+			g.group.gateClosed()
+			return nil
+		}
 	}
-	return nil
 }
 
 func switchBoundaryReached(boundary switchBoundaryKind, msg *pipeline.Message) bool {

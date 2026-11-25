@@ -21,12 +21,18 @@ const (
 	h264FUEndMask   = byte(0x40)
 )
 
+type h264State uint8
+
+const (
+	h264Idle h264State = iota
+	h264InFUA
+	h264BufferingParams // only while assembler.state == asmDropping
+)
+
 // H264Depacketizer converts H264 RTP payloads into Annex B access-unit packets.
 type H264Depacketizer struct {
 	assembler      videoFrameAssembler
-	keyframe       bool
-	fragment       bool
-	hasParamBuffer bool
+	substate       h264State
 	paramTimestamp uint32
 }
 
@@ -56,82 +62,91 @@ func (d *H264Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 
 	start := h264StartsNALU(pkt.Payload)
 	sync := start && h264HasIDR(pkt.Payload)
-	if d.assembler.dropping {
+
+	switch d.assembler.state {
+	case asmDropping:
 		if !sync {
 			if start && !pkt.Marker && h264HasParamSet(pkt.Payload) {
-				if !d.hasParamBuffer || d.paramTimestamp != pkt.Timestamp {
+				if d.substate != h264BufferingParams || d.paramTimestamp != pkt.Timestamp {
 					d.assembler.buffer = d.assembler.buffer[:0]
 					d.paramTimestamp = pkt.Timestamp
-					d.hasParamBuffer = true
+					d.substate = h264BufferingParams
 				}
-				d.fragment = false
 				if err := d.appendPayload(pkt.Payload); err != nil {
-					d.hasParamBuffer = false
-					d.assembler.resetPartial()
-					d.fragment = false
-					d.keyframe = false
+					d.substate = h264Idle
+					d.assembler.clearPartial()
 					return err
 				}
 				return nil
 			}
-			d.hasParamBuffer = false
-			d.assembler.requestSync = true
-			d.assembler.resetPartial()
-			d.fragment = false
-			d.keyframe = false
-			return d.assembler.emitPendingSync(out)
+			d.substate = h264Idle
+			d.assembler.clearPartial()
+			if start {
+				return d.assembler.requestSyncOnFrame(pkt.Timestamp, out)
+			}
+			return d.assembler.emitPendingSync(pkt.Timestamp, out)
 		}
-		if d.hasParamBuffer && d.paramTimestamp == pkt.Timestamp {
-			d.assembler.started = true
-			d.assembler.timestamp = pkt.Timestamp
-			d.keyframe = false
-			d.fragment = false
+		if d.substate == h264BufferingParams && d.paramTimestamp == pkt.Timestamp {
+			d.assembler.resumeWithBufferedParams(pkt.Timestamp)
 		} else {
-			d.begin(pkt.Timestamp)
+			d.assembler.beginFrame(pkt.Timestamp, false)
 		}
-		d.hasParamBuffer = false
-		d.assembler.dropping = false
-		d.assembler.requestSync = false
-	} else if !d.assembler.started {
+		d.substate = h264Idle
+	case asmIdle:
 		if !start {
+			d.substate = h264Idle
 			d.assembler.dropUntilSync()
-			d.fragment = false
-			d.keyframe = false
-			return d.assembler.emitPendingSync(out)
+			return d.assembler.emitPendingSync(pkt.Timestamp, out)
 		}
-		d.begin(pkt.Timestamp)
-	} else if pkt.Timestamp != d.assembler.timestamp {
-		d.fragment = false
-		d.keyframe = false
-		d.assembler.dropUntilSync()
-		return d.assembler.emitPendingSync(out)
+		d.assembler.beginFrame(pkt.Timestamp, false)
+		d.substate = h264Idle
+	case asmAssembling:
+		if pkt.Timestamp != d.assembler.timestamp {
+			// Previous access unit was truncated (never saw Marker).
+			d.substate = h264Idle
+			if sync {
+				d.assembler.lossBefore = true
+				d.assembler.beginFrame(pkt.Timestamp, false)
+			} else if start && !pkt.Marker && h264HasParamSet(pkt.Payload) {
+				d.assembler.dropUntilSync()
+				d.paramTimestamp = pkt.Timestamp
+				d.substate = h264BufferingParams
+				if err := d.appendPayload(pkt.Payload); err != nil {
+					d.substate = h264Idle
+					d.assembler.clearPartial()
+					return err
+				}
+				return nil
+			} else {
+				d.assembler.dropUntilSync()
+				return d.assembler.emitPendingSync(pkt.Timestamp, out)
+			}
+		}
 	}
 
 	if err := d.appendPayload(pkt.Payload); err != nil {
-		d.fragment = false
-		d.keyframe = false
-		d.hasParamBuffer = false
+		d.substate = h264Idle
 		d.assembler.dropUntilSync()
 		return err
 	}
-	if !pkt.Marker || d.fragment {
+	if !pkt.Marker || d.substate == h264InFUA {
 		return nil
 	}
 	if len(d.assembler.buffer) == 0 {
-		d.assembler.started = false
+		d.assembler.state = asmIdle
 		return nil
 	}
-	frame := d.assembler.buffer
-	d.assembler.started = false
-	return d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), frame, d.keyframe, out)
+	if err := d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), d.assembler.buffer, d.assembler.keyframe, out); err != nil {
+		return err
+	}
+	d.assembler.state = asmIdle
+	return nil
 }
 
 // FlushInto discards any partial access unit at end of stream.
 func (d *H264Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
-	d.keyframe = false
-	d.fragment = false
-	d.hasParamBuffer = false
+	d.substate = h264Idle
 	return nil
 }
 
@@ -147,32 +162,22 @@ func (d *H264Depacketizer) HandleEvent(ctx context.Context, event *av.Event) err
 	switch event.Type {
 	case av.EventPacketLoss, av.EventDiscontinuity, av.EventCodecChanged:
 		if affected {
-			d.keyframe = false
-			d.fragment = false
-			d.hasParamBuffer = false
+			d.substate = h264Idle
 		}
 	}
 	return nil
-}
-
-func (d *H264Depacketizer) begin(timestamp uint32) {
-	d.assembler.started = true
-	d.assembler.timestamp = timestamp
-	d.assembler.buffer = d.assembler.buffer[:0]
-	d.keyframe = false
-	d.fragment = false
 }
 
 func (d *H264Depacketizer) appendPayload(payload []byte) error {
 	naluType := payload[0] & h264NALUTypeMask
 	switch {
 	case naluType > 0 && naluType < h264NALUSTAPA:
-		if d.fragment {
+		if d.substate == h264InFUA {
 			return ErrInvalidPayload
 		}
 		return d.appendNALU(payload)
 	case naluType == h264NALUSTAPA:
-		if d.fragment {
+		if d.substate == h264InFUA {
 			return ErrInvalidPayload
 		}
 		return d.appendSTAPA(payload)
@@ -213,12 +218,14 @@ func (d *H264Depacketizer) appendFUA(payload []byte) error {
 	end := payload[1]&h264FUEndMask != 0
 	naluHeader := (payload[0] & h264NALUNRIMask) | (payload[1] & h264NALUTypeMask)
 	if start {
-		if d.fragment {
+		if d.substate == h264InFUA {
 			return ErrInvalidPayload
 		}
-		d.fragment = !end
+		if !end {
+			d.substate = h264InFUA
+		}
 		if naluHeader&h264NALUTypeMask == h264NALUIDR {
-			d.keyframe = true
+			d.assembler.keyframe = true
 		}
 		if err := d.appendStartCode(); err != nil {
 			return err
@@ -228,14 +235,14 @@ func (d *H264Depacketizer) appendFUA(payload []byte) error {
 		}
 		return d.appendRaw(payload[2:])
 	}
-	if !d.fragment {
+	if d.substate != h264InFUA {
 		return ErrInvalidPayload
 	}
 	if err := d.appendRaw(payload[2:]); err != nil {
 		return err
 	}
 	if end {
-		d.fragment = false
+		d.substate = h264Idle
 	}
 	return nil
 }
@@ -245,7 +252,7 @@ func (d *H264Depacketizer) appendNALU(nalu []byte) error {
 		return nil
 	}
 	if nalu[0]&h264NALUTypeMask == h264NALUIDR {
-		d.keyframe = true
+		d.assembler.keyframe = true
 	}
 	if err := d.appendStartCode(); err != nil {
 		return err

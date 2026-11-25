@@ -13,11 +13,11 @@ import (
 )
 
 func (d *Demuxer) enterCluster(header ebml.Header) error {
-	d.inCluster = true
-	d.clusterUnknown = header.Size.Unknown
 	if header.Size.Unknown {
+		d.cluster = clusterUnknownSize
 		d.clusterEnd = 0
 	} else {
+		d.cluster = clusterSized
 		d.clusterEnd = header.DataOffset + int64(header.Size.Value)
 	}
 	d.clusterTimecode = 0

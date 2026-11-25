@@ -35,14 +35,23 @@ type VP9Depacketizer struct {
 var _ Depacketizer = (*VP8Depacketizer)(nil)
 var _ Depacketizer = (*VP9Depacketizer)(nil)
 
+type assemblerState uint8
+
+const (
+	asmIdle assemblerState = iota
+	asmAssembling
+	asmDropping
+)
+
 type videoFrameAssembler struct {
-	stream        av.Stream
-	buffer        []byte
-	started       bool
-	dropping      bool
-	lossBefore    bool
-	discontinuous bool
-	requestSync   bool
+	stream           av.Stream
+	buffer           []byte
+	state            assemblerState
+	lossBefore       bool
+	discontinuous    bool
+	requestSync      bool
+	hasSyncTimestamp bool
+	syncTimestamp    uint32
 	// keyframe is frame-level: detected on the first fragment, kept through
 	// emission.
 	keyframe  bool
@@ -174,41 +183,106 @@ func (a *videoFrameAssembler) push(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !start && (!a.started || pkt.Timestamp != a.timestamp) {
-		a.dropUntilSync()
-		return a.emitPendingSync(out)
-	}
-	if start {
-		if a.dropping && !keyframe {
-			a.requestSync = true
-			a.resetPartial()
-			return a.emitPendingSync(out)
+	switch a.state {
+	case asmIdle:
+		if !start {
+			a.dropUntilSync()
+			return a.emitPendingSync(pkt.Timestamp, out)
 		}
-		a.requestSync = false
-		a.started = true
-		a.dropping = false
-		a.timestamp = pkt.Timestamp
-		a.keyframe = keyframe
-		a.buffer = a.buffer[:0]
+		if end {
+			if len(frame) > cap(a.buffer) {
+				a.dropUntilSync()
+				return ErrFrameTooLarge
+			}
+			if len(out.Packets) == cap(out.Packets) {
+				return ErrResultFull
+			}
+			a.beginFrame(pkt.Timestamp, keyframe)
+			if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out); err != nil {
+				return err
+			}
+			a.state = asmIdle
+			return nil
+		}
+		a.beginFrame(pkt.Timestamp, keyframe)
+	case asmAssembling:
+		if start {
+			// Previous frame never saw its end marker (truncated frame).
+			if !keyframe {
+				a.dropUntilSync()
+				return a.emitPendingSync(pkt.Timestamp, out)
+			}
+			if end {
+				if len(frame) > cap(a.buffer) {
+					a.dropUntilSync()
+					return ErrFrameTooLarge
+				}
+				if len(out.Packets) == cap(out.Packets) {
+					return ErrResultFull
+				}
+				a.lossBefore = true
+				a.beginFrame(pkt.Timestamp, true)
+				if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, true, out); err != nil {
+					return err
+				}
+				a.state = asmIdle
+				return nil
+			}
+			a.lossBefore = true
+			a.beginFrame(pkt.Timestamp, true)
+		} else if pkt.Timestamp != a.timestamp {
+			a.dropUntilSync()
+			return a.emitPendingSync(pkt.Timestamp, out)
+		}
+	case asmDropping:
+		if !start {
+			return a.emitPendingSync(pkt.Timestamp, out)
+		}
+		if !keyframe {
+			a.clearPartial()
+			return a.requestSyncOnFrame(pkt.Timestamp, out)
+		}
+		if end {
+			if len(frame) > cap(a.buffer) {
+				a.dropUntilSync()
+				return ErrFrameTooLarge
+			}
+			if len(out.Packets) == cap(out.Packets) {
+				return ErrResultFull
+			}
+			a.beginFrame(pkt.Timestamp, true)
+			if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, true, out); err != nil {
+				return err
+			}
+			a.state = asmIdle
+			return nil
+		}
+		a.beginFrame(pkt.Timestamp, true)
 	}
-	if a.dropping {
-		return nil
-	}
+
 	if len(a.buffer)+len(frame) > cap(a.buffer) {
 		a.dropUntilSync()
 		return ErrFrameTooLarge
 	}
-	if end && len(a.buffer) == 0 {
-		a.started = false
-		return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out)
-	}
-	a.buffer = append(a.buffer, frame...)
-	if !end {
+	if end {
+		if len(out.Packets) == cap(out.Packets) {
+			return ErrResultFull
+		}
+		var packetPayload []byte
+		if len(a.buffer) == 0 {
+			packetPayload = frame
+		} else {
+			a.buffer = append(a.buffer, frame...)
+			packetPayload = a.buffer
+		}
+		if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), packetPayload, a.keyframe, out); err != nil {
+			return err
+		}
+		a.state = asmIdle
 		return nil
 	}
-	packetPayload := a.buffer
-	a.started = false
-	return a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), packetPayload, a.keyframe, out)
+	a.buffer = append(a.buffer, frame...)
+	return nil
 }
 
 func (a *videoFrameAssembler) handleEvent(ctx context.Context, event *av.Event) error {
@@ -235,33 +309,65 @@ func (a *videoFrameAssembler) handleEvent(ctx context.Context, event *av.Event) 
 	return nil
 }
 
+func (a *videoFrameAssembler) beginFrame(timestamp uint32, keyframe bool) {
+	a.state = asmAssembling
+	a.requestSync = false
+	a.hasSyncTimestamp = false
+	a.timestamp = timestamp
+	a.keyframe = keyframe
+	a.buffer = a.buffer[:0]
+}
+
+func (a *videoFrameAssembler) resumeWithBufferedParams(timestamp uint32) {
+	a.state = asmAssembling
+	a.requestSync = false
+	a.hasSyncTimestamp = false
+	a.timestamp = timestamp
+	a.keyframe = false
+}
+
 func (a *videoFrameAssembler) markLoss(discontinuous bool) {
-	a.resetPartial()
+	a.state = asmDropping
 	a.lossBefore = true
 	if discontinuous {
 		a.discontinuous = true
 	}
 	a.requestSync = true
-	a.dropping = true
+	a.hasSyncTimestamp = false
+	a.clearPartial()
 }
 
 func (a *videoFrameAssembler) dropUntilSync() {
-	if !a.dropping {
+	if a.state != asmDropping {
 		a.requestSync = true
+		a.hasSyncTimestamp = false
 	}
+	a.state = asmDropping
 	a.lossBefore = true
-	a.dropping = true
-	a.resetPartial()
+	a.clearPartial()
 }
 
-func (a *videoFrameAssembler) resetPartial() {
-	a.started = false
+func (a *videoFrameAssembler) clearPartial() {
 	a.buffer = a.buffer[:0]
 	a.keyframe = false
 	a.timestamp = 0
 }
 
-func (a *videoFrameAssembler) emitPendingSync(out *DepacketizeResult) error {
+func (a *videoFrameAssembler) resetPartial() {
+	if a.state == asmAssembling {
+		a.state = asmIdle
+	}
+	a.clearPartial()
+}
+
+func (a *videoFrameAssembler) requestSyncOnFrame(timestamp uint32, out *DepacketizeResult) error {
+	if !a.hasSyncTimestamp || a.syncTimestamp != timestamp {
+		a.requestSync = true
+	}
+	return a.emitPendingSync(timestamp, out)
+}
+
+func (a *videoFrameAssembler) emitPendingSync(timestamp uint32, out *DepacketizeResult) error {
 	if !a.requestSync {
 		return nil
 	}
@@ -275,6 +381,8 @@ func (a *videoFrameAssembler) emitPendingSync(out *DepacketizeResult) error {
 		Reason:   "video depacketizer needs sync",
 	})
 	a.requestSync = false
+	a.hasSyncTimestamp = true
+	a.syncTimestamp = timestamp
 	return nil
 }
 

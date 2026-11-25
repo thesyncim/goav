@@ -11,6 +11,14 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+type runPhase uint8
+
+const (
+	runIdle     runPhase = iota // not executing; topology freely mutable
+	runActive                   // sources and workers executing; stages/sinks mutable
+	runDraining                 // sources ended, queues closing; topology and controls refused
+)
+
 // bufferedRunner is the queued delivery strategy over the shared topology:
 // an emit binds the message into a slot of each target's bounded queue, and
 // one serial worker per node drains it into Handle.
@@ -22,10 +30,9 @@ type bufferedRunner struct {
 	order   atomic.Pointer[timeOrder]
 	workers sync.WaitGroup
 	runCtx  context.Context
-	running bool
-	// draining is set once the sources ended and the queues are closing; the
-	// topology refuses changes until Run returns.
-	draining bool
+	// phase tracks the run lifecycle under topology.mu:
+	// runIdle -> runActive -> runDraining -> runIdle.
+	phase runPhase
 }
 
 // bufferedNode is a node with its own bounded queue and serial worker. The
@@ -148,7 +155,7 @@ func (g *bufferedRunner) newNode(policy BufferPolicy) (*bufferedNode, error) {
 // mutable refuses a new source once Run started (sources start only there),
 // and every change while the run drains.
 func (g *bufferedRunner) mutable(source bool) error {
-	if g.running && (source || g.draining) {
+	if g.phase == runDraining || (g.phase == runActive && source) {
 		return ErrDynamicGraphUnsupported
 	}
 	return nil
@@ -160,7 +167,7 @@ func (g *bufferedRunner) attachLocked(n *bufferedNode, index int) {
 	n.drop.reset(n.policy)
 	n.wake = make(chan struct{}, 1)
 	n.emitter = bufferedEmitter{graph: g, from: index, self: n, park: newParkedProducer()}
-	if g.running && n.kind != nodeSource {
+	if g.phase == runActive && n.kind != nodeSource {
 		g.openQueue(n)
 		g.startWorkerLocked(n)
 	}
@@ -169,7 +176,8 @@ func (g *bufferedRunner) attachLocked(n *bufferedNode, index int) {
 // stopLocked closes a running node's queue; its worker sheds what is left
 // (the routing snapshot is nil) and exits.
 func (g *bufferedRunner) stopLocked(ctx context.Context, n *bufferedNode) (bool, error) {
-	if !g.running || n.kind == nodeSource {
+	n.removed.Store(true)
+	if g.phase == runIdle || n.kind == nodeSource {
 		return false, nil
 	}
 	if err := g.closeNodeQueueContext(ctx, n); err != nil {
@@ -199,6 +207,10 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 		g.mu.Unlock()
 		return ErrClosed
 	}
+	if g.phase != runIdle {
+		g.mu.Unlock()
+		return ErrAlreadyRunning
+	}
 	if err := ctx.Err(); err != nil {
 		g.mu.Unlock()
 		return err
@@ -215,8 +227,7 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.fail.reset(cancel)
 	g.openQueuesLocked()
 	g.armReadinessLocked()
-	g.running = true
-	g.draining = false
+	g.phase = runActive
 	g.runCtx = runCtx
 	g.domainParent = runCtx
 	for _, d := range g.domains {
@@ -225,14 +236,14 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.pending.n.Store(0) // no worker runs yet; queues were just reopened
 	g.workers = sync.WaitGroup{}
 	for _, node := range g.nodes {
-		if !node.active || node.kind == nodeSource {
+		if !node.isActive() || node.kind == nodeSource {
 			continue
 		}
 		g.startWorkerLocked(node)
 	}
 	sources := make([]*bufferedNode, 0, len(g.sources))
 	for _, index := range g.sources {
-		if node := g.nodes[index]; node.active {
+		if node := g.nodes[index]; node.isActive() {
 			sources = append(sources, node)
 		}
 	}
@@ -269,14 +280,16 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	// skips the wait; workers shed what is left once the queues close.
 	g.pending.wait(runCtx.Done())
 	g.mu.Lock()
-	g.draining = true
+	g.phase = runDraining
 	g.closeQueuesLocked()
 	g.mu.Unlock()
 	g.workers.Wait()
 	g.mu.Lock()
-	g.running = false
-	g.draining = false
+	g.phase = runIdle
 	g.runCtx = nil
+	for _, node := range g.nodes {
+		node.opened = false
+	}
 	g.mu.Unlock()
 	return g.fail.err()
 }
@@ -304,7 +317,7 @@ func (g *bufferedRunner) RemoveNodeContext(ctx context.Context, ref NodeRef) (No
 
 func (g *bufferedRunner) remove(ctx context.Context, ref NodeRef) (*bufferedNode, error) {
 	g.mu.Lock()
-	running := g.running
+	running := g.phase == runActive
 	node, err := g.detachLocked(ref)
 	if err != nil {
 		g.mu.Unlock()
@@ -312,7 +325,7 @@ func (g *bufferedRunner) remove(ctx context.Context, ref NodeRef) (*bufferedNode
 	}
 	if node.kind == nodeSink && running {
 		// A sink leaving before its first media message stops gating readiness.
-		g.noteSinkMedia(&node.sawMedia)
+		g.noteSinkMedia(&node.nodeBase)
 	}
 	if !running || !node.opened {
 		g.retireLocked(node)
@@ -342,7 +355,7 @@ func (g *bufferedRunner) remove(ctx context.Context, ref NodeRef) (*bufferedNode
 // and shedding whatever its worker still holds. Finalization makes its index
 // reusable only after its worker and Close finish. Caller holds g.mu.
 func (g *bufferedRunner) retireLocked(node *bufferedNode) {
-	node.active = false
+	node.phase = nodeRetired
 	node.removed.Store(true)
 	node.routes = nil
 	g.rebuildLocked()
@@ -385,7 +398,7 @@ func (g *bufferedRunner) nodePolicy(policy BufferPolicy) BufferPolicy {
 func (g *bufferedRunner) openQueuesLocked() {
 	for i := range g.nodes {
 		node := g.nodes[i]
-		if !node.active || node.kind == nodeSource {
+		if !node.isActive() || node.kind == nodeSource {
 			continue
 		}
 		g.openQueue(node)
@@ -424,7 +437,7 @@ func (g *bufferedRunner) startWorkerLocked(node *bufferedNode) {
 func (g *bufferedRunner) closeQueuesLocked() {
 	for i := range g.nodes {
 		node := g.nodes[i]
-		if !node.active || node.kind == nodeSource {
+		if !node.isRoutable() || node.kind == nodeSource {
 			continue
 		}
 		g.closeNodeQueue(node)
@@ -1005,7 +1018,7 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 		return node.stage.Handle(ctx, msg, &node.emitter)
 	case nodeSink:
 		if (msg.Kind == MessagePacket || msg.Kind == MessageFrame) && !node.sawMedia.Load() {
-			g.noteSinkMedia(&node.sawMedia)
+			g.noteSinkMedia(&node.nodeBase)
 		}
 		return node.sink.Handle(ctx, msg)
 	default:

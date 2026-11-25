@@ -17,11 +17,18 @@ const (
 	av1OBUTileList          = 8
 )
 
+type av1FragState uint8
+
+const (
+	av1FragIdle av1FragState = iota
+	av1FragInProgress
+)
+
 // AV1Depacketizer converts AV1 RTP aggregation payloads into bounded packets.
 type AV1Depacketizer struct {
 	assembler videoFrameAssembler
 	fragment  []byte
-	keyframe  bool
+	fragState av1FragState
 }
 
 var _ Depacketizer = (*AV1Depacketizer)(nil)
@@ -56,56 +63,66 @@ func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	n := header&av1NMask != 0
 	count := int((header & av1WMask) >> 4)
 
-	if d.assembler.dropping {
-		d.fragment = d.fragment[:0]
+	switch d.assembler.state {
+	case asmDropping:
+		d.resetFragment()
 		if !n || z {
-			d.assembler.requestSync = true
-			d.assembler.resetPartial()
-			return d.assembler.emitPendingSync(out)
+			d.assembler.clearPartial()
+			if !z {
+				return d.assembler.requestSyncOnFrame(pkt.Timestamp, out)
+			}
+			return d.assembler.emitPendingSync(pkt.Timestamp, out)
 		}
-		d.begin(pkt.Timestamp)
-		d.keyframe = n
-		d.assembler.dropping = false
-		d.assembler.requestSync = false
-	} else if !d.assembler.started {
-		d.fragment = d.fragment[:0]
+		d.assembler.beginFrame(pkt.Timestamp, true)
+	case asmIdle:
+		d.resetFragment()
 		if z {
 			d.assembler.dropUntilSync()
-			return d.assembler.emitPendingSync(out)
+			return d.assembler.emitPendingSync(pkt.Timestamp, out)
 		}
-		d.begin(pkt.Timestamp)
-		d.keyframe = n
-	} else if pkt.Timestamp != d.assembler.timestamp || (len(d.fragment) > 0 && !z) || (len(d.fragment) == 0 && z) {
-		d.fragment = d.fragment[:0]
-		d.keyframe = false
-		d.assembler.dropUntilSync()
-		return d.assembler.emitPendingSync(out)
+		d.assembler.beginFrame(pkt.Timestamp, n)
+	case asmAssembling:
+		if pkt.Timestamp != d.assembler.timestamp {
+			// Previous temporal unit was truncated (never saw Marker).
+			d.resetFragment()
+			if n && !z {
+				d.assembler.lossBefore = true
+				d.assembler.beginFrame(pkt.Timestamp, true)
+			} else {
+				d.assembler.dropUntilSync()
+				return d.assembler.emitPendingSync(pkt.Timestamp, out)
+			}
+		} else if (d.fragState == av1FragInProgress && !z) || (d.fragState == av1FragIdle && z) {
+			d.resetFragment()
+			d.assembler.dropUntilSync()
+			return d.assembler.emitPendingSync(pkt.Timestamp, out)
+		}
 	}
 
 	if err := d.appendPayload(pkt.Payload, z, y, count); err != nil {
-		d.fragment = d.fragment[:0]
-		d.keyframe = false
+		d.resetFragment()
 		d.assembler.dropUntilSync()
 		return err
 	}
-	if !pkt.Marker || y || len(d.fragment) != 0 {
+	if !pkt.Marker || y || d.fragState == av1FragInProgress {
 		return nil
 	}
 	if len(d.assembler.buffer) == 0 {
-		d.assembler.started = false
+		d.assembler.state = asmIdle
 		return nil
 	}
 
-	frame := d.assembler.buffer
-	d.assembler.started = false
-	return d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), frame, d.keyframe, out)
+	if err := d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), d.assembler.buffer, d.assembler.keyframe, out); err != nil {
+		return err
+	}
+	d.assembler.state = asmIdle
+	return nil
 }
 
 // FlushInto discards any partial temporal unit at end of stream.
 func (d *AV1Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
-	d.fragment = d.fragment[:0]
-	d.keyframe = false
+	d.resetFragment()
 	return nil
 }
 
@@ -121,18 +138,15 @@ func (d *AV1Depacketizer) HandleEvent(ctx context.Context, event *av.Event) erro
 	switch event.Type {
 	case av.EventPacketLoss, av.EventDiscontinuity, av.EventCodecChanged:
 		if affected {
-			d.fragment = d.fragment[:0]
-			d.keyframe = false
+			d.resetFragment()
 		}
 	}
 	return nil
 }
 
-func (d *AV1Depacketizer) begin(timestamp uint32) {
-	d.assembler.started = true
-	d.assembler.timestamp = timestamp
-	d.assembler.buffer = d.assembler.buffer[:0]
-	d.keyframe = false
+func (d *AV1Depacketizer) resetFragment() {
+	d.fragment = d.fragment[:0]
+	d.fragState = av1FragIdle
 }
 
 func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count int) error {
@@ -164,13 +178,6 @@ func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count in
 		elements++
 
 		if isFirst && z {
-			if len(d.fragment) == 0 {
-				if isLast {
-					break
-				}
-				elementIndex++
-				continue
-			}
 			if err := d.appendFragment(element); err != nil {
 				return err
 			}
@@ -180,8 +187,9 @@ func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count in
 			if err := d.appendOBU(d.fragment); err != nil {
 				return err
 			}
-			d.fragment = d.fragment[:0]
+			d.resetFragment()
 		} else if isLast && y {
+			d.fragState = av1FragInProgress
 			return d.appendFragment(element)
 		} else if err := d.appendOBU(element); err != nil {
 			return err

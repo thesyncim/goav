@@ -9,6 +9,15 @@ import (
 	"github.com/thesyncim/goav/libcodec/kit"
 )
 
+type atEncoderState uint8
+
+const (
+	atEncOpen atEncoderState = iota
+	atEncStreaming
+	atEncDraining
+	atEncClosed
+)
+
 // encoder is one AudioConverter from interleaved s16 PCM to AAC-LC. The
 // converter pulls its input through the input procedure, which hands it
 // whole 1024-sample frames out of a FIFO; each pull returns one packet.
@@ -25,8 +34,7 @@ type encoder struct {
 	desc     packetDesc
 	priming  int64
 	next     int64 // PTS of the next packet
-	started  bool
-	draining bool
+	state    atEncoderState
 }
 
 func newEncoder(sym *symbols, config kit.AudioConfig) (kit.AudioEncoder, error) {
@@ -102,6 +110,9 @@ func (e *encoder) Config() []byte { return e.config }
 
 // Update changes the bitrate while running.
 func (e *encoder) Update(knob string, values codec.KnobValues) error {
+	if e.state == atEncClosed || e.state == atEncDraining || e.conv == 0 {
+		return codec.ErrClosed
+	}
 	if knob != "bitrate" {
 		return &kit.Error{Backend: Name, Op: "control", Name: knob, Reason: "cannot change while running"}
 	}
@@ -109,10 +120,16 @@ func (e *encoder) Update(knob string, values codec.KnobValues) error {
 }
 
 func (e *encoder) Encode(s *kit.Samples, emit func(*kit.Packet) error) error {
-	if !e.started {
+	if e.conv == 0 {
+		return codec.ErrClosed
+	}
+	switch e.state {
+	case atEncClosed, atEncDraining:
+		return codec.ErrClosed
+	case atEncOpen:
 		// A packet's PTS is its first decoded sample's, so the priming the
 		// encoder adds shows before the first input sample.
-		e.next, e.started = s.PTS-e.priming, true
+		e.next, e.state = s.PTS-e.priming, atEncStreaming
 	}
 	e.fifo = append(e.fifo, s.PCM...)
 	for len(e.fifo) >= frames*e.channels {
@@ -129,7 +146,14 @@ func (e *encoder) Encode(s *kit.Samples, emit func(*kit.Packet) error) error {
 }
 
 func (e *encoder) Flush(emit func(*kit.Packet) error) error {
-	e.draining = true
+	if e.state == atEncClosed || e.conv == 0 {
+		return codec.ErrClosed
+	}
+	if e.state == atEncOpen {
+		e.state = atEncDraining
+		return nil
+	}
+	e.state = atEncDraining
 	for {
 		prevLen := len(e.fifo)
 		produced, err := e.pull(emit)
@@ -171,10 +195,13 @@ func (e *encoder) supply(packets *uint32, data *bufferList, desc **packetDesc) i
 	want := min(int(*packets), frames) * e.channels
 	have := len(e.fifo)
 	switch {
+	case e.state == atEncClosed:
+		*packets = 0
+		return noData
 	case have >= want:
-	case e.draining && have > 0:
+	case e.state == atEncDraining && have > 0:
 		want = have
-	case e.draining:
+	case e.state == atEncDraining:
 		*packets = 0
 		data.DataByteSize = 0
 		return 0
@@ -193,9 +220,11 @@ func (e *encoder) supply(packets *uint32, data *bufferList, desc **packetDesc) i
 }
 
 func (e *encoder) Close() error {
-	if e.conv == 0 {
+	if e.state == atEncClosed || e.conv == 0 {
+		e.state = atEncClosed
 		return nil
 	}
+	e.state = atEncClosed
 	sessions.Delete(e.handle)
 	e.sym.dispose(e.conv)
 	e.conv = 0

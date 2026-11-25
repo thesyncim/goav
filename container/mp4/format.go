@@ -61,12 +61,20 @@ func (DemuxerFactory) NewDemuxer(ctx context.Context, result format.ProbeResult)
 	return &FormatDemuxer{}, nil
 }
 
+type formatDemuxState uint8
+
+const (
+	formatDemuxUnopened formatDemuxState = iota
+	formatDemuxOpen
+	formatDemuxClosed
+)
+
 // FormatDemuxer adapts the random-access MP4 Demuxer to the format.Demuxer
 // interface.
 type FormatDemuxer struct {
 	demuxer *Demuxer
 	streams []av.Stream
-	closed  bool
+	state   formatDemuxState
 	// avccLength is the NAL length-prefix width per stream index for H.264
 	// and HEVC tracks (0 for every other codec): goav carries both as Annex B, so
 	// those samples are converted on read through scratch, like the Matroska
@@ -108,12 +116,12 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 		}
 		d.avccLength = append(d.avccLength, length)
 	}
-	d.closed = false
+	d.state = formatDemuxOpen
 	return nil
 }
 
 func (d *FormatDemuxer) Streams() []av.Stream {
-	if len(d.streams) == 0 {
+	if d.state != formatDemuxOpen || len(d.streams) == 0 {
 		return nil
 	}
 	out := make([]av.Stream, len(d.streams))
@@ -130,7 +138,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if out == nil || out.Packet == nil {
 		return format.ErrNilPacket
 	}
-	if d.closed || d.demuxer == nil {
+	if d.state != formatDemuxOpen || d.demuxer == nil {
 		return io.EOF
 	}
 	var sample Sample
@@ -180,7 +188,7 @@ func (d *FormatDemuxer) Seek(ctx context.Context, position time.Duration) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if d.closed || d.demuxer == nil {
+	if d.state != formatDemuxOpen || d.demuxer == nil {
 		return ErrClosed
 	}
 	if position < 0 {
@@ -194,8 +202,10 @@ func (d *FormatDemuxer) Close() error {
 	if d == nil {
 		return nil
 	}
-	d.closed = true
+	d.state = formatDemuxClosed
 	d.demuxer = nil
+	d.streams = d.streams[:0]
+	d.avccLength = d.avccLength[:0]
 	return nil
 }
 

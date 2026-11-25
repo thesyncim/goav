@@ -68,22 +68,34 @@ func (s *Server) Remove(name string) error {
 	return nil
 }
 
+type storeFileState uint8
+
+const (
+	storeFileOpen storeFileState = iota
+	storeFileClosed
+	storeFileAborted
+)
+
 type serverFile struct {
 	bytes.Buffer
-	server  *Server
-	name    string
-	aborted bool
+	server *Server
+	name   string
+	state  storeFileState
 }
 
 func (f *serverFile) abort() {
-	f.aborted = true
+	if f.state != storeFileOpen {
+		return
+	}
+	f.state = storeFileAborted
 	f.Reset()
 }
 
 func (f *serverFile) Close() error {
-	if f.aborted {
+	if f.state != storeFileOpen {
 		return nil
 	}
+	f.state = storeFileClosed
 	f.server.mu.Lock()
 	f.server.files[f.name] = f.Bytes()
 	f.server.wakeLocked(f.name)

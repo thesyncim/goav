@@ -8,6 +8,14 @@ import (
 	"github.com/thesyncim/goav/container/ebml"
 )
 
+type clusterState uint8
+
+const (
+	clusterNone clusterState = iota
+	clusterSized
+	clusterUnknownSize
+)
+
 type Demuxer struct {
 	reader                *ebml.Reader
 	seeker                io.ReadSeeker
@@ -45,8 +53,7 @@ type Demuxer struct {
 	chaptersSeen          bool
 	tagsSeen              bool
 	inSegment             bool
-	inCluster             bool
-	clusterUnknown        bool
+	cluster               clusterState
 	clusterEnd            int64
 	clusterTimecode       int64
 	blockLimit            io.LimitedReader
@@ -200,8 +207,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.chaptersSeen = false
 	d.tagsSeen = false
 	d.inSegment = false
-	d.inCluster = false
-	d.clusterUnknown = false
+	d.cluster = clusterNone
 	d.clusterEnd = 0
 	d.clusterTimecode = 0
 	d.pendingHeader = ebml.Header{}
@@ -314,44 +320,48 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 		return d.readNextLacedPacket(dst)
 	}
 	for {
-		if d.inCluster && !d.clusterUnknown && d.reader.Offset() >= d.clusterEnd {
-			d.inCluster = false
+		if d.cluster == clusterSized && d.reader.Offset() >= d.clusterEnd {
+			d.cluster = clusterNone
 		}
 		header, err := d.nextPacketHeader()
 		if err != nil {
 			return err
 		}
-		if d.inCluster {
-			if header.ID == idCluster {
+		if d.cluster != clusterNone {
+			if d.cluster == clusterUnknownSize && isUnknownClusterTerminator(header.ID) {
+				d.cluster = clusterNone
+				d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
+			} else if header.ID == idCluster {
 				if err := d.enterCluster(header); err != nil {
 					return err
 				}
 				continue
+			} else {
+				switch header.ID {
+				case idTimestamp:
+					value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
+					if err != nil {
+						return err
+					}
+					if value > uint64(math.MaxInt64) {
+						return ErrInvalidData
+					}
+					d.clusterTimecode = int64(value)
+				case idSimpleBlock:
+					return d.finishClusterPacket(d.readSimpleBlock(header, dst), dst)
+				case idBlockGroup:
+					return d.finishClusterPacket(d.readBlockGroup(header, dst), dst)
+				case idVoid, idCRC32:
+					if err := skipElement(d.reader, header); err != nil {
+						return err
+					}
+				default:
+					if err := d.readUnknownClusterElement(header); err != nil {
+						return err
+					}
+				}
+				continue
 			}
-			switch header.ID {
-			case idTimestamp:
-				value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
-				if err != nil {
-					return err
-				}
-				if value > uint64(math.MaxInt64) {
-					return ErrInvalidData
-				}
-				d.clusterTimecode = int64(value)
-			case idSimpleBlock:
-				return d.finishClusterPacket(d.readSimpleBlock(header, dst), dst)
-			case idBlockGroup:
-				return d.finishClusterPacket(d.readBlockGroup(header, dst), dst)
-			case idVoid, idCRC32:
-				if err := skipElement(d.reader, header); err != nil {
-					return err
-				}
-			default:
-				if err := d.readUnknownClusterElement(header); err != nil {
-					return err
-				}
-			}
-			continue
 		}
 		switch header.ID {
 		case idSeekHead:

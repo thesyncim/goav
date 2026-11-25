@@ -11,6 +11,16 @@ import (
 	"github.com/thesyncim/goav/internal/av1"
 )
 
+type muxerState uint8
+
+const (
+	matroskaConfiguring muxerState = iota
+	matroskaHeaderWritten
+	matroskaInCluster
+	matroskaFailed
+	matroskaClosed
+)
+
 type Muxer struct {
 	writer                 io.Writer
 	ebml                   *ebml.Writer
@@ -18,8 +28,8 @@ type Muxer struct {
 	tracks                 []Track
 	pendingPackets         []pendingMuxerPacket
 	cues                   []CuePoint
-	headerWritten          bool
-	clusterOpen            bool
+	state                  muxerState
+	err                    error
 	seekable               bool
 	segmentData            int64
 	seekHeadOffset         int64
@@ -40,7 +50,6 @@ type Muxer struct {
 	durationPatch          bool
 	maxTimeNS              int64
 	clusterTimecode        int64
-	closed                 bool
 	scratch                [codecPrivateScratchSize]byte
 	blockScratch           [16]byte
 	blockPayload           bytes.Buffer
@@ -139,8 +148,8 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.tracks = m.tracks[:0]
 	m.clearPendingPackets()
 	m.cues = m.cues[:0]
-	m.headerWritten = false
-	m.clusterOpen = false
+	m.state = matroskaConfiguring
+	m.err = nil
 	// A writer is seekable when it can report its position: an *os.File on a
 	// pipe has a Seek method that fails.
 	m.seekable = false
@@ -171,7 +180,6 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 		m.maxTimeNS = m.options.Info.DurationNS
 	}
 	m.clusterTimecode = 0
-	m.closed = false
 	m.blockPayload.Reset()
 	m.codecPayload.Reset()
 	m.encryptionPayload.Reset()
@@ -189,11 +197,23 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	}
 }
 
+func (m *Muxer) fail(err error) error {
+	m.state = matroskaFailed
+	m.err = err
+	return err
+}
+
 func (m *Muxer) AddTrack(track Track) (uint32, error) {
 	if m == nil || m.writer == nil {
 		return 0, ErrNilWriter
 	}
-	if m.headerWritten || len(m.pendingPackets) != 0 {
+	if m.state == matroskaFailed {
+		return 0, m.err
+	}
+	if m.state == matroskaClosed {
+		return 0, ErrClosed
+	}
+	if m.state >= matroskaHeaderWritten || len(m.pendingPackets) != 0 {
 		return 0, ErrTrackAfterWrite
 	}
 	if err := normalizeTrackBlockAdditionMetadata(&track); err != nil {
@@ -278,8 +298,11 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if m == nil || m.writer == nil {
 		return ErrNilWriter
 	}
-	if m.closed {
+	switch m.state {
+	case matroskaClosed:
 		return ErrClosed
+	case matroskaFailed:
+		return m.err
 	}
 	trackIndex, ok := m.trackIndex(packet.TrackID)
 	if packet.TrackID == 0 || !ok {
@@ -314,7 +337,7 @@ func (m *Muxer) WritePacket(packet Packet) error {
 	if err := validateUnknownElementsFor(packet.UnknownClusterElements, isKnownClusterElement); err != nil {
 		return ErrInvalidData
 	}
-	if !m.headerWritten {
+	if m.state == matroskaConfiguring {
 		if maxAdditionID > track.MaxBlockAdditionID {
 			track.MaxBlockAdditionID = maxAdditionID
 			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
@@ -363,11 +386,15 @@ func (m *Muxer) writePacketReady(packet Packet, track Track) error {
 		return err
 	}
 	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
-		return err
+		return m.fail(err)
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
+	before := m.ebml.Offset()
 	if err := m.writeSimpleBlock(packet, blockTimecode, track); err != nil {
+		if m.ebml.Offset() != before {
+			return m.fail(err)
+		}
 		return err
 	}
 	m.clusterBlock = blockNumber
@@ -385,8 +412,11 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if m == nil || m.writer == nil {
 		return ErrNilWriter
 	}
-	if m.closed {
+	switch m.state {
+	case matroskaClosed:
 		return ErrClosed
+	case matroskaFailed:
+		return m.err
 	}
 	trackIndex, ok := m.trackIndex(packet.TrackID)
 	if packet.TrackID == 0 || !ok {
@@ -423,7 +453,7 @@ func (m *Muxer) WriteLacedPacket(packet LacedPacket) error {
 	if track.FlagLacingSet && !track.FlagLacing {
 		return ErrInvalidTrack
 	}
-	if !m.headerWritten {
+	if m.state == matroskaConfiguring {
 		if maxAdditionID > track.MaxBlockAdditionID {
 			track.MaxBlockAdditionID = maxAdditionID
 			m.tracks[trackIndex].MaxBlockAdditionID = maxAdditionID
@@ -481,7 +511,7 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 	if err != nil {
 		return err
 	}
-	if !m.headerWritten {
+	if m.state == matroskaConfiguring {
 		if err := m.writeHeader(); err != nil {
 			return err
 		}
@@ -510,15 +540,22 @@ func (m *Muxer) writeLacedPacket(packet LacedPacket, track Track, muxedFrameSize
 		return err
 	}
 	if err := writeUnknownElements(m.ebml, packet.UnknownClusterElements); err != nil {
-		return err
+		return m.fail(err)
 	}
 	relativePosition := m.relativeClusterPosition()
 	blockNumber := m.clusterBlock + 1
+	before := m.ebml.Offset()
 	if lacedPacketNeedsBlockGroup(packet) {
 		if err := m.writeLacedBlockGroup(packet, blockTimecode, lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+			if m.ebml.Offset() != before {
+				return m.fail(err)
+			}
 			return err
 		}
 	} else if err := m.writeLacedBlock(idSimpleBlock, packet, blockTimecode, lacedSimpleBlockFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
+		if m.ebml.Offset() != before {
+			return m.fail(err)
+		}
 		return err
 	}
 	m.clusterBlock = blockNumber
@@ -542,10 +579,13 @@ func (m *Muxer) Close() error {
 	if m == nil {
 		return nil
 	}
-	if m.closed {
+	switch m.state {
+	case matroskaClosed:
 		return nil
+	case matroskaFailed:
+		return m.err
 	}
-	if m.writer != nil && !m.headerWritten && len(m.tracks) != 0 {
+	if m.writer != nil && m.state == matroskaConfiguring && len(m.tracks) != 0 {
 		if len(m.pendingPackets) != 0 {
 			if !m.headerTracksReady() {
 				return ErrInvalidTrack
@@ -561,32 +601,32 @@ func (m *Muxer) Close() error {
 	}
 	if m.clusterSized {
 		if err := m.ebml.FinishSizedElement(m.clusterPatch); err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.clusterSized = false
 	}
 	if m.hasCuesToWrite() {
 		if err := m.writeCues(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if m.durationPatch {
 		if err := m.patchDuration(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if m.seekHeadReserve != 0 {
 		if err := m.patchSeekHead(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if m.segmentSized {
 		if err := m.ebml.FinishSizedElement(m.segmentPatch); err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.segmentSized = false
 	}
-	m.closed = true
+	m.state = matroskaClosed
 	return nil
 }
 
@@ -617,7 +657,7 @@ func (m *Muxer) defaultDurationNS(trackID uint32) int64 {
 }
 
 func (m *Muxer) shouldStartCluster(timecode int64) bool {
-	if !m.clusterOpen {
+	if m.state != matroskaInCluster {
 		return true
 	}
 	delta := timecode - m.clusterTimecode
@@ -636,55 +676,55 @@ func (m *Muxer) writeHeader() error {
 		return err
 	}
 	if err := m.writeEBMLHeader(); err != nil {
-		return err
+		return m.fail(err)
 	}
 	if !m.options.Streaming && m.seekable {
 		patch, err := m.ebml.StartSizedElement(idSegment, ebml.MaxSizeWidth)
 		if err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.segmentPatch = patch
 		m.segmentSized = true
 		m.segmentData = patch.Start
 		if err := m.writeSeekHeadPlaceholder(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	} else {
 		if err := m.ebml.WriteUnknownHeader(idSegment, ebml.MaxSizeWidth); err != nil {
-			return err
+			return m.fail(err)
 		}
 		m.segmentData = m.ebml.Offset()
 	}
 	m.infoPosition = m.relativeSegmentPosition()
 	if err := m.writeInfo(); err != nil {
-		return err
+		return m.fail(err)
 	}
 	m.tracksPosition = m.relativeSegmentPosition()
 	if err := m.writeTracks(); err != nil {
-		return err
+		return m.fail(err)
 	}
 	if m.hasAttachmentsElement() {
 		m.attachPosition = m.relativeSegmentPosition()
 		if err := m.writeAttachments(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if m.hasChaptersElement() {
 		m.chapterPosition = m.relativeSegmentPosition()
 		if err := m.writeChapters(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if m.hasTagsElement() {
 		m.tagsPosition = m.relativeSegmentPosition()
 		if err := m.writeTags(); err != nil {
-			return err
+			return m.fail(err)
 		}
 	}
 	if err := m.writeUnknownSegmentElements(); err != nil {
-		return err
+		return m.fail(err)
 	}
-	m.headerWritten = true
+	m.state = matroskaHeaderWritten
 	return nil
 }
 

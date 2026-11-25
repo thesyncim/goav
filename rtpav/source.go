@@ -35,6 +35,14 @@ type SourceConfig struct {
 	MaxPackets  int
 }
 
+type sourceState uint8
+
+const (
+	sourceIdle sourceState = iota
+	sourceRunning
+	sourceClosed
+)
+
 // Source adapts a PacketReader into a pipeline.Source: RTP is read,
 // optionally reordered, depacketized into av.Packets, stamped with media
 // timestamps, and emitted with loss/discontinuity events; RTCP feedback flows
@@ -63,7 +71,7 @@ type Source struct {
 	eos              av.Event
 	event            av.Event
 	discontinuity    av.Event
-	closed           atomic.Bool
+	state            atomic.Uint32
 	discardedPartial atomic.Uint64
 }
 
@@ -136,9 +144,13 @@ func (s *Source) DescribeNode() pipeline.NodeSpec {
 // Start announces the declared streams, then reads, reorders, and
 // depacketizes RTP until io.EOF, flushing partial state at end of stream.
 func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
-	if s.closed.Load() {
-		return ErrClosed
+	if !s.state.CompareAndSwap(uint32(sourceIdle), uint32(sourceRunning)) {
+		if sourceState(s.state.Load()) == sourceClosed {
+			return ErrClosed
+		}
+		return errors.New("rtpav: source already started")
 	}
+	defer s.state.CompareAndSwap(uint32(sourceRunning), uint32(sourceIdle))
 	for {
 		packet, event, payloads, err := s.receiver.ReadRTP(ctx)
 		if err == nil || event != nil || packet != nil {
@@ -251,7 +263,7 @@ func isReadEOF(err error) bool {
 
 // Close closes the wrapped receiver once.
 func (s *Source) Close() error {
-	if !s.closed.CompareAndSwap(false, true) {
+	if s.state.Swap(uint32(sourceClosed)) == uint32(sourceClosed) {
 		return nil
 	}
 	return s.receiver.Close()
@@ -536,7 +548,7 @@ func partialDepacketizer(depacketizer Depacketizer) (bool, av.Stream) {
 	if assembler == nil {
 		return false, av.Stream{}
 	}
-	return assembler.started, assembler.stream
+	return assembler.state == asmAssembling, assembler.stream
 }
 
 func (s *Source) applyCodecChangedStream(event *av.Event) (av.Stream, bool) {

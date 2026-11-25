@@ -58,7 +58,7 @@ type audioEncoder struct {
 	session AudioEncoder
 	out     *codec.EncodeResult
 	carry   codec.EncodeResult
-	closed  bool
+	state   encoderLifecycle
 	emitFn  func(*Packet) error
 	pcm     []int16
 }
@@ -82,10 +82,12 @@ func (e *audioEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if e.session != nil {
+	if e.state == encOpen {
 		_ = e.Close()
 	}
-	e.closed = false
+	e.state = encUnopened
+	e.releaseCarry()
+	e.out = nil
 	e.config = AudioConfig{SampleRate: rate, Channels: channels, Realtime: config.LowLatency || config.Realtime, Knobs: knobs}
 	params.ID, params.Type = e.c.ID, av.MediaAudio
 	params.SampleRate, params.ClockRate, params.Channels = rate, uint32(rate), channels
@@ -97,7 +99,11 @@ func (e *audioEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	stream.TimeBase = av.TimeBase{Num: 1, Den: int64(rate)}
 	e.stream = stream
 	e.emitFn = e.emit
-	return e.start()
+	if err := e.start(); err != nil {
+		return err
+	}
+	e.state = encOpen
+	return nil
 }
 
 func (e *audioEncoder) start() error {
@@ -176,7 +182,7 @@ func (e *audioEncoder) ready(ctx context.Context, out *codec.EncodeResult) error
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if e.closed || e.session == nil {
+	if e.state != encOpen {
 		return codec.ErrClosed
 	}
 	out.Packets = takeCarried(out.Packets, &e.carry)
@@ -212,7 +218,7 @@ func (e *audioEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if e.closed || e.session == nil {
+	if e.state != encOpen {
 		return codec.ErrClosed
 	}
 	switch event.Type {
@@ -247,26 +253,51 @@ func (e *audioEncoder) set(name, value string) error {
 		e.config.Knobs = knobs
 		return nil
 	}
+	next := e.config
+	next.Knobs = knobs
+	return e.restart(next)
+}
+
+func (e *audioEncoder) restart(next AudioConfig) error {
 	e.out = &e.carry
 	if err := e.session.Flush(e.emitFn); err != nil {
+		_ = e.session.Close()
+		e.session = nil
+		e.releaseCarry()
+		e.state = encClosed
 		return err
 	}
-	err = e.session.Close()
+	err := e.session.Close()
 	e.session = nil
 	if err != nil {
+		e.releaseCarry()
+		e.state = encClosed
 		return err
 	}
-	e.config.Knobs = knobs
-	return e.start()
+	prev := e.config
+	e.config = next
+	if err := e.start(); err != nil {
+		e.config = prev
+		e.releaseCarry()
+		e.state = encClosed
+		return err
+	}
+	e.state = encOpen
+	return nil
+}
+
+func (e *audioEncoder) releaseCarry() {
+	releasePackets(e.carry.Packets)
+	clear(e.carry.Packets)
+	e.carry.Packets = e.carry.Packets[:0]
 }
 
 func (e *audioEncoder) Close() error {
-	if e.closed {
+	if e.state == encClosed {
 		return nil
 	}
-	e.closed = true
-	releasePackets(e.carry.Packets)
-	e.carry.Packets = nil
+	e.state = encClosed
+	e.releaseCarry()
 	if e.session == nil {
 		return nil
 	}

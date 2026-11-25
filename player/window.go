@@ -16,6 +16,14 @@ import (
 
 var rates = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4}
 
+// windowState is the lifecycle state of a playback window.
+type windowState uint8
+
+const (
+	windowRunning windowState = iota
+	windowEnded
+)
+
 // game is the ebiten side of a Window: it presents the engine's video on
 // the display refresh, draws the overlay, and turns keys into task controls.
 type game struct {
@@ -26,28 +34,33 @@ type game struct {
 	sized bool
 	done  <-chan error
 
-	// controls run off the render loop, in order.
-	controls chan func()
+	// ctrlWake wakes the control worker when pending control state changes.
+	ctrlWake chan struct{}
 
 	image  *ebiten.Image
 	rgba   []byte
 	vw, vh int
 
-	paused  bool
 	rate    int
 	overlay bool
 	titleAt time.Time
 
-	mu       sync.Mutex
-	status   string
-	statusAt time.Time
-	finished bool
-	taskErr  error
-	ended    bool
+	mu          sync.Mutex
+	state       windowState
+	taskErr     error
+	status      string
+	statusAt    time.Time
+	paused      bool
+	pauseDirty  bool
+	wantRate    float64
+	rateDirty   bool
+	wantSeek    time.Duration
+	seekPending bool
+	ctrlClosed  bool
 }
 
 func newGame(ctx context.Context, w *Window, task goav.Task, title string, width, height int, notice string, done <-chan error) *game {
-	g := &game{ctx: ctx, w: w, task: task, title: title, done: done, controls: make(chan func(), 16), rate: 3}
+	g := &game{ctx: ctx, w: w, task: task, title: title, done: done, ctrlWake: make(chan struct{}, 1), rate: 3}
 	if width > 0 && height > 0 {
 		ebiten.SetWindowSize(width, height)
 		g.sized = true
@@ -60,23 +73,19 @@ func newGame(ctx context.Context, w *Window, task goav.Task, title string, width
 	if notice != "" {
 		g.setStatus(notice)
 	}
-	go func() {
-		for fn := range g.controls {
-			fn()
-		}
-	}()
+	go g.runControls()
 	return g
 }
 
 func runWindow(g *game) error {
-	defer close(g.controls)
+	defer g.stopControls()
 	return ebiten.RunGameWithOptions(g, nil)
 }
 
 func (g *game) result() (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.finished, g.taskErr
+	return g.state == windowEnded, g.taskErr
 }
 
 func (g *game) setStatus(s string) {
@@ -85,28 +94,108 @@ func (g *game) setStatus(s string) {
 	g.mu.Unlock()
 }
 
-// control queues fn behind earlier controls without blocking the frame.
-func (g *game) control(fn func()) {
+func (g *game) wakeControls() {
 	select {
-	case g.controls <- fn:
+	case g.ctrlWake <- struct{}{}:
 	default:
-		g.setStatus("busy: control dropped")
 	}
 }
 
+func (g *game) stopControls() {
+	g.mu.Lock()
+	g.ctrlClosed = true
+	g.mu.Unlock()
+	g.wakeControls()
+}
+
+// runControls applies pending pause, rate, and seek intents off the render
+// loop, coalescing bursts so rapid input never drops or desyncs paused state.
+func (g *game) runControls() {
+	for range g.ctrlWake {
+		for {
+			g.mu.Lock()
+			if g.ctrlClosed {
+				g.mu.Unlock()
+				return
+			}
+			switch {
+			case g.pauseDirty:
+				paused := g.paused
+				g.pauseDirty = false
+				g.mu.Unlock()
+				g.applyPause(paused)
+			case g.rateDirty:
+				rate := g.wantRate
+				g.rateDirty = false
+				g.mu.Unlock()
+				g.applyRate(rate)
+			case g.seekPending:
+				target := g.wantSeek
+				paused := g.paused
+				g.seekPending = false
+				g.mu.Unlock()
+				g.applySeek(target, paused)
+			default:
+				g.mu.Unlock()
+				goto wait
+			}
+		}
+	wait:
+	}
+}
+
+func (g *game) applyPause(paused bool) {
+	op, verb := g.task.Resume, "resume"
+	if paused {
+		op, verb = g.task.Pause, "pause"
+	}
+	if err := op(g.ctx); err != nil {
+		g.setStatus(fmt.Sprintf("%s held by backpressure: %v", verb, err))
+		return
+	}
+	g.setStatus(verb)
+}
+
+func (g *game) applyRate(r float64) {
+	ctrl, err := control.Rate(r)
+	if err == nil {
+		err = g.task.Control(g.ctx, ctrl)
+	}
+	// The engine consumes at the new rate either way: on a free-running
+	// task that alone sets the pace through backpressure.
+	g.w.engine.SetRate(r)
+	if err != nil {
+		g.setStatus(fmt.Sprintf("rate %gx (task: %v)", r, err))
+		return
+	}
+	g.setStatus(fmt.Sprintf("rate %gx", r))
+}
+
+func (g *game) applySeek(target time.Duration, paused bool) {
+	if err := g.w.engine.Seek(g.ctx, g.task, target, paused); err != nil {
+		g.setStatus(fmt.Sprintf("seek: %v", err))
+		return
+	}
+	g.setStatus("seek " + clock(target))
+}
+
 func (g *game) Update() error {
+	var ended bool
 	select {
 	case err := <-g.done:
 		g.mu.Lock()
-		g.finished, g.taskErr = true, err
+		g.state, g.taskErr = windowEnded, err
 		g.mu.Unlock()
-		g.ended = true
 		if err != nil {
 			return ebiten.Termination
 		}
+		ended = true
 	default:
+		g.mu.Lock()
+		ended = g.state == windowEnded
+		g.mu.Unlock()
 	}
-	if g.ended && g.w.engine.Drained() {
+	if ended && g.w.engine.Drained() {
 		return ebiten.Termination
 	}
 	if ebiten.IsWindowBeingClosed() || inpututil.IsKeyJustPressed(ebiten.KeyQ) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
@@ -116,8 +205,11 @@ func (g *game) Update() error {
 	if time.Since(g.titleAt) >= 250*time.Millisecond {
 		g.titleAt = time.Now()
 		s := g.w.Stats()
+		g.mu.Lock()
+		paused := g.paused
+		g.mu.Unlock()
 		state := ""
-		if g.paused {
+		if paused {
 			state = "  paused"
 		}
 		ebiten.SetWindowTitle(fmt.Sprintf("%s  %s  %gx  dropped %d%s", g.title, clock(s.Position), rates[g.rate], s.Dropped, state))
@@ -126,26 +218,9 @@ func (g *game) Update() error {
 }
 
 func (g *game) keys() {
-	e, task := g.w.engine, g.task
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
-		g.paused = !g.paused
-		paused := g.paused
-		// The engine pauses at once (the speaker goes silent, the picture
-		// holds); the task timeline follows so the pacer stops reading. A
-		// free-running task refuses, and backpressure stalls it instead.
-		e.SetPaused(paused)
-		g.control(func() {
-			op, verb := task.Resume, "resume"
-			if paused {
-				op, verb = task.Pause, "pause"
-			}
-			if err := op(g.ctx); err != nil {
-				g.setStatus(fmt.Sprintf("%s held by backpressure: %v", verb, err))
-				return
-			}
-			g.setStatus(verb)
-		})
+		g.togglePause()
 	case inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft):
 		g.seek(-5 * time.Second)
 	case inpututil.IsKeyJustPressed(ebiten.KeyArrowRight):
@@ -167,35 +242,38 @@ func (g *game) keys() {
 	}
 }
 
+func (g *game) togglePause() {
+	g.mu.Lock()
+	g.paused = !g.paused
+	paused := g.paused
+	g.pauseDirty = true
+	g.mu.Unlock()
+	// The engine pauses at once (the speaker goes silent, the picture
+	// holds); the task timeline follows so the pacer stops reading. A
+	// free-running task refuses, and backpressure stalls it instead.
+	g.w.engine.SetPaused(paused)
+	g.wakeControls()
+}
+
 func (g *game) seek(delta time.Duration) {
-	target := max(g.w.engine.Stats().Position+delta, 0)
-	e, task, paused := g.w.engine, g.task, g.paused
-	g.control(func() {
-		if err := e.Seek(g.ctx, task, target, paused); err != nil {
-			g.setStatus(fmt.Sprintf("seek: %v", err))
-			return
-		}
-		g.setStatus("seek " + clock(target))
-	})
+	pos := g.w.engine.Stats().Position
+	g.mu.Lock()
+	if g.seekPending {
+		pos = g.wantSeek
+	}
+	g.wantSeek = max(pos+delta, 0)
+	g.seekPending = true
+	g.mu.Unlock()
+	g.wakeControls()
 }
 
 func (g *game) setRate() {
 	r := rates[g.rate]
-	e, task := g.w.engine, g.task
-	g.control(func() {
-		ctrl, err := control.Rate(r)
-		if err == nil {
-			err = task.Control(g.ctx, ctrl)
-		}
-		// The engine consumes at the new rate either way: on a free-running
-		// task that alone sets the pace through backpressure.
-		e.SetRate(r)
-		if err != nil {
-			g.setStatus(fmt.Sprintf("rate %gx (task: %v)", r, err))
-			return
-		}
-		g.setStatus(fmt.Sprintf("rate %gx", r))
-	})
+	g.mu.Lock()
+	g.wantRate = r
+	g.rateDirty = true
+	g.mu.Unlock()
+	g.wakeControls()
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
@@ -233,14 +311,14 @@ func (g *game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(g.image, op)
 	}
 	g.mu.Lock()
-	status, age := g.status, time.Since(g.statusAt)
+	status, age, paused := g.status, time.Since(g.statusAt), g.paused
 	g.mu.Unlock()
-	if g.overlay || g.paused || age < 2*time.Second {
+	if g.overlay || paused || age < 2*time.Second {
 		s := g.w.Stats()
 		text := fmt.Sprintf("%s  %gx\nshown %d  dropped %d  underruns %d\nA/V %+.1fms (max %.1fms)",
 			clock(s.Position), rates[g.rate], s.Presented, s.Dropped, s.Underruns,
 			float64(s.AVOffset)/float64(time.Millisecond), float64(s.MaxAVOffset)/float64(time.Millisecond))
-		if g.paused {
+		if paused {
 			text += "\npaused"
 		}
 		if status != "" && age < 4*time.Second {

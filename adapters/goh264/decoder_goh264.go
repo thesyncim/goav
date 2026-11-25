@@ -37,6 +37,15 @@ func (DecoderFactory) NewDecoder(ctx context.Context, config codec.DecodeConfig)
 	return decoder, nil
 }
 
+type h264State uint8
+
+const (
+	h264Unopened h264State = iota
+	h264Open
+	h264Dropping
+	h264Closed
+)
+
 type Decoder struct {
 	decoder          *goh264lib.Decoder
 	stream           av.Stream
@@ -44,8 +53,7 @@ type Decoder struct {
 	videoMeta        []av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
-	dropUntilSync    bool
-	closed           bool
+	state            h264State
 	// pending holds the timing of each packet fed to the backend whose
 	// picture has not come out yet, in arrival order. See popTiming.
 	pending []frameTiming
@@ -71,7 +79,11 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	d.stream = normalizeStream(config.Stream)
+	stream := normalizeStream(config.Stream)
+	if err := d.resetDecoder(stream.Codec.ExtraData.Bytes); err != nil {
+		return err
+	}
+	d.stream = stream
 	d.video = av.VideoFrame{
 		Width:       d.stream.Codec.Width,
 		Height:      d.stream.Codec.Height,
@@ -79,12 +91,11 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	}
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
-	d.dropUntilSync = false
-	d.closed = false
+	d.state = h264Open
 	if cap(d.pending) == 0 {
 		d.pending = make([]frameTiming, 0, maxPendingTimings)
 	}
-	return d.resetDecoder(d.stream.Codec.ExtraData.Bytes)
+	return nil
 }
 
 func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.DecodeResult) error {
@@ -94,30 +105,30 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	switch d.state {
+	case h264Closed:
 		return codec.ErrClosed
-	}
-	if d.decoder == nil {
+	case h264Unopened:
 		return codec.ErrUnsupportedFormat
 	}
 	if pkt == nil {
 		return d.appendKeyframeRequest(out, "h264 packet loss")
 	}
 	if pkt.LossBefore || pkt.Discontinuous {
-		d.dropUntilSync = true
+		d.enterDropping()
 		if err := d.appendKeyframeRequest(out, "h264 discontinuity"); err != nil {
 			return err
 		}
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
-		d.dropUntilSync = true
+		d.enterDropping()
 		return d.appendKeyframeRequest(out, "h264 corrupt packet")
 	}
-	if d.dropUntilSync && !pkt.Keyframe {
+	if d.state == h264Dropping && !pkt.Keyframe {
 		return nil
 	}
 	if pkt.Keyframe {
-		d.dropUntilSync = false
+		d.state = h264Open
 	}
 
 	// An empty packet carries no picture (the backend reads it as a flush).
@@ -139,10 +150,10 @@ func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error 
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.state == h264Closed {
 		return codec.ErrClosed
 	}
-	if d.decoder == nil {
+	if d.state == h264Unopened {
 		return nil
 	}
 	frames, err := d.decoder.FlushDelayedFrames()
@@ -161,37 +172,50 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if d.closed {
+	switch d.state {
+	case h264Closed:
 		return codec.ErrClosed
+	case h264Unopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
-		d.dropUntilSync = true
+		d.enterDropping()
 	case av.EventCodecChanged, av.EventDiscontinuity:
+		if err := d.resetDecoder(eventExtraData(event)); err != nil {
+			return err
+		}
 		d.applyEventStream(event)
-		d.dropUntilSync = true
-		return d.resetDecoder(eventExtraData(event))
+		d.enterDropping()
 	}
 	return nil
 }
 
 func (d *Decoder) Close() error {
-	if d.closed {
+	if d.state == h264Closed {
 		return nil
 	}
-	d.closed = true
+	d.state = h264Closed
 	d.decoder = nil
+	d.pending = d.pending[:0]
 	return nil
 }
 
-func (d *Decoder) resetDecoder(extra []byte) error {
-	d.decoder = goh264lib.NewDecoder()
+func (d *Decoder) enterDropping() {
+	d.state = h264Dropping
 	d.pending = d.pending[:0]
-	if len(extra) == 0 {
-		return nil
+}
+
+func (d *Decoder) resetDecoder(extra []byte) error {
+	dec := goh264lib.NewDecoder()
+	if len(extra) != 0 {
+		if _, err := dec.DecodeFrames(extra); err != nil {
+			return err
+		}
 	}
-	_, err := d.decoder.DecodeFrames(extra)
-	return err
+	d.decoder = dec
+	d.pending = d.pending[:0]
+	return nil
 }
 
 func (d *Decoder) applyEventStream(event *av.Event) {

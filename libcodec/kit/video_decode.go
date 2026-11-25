@@ -12,23 +12,32 @@ import (
 	"github.com/thesyncim/goav/codec"
 )
 
+type videoDecoderState uint8
+
+const (
+	vdecUnopened videoDecoderState = iota
+	vdecAwaitingParamSets
+	vdecRunning
+	vdecDropping
+	vdecHealing
+	vdecClosed
+)
+
 type videoDecoder struct {
-	c        *Codec
-	desc     codec.Descriptor
-	stream   av.Stream
-	config   VideoConfig
-	session  VideoDecoder
-	out      *codec.DecodeResult
-	pending  timings
-	sets     [][]byte
-	fedSets  bool
-	unit     []byte
-	video    *av.VideoFrame
-	request  bool
-	dropping bool
-	healing  bool // a damaged unit asked for the keyframe that heals it
-	closed   bool
-	emitFn   func(*Picture) error
+	c       *Codec
+	desc    codec.Descriptor
+	stream  av.Stream
+	config  VideoConfig
+	session VideoDecoder
+	out     *codec.DecodeResult
+	pending timings
+	sets    [][]byte
+	fedSets bool
+	unit    []byte
+	video   *av.VideoFrame
+	request bool
+	state   videoDecoderState
+	emitFn  func(*Picture) error
 	// held are decoded pictures a Reorder session returned early, sorted
 	// by PTS; decoded is the decode time of the last unit sent.
 	held    []av.Frame
@@ -48,14 +57,19 @@ func (d *videoDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if d.session != nil {
-		_ = d.Close()
-	}
-	d.closed = false
 	stream := config.Stream
 	if !stream.TimeBase.Valid() {
 		stream.TimeBase = av.TimeBase{Num: 1, Den: 90000}
 	}
+	var sets [][]byte
+	if nalFramed(d.c.ID, d.c.Bitstream) {
+		sets, err = configParameterSets(d.c.ID, stream.Codec.ExtraData.Bytes)
+		if err != nil {
+			return fmt.Errorf("%w: %s %s: extradata: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
+		}
+	}
+	_ = d.discard()
+	d.sets = nil
 	d.stream = stream
 	d.request = config.Resilience.RequestKeyframes
 	d.config = VideoConfig{
@@ -68,17 +82,22 @@ func (d *videoDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	d.emitFn = d.emitPicture
 	if !nalFramed(d.c.ID, d.c.Bitstream) {
 		d.config.ExtraData = slices.Clone(stream.Codec.ExtraData.Bytes)
-		return d.start()
-	}
-	sets, err := configParameterSets(d.c.ID, stream.Codec.ExtraData.Bytes)
-	if err != nil {
-		return fmt.Errorf("%w: %s %s: extradata: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
+		if err := d.start(); err != nil {
+			return err
+		}
+		d.state = vdecRunning
+		return nil
 	}
 	d.sets = cloneUnits(sets)
 	if d.c.Bitstream == AnnexB || len(d.sets) != 0 {
-		return d.start()
+		if err := d.start(); err != nil {
+			return err
+		}
+		d.state = vdecRunning
+		return nil
 	}
 	// An AVCC session opens on the first parameter sets the stream carries.
+	d.state = vdecAwaitingParamSets
 	return nil
 }
 
@@ -113,7 +132,7 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.state == vdecUnopened || d.state == vdecClosed {
 		return codec.ErrClosed
 	}
 	if packet == nil {
@@ -125,7 +144,7 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 		}
 	}
 	if packet.LossBefore || packet.Discontinuous || (packet.Corrupt && !packet.Keyframe) {
-		d.dropping = true
+		d.state = vdecDropping
 		if err := d.requestKeyframe(out, "discontinuity"); err != nil {
 			return err
 		}
@@ -133,6 +152,9 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	data, keyframe, err := d.accessUnit(packet, out)
 	if err != nil || data == nil {
 		return err
+	}
+	if d.session == nil {
+		return codec.ErrClosed
 	}
 	base := d.stream.TimeBase
 	pts := timeIn(packet.PTS, base)
@@ -152,13 +174,13 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 		// The library dropped the unit and decodes on. The units that
 		// reference it may be dropped too, until a keyframe heals the
 		// stream: ask for one once.
-		if d.healing {
+		if d.state == vdecHealing {
 			return nil
 		}
-		d.healing = true
+		d.state = vdecHealing
 		return d.requestKeyframe(out, "damaged unit")
 	case err == nil && keyframe:
-		d.healing = false
+		d.state = vdecRunning
 	}
 	return err
 }
@@ -231,7 +253,7 @@ func (d *videoDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) e
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.state == vdecUnopened || d.state == vdecClosed {
 		return codec.ErrClosed
 	}
 	if d.session == nil {
@@ -247,46 +269,52 @@ func (d *videoDecoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if d.closed {
+	if d.state == vdecUnopened || d.state == vdecClosed {
 		return codec.ErrClosed
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
-		d.dropping = true
+		d.state = vdecDropping
 	case av.EventCodecChanged:
+		next := d.stream
+		if event.Stream != nil {
+			next = *event.Stream
+		}
+		if event.StreamID != "" {
+			next.ID = event.StreamID
+		}
+		if event.Epoch != 0 {
+			next.Epoch = event.Epoch
+		}
+		if event.Codec != nil {
+			next.Codec = *event.Codec
+		}
+		if next.Codec.ID != "" && next.Codec.ID != d.c.ID {
+			return codec.ErrUnsupportedCodecSwitch
+		}
+		if !next.TimeBase.Valid() {
+			next.TimeBase = d.config.TimeBase
+		}
+		var sets [][]byte
+		if nalFramed(d.c.ID, d.c.Bitstream) {
+			var err error
+			sets, err = configParameterSets(d.c.ID, next.Codec.ExtraData.Bytes)
+			if err != nil {
+				return fmt.Errorf("%w: extradata: %v", codec.ErrUnsupportedFormat, err)
+			}
+		}
 		// A configuration event is a boundary: discard old delayed output
 		// before the stage forwards the new configuration downstream.
 		if err := d.discard(); err != nil {
 			return err
 		}
-		if event.Stream != nil {
-			d.stream = *event.Stream
-		}
-		if event.StreamID != "" {
-			d.stream.ID = event.StreamID
-		}
-		if event.Epoch != 0 {
-			d.stream.Epoch = event.Epoch
-		}
-		if event.Codec != nil {
-			d.stream.Codec = *event.Codec
-		}
-		if d.stream.Codec.ID != "" && d.stream.Codec.ID != d.c.ID {
-			return codec.ErrUnsupportedCodecSwitch
-		}
-		if !d.stream.TimeBase.Valid() {
-			d.stream.TimeBase = d.config.TimeBase
-		}
-		d.config.Width = d.stream.Codec.Width
-		d.config.Height = d.stream.Codec.Height
-		d.config.TimeBase = d.stream.TimeBase
-		d.config.ExtraData = slices.Clone(d.stream.Codec.ExtraData.Bytes)
+		d.stream = next
+		d.config.Width = next.Codec.Width
+		d.config.Height = next.Codec.Height
+		d.config.TimeBase = next.TimeBase
+		d.config.ExtraData = slices.Clone(next.Codec.ExtraData.Bytes)
 		d.sets = nil
-		if nalFramed(d.c.ID, d.c.Bitstream) {
-			sets, err := configParameterSets(d.c.ID, d.stream.Codec.ExtraData.Bytes)
-			if err != nil {
-				return fmt.Errorf("%w: extradata: %v", codec.ErrUnsupportedFormat, err)
-			}
+		if len(sets) != 0 {
 			d.sets = cloneUnits(sets)
 		}
 		return d.restart()
@@ -303,11 +331,12 @@ func releaseFrames(frames []av.Frame) {
 }
 
 func (d *videoDecoder) Close() error {
-	if d.closed {
+	if d.state == vdecClosed {
 		return nil
 	}
-	d.closed = true
-	return d.discard()
+	err := d.discard()
+	d.state = vdecClosed
+	return err
 }
 
 // discard releases both wrapper-owned pictures and backend reference state.
@@ -321,8 +350,7 @@ func (d *videoDecoder) discard() error {
 	d.video = nil
 	d.out = nil
 	d.fedSets = false
-	d.healing = false
-	d.dropping = true
+	d.state = vdecUnopened
 	if d.session == nil {
 		return nil
 	}
@@ -340,9 +368,16 @@ func (d *videoDecoder) reset() error {
 
 func (d *videoDecoder) restart() error {
 	if !nalFramed(d.c.ID, d.c.Bitstream) || d.c.Bitstream == AnnexB || len(d.sets) != 0 {
-		return d.start()
+		if err := d.start(); err != nil {
+			d.state = vdecUnopened
+			return err
+		}
+		d.state = vdecDropping
+		return nil
 	}
-	return nil // AVCC waits for the replacement stream's parameter sets.
+	// AVCC waits for the replacement stream's parameter sets and keyframe.
+	d.state = vdecDropping
+	return nil
 }
 
 // accessUnit prepares a packet for the session: as it is for a raw
@@ -351,10 +386,15 @@ func (d *videoDecoder) restart() error {
 // returns nil data for a packet dropped while waiting for a keyframe.
 func (d *videoDecoder) accessUnit(packet *av.Packet, out *codec.DecodeResult) ([]byte, bool, error) {
 	if !nalFramed(d.c.ID, d.c.Bitstream) {
-		if d.dropping && !packet.Keyframe {
-			return nil, false, nil
+		if d.session == nil {
+			return nil, false, codec.ErrClosed
 		}
-		d.dropping = false
+		if d.state == vdecDropping {
+			if !packet.Keyframe {
+				return nil, false, nil
+			}
+			d.state = vdecRunning
+		}
 		return packet.Payload.Bytes, packet.Keyframe, nil
 	}
 	units, err := accessUnit(packet.Payload.Bytes)
@@ -362,10 +402,9 @@ func (d *videoDecoder) accessUnit(packet *av.Packet, out *codec.DecodeResult) ([
 		return nil, false, fmt.Errorf("%w: %s %s: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
 	}
 	keyframe := packet.Keyframe || slices.ContainsFunc(units, func(u []byte) bool { return randomAccess(d.c.ID, u) })
-	if d.dropping && !keyframe {
+	if d.state == vdecDropping && !keyframe {
 		return nil, false, nil
 	}
-	d.dropping = false
 	if sets := parameterSetsOf(d.c.ID, units); len(sets) != 0 && !sameUnits(sets, d.sets) {
 		if d.c.Bitstream == AVCC {
 			// New parameter sets need a session built for them.
@@ -381,8 +420,12 @@ func (d *videoDecoder) accessUnit(packet *av.Packet, out *codec.DecodeResult) ([
 			return nil, false, d.requestKeyframe(out, "no parameter sets yet")
 		}
 		if err := d.start(); err != nil {
+			d.state = vdecUnopened
 			return nil, false, err
 		}
+	}
+	if d.state == vdecDropping || d.state == vdecAwaitingParamSets {
+		d.state = vdecRunning
 	}
 	d.unit = d.unit[:0]
 	if d.c.Bitstream == AVCC {

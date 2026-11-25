@@ -201,7 +201,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 		s.mu.Lock()
 		ownClose := s.closed && parent.Err() == nil
 		s.mu.Unlock()
-		if ownClose && result == context.Canceled {
+		if ownClose && errors.Is(result, context.Canceled) {
 			result = pipeline.ErrClosed
 		}
 		if native.close != nil {
@@ -241,7 +241,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 				havePTS = true
 			}
 			pts := frame.PTS.Value
-			if pts < firstPTS || (havePTS && pts < lastPTS) || (firstPTS < 0 && pts > int64(^uint64(0)>>1)+firstPTS) {
+			if pts < firstPTS || pts < lastPTS || (firstPTS < 0 && pts > int64(^uint64(0)>>1)+firstPTS) {
 				releaseFrame(frame)
 				return errors.New("cameraav: invalid or regressing capture timestamp")
 			}

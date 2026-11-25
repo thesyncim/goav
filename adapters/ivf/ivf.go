@@ -27,17 +27,34 @@ type DemuxerFactory struct{}
 
 type MuxerFactory struct{}
 
+type ivfDemuxState uint8
+
+const (
+	ivfDemuxUnopened ivfDemuxState = iota
+	ivfDemuxOpen
+	ivfDemuxHeaderPending
+	ivfDemuxClosed
+)
+
+type ivfMuxState uint8
+
+const (
+	ivfMuxUnopened ivfMuxState = iota
+	ivfMuxOpen
+	ivfMuxHeaderWritten
+	ivfMuxClosed
+)
+
 type Demuxer struct {
 	reader      io.Reader
 	stream      av.Stream
 	streams     [1]av.Stream
 	frameHeader [frameHeaderSize]byte
-	// headerPending keeps a frame header that ReadInto consumed but could not
-	// deliver (ErrPayloadTooSmall), so a retry with a larger buffer reads the
-	// same frame instead of parsing payload bytes as the next header.
-	headerPending bool
-	opened        bool
-	closed        bool
+	// state tracks lifecycle and whether frameHeader holds a consumed header
+	// that ReadInto could not deliver (ErrPayloadTooSmall), so a retry with a
+	// larger buffer reads the same frame instead of parsing payload bytes as
+	// the next header.
+	state ivfDemuxState
 }
 
 type Muxer struct {
@@ -47,10 +64,8 @@ type Muxer struct {
 	headerOffset    int64
 	frameCount      uint32
 	frameHeader     [frameHeaderSize]byte
-	opened          bool
-	headerWritten   bool
 	patchFrameCount bool
-	closed          bool
+	state           ivfMuxState
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -143,13 +158,12 @@ func (d *Demuxer) Open(ctx context.Context, input format.Input, _ format.OpenOpt
 	d.reader = input.Reader
 	d.stream = stream
 	d.streams[0] = stream
-	d.opened = true
-	d.closed = false
+	d.state = ivfDemuxOpen
 	return nil
 }
 
 func (d *Demuxer) Streams() []av.Stream {
-	if !d.opened {
+	if d.state != ivfDemuxOpen && d.state != ivfDemuxHeaderPending {
 		return nil
 	}
 	return d.streams[:]
@@ -162,27 +176,27 @@ func (d *Demuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {
 	if out == nil || out.Packet == nil {
 		return format.ErrNilPacket
 	}
-	if d.closed {
+	switch d.state {
+	case ivfDemuxClosed:
 		return io.EOF
-	}
-	if d.reader == nil {
+	case ivfDemuxUnopened:
 		return ErrNilReader
 	}
 	out.PacketReady = false
 	out.Packet.Reset()
 
 	header := d.frameHeader[:]
-	if !d.headerPending {
+	if d.state != ivfDemuxHeaderPending {
 		if _, err := io.ReadFull(d.reader, header); err != nil {
 			return err
 		}
 	}
 	size := binary.LittleEndian.Uint32(header[:4])
 	if uint64(size) > uint64(cap(out.Packet.Payload.Bytes)) {
-		d.headerPending = true
+		d.state = ivfDemuxHeaderPending
 		return ErrPayloadTooSmall
 	}
-	d.headerPending = false
+	d.state = ivfDemuxOpen
 	payloadSize := int(size)
 
 	packet := out.Packet
@@ -201,7 +215,7 @@ func (d *Demuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {
 }
 
 func (d *Demuxer) Close() error {
-	d.closed = true
+	d.state = ivfDemuxClosed
 	d.reader = nil
 	return nil
 }
@@ -226,10 +240,8 @@ func (m *Muxer) Open(ctx context.Context, output format.Output, streams []av.Str
 	m.streamID = stream.ID
 	m.headerOffset = 0
 	m.frameCount = 0
-	m.opened = true
-	m.headerWritten = false
 	m.patchFrameCount = false
-	m.closed = false
+	m.state = ivfMuxOpen
 	return nil
 }
 
@@ -240,10 +252,10 @@ func (m *Muxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteRes
 	if packet == nil {
 		return format.ErrNilPacket
 	}
-	if m.closed {
+	switch m.state {
+	case ivfMuxClosed:
 		return io.ErrClosedPipe
-	}
-	if m.writer == nil {
+	case ivfMuxUnopened:
 		return ErrNilWriter
 	}
 	if m.streamID != "" && packet.StreamID != "" && packet.StreamID != m.streamID {
@@ -255,7 +267,7 @@ func (m *Muxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteRes
 	if m.frameCount == math.MaxUint32 {
 		return ErrFrameCountTooLarge
 	}
-	if !m.headerWritten {
+	if m.state == ivfMuxOpen {
 		m.stream.TimeBase = ivfTimeBase(m.stream, packet)
 		if err := m.writeHeader(); err != nil {
 			return err
@@ -276,23 +288,24 @@ func (m *Muxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteRes
 }
 
 func (m *Muxer) Close() error {
-	if m.closed {
+	if m.state == ivfMuxClosed {
 		return nil
 	}
-	if m.writer != nil && !m.headerWritten {
+	var err error
+	if m.state == ivfMuxOpen {
 		m.stream.TimeBase = streamTimeBase(m.stream)
-		if err := m.writeHeader(); err != nil {
-			return err
-		}
+		err = m.writeHeader()
 	}
-	err := m.patchFrameCountHeader()
-	m.closed = true
+	if err == nil && m.state == ivfMuxHeaderWritten {
+		err = m.patchFrameCountHeader()
+	}
+	m.state = ivfMuxClosed
 	m.writer = nil
 	return err
 }
 
 func (m *Muxer) writeHeader() error {
-	if m.headerWritten {
+	if m.state == ivfMuxHeaderWritten {
 		return nil
 	}
 	if seeker, ok := m.writer.(io.Seeker); ok {
@@ -306,12 +319,12 @@ func (m *Muxer) writeHeader() error {
 	if err := writeFull(m.writer, header[:]); err != nil {
 		return err
 	}
-	m.headerWritten = true
+	m.state = ivfMuxHeaderWritten
 	return nil
 }
 
 func (m *Muxer) patchFrameCountHeader() error {
-	if !m.patchFrameCount || !m.headerWritten || m.writer == nil {
+	if !m.patchFrameCount || m.state != ivfMuxHeaderWritten || m.writer == nil {
 		return nil
 	}
 	seeker, ok := m.writer.(io.Seeker)

@@ -555,7 +555,7 @@ func TestSeekCutsTheOldTimelinePerKind(t *testing.T) {
 	if len(d.e.video) != 3 || d.e.queuedLocked() == 0 {
 		t.Fatal("the second branch's discontinuity flushed, or its fresh audio was cut")
 	}
-	if d.e.seeking {
+	if d.e.seek.mode != seekIdle {
 		t.Fatal("the cut outlived both kinds landing")
 	}
 
@@ -625,5 +625,180 @@ func TestPausedSeekWaitsAndPreviews(t *testing.T) {
 	d.pushVideo(5200*time.Millisecond, 5240*time.Millisecond, 40*time.Millisecond)
 	if len(d.e.video) == 0 {
 		t.Fatal("the cut held past its wait")
+	}
+}
+
+// Bug 1: resuming playback while in seekCutting must refresh seekAt so the
+// paused duration is not deducted from seekBudget on the first post-unpause frame.
+func TestPausedSeekResumeDoesNotDeductPausedTime(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 500*time.Millisecond)
+	d.pushVideo(0, 300*time.Millisecond, 40*time.Millisecond)
+	d.step(100 * time.Millisecond)
+
+	d.e.SetPaused(true)
+	d.e.BeginSeek()
+	// Stay paused far longer than seekWait with no frames arriving.
+	d.step(3 * seekWait)
+
+	// Unpause and advance slightly (well within seekWait).
+	d.e.SetPaused(false)
+	d.step(50 * time.Millisecond)
+
+	// Stale in-flight video from the old timeline must still be cut.
+	d.pushVideo(300*time.Millisecond, 380*time.Millisecond, 40*time.Millisecond)
+	if len(d.e.video) != 0 {
+		t.Fatalf("stale video accepted after paused-seek resume: %d queued", len(d.e.video))
+	}
+	// New position lands and exits seekCutting once both kinds land.
+	d.pushVideo(5*time.Second, 5040*time.Millisecond, 40*time.Millisecond)
+	d.pushAudio(5*time.Second, 5040*time.Millisecond)
+	if len(d.e.video) != 1 || d.e.seek.mode != seekIdle {
+		t.Fatalf("after landing: video=%d seek.mode=%d, want 1 and seekIdle", len(d.e.video), d.e.seek.mode)
+	}
+}
+
+// Bug 2: flushLocked clears engineEnded -> engineActive (while preserving
+// engineClosed), restoring preroll, underrun accounting, and Drained().
+func TestFlushAfterEndRestoresActiveLifecycle(t *testing.T) {
+	d := newFakeDevice(t, 100*time.Millisecond)
+	d.pushAudio(0, 200*time.Millisecond)
+	d.e.End()
+	d.step(300 * time.Millisecond)
+	if !d.e.Drained() {
+		t.Fatal("expected engine to be drained after End")
+	}
+
+	// Seeking/flushing after End transitions back to engineActive.
+	d.e.Flush()
+	if d.e.phase != engineActive {
+		t.Fatalf("phase after Flush = %d, want engineActive", d.e.phase)
+	}
+	if d.e.Drained() {
+		t.Fatal("Drained() remained true after Flush")
+	}
+
+	// Preroll is restored: pushing less than latency must not start playback.
+	d.pushAudio(0, 60*time.Millisecond)
+	d.step(50 * time.Millisecond)
+	if _, ok := d.master(); ok {
+		t.Fatal("master started with less than latency after Flush from End")
+	}
+
+	// Underrun accounting is restored: running dry after playback counts.
+	d.pushAudio(60*time.Millisecond, 200*time.Millisecond)
+	d.step(300 * time.Millisecond)
+	if got := d.e.Stats().Underruns; got != 1 {
+		t.Fatalf("underruns = %d after Flush from End, want 1", got)
+	}
+
+	// Close is terminal: Flush must not resurrect engineClosed.
+	d.e.Close()
+	d.e.Flush()
+	if d.e.phase != engineClosed {
+		t.Fatalf("phase after Close+Flush = %d, want engineClosed", d.e.phase)
+	}
+}
+
+// Bug 3: BeginSeek before any media arrived stays seekIdle instead of getting
+// stuck in seekCutting while paused.
+func TestBeginSeekBeforeAnyMediaStaysIdle(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.e.SetPaused(true)
+	d.e.BeginSeek()
+	if d.e.seek.mode != seekIdle {
+		t.Fatalf("seek.mode = %d after BeginSeek with no prior media, want seekIdle", d.e.seek.mode)
+	}
+	d.pushVideo(0, 40*time.Millisecond, 40*time.Millisecond)
+	if len(d.e.video) != 1 {
+		t.Fatalf("first video frame after empty BeginSeek was dropped: %d queued", len(d.e.video))
+	}
+}
+
+// Bug 4: stale or post-close audio frames must not set sawAudio and poison
+// video-only external clock fallback.
+func TestStaleOrPostCloseAudioDoesNotPoisonVideoOnlyClock(t *testing.T) {
+	t.Run("post-close", func(t *testing.T) {
+		d := newFakeDevice(t, 50*time.Millisecond)
+		d.e.Close()
+		if err := d.e.PushAudio(context.Background(), audioFrame(0, OutputRate, 2, 960, 100)); err != nil {
+			t.Fatal(err)
+		}
+		if d.e.sawAudio {
+			t.Fatal("sawAudio became true on post-close PushAudio")
+		}
+	})
+
+	t.Run("stale-audio-cut", func(t *testing.T) {
+		d := newFakeDevice(t, 100*time.Millisecond)
+		// Simulate a seek cut on audio before any valid audio was accepted.
+		d.e.mu.Lock()
+		d.e.seek.begin([kinds]time.Duration{kindAudio: 0}, [kinds]bool{kindAudio: true}, d.e.Clock().Now())
+		d.e.mu.Unlock()
+		if err := d.e.PushAudio(context.Background(), audioFrame(20*time.Millisecond, OutputRate, 2, 960, 100)); err != nil {
+			t.Fatal(err)
+		}
+		if d.e.sawAudio {
+			t.Fatal("sawAudio became true on stale audio frame")
+		}
+		// Video-only external clock fallback must still work.
+		d.pushVideo(500*time.Millisecond, time.Second, 40*time.Millisecond)
+		d.step(110 * time.Millisecond)
+		if m, ok := d.master(); !ok || m < 500*time.Millisecond {
+			t.Fatalf("video-only master = %v %v, want >= 500ms", m, ok)
+		}
+	})
+}
+
+// Bug 5: EndSeek resets seekCutState completely, including cutting flags.
+func TestEndSeekResetsCuttingState(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 200*time.Millisecond)
+	d.pushVideo(0, 200*time.Millisecond, 40*time.Millisecond)
+	d.e.BeginSeek()
+	if d.e.seek.mode != seekCutting || d.e.seek.cutting == ([kinds]bool{}) {
+		t.Fatalf("expected seekCutting with active kinds, got %+v", d.e.seek)
+	}
+	d.e.EndSeek()
+	if d.e.seek != (seekCutState{}) {
+		t.Fatalf("EndSeek left non-zero seekCutState: %+v", d.e.seek)
+	}
+}
+
+func TestExtClockStates(t *testing.T) {
+	var c extClock
+	if c.state != extClockUnset {
+		t.Fatalf("zero extClock state = %d, want extClockUnset", c.state)
+	}
+	// Pause/reanchor on unset clock are no-ops and cannot produce running/paused.
+	c.setPaused(false, 100*time.Millisecond, 1)
+	c.reanchor(100*time.Millisecond, 1)
+	if c.state != extClockUnset {
+		t.Fatalf("unset clock mutated to state %d", c.state)
+	}
+	c.set(time.Second, 100*time.Millisecond, false)
+	if c.state != extClockRunning {
+		t.Fatalf("state = %d, want extClockRunning", c.state)
+	}
+	if got := c.now(300*time.Millisecond, 1); got != 1200*time.Millisecond {
+		t.Fatalf("now = %v, want 1.2s", got)
+	}
+	c.setPaused(true, 300*time.Millisecond, 1)
+	if c.state != extClockPaused {
+		t.Fatalf("state = %d, want extClockPaused", c.state)
+	}
+	if got := c.now(900*time.Millisecond, 1); got != 1200*time.Millisecond {
+		t.Fatalf("paused now = %v, want frozen 1.2s", got)
+	}
+	c.setPaused(false, 900*time.Millisecond, 1)
+	if c.state != extClockRunning {
+		t.Fatalf("state = %d, want extClockRunning", c.state)
+	}
+	if got := c.now(1100*time.Millisecond, 2); got != 1600*time.Millisecond {
+		t.Fatalf("resumed 2x now = %v, want 1.6s", got)
+	}
+	c.reset()
+	if c != (extClock{}) {
+		t.Fatalf("reset left non-zero extClock: %+v", c)
 	}
 }

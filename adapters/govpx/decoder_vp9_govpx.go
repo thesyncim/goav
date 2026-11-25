@@ -33,7 +33,7 @@ type VP9Decoder struct {
 	requestKeyframes bool
 	dropDamagedVideo bool
 	dropUntilSync    bool
-	closed           bool
+	state            vpxState
 }
 
 func (d *VP9Decoder) Descriptor() codec.Descriptor {
@@ -42,6 +42,9 @@ func (d *VP9Decoder) Descriptor() codec.Descriptor {
 
 func (d *VP9Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := d.resetDecoder(config.Resilience.AcceptLoss); err != nil {
 		return err
 	}
 	d.stream = normalizeVP9Stream(config.Stream)
@@ -53,8 +56,8 @@ func (d *VP9Decoder) Open(ctx context.Context, config codec.DecodeConfig) error 
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
 	d.dropUntilSync = true
-	d.closed = false
-	return d.resetDecoder(config.Resilience.AcceptLoss)
+	d.state = vpxOpen
+	return nil
 }
 
 func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.DecodeResult) error {
@@ -64,10 +67,10 @@ func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	switch d.state {
+	case vpxClosed:
 		return codec.ErrClosed
-	}
-	if d.decoder == nil {
+	case vpxUnopened:
 		return codec.ErrUnsupportedFormat
 	}
 	if pkt == nil {
@@ -111,7 +114,7 @@ func (d *VP9Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) err
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed {
+	if d.state == vpxClosed {
 		return codec.ErrClosed
 	}
 	return nil
@@ -124,8 +127,11 @@ func (d *VP9Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if event == nil {
 		return nil
 	}
-	if d.closed {
+	switch d.state {
+	case vpxClosed:
 		return codec.ErrClosed
+	case vpxUnopened:
+		return codec.ErrUnsupportedFormat
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
@@ -139,17 +145,18 @@ func (d *VP9Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 }
 
 func (d *VP9Decoder) Close() error {
-	if d.closed {
+	if d.state == vpxClosed {
 		return nil
 	}
-	d.closed = true
+	d.state = vpxClosed
 	if d.decoder == nil {
 		return nil
 	}
-	if err := d.decoder.Close(); err != nil && !errors.Is(err, govpxlib.ErrClosed) {
+	err := d.decoder.Close()
+	d.decoder = nil
+	if err != nil && !errors.Is(err, govpxlib.ErrClosed) {
 		return err
 	}
-	d.decoder = nil
 	return nil
 }
 
@@ -159,6 +166,9 @@ func (d *VP9Decoder) resetDecoder(acceptLoss bool) error {
 	})
 	if err != nil {
 		return mapGovpxError(err)
+	}
+	if d.decoder != nil {
+		_ = d.decoder.Close()
 	}
 	d.decoder = decoder
 	return nil
