@@ -549,10 +549,6 @@ func (w *runtimeAV1BitWriter) writeBool(value bool) {
 	w.writeBits(0, 1)
 }
 
-func (w *runtimeAV1BitWriter) bytes() []byte {
-	return w.buf[:(w.bit+7)>>3]
-}
-
 func (w *runtimeAV1BitWriter) trailingBits() []byte {
 	w.writeBits(1, 1)
 	for w.bit&7 != 0 {
