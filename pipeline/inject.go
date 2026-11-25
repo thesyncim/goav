@@ -3,16 +3,14 @@ package pipeline
 import "context"
 
 // NodeInjector is implemented by graphs that can deliver an out-of-band message
-// to a single named node in a running graph. It is an optional capability
-// discovered by type assertion (like NodePauser), so it does not widen the Graph
-// interface for every implementer. Direct graphs do not implement it: they have
-// no per-node serial worker to deliver on, so there is nothing to serialize an
-// injection against.
+// to a single named node in a running graph. Both the buffered and direct
+// runners implement it: buffered graphs enqueue onto the node's serial worker,
+// and direct graphs serialize delivery through the node's ownership gate.
 type NodeInjector interface {
-	// Inject delivers msg to the node named by ref, processed on that node's
-	// serial worker exactly like inbound traffic. It is safe to call concurrently
-	// with the running graph: the message rides the node's normal queue, so the
-	// node's Handle still observes one message at a time with no extra locking.
+	// Inject delivers msg to the node named by ref, serialized with inbound
+	// traffic on that node. It is safe to call concurrently with the running
+	// graph, so the node's Handle still observes one message at a time with no
+	// extra locking.
 	Inject(ctx context.Context, ref NodeRef, msg *Message) error
 }
 
@@ -65,6 +63,47 @@ func (g *bufferedRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) 
 		// A control silently swallowed by a full lossy queue is the worst outcome
 		// for a caller who believes the switch/keyframe landed — surface the shed
 		// as backpressure so the caller can retry.
+		return ErrBackpressure
+	}
+	return nil
+}
+
+// Inject delivers an out-of-band control message to a single node in a running
+// direct graph, serialized with media deliveries through the node's ownership
+// gate (handoff.go). Like bufferedRunner.Inject, it requires the graph to be
+// running and refuses nil messages, closed graphs, unknown nodes, and sources.
+func (g *directRunner) Inject(ctx context.Context, ref NodeRef, msg *Message) error {
+	if msg == nil {
+		return ErrNilMessage
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	g.mu.RLock()
+	if g.closed {
+		g.mu.RUnlock()
+		return ErrClosed
+	}
+	if !g.running.Load() {
+		g.mu.RUnlock()
+		return ErrDynamicGraphUnsupported
+	}
+	index, ok := g.index[ref.String()]
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+		g.mu.RUnlock()
+		return ErrUnknownNode
+	}
+	node := g.nodes[index]
+	if node.kind == nodeSource {
+		g.mu.RUnlock()
+		return ErrInvalidLink
+	}
+	g.mu.RUnlock()
+	delivered, err := g.deliver(ctx, nil, node, msg)
+	if err != nil {
+		return err
+	}
+	if !delivered {
 		return ErrBackpressure
 	}
 	return nil

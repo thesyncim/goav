@@ -3,34 +3,34 @@ package goav
 import (
 	"context"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 	runtime := runtimeForGraphExecution(gp.runtime)
-	// One shared timeline per task: the runtime clone carries it as the clock
-	// every lowering step threads to paced sources, so a task-wide rate change
-	// re-anchors all of them together.
+	// One shared timeline, QoS reporter, and control seam per task — kept on
+	// the per-build builder and finished task so the shared Runtime remains
+	// strictly immutable across concurrent builds and runs.
 	timeline := newTimeline(runtime.clock)
-	runtime = runtimeWithClock(runtime, timeline)
-	// The QoS reporter rides the same clone: lowering binds it into playout
-	// and sync gates next to the timeline, and the finished task attaches
-	// itself below so gate reports reach its Watch surface.
-	runtime.qos = newQoSReporter()
-	runtime.controls = &taskControls{}
-	gp = graphPlanWithRuntime(gp, runtime)
+	qos := newQoSReporter()
+	controls := &taskControls{}
 	if err := validateGraphPlanLowering(gp); err != nil {
 		return nil, err
 	}
-	service := &builder{runtime: runtime, requireRunOK: true}
 	config, err := gp.lowerer.graphConfig(gp)
 	if err != nil {
 		return nil, err
 	}
-	runtime = runtimeWithBuffer(runtime, config.Buffer)
-	gp = graphPlanWithRuntime(gp, runtime)
-	service.runtime = runtime
+	service := &builder{
+		runtime:      runtime,
+		clock:        timeline,
+		realtime:     config.Realtime,
+		buffer:       config.Buffer,
+		bufferSet:    true,
+		qos:          qos,
+		controls:     controls,
+		requireRunOK: true,
+	}
 	graph, err := pipeline.NewGraph(config)
 	if err != nil {
 		return nil, err
@@ -40,6 +40,11 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 		return nil, err
 	}
 	task := newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...)
+	task.realtime = config.Realtime
+	task.buffer = config.Buffer
+	task.bufferSet = true
+	task.qos = qos
+	task.controls = controls
 	task.isolated, err = task.installIsolation(gp.lowerer.isolation, service.destinationTxs, gp.work.Destinations, nil)
 	if err != nil {
 		_ = task.Close()
@@ -47,8 +52,8 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 	}
 	task.encoders = service.encoders
 	task.timeline = timeline
-	runtime.qos.attach(task)
-	runtime.controls.attach(task)
+	qos.attach(task)
+	controls.attach(task)
 	task.startQoSPolicy(runtime.qosPolicy)
 	return task, nil
 }
@@ -58,36 +63,4 @@ func runtimeForGraphExecution(rt *Runtime) *Runtime {
 		return rt
 	}
 	return mustNew()
-}
-
-// runtimeWithRealtime is a view of rt with realtime pacing set, sharing its
-// registries and pools.
-func runtimeWithRealtime(rt *Runtime, realtime bool) *Runtime {
-	if rt == nil {
-		return nil
-	}
-	clone := *rt
-	clone.realtime = realtime
-	return &clone
-}
-
-func runtimeWithBuffer(rt *Runtime, buffer pipeline.BufferPolicy) *Runtime {
-	if rt == nil {
-		return nil
-	}
-	clone := *rt
-	clone.buffer = buffer
-	return &clone
-}
-
-// runtimeWithClock clones the runtime with the task's timeline as its clock,
-// so every builder a lowering step creates hands paced sources the shared
-// timeline instead of the raw runtime clock.
-func runtimeWithClock(rt *Runtime, clock av.Clock) *Runtime {
-	if rt == nil {
-		return nil
-	}
-	clone := *rt
-	clone.clock = clock
-	return &clone
 }

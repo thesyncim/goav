@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -30,6 +31,7 @@ type destinationSpec struct {
 	resolvedFormat av.FormatID
 	name           string
 	err            error
+	writerUsed     *atomic.Bool
 }
 
 type branchDestinationFacts struct {
@@ -130,6 +132,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 	if writer == nil {
 		spec.err = errNilWriter
+	} else {
+		spec.writerUsed = &atomic.Bool{}
 	}
 	return spec
 }

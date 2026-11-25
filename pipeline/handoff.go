@@ -84,17 +84,20 @@ func newDirectWaiter() *directWaiter {
 // goroutines at once; an emitter's own cached record covers the rest.
 var directWaiters = sync.Pool{New: func() any { return newDirectWaiter() }}
 
-// takeWaiter returns a free waiter record for a delivery from e.
+// takeWaiter returns a free waiter record for a delivery from e (or from the
+// shared pool when e is nil, e.g. out-of-band Inject).
 func (e *directEmitter) takeWaiter() *directWaiter {
-	if w := e.waiter; w != nil && w.inUse.CompareAndSwap(false, true) {
-		return w
+	if e != nil {
+		if w := e.waiter; w != nil && w.inUse.CompareAndSwap(false, true) {
+			return w
+		}
 	}
 	return directWaiters.Get().(*directWaiter)
 }
 
 func (e *directEmitter) putWaiter(w *directWaiter) {
 	w.ctx, w.msg, w.err, w.delivered = nil, nil, nil, false
-	if w == e.waiter {
+	if e != nil && w == e.waiter {
 		w.inUse.Store(false)
 		return
 	}
@@ -179,7 +182,9 @@ func (g *directRunner) deliver(ctx context.Context, from *directEmitter, dst *di
 	w.state.Store(waiterPending)
 	v := dst.gate.Add(1)
 	if v&nodeClosingBit != 0 {
-		dst.gate.Add(-1)
+		if dst.gate.Add(-1) == nodeClosingBit {
+			dst.notifyDrained()
+		}
 		from.putWaiter(w)
 		return false, nil
 	}
@@ -232,6 +237,9 @@ func (g *directRunner) release(dst *directNode) {
 		v := dst.gate.Load()
 		if v&^nodeClosingBit == 1 {
 			if dst.gate.CompareAndSwap(v, v-1) {
+				if v-1 == nodeClosingBit {
+					dst.notifyDrained()
+				}
 				return
 			}
 			continue

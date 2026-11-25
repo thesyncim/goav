@@ -554,6 +554,9 @@ const (
 	// EventBitrateChanged asks encoders on its path to retarget bitrate without
 	// restarting (Event.Metadata[MetadataBitrate] in bits/sec).
 	EventBitrateChanged EventType = "bitrate_changed"
+	// EventSelectActive asks a running Select stage to switch its active arm
+	// to Event.StreamID. Select stages consume it; joins forward it unchanged.
+	EventSelectActive EventType = "select_active"
 	// EventQoS reports late or shed delivery at a playout, sync, or MaxLatency
 	// gate on the task observer stream (Watch). Build metadata with QoSMetadata
 	// and read with EventQoSReport; rate-limited per producer (~1/sec).
@@ -568,19 +571,26 @@ const (
 )
 
 // Event is one out-of-band signal: its type, the stream it concerns, and the
-// typed payload fields the type documents (Stream, Codec, Timestamp, Cause,
-// Metadata). Events ride the data path in order with the media.
+// typed payload fields the type documents (Stream, Codec, Timestamp, Bitrate,
+// Rate, End, Cause, Metadata). Events ride the data path in order with the media.
 type Event struct {
 	Type      EventType
 	StreamID  StreamID
 	Epoch     Epoch
 	At        time.Time
 	Timestamp Timestamp
-	Stream    *Stream
-	Codec     *CodecParameters
-	Cause     error
-	Reason    string
-	Metadata  Metadata
+	// Bitrate carries the target encoder bitrate in bits per second for
+	// EventBitrateChanged (avoiding stringly-typed Metadata allocations).
+	Bitrate int
+	// Rate carries the playback rate multiplier for EventRate.
+	Rate float64
+	// End carries the exclusive media end position for EventSegment.
+	End      time.Duration
+	Stream   *Stream
+	Codec    *CodecParameters
+	Cause    error
+	Reason   string
+	Metadata Metadata
 }
 
 // Reset clears the event for reuse.

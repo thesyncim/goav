@@ -86,9 +86,7 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 // runner) probe as accepted: they also have nothing to flush, so ordering is
 // moot and delivery reports the real refusal.
 func (t *task) probeSourceControl(node pipeline.NodeRef) error {
-	prober, ok := t.graph.(interface {
-		CanControlSource(pipeline.NodeRef) error
-	})
+	prober, ok := t.graph.(pipeline.SourceControlProber)
 	if !ok {
 		return nil
 	}
@@ -99,9 +97,7 @@ func (t *task) probeSourceControl(node pipeline.NodeRef) error {
 // delivering the seek control. Running probe -> flush -> deliver ensures a
 // refused seek never drops media and flush never sheds post-seek frames.
 func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
-	flusher, ok := t.graph.(interface {
-		FlushDownstream(pipeline.NodeRef) error
-	})
+	flusher, ok := t.graph.(pipeline.DownstreamFlusher)
 	if !ok {
 		return nil
 	}

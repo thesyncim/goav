@@ -10,9 +10,7 @@ import (
 // final counters in final: a removed node leaves the graph's Stats, so a
 // detached branch reports what it did from these.
 func removeBranchNode(ctx context.Context, graph pipeline.Graph, node pipeline.NodeRef, final map[string]pipeline.NodeStats) error {
-	if remover, ok := graph.(interface {
-		RemoveNodeContext(context.Context, pipeline.NodeRef) (pipeline.NodeStats, error)
-	}); ok {
+	if remover, ok := graph.(pipeline.NodeRemoverContext); ok {
 		stats, err := remover.RemoveNodeContext(ctx, node)
 		if err == nil {
 			final[node.String()] = stats

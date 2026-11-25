@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
@@ -38,6 +39,20 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		formatID = outputProbe.Format
 	}
 	if output.Writer != nil {
+		if destination.writerUsed != nil && destination.writerUsed.Swap(true) {
+			return output, nil, &BuildError{
+				Phase:     phaseOpen,
+				Family:    errcode.FamilyForCode(destinationInvalidCode),
+				Code:      destinationInvalidCode,
+				Operation: "open destination",
+				Node:      firstNonEmpty(destination.name, output.Name, "destination"),
+				Reason:    "single-use io.Writer destination has already been opened by an earlier Build/Run",
+				fixes: buildErrorFixes([]string{
+					"construct a fresh goav.Write(name, writer) for each Run/Build",
+					"use goav.WriteFunc(...) or goav.ToURI(...) for reusable destinations",
+				}),
+			}
+		}
 		// goav.Write close contract: a writer that also implements io.Closer is
 		// closed exactly once when the destination finalizes; a plain writer
 		// stays the caller's to close.
@@ -55,7 +70,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		MIMEType: output.MIMEType,
 		Streams:  cloneStreams(streams),
 		Metadata: compile.CloneMetadata(output.Metadata),
-		Realtime: b.runtime.realtime || output.Realtime,
+		Realtime: b.effectiveRealtime() || output.Realtime,
 	}
 	writer, err := destination.custom.Open(ctx, info)
 	if err != nil {
@@ -88,7 +103,7 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		return nil, outputMuxerMissingError(output, index, formatID, containerChoices(b.runtime.formats), err)
 	}
 	if err := muxer.Open(ctx, output, streams, format.OpenOptions{
-		Realtime: b.runtime.realtime || output.Realtime,
+		Realtime: b.effectiveRealtime() || output.Realtime,
 		Metadata: output.Metadata,
 	}); err != nil {
 		muxer.Close()

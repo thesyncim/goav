@@ -157,7 +157,7 @@ func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 // inputCanSeek is false for a Seeker whose open input cannot reposition
 // (CanSeek, see Seeker).
 func inputCanSeek(demuxer Demuxer) bool {
-	checker, ok := demuxer.(interface{ CanSeek() bool })
+	checker, ok := demuxer.(SeekChecker)
 	return !ok || checker.CanSeek()
 }
 

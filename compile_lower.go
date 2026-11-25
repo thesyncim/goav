@@ -32,6 +32,7 @@ import (
 // recipeLowerer builds a recipe's planned graph.
 type recipeLowerer struct {
 	runtime   *Runtime
+	realtime  bool
 	recipe    recipeir.Recipe
 	joins     map[recipeir.NodeID]*compile.JoinPlan
 	joinOrder []recipeir.NodeID
@@ -42,17 +43,14 @@ type recipeLowerer struct {
 	isolation []isolationPlan
 }
 
-func (r *recipeLowerer) withRuntime(rt *Runtime) *recipeLowerer {
-	out := *r
-	out.runtime = rt
-	return &out
+func (r *recipeLowerer) effectiveRealtime() bool {
+	return r.realtime || (r.runtime != nil && r.runtime.realtime)
 }
 
 // lower builds the plan into graph: each node in schedule order, connected
 // to its inputs as it is added, so the built graph is the described one.
 func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
-	rt := service.runtime
-	realtime := rt.realtime
+	realtime := service.effectiveRealtime()
 	streams := make(map[pipeline.NodeRef]av.Stream, len(r.graph.Nodes))
 	sourceStreams := map[int][]av.Stream{}
 	qualifiers := map[int]string{}
@@ -199,7 +197,7 @@ func openComposeNode(ctx context.Context, service *builder, node compile.Compose
 		}
 		// A media destination learns its streams and binds the task's
 		// control path; once it opened them, goav closes it either way.
-		opened, err := openMediaSink(ctx, sink, in, service.runtime.controlFunc())
+		opened, err := openMediaSink(ctx, sink, in, service.controlFunc())
 		if err != nil {
 			return openedNode{}, err
 		}
@@ -337,18 +335,19 @@ func (r *recipeLowerer) planExecution(gp graphPlan) (graphExecutionPlan, error) 
 		return graphExecutionPlan{}, publicError(compile.RecipeGraphUnsupportedRecipeError("configure graph", r.recipe))
 	}
 	buffer := rt.buffer
+	realtime := r.effectiveRealtime()
 	reason := "runtime_buffer"
 	if buffer.IsDirect() {
 		reason = r.serialExecutionReason()
 		for _, id := range r.joinOrder {
-			if pinned := r.joins[id].TreeGraphBuffer(rt.realtime); pinned != nil {
+			if pinned := r.joins[id].TreeGraphBuffer(realtime); pinned != nil {
 				buffer = *pinned
 				reason = "join_requires_workers"
 				break
 			}
 		}
 	}
-	if buffer.IsDirect() && rt.realtime && r.realtimeCodecWork() {
+	if buffer.IsDirect() && realtime && r.realtimeCodecWork() {
 		buffer = realtimeRecipeBufferPolicy(buffer)
 		reason = "realtime_codec_workers"
 	}
@@ -370,7 +369,7 @@ func (r *recipeLowerer) planExecution(gp graphPlan) (graphExecutionPlan, error) 
 	}
 	config := pipeline.GraphConfig{
 		Name:             firstNonEmpty(gp.name, "goav"),
-		Realtime:         rt.realtime,
+		Realtime:         realtime,
 		Buffer:           buffer,
 		EventCapacity:    rt.eventCapacity,
 		CloseWaitTimeout: rt.closeWaitTimeout,

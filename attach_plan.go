@@ -133,7 +133,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 	live := t.tapsLocked()
 	group := compile.AttachGroup{
 		Name:    p.name,
-		Env:     t.runtime.compileEnv(),
+		Env:     t.compileEnv(),
 		Anchors: map[recipeir.NodeID]pipeline.NodeRef{},
 		Routes:  map[recipeir.NodeID]compile.AnchorRoute{},
 		Pending: map[recipeir.NodeID]recipeir.NodeID{},
@@ -346,7 +346,7 @@ func (p *attachPlan) checkBranch(index int) error {
 	if err := validatePlayoutPolicyForRecipeIROperations("attach runtime branch", name, live, operations); err != nil {
 		return err
 	}
-	realtime := t.runtime != nil && t.runtime.realtime
+	realtime := t.effectiveRealtime()
 	needsRuntime := func(work string, fix string) error {
 		if t.runtime != nil {
 			return nil
@@ -542,9 +542,9 @@ func (p *attachPlan) checkMuxes(ctx context.Context) error {
 // order, against the live streams its inputs carry.
 func (p *attachPlan) open(ctx context.Context) error {
 	t := p.task
-	service := &builder{runtime: t.runtime}
+	realtime := t.effectiveRealtime()
+	service := t.newLoweringBuilder()
 	defer func() { p.transactions = service.destinationTxs }()
-	realtime := t.runtime != nil && t.runtime.realtime
 	streams := map[pipeline.NodeRef]av.Stream{}
 	maps := func(ref pipeline.NodeRef) (av.Stream, shape.Spec) {
 		if stream, ok := streams[ref]; ok {
@@ -577,11 +577,6 @@ func (p *attachPlan) open(ctx context.Context) error {
 				tx.name, tx.node = p.names[node.Output], ref
 				tx.id = compile.WorkDestinationID(tx.name)
 			}
-		}
-		if node.Kind == compile.ComposeStep && node.Transform.Stage != nil {
-			// Attached gates pace on the running task's timeline and report
-			// QoS to its Watch surface.
-			bindGateDeps(node.Transform.Stage, t.playoutClock(), t.qosReportFunc())
 		}
 		p.opened = append(p.opened, opened)
 		streams[ref] = opened.stream
@@ -678,13 +673,10 @@ func (p *attachPlan) feeds(index int, node compile.ComposeNode) bool {
 // branch's own, or the runtime's on a buffered task.
 func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolicy {
 	policy := buffer.PipelinePolicy()
-	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
+	if t.graph.Spec().Execution.Mode != "buffered" {
 		return policy
 	}
-	var runtimeBuffer pipeline.BufferPolicy
-	if t.runtime != nil {
-		runtimeBuffer = t.runtime.buffer
-	}
+	runtimeBuffer := t.effectiveBuffer()
 	if policy.IsDirect() {
 		return realtimeRecipeBufferPolicy(runtimeBuffer)
 	}
@@ -910,10 +902,7 @@ func (p *attachPlan) spec() (pipeline.Spec, error) {
 	if err != nil {
 		return spec, err
 	}
-	config := pipeline.GraphConfig{}
-	if p.task.runtime != nil {
-		config.Buffer = p.task.runtime.buffer
-	}
+	config := pipeline.GraphConfig{Buffer: p.task.effectiveBuffer()}
 	if graph.Execution.Mode == "buffered" && config.Buffer.IsDirect() {
 		for _, node := range graph.Nodes {
 			if node.Execution.Kind == "worker" {

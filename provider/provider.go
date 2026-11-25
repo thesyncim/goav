@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -174,3 +176,60 @@ type Info struct {
 // that also implements TransactionalWriter gets Commit after success, Abort
 // after failure, Close exactly once either way.
 type OpenFunc func(context.Context, Info) (io.WriteCloser, error)
+
+// Optional provider capabilities. Adapters can implement any subset and verify
+// conformance at compile time (for example, `var _ provider.StreamOpener = (*S)(nil)`).
+
+// Named supplies a provider's node name for Describe output and diagnostics.
+type Named interface {
+	Name() string
+}
+
+// Detailed supplies a human-readable node detail string for Describe output.
+type Detailed interface {
+	Detail() string
+}
+
+// ProtocolProvider declares the transport protocol of a ByteSource.
+type ProtocolProvider interface {
+	Protocol() av.ProtocolID
+}
+
+// ClockUser is an opened pipeline.Source that paces on the task's shared clock.
+type ClockUser interface {
+	UseClock(av.Clock)
+}
+
+// DecodeBoundsProvider declares per-stream decode bounds seeded into decoders
+// fed by a Source, resolved after OpenSource.
+type DecodeBoundsProvider interface {
+	DecodeBounds(av.StreamID) codec.DecodeBounds
+}
+
+// Sized is an opened ByteSource reader that knows its total byte length.
+type Sized interface {
+	Size() int64
+}
+
+// LiveReporter is an opened ByteSource reader or media sink that reports
+// whether it produces or consumes media in real time.
+type LiveReporter interface {
+	Live() bool
+}
+
+// InputShaper is a media sink that declares the media shapes it accepts in
+// preference order.
+type InputShaper interface {
+	InputShapes() shape.Set
+}
+
+// ControlUser is a media sink that can inject live controls into the task.
+type ControlUser interface {
+	UseControl(func(context.Context, control.Control) error)
+}
+
+// StreamOpener is a media sink that learns its routed streams before media
+// flows. Once OpenStreams succeeds, goav closes the sink even on build failure.
+type StreamOpener interface {
+	OpenStreams(context.Context, []av.Stream) error
+}

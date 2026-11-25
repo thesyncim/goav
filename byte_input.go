@@ -25,10 +25,10 @@ func openByteInput(ctx context.Context, src provider.ByteSource, input format.In
 	if at, ok := reader.(io.ReaderAt); ok {
 		input.ReaderAt = at
 	}
-	if sized, ok := reader.(interface{ Size() int64 }); ok {
+	if sized, ok := reader.(provider.Sized); ok {
 		input.Size = sized.Size()
 	}
-	if live, ok := reader.(interface{ Live() bool }); ok && live.Live() {
+	if live, ok := reader.(provider.LiveReporter); ok && live.Live() {
 		// A stream that turns out live when it opens (an Icecast mount)
 		// paces and reconnects like one declared live.
 		input.Realtime = true

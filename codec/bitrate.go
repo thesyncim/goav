@@ -15,12 +15,14 @@ func BitrateMetadata(bitsPerSecond int) av.Metadata {
 }
 
 // EventBitrate extracts the requested bitrate in bits per second from an
-// av.EventBitrateChanged event. It reports false when the event carries no
-// positive decimal av.MetadataBitrate entry, so an encoder can reject a
-// malformed retarget explicitly instead of applying garbage.
+// av.EventBitrateChanged event. It prefers the typed Event.Bitrate field and
+// falls back to av.MetadataBitrate for callers that populated Metadata directly.
 func EventBitrate(event *av.Event) (int, bool) {
 	if event == nil {
 		return 0, false
+	}
+	if event.Bitrate > 0 {
+		return event.Bitrate, true
 	}
 	value, err := strconv.Atoi(event.Metadata[av.MetadataBitrate])
 	if err != nil || value <= 0 {

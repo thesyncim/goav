@@ -173,9 +173,12 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 	task := built.(*task)
 	t.Cleanup(func() { _ = task.Close() })
 
+	if mode := task.Spec().Execution.Mode; mode != "direct" {
+		t.Fatalf("offline encode Execution.Mode = %q, want direct", mode)
+	}
 	err = task.Control(ctx, control.Must(control.SetBitrate("cam", 250_000)))
-	if !errors.Is(err, control.ErrUnsupported) {
-		t.Fatalf("offline encode SetBitrate err = %v, want control.ErrUnsupported from direct runner", err)
+	if !errors.Is(err, control.ErrNotRunning) {
+		t.Fatalf("offline encode SetBitrate before Run err = %v, want control.ErrNotRunning", err)
 	}
 }
 

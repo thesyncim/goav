@@ -73,24 +73,6 @@ func (r *qosReporter) publish(event av.Event) {
 	}
 }
 
-// qosReportFunc is the reporter as a bindable func, nil when the runtime
-// carries no reporter (explicit-graph builders lower no gates).
-func (r *Runtime) qosReportFunc() func(av.Event) {
-	if r == nil || r.qos == nil {
-		return nil
-	}
-	return r.qos.publish
-}
-
-// qosReportFunc is the attach-time twin of the runtime seam: gates attached to
-// a running task publish straight to its Watch surface.
-func (t *task) qosReportFunc() func(av.Event) {
-	if t == nil {
-		return nil
-	}
-	return func(event av.Event) { t.watch.publish(event) }
-}
-
 // bindGateDeps threads the task-scoped dependencies into a lowered playout or
 // sync gate: the pacing clock (playout only — the stage twin of the provider
 // UseClock seam, marking the timeline paced so task rate controls apply) and
