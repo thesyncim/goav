@@ -73,15 +73,6 @@ func (r *qosReporter) publish(event av.Event) {
 	}
 }
 
-// qosReportFunc is the attach-time twin of the builder seam: gates attached to
-// a running task publish straight to its Watch surface.
-func (t *task) qosReportFunc() func(av.Event) {
-	if t == nil {
-		return nil
-	}
-	return func(event av.Event) { t.watch.publish(event) }
-}
-
 // bindGateDeps threads the task-scoped dependencies into a lowered playout or
 // sync gate: the pacing clock (playout only — the stage twin of the provider
 // UseClock seam, marking the timeline paced so task rate controls apply) and
