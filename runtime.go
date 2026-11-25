@@ -118,12 +118,6 @@ type Runtime struct {
 	// qosPolicy is the opt-in per-runtime QoS policy started on every task
 	// this runtime builds (runconfig.WithQoSPolicy).
 	qosPolicy func(av.Event) []control.Control
-	// qos is the per-task reporter recipe builds thread to lowering-time gates
-	// next to the timeline; nil on the shared runtime and explicit-graph paths.
-	qos *qosReporter
-	// controls is the per-task control seam media sinks bind at lowering
-	// time (UseControl); nil like qos.
-	controls *taskControls
 	// schemes resolve URIInput and URI values (runconfig.WithScheme).
 	schemes map[string]provider.Scheme
 }
@@ -143,6 +137,12 @@ func (r *Runtime) newBuilder() *builder {
 
 type builder struct {
 	runtime        *Runtime
+	clock          av.Clock
+	realtime       bool
+	buffer         pipeline.BufferPolicy
+	bufferSet      bool
+	qos            *qosReporter
+	controls       *taskControls
 	destinationTxs []*destinationTransaction
 	// encoders are the encode stages this build opened, so stream-addressed
 	// encoder controls reach the encoder producing the stream.
@@ -157,21 +157,60 @@ type builder struct {
 func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
 	return pipeline.NewGraph(pipeline.GraphConfig{
 		Name:             "goav",
-		Realtime:         b.runtime.realtime,
-		Buffer:           b.runtime.buffer,
+		Realtime:         b.effectiveRealtime(),
+		Buffer:           b.effectiveBuffer(),
 		EventCapacity:    b.runtime.eventCapacity,
 		CloseWaitTimeout: b.runtime.closeWaitTimeout,
 	})
 }
 
 // taskClock returns the clock the build hands to paced sources — on recipe
-// builds the task's shared timeline, which the runtime clone carries as its
-// clock.
+// builds the task's shared timeline, falling back to the runtime clock.
 func (b *builder) taskClock() av.Clock {
-	if b == nil || b.runtime == nil {
+	if b == nil {
+		return nil
+	}
+	if b.clock != nil {
+		return b.clock
+	}
+	if b.runtime == nil {
 		return nil
 	}
 	return b.runtime.clock
+}
+
+func (b *builder) effectiveRealtime() bool {
+	if b == nil {
+		return false
+	}
+	return b.realtime || (b.runtime != nil && b.runtime.realtime)
+}
+
+func (b *builder) effectiveBuffer() pipeline.BufferPolicy {
+	if b == nil {
+		return pipeline.BufferPolicy{}
+	}
+	if b.bufferSet {
+		return b.buffer
+	}
+	if b.runtime != nil {
+		return b.runtime.buffer
+	}
+	return pipeline.BufferPolicy{}
+}
+
+func (b *builder) qosReportFunc() func(av.Event) {
+	if b == nil || b.qos == nil {
+		return nil
+	}
+	return b.qos.publish
+}
+
+func (b *builder) controlFunc() func(context.Context, control.Control) error {
+	if b == nil || b.controls == nil {
+		return nil
+	}
+	return b.controls.control
 }
 
 func (b *builder) Source(source pipeline.Source) *builder {
@@ -351,6 +390,13 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 type task struct {
 	graph   pipeline.Graph
 	runtime *Runtime
+	// realtime and buffer hold the task's resolved execution policy so the
+	// shared Runtime stays immutable across tasks.
+	realtime  bool
+	buffer    pipeline.BufferPolicy
+	bufferSet bool
+	qos       *qosReporter
+	controls  *taskControls
 	// timeline is the task-wide clock service every paced source sleeps on;
 	// control.Rate scales it so all paced delivery re-anchors together. Nil
 	// only for tasks assembled outside the build paths (unit-test graphs).
@@ -866,9 +912,7 @@ func (t *task) CloseContext(ctx context.Context) error {
 	}
 	t.lifecycleMu.Unlock()
 	stopped, first := t.stopAttachments(ctx)
-	if contextGraph, ok := t.graph.(interface {
-		CloseContext(context.Context) error
-	}); ok {
+	if contextGraph, ok := t.graph.(pipeline.ContextCloser); ok {
 		first = errors.Join(first, contextGraph.CloseContext(ctx))
 	} else {
 		first = errors.Join(first, ctx.Err(), t.graph.Close())
@@ -1048,5 +1092,50 @@ func (r *Runtime) compileEnv() compile.Env {
 		Buffer:      r.buffer,
 		Realtime:    r.realtime,
 		ShapeDeltas: r.shapeDeltas,
+	}
+}
+
+func (t *task) effectiveRealtime() bool {
+	if t == nil {
+		return false
+	}
+	return t.realtime || (t.runtime != nil && t.runtime.realtime)
+}
+
+func (t *task) effectiveBuffer() pipeline.BufferPolicy {
+	if t == nil {
+		return pipeline.BufferPolicy{}
+	}
+	if t.bufferSet {
+		return t.buffer
+	}
+	if t.runtime != nil {
+		return t.runtime.buffer
+	}
+	return pipeline.BufferPolicy{}
+}
+
+func (t *task) compileEnv() compile.Env {
+	if t == nil || t.runtime == nil {
+		return compile.Env{}
+	}
+	env := t.runtime.compileEnv()
+	env.Realtime = t.effectiveRealtime()
+	env.Buffer = t.effectiveBuffer()
+	return env
+}
+
+// newLoweringBuilder constructs a per-operation builder carrying this task's
+// resolved execution environment (clock, realtime, buffer, QoS, controls) so
+// runtime attach shares the exact lowering setup of initial build.
+func (t *task) newLoweringBuilder() *builder {
+	return &builder{
+		runtime:   t.runtime,
+		clock:     t.playoutClock(),
+		realtime:  t.effectiveRealtime(),
+		buffer:    t.effectiveBuffer(),
+		bufferSet: true,
+		qos:       t.qos,
+		controls:  t.controls,
 	}
 }

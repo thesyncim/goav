@@ -86,14 +86,6 @@ func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work compile.WorkPlan, l
 	}
 }
 
-func graphPlanWithRuntime(gp graphPlan, rt *Runtime) graphPlan {
-	gp.runtime = rt
-	if gp.lowerer != nil {
-		gp.lowerer = gp.lowerer.withRuntime(rt)
-	}
-	return gp
-}
-
 func validateGraphPlanLowering(gp graphPlan) error {
 	if !gp.ready() {
 		return publicError(compile.GraphPlanInvalidError("graph plan is not ready", nil))

@@ -26,6 +26,13 @@ type Seeker interface {
 	Seek(ctx context.Context, position time.Duration) error
 }
 
+// SeekChecker is the optional capability of a Seeker whose seekability depends
+// on its open input (e.g. a seekable file vs. a pipe). Returning false causes
+// DemuxSource to refuse seeks up front with ErrNotSeekable.
+type SeekChecker interface {
+	CanSeek() bool
+}
+
 // ErrNotSeekable reports a reposition requested on input that cannot seek (a
 // pipe, a network stream, a plain io.Reader). Demuxers wrap it from Seek so
 // callers can tell "this input cannot seek" from a failed seek on seekable

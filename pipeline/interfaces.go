@@ -243,9 +243,36 @@ type NodeRemover interface {
 	RemoveNode(NodeRef) (NodeStats, error)
 }
 
+// NodeRemoverContext is the context-aware extension of NodeRemover: removal
+// honors ctx cancellation while draining in-flight work. Both runners
+// implement it.
+type NodeRemoverContext interface {
+	RemoveNodeContext(context.Context, NodeRef) (NodeStats, error)
+}
+
+// ContextCloser is implemented by graphs whose Close can honor a caller's
+// context deadline while draining nodes. Both runners implement it.
+type ContextCloser interface {
+	CloseContext(context.Context) error
+}
+
+// SourceControlProber is implemented by graphs that can report whether a
+// source node accepts live control before flushing downstream queues.
+type SourceControlProber interface {
+	CanControlSource(NodeRef) error
+}
+
+// DownstreamFlusher is implemented by buffered graphs that can flush stale
+// media from queues exclusively downstream of a source before seek/segment
+// control.
+type DownstreamFlusher interface {
+	FlushDownstream(NodeRef) error
+}
+
 // NodePauser is implemented by graphs that can pause/resume delivery to a single
-// node (the buffered runner). It is an optional capability discovered by type
-// assertion, so it does not widen the Graph interface for every implementer.
+// node. Both the buffered and direct runners implement it. It is an optional
+// capability discovered by type assertion, so it does not widen the Graph
+// interface for every implementer.
 type NodePauser interface {
 	SetNodePaused(ref NodeRef, paused bool) error
 }

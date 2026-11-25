@@ -13,10 +13,10 @@ import (
 
 func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform compile.MediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
 	if transform.Stage != nil {
-		// Playout gates pace on the task timeline the runtime clone carries
-		// as its clock; binding here keeps the gate internal to the lowering.
-		// The QoS reporter rides the same clone so late admits reach Watch.
-		bindGateDeps(transform.Stage, b.taskClock(), b.runtime.qosReportFunc())
+		// Playout gates pace on the task timeline carried by the per-build
+		// builder; binding here keeps the gate internal to the lowering.
+		// The QoS reporter rides the same builder so late admits reach Watch.
+		bindGateDeps(transform.Stage, b.taskClock(), b.qosReportFunc())
 		if name != "" && name != transform.Stage.Name() {
 			return namedStage{name: name, stage: transform.Stage}, stream, nil
 		}

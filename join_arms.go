@@ -61,7 +61,7 @@ func (s *armRestampStage) Handle(ctx context.Context, msg *pipeline.Message, emi
 		if msg.Event == nil {
 			return nil
 		}
-		if msg.Event.Reason == selectorActiveReason {
+		if msg.Event.Type == av.EventSelectActive {
 			// Control-plane events ride the data path unchanged: a SelectActive
 			// heading for a downstream selector carries its target arm in
 			// Event.StreamID — re-stamping it would erase the target.

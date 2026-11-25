@@ -188,11 +188,11 @@ func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
 		t.Fatalf("discontinuity events = %+v", emit.events)
 	}
 
-	selectActive := av.Event{Type: av.EventStats, StreamID: "camera_b", Reason: selectorActiveReason}
+	selectActive := av.Event{Type: av.EventSelectActive, StreamID: "camera_b"}
 	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &selectActive}, emit); err != nil {
 		t.Fatalf("select event error = %v", err)
 	}
-	if len(emit.events) != 2 || emit.events[1].StreamID != "camera_b" || emit.events[1].Reason != selectorActiveReason {
+	if len(emit.events) != 2 || emit.events[1].Type != av.EventSelectActive || emit.events[1].StreamID != "camera_b" {
 		t.Fatalf("selector events = %+v", emit.events)
 	}
 

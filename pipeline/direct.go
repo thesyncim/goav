@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,12 +14,16 @@ type directRunner struct {
 	topology[*directNode]
 	// order is the running time order (time_order.go), set for an ordered
 	// run so a delivery into a join charges its source.
-	order atomic.Pointer[timeOrder]
+	order   atomic.Pointer[timeOrder]
+	running atomic.Bool
 }
 
 type directNode struct {
 	nodeBase
 	emitter directEmitter
+	// drained receives a non-blocking signal when the last in-flight delivery
+	// exits after nodeClosingBit is set, waking Remove/Close without polling.
+	drained chan struct{}
 	// The pad keeps what every delivery writes (the gate) off the cache lines
 	// of the fields it only reads, so producers on several cores do not bounce
 	// those lines between them.
@@ -33,6 +36,16 @@ type directNode struct {
 	gate atomic.Int64
 	// waiters queues the deliveries that arrived while the node was owned.
 	waiters waiterQueue
+}
+
+func (n *directNode) notifyDrained() {
+	if n.drained == nil {
+		return
+	}
+	select {
+	case n.drained <- struct{}{}:
+	default:
+	}
 }
 
 func (n *directNode) base() *nodeBase { return &n.nodeBase }
@@ -84,7 +97,7 @@ func (g *directRunner) newNode(policy BufferPolicy) (*directNode, error) {
 	if !policy.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
-	n := &directNode{}
+	n := &directNode{drained: make(chan struct{}, 1)}
 	n.waiters.init()
 	return n, nil
 }
@@ -104,7 +117,7 @@ func (g *directRunner) stopLocked(context.Context, *directNode) (bool, error) {
 // awaitStopped drains the node's gate: a delivery already in flight loaded
 // the previous snapshot.
 func (g *directRunner) awaitStopped(ctx context.Context, n *directNode, timeout time.Duration) error {
-	return waitNodeGateDrainedContext(ctx, "close", n.name, &n.gate, timeout)
+	return waitNodeGateDrainedContext(ctx, "close", n.name, &n.gate, n.drained, timeout)
 }
 
 func (g *directRunner) Run(ctx context.Context) error {
@@ -126,7 +139,9 @@ func (g *directRunner) Run(ctx context.Context) error {
 		}
 		sources = append(sources, directSourceRun{source: node.source, emitter: &node.emitter})
 	}
+	g.running.Store(true)
 	g.mu.RUnlock()
+	defer g.running.Store(false)
 
 	switch len(sources) {
 	case 0:
@@ -221,19 +236,19 @@ func (g *directRunner) remove(ctx context.Context, ref NodeRef) (*directNode, er
 	}
 	g.rebuildLocked()
 	g.mu.Unlock()
-	if err := waitNodeGateDrainedContext(ctx, "remove", node.name, &node.gate, g.config.CloseWaitTimeout); err != nil {
+	if err := waitNodeGateDrainedContext(ctx, "remove", node.name, &node.gate, node.drained, g.config.CloseWaitTimeout); err != nil {
 		g.reap(node)
 		return node, err
 	}
 	return node, g.finalize(node)
 }
 
-// waitNodeGateDrainedContext tombstones a removed node's delivery gate and waits for
-// every in-flight delivery to finish, so the node is never closed under a
+// waitNodeGateDrainedContext tombstones a removed node's delivery gate and waits
+// for every in-flight delivery to finish, so the node is never closed under a
 // concurrent Handle. New deliveries (from emits holding an older routing
-// snapshot) see the closing bit and shed themselves. This is the cold removal
-// path; in-flight deliveries are bounded by one downstream chain.
-func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64, timeout time.Duration) error {
+// snapshot) see the closing bit and shed themselves; the last exiting delivery
+// signals drained so this wait parks cleanly without polling.
+func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64, drained <-chan struct{}, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -244,23 +259,25 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	var deadline time.Time
-	if timeout > 0 {
-		deadline = time.Now().Add(timeout)
+	if gate.Load() == nodeClosingBit {
+		return nil
 	}
-	for spins := 0; gate.Load() != nodeClosingBit; spins++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
+	var timer *time.Timer
+	var timerCh <-chan time.Time
+	if timeout > 0 {
+		timer = time.NewTimer(timeout)
+		defer timer.Stop()
+		timerCh = timer.C
+	}
+	for gate.Load() != nodeClosingBit {
+		select {
+		case <-drained:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timerCh:
 			pending := gate.Load() &^ nodeClosingBit
 			return &CloseWaitError{Operation: operation, Node: node, Pending: pending, Timeout: timeout}
 		}
-		if spins < 100 {
-			runtime.Gosched()
-			continue
-		}
-		time.Sleep(100 * time.Microsecond)
 	}
 	return nil
 }

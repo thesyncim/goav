@@ -54,7 +54,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 	if reader != nil {
 		demuxer = newByteInputDemuxer(demuxer, reader)
 	}
-	realtime := b.runtime.realtime || input.Realtime
+	realtime := b.effectiveRealtime() || input.Realtime
 	if err := demuxer.Open(ctx, input, format.OpenOptions{
 		Realtime: realtime,
 		Metadata: input.Metadata,
@@ -84,14 +84,14 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 		// time is due on the task timeline, which is what makes control.Rate work
 		// on file inputs. Offline tasks pump at full speed.
 		Realtime: realtime,
-		Clock:    b.runtime.clock,
+		Clock:    b.taskClock(),
 	})
 	if err != nil {
 		demuxer.Close()
 		return demuxBuild{}, err
 	}
 	if realtime {
-		markTimelinePaced(b.runtime.clock)
+		markTimelinePaced(b.taskClock())
 	}
 	return demuxBuild{source: source, streams: streams}, nil
 }
@@ -169,7 +169,7 @@ func (d qualifiedSeekDemuxer) CanSeek() bool { return canSeek(d.seeker) }
 // canSeek forwards a wrapped Seeker's CanSeek (format.Seeker): true unless
 // the seeker reports its input cannot reposition.
 func canSeek(seeker format.Seeker) bool {
-	checker, ok := seeker.(interface{ CanSeek() bool })
+	checker, ok := seeker.(format.SeekChecker)
 	return !ok || checker.CanSeek()
 }
 

@@ -111,10 +111,12 @@ type recipeResolved struct {
 // result back to the handles the build opens.
 func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
 	g.bindSchemes(rt)
-	rt = g.compileRuntime(rt)
+	realtime := g.effectiveRealtime(rt)
 	handles := g.handles(rt)
 	req := g.compileRequest(handles)
-	req.Env, req.Preflight, req.Ctx = rt.compileEnv(), options.preflight, options.ctx
+	env := rt.compileEnv()
+	env.Realtime = realtime
+	req.Env, req.Preflight, req.Ctx = env, options.preflight, options.ctx
 	result, err := refuse(compile.Compile(req))
 	if err != nil {
 		return recipeResolved{}, err
@@ -142,6 +144,7 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 		}
 		resolved.graphPlan = newGraphPlan(rt, result.Spec, result.Work, &recipeLowerer{
 			runtime:   rt,
+			realtime:  realtime,
 			recipe:    result.Recipe,
 			joins:     result.Joins,
 			joinOrder: result.JoinOrder,
@@ -154,20 +157,19 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 	return resolved, nil
 }
 
-// compileRuntime is the runtime a recipe plans and builds against. Realtime
-// follows the inputs and destinations unless the runtime forces it with
-// WithRealtime(true): a recipe with a live input (a provider or push source
-// whose shape declares Realtime) or a live destination (a media sink whose
-// Live reports true: RTP out, WHIP, a WebRTC track) compiles against a
-// realtime view of its runtime, so its graph buffers between stages,
-// encoders pick low-latency presets, and files play paced at their media
-// time, while file-to-file recipes keep the offline runtime and run at full
-// speed.
-func (g *recipeGraph) compileRuntime(rt *Runtime) *Runtime {
-	if rt == nil || rt.realtime || !inputsAreLive(g.inputs) && !destinationsAreLive(g.dests) {
-		return rt
+// effectiveRealtime reports whether a recipe plans and builds in realtime
+// mode. Realtime follows the inputs and destinations unless the runtime forces
+// it with WithRealtime(true): a recipe with a live input (a provider or push
+// source whose shape declares Realtime) or a live destination (a media sink
+// whose Live reports true: RTP out, WHIP, a WebRTC track) plans realtime, so
+// its graph buffers between stages, encoders pick low-latency presets, and
+// files play paced at their media time, while file-to-file recipes stay
+// offline and run at full speed.
+func (g *recipeGraph) effectiveRealtime(rt *Runtime) bool {
+	if rt != nil && rt.realtime {
+		return true
 	}
-	return runtimeWithRealtime(rt, true)
+	return inputsAreLive(g.inputs) || destinationsAreLive(g.dests)
 }
 
 // inputsAreLive reports whether any input delivers on its own clock.

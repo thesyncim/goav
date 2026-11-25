@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
@@ -235,7 +236,7 @@ func (s Input) openGraphSourceBuildKind(ctx context.Context, service *builder, n
 		if err != nil {
 			return graphSourceBuild{}, err
 		}
-		return s.reconnecting(build, open, service.taskClock(), service.runtime.qosReportFunc()), nil
+		return s.reconnecting(build, open, service.taskClock(), service.qosReportFunc()), nil
 	default:
 		qualifier := ""
 		if qualify {
@@ -248,7 +249,7 @@ func (s Input) openGraphSourceBuildKind(ctx context.Context, service *builder, n
 		if err != nil {
 			return graphSourceBuild{}, err
 		}
-		return s.reconnecting(build, open, service.taskClock(), service.runtime.qosReportFunc()), nil
+		return s.reconnecting(build, open, service.taskClock(), service.qosReportFunc()), nil
 	}
 }
 
@@ -265,6 +266,22 @@ func (s Input) openDemuxed(ctx context.Context, service *builder, qualifier stri
 		if s.reconnect != nil && !input.Realtime {
 			reader.Close()
 			return graphSourceBuild{}, reconnectNotLiveError(s.inputName("input"), "this one opened as a finite resource")
+		}
+	}
+	if s.bytes == nil && s.readerUsed != nil && s.reconnect == nil {
+		if s.readerUsed.Swap(true) {
+			return graphSourceBuild{}, &BuildError{
+				Phase:     phaseOpen,
+				Family:    errcode.FamilyForCode(inputInvalidCode),
+				Code:      inputInvalidCode,
+				Operation: "open input",
+				Node:      s.inputName("input"),
+				Reason:    "single-use io.Reader input has already been opened by an earlier Build/Run",
+				fixes: buildErrorFixes([]string{
+					"construct a fresh goav.Read(name, reader) for each Run/Build",
+					"use goav.FromURI(...) or a provider.ByteSource for reusable inputs",
+				}),
+			}
 		}
 	}
 	build, err := service.openDemuxSource(ctx, input, qualifier, s.pinnedFormat(), reader)

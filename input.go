@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -47,6 +48,9 @@ type Input struct {
 	// read the same input because they share it. Copies made by With or
 	// WrapSource are new inputs.
 	id *inputIdentity
+	// readerUsed guards single-use io.Reader inputs (goav.Read) against
+	// accidental reuse across multiple Build/Run calls.
+	readerUsed *atomic.Bool
 }
 
 // inputIdentity is a non-empty type so every allocation is a distinct pointer.
@@ -120,6 +124,8 @@ func Read(name string, reader io.Reader, opts ...InputOption) Input {
 	}
 	if reader == nil {
 		spec.err = errNilReader
+	} else {
+		spec.readerUsed = &atomic.Bool{}
 	}
 	return applyInputOptions(inputSpecHandle(spec), opts)
 }
@@ -274,7 +280,7 @@ func (s Input) providerName() string {
 	if s.provider == nil {
 		return ""
 	}
-	if named, ok := s.provider.(sourceProviderNamer); ok {
+	if named, ok := s.provider.(provider.Named); ok {
 		return named.Name()
 	}
 	return ""

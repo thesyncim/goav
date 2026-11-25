@@ -31,10 +31,14 @@ func TestCompositionLawsHoldForGeneratedRecipes(t *testing.T) {
 	for _, tc := range generatedCompositionCorpus() {
 		t.Run(tc.name, func(t *testing.T) {
 			input := goavtest.Audio(tc.sampleRate, 1, tc.samples)
-			archive, monitor := goav.Write("archive.ogg", io.Discard), goav.Write("monitor.ogg", io.Discard)
 			stream := generatedCompositionStream(input, tc)
-			split := requireGeneratedCompositionDescribeMatchesBuild(t, stream.To(archive), stream.To(monitor))
-			merged := requireGeneratedCompositionDescribeMatchesBuild(t, stream.To(archive, monitor))
+			split := requireGeneratedCompositionDescribeMatchesBuild(t,
+				stream.To(goav.Write("archive.ogg", io.Discard)),
+				stream.To(goav.Write("monitor.ogg", io.Discard)),
+			)
+			merged := requireGeneratedCompositionDescribeMatchesBuild(t,
+				stream.To(goav.Write("archive.ogg", io.Discard), goav.Write("monitor.ogg", io.Discard)),
+			)
 			if !reflect.DeepEqual(split, merged) {
 				t.Fatalf("s.To(a), s.To(b) != s.To(a, b) for generated case %s\nsplit:\n%s\nmerged:\n%s",
 					tc.name, specText(split), specText(merged))

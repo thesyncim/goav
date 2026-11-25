@@ -73,16 +73,7 @@ func (r *qosReporter) publish(event av.Event) {
 	}
 }
 
-// qosReportFunc is the reporter as a bindable func, nil when the runtime
-// carries no reporter (explicit-graph builders lower no gates).
-func (r *Runtime) qosReportFunc() func(av.Event) {
-	if r == nil || r.qos == nil {
-		return nil
-	}
-	return r.qos.publish
-}
-
-// qosReportFunc is the attach-time twin of the runtime seam: gates attached to
+// qosReportFunc is the attach-time twin of the builder seam: gates attached to
 // a running task publish straight to its Watch surface.
 func (t *task) qosReportFunc() func(av.Event) {
 	if t == nil {

@@ -220,15 +220,16 @@ func TestTaskControlRejectsUnknownAndDirectGraph(t *testing.T) {
 		t.Fatalf("control.Control empty node err = %v, want ErrUnknownNode", err)
 	}
 
-	// A direct (non-buffered) graph has no per-node worker, so control.Control is unsupported.
+	// A direct (non-buffered) graph supports NodeInjector too, serialized
+	// through each node's ownership gate; before Run it reports ErrNotRunning.
 	directGraph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "direct"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	directTask := newTask(directGraph, nil)
 	t.Cleanup(func() { _ = directTask.Close() })
-	if err := directTask.Control(ctx, control.Keyframe("video").At("encode")); !errors.Is(err, control.ErrUnsupported) {
-		t.Fatalf("control.Control on direct graph err = %v, want control.ErrUnsupported", err)
+	if err := directTask.Control(ctx, control.Keyframe("video").At("encode")); !errors.Is(err, control.ErrNotRunning) {
+		t.Fatalf("control.Control on idle direct graph err = %v, want control.ErrNotRunning", err)
 	}
 }
 

@@ -9,11 +9,8 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 )
-
-const selectorActiveReason = "select.active"
 
 // Type classifies an out-of-band control delivered to a running node.
 type Type string
@@ -223,13 +220,13 @@ func (c Control) Message() (*pipeline.Message, error) {
 			Type:     av.EventBitrateChanged,
 			StreamID: c.streamID,
 			Reason:   c.reason,
-			Metadata: codec.BitrateMetadata(c.bitrate),
+			Bitrate:  c.bitrate,
 		}}, nil
 	case SelectType:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
-			Type:     av.EventStats,
+			Type:     av.EventSelectActive,
 			StreamID: c.streamID,
-			Reason:   selectorActiveReason,
+			Reason:   c.reason,
 		}}, nil
 	case SeekType:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
@@ -246,7 +243,7 @@ func (c Control) Message() (*pipeline.Message, error) {
 			Type:     av.EventRate,
 			StreamID: c.streamID,
 			Reason:   c.reason,
-			Metadata: av.RateMetadata(c.rate),
+			Rate:     c.rate,
 		}}, nil
 	case SegmentType:
 		if c.position < 0 || c.end <= c.position {
@@ -257,7 +254,7 @@ func (c Control) Message() (*pipeline.Message, error) {
 			StreamID:  c.streamID,
 			Reason:    c.reason,
 			Timestamp: av.Timestamp{Value: int64(c.position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
-			Metadata:  av.SegmentEndMetadata(c.end),
+			End:       c.end,
 		}}, nil
 	case EventType:
 		event := c.event

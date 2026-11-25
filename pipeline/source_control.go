@@ -158,3 +158,25 @@ func (g *directRunner) InjectSource(ctx context.Context, ref NodeRef, msg *Messa
 	}
 	return controllable.Control(ctx, msg)
 }
+
+// CanControlSource reports whether InjectSource would accept a control for ref
+// on a direct graph, matching bufferedRunner.CanControlSource.
+func (g *directRunner) CanControlSource(ref NodeRef) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.closed {
+		return ErrClosed
+	}
+	index, ok := g.index[ref.String()]
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+		return ErrUnknownNode
+	}
+	node := g.nodes[index]
+	if node.kind != nodeSource {
+		return ErrInvalidLink
+	}
+	if _, ok := node.source.(ControllableSource); !ok {
+		return ErrInvalidLink
+	}
+	return nil
+}

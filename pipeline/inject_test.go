@@ -174,3 +174,66 @@ func TestGraphBufferedInjectRejectsClosedAndSource(t *testing.T) {
 		t.Fatalf("Inject after Close err = %v, want ErrClosed", err)
 	}
 }
+
+func TestGraphDirectInjectReachesNode(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	release := make(chan struct{})
+	source := &blockingSource{name: "source", release: release}
+	stage := &recordingStage{name: "stage", want: 1, got: make(chan struct{})}
+	sink := &bufferedBlockingSink{name: "sink", started: make(chan struct{})}
+
+	graph, err := NewGraph(GraphConfig{Name: "direct-inject"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(stage, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "stage")); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("stage", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	injector, ok := graph.(NodeInjector)
+	if !ok {
+		t.Fatalf("direct graph %T does not implement NodeInjector", graph)
+	}
+
+	// Before Run, Inject must report ErrDynamicGraphUnsupported.
+	if err := injector.Inject(ctx, "stage", &Message{Kind: MessageEvent, Event: &av.Event{Type: av.EventKeyframeRequired}}); !errors.Is(err, ErrDynamicGraphUnsupported) {
+		t.Fatalf("direct Inject before Run err = %v, want ErrDynamicGraphUnsupported", err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- graph.Run(ctx) }()
+
+	if err := waitInjectAccepted(ctx, injector, "stage"); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-stage.got:
+	case <-ctx.Done():
+		t.Fatalf("injected event never reached direct stage: %v", ctx.Err())
+	}
+
+	close(release)
+	if err := <-runErr; err != nil {
+		t.Fatalf("direct Run err = %v", err)
+	}
+
+	got := stage.snapshot()
+	if len(got) == 0 || got[0] != av.EventKeyframeRequired {
+		t.Fatalf("direct stage events = %v, want first = %q", got, av.EventKeyframeRequired)
+	}
+}

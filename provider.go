@@ -13,16 +13,8 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Optional provider.Source capabilities, discovered by type assertion.
-type (
-	sourceProviderNamer    interface{ Name() string }
-	sourceProviderDetailer interface{ Detail() string }
-	// decodeBoundsProvider reports the decode bounds a provider declares for
-	// one of its streams (zero value when none); resolved after OpenSource.
-	decodeBoundsProvider interface {
-		DecodeBounds(av.StreamID) codec.DecodeBounds
-	}
-)
+// Optional provider.Source capabilities, defined in package provider.
+type decodeBoundsProvider = provider.DecodeBoundsProvider
 
 // From adapts a provider input into a recipe input: a provider.Source,
 // whose media the provider produces, or a provider.ByteSource, whose
@@ -54,11 +46,11 @@ func (s Input) withProvider(src provider.Input) Input {
 		s.codec = codecSpecFromSourceShape(spec)
 	case provider.ByteSource:
 		s.bytes = src
-		if named, ok := src.(sourceProviderNamer); ok && s.input.Name == "" {
+		if named, ok := src.(provider.Named); ok && s.input.Name == "" {
 			s.input.Name = named.Name()
 			s.name = s.input.Name
 		}
-		if protocol, ok := src.(interface{ Protocol() av.ProtocolID }); ok && s.input.Protocol == "" {
+		if protocol, ok := src.(provider.ProtocolProvider); ok && s.input.Protocol == "" {
 			s.input.Protocol = protocol.Protocol()
 		}
 	default:
@@ -73,7 +65,7 @@ func (s Input) withProvider(src provider.Input) Input {
 // providerNodeName returns the provider's node name capability, defaulting to
 // "source".
 func providerNodeName(src provider.Source) string {
-	if named, ok := src.(sourceProviderNamer); ok {
+	if named, ok := src.(provider.Named); ok {
 		if name := named.Name(); name != "" {
 			return name
 		}
@@ -84,7 +76,7 @@ func providerNodeName(src provider.Source) string {
 // providerNodeDetail returns the provider's node detail capability; providers
 // without one get an empty detail so planned and built graphs agree.
 func providerNodeDetail(src provider.Source) string {
-	if detailed, ok := src.(sourceProviderDetailer); ok {
+	if detailed, ok := src.(provider.Detailed); ok {
 		return detailed.Detail()
 	}
 	return ""
@@ -119,7 +111,7 @@ func openProviderSource(ctx context.Context, src provider.Source, name string, d
 	if err != nil {
 		return graphSourceBuild{}, err
 	}
-	if aware, ok := source.(interface{ UseClock(av.Clock) }); ok && clock != nil {
+	if aware, ok := source.(provider.ClockUser); ok && clock != nil {
 		aware.UseClock(clock)
 		markTimelinePaced(clock)
 	}

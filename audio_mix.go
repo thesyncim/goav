@@ -138,10 +138,10 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 			out.StreamID = s.out
 			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
-		if msg.Event.Reason == selectorActiveReason {
+		if msg.Event.Type == av.EventSelectActive {
 			// Control-plane events ride the data path through joins unchanged:
 			// a SelectActive heading for a selector downstream of this join
-			// (LegacySelect(LegacyMix(a, b), LegacyMix(c, d))) carries its target arm in
+			// (Select(Mix(a, b), Mix(c, d))) carries its target arm in
 			// Event.StreamID and is consumed by the selector — re-stamping it
 			// to the mix output would erase the target.
 			return emitter.Emit(ctx, msg)

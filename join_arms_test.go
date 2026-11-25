@@ -160,11 +160,11 @@ func TestArmRestampStageContracts(t *testing.T) {
 		t.Fatalf("restamped packet = %+v, original = %+v", got, packet)
 	}
 
-	selectorEvent := &av.Event{Type: av.EventStats, StreamID: "camera_b", Reason: selectorActiveReason}
+	selectorEvent := &av.Event{Type: av.EventSelectActive, StreamID: "camera_b"}
 	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: selectorEvent}, emit); err != nil {
 		t.Fatalf("selector event error = %v", err)
 	}
-	if got := emit.events[len(emit.events)-1]; got.StreamID != "camera_b" || got.Reason != selectorActiveReason {
+	if got := emit.events[len(emit.events)-1]; got.Type != av.EventSelectActive || got.StreamID != "camera_b" {
 		t.Fatalf("selector event = %+v, want unchanged target", got)
 	}
 
