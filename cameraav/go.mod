@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/ebitengine/purego v0.11.0
-	github.com/thesyncim/goav v0.1.0-alpha.8
+	github.com/thesyncim/goav v0.1.0-alpha.9
 	golang.org/x/sys v0.49.0
 )
 

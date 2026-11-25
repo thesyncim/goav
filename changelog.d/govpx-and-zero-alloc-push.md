@@ -1,2 +1,0 @@
-- Make `source.Push.Packet` and `source.Push.Frame` zero-allocation (`0 allocs/op`) by reusing a `pipeline.Message` slot on `Push` instead of escaping a fresh `pipeline.Message` to the heap per packet/frame (dropping `BenchmarkResize`, `BenchmarkResample`, and `BenchmarkSourcePush` to `0 allocs/op`).
-- Bump `github.com/thesyncim/govpx` to `v0.1.1-0.20261124220323-9327953bd8dc` across root and all nested modules referencing it.
