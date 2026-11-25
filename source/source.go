@@ -3,10 +3,17 @@ package source
 
 import (
 	"context"
+	"sync"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
+
+var pushMessagePool = sync.Pool{
+	New: func() any {
+		return new(pipeline.Message)
+	},
+}
 
 // Func is the body of a custom source: push packets, frames, or events until
 // the media ends (push.EOS) or the context is cancelled. The returned error
@@ -40,7 +47,6 @@ type Push struct {
 	ctx     context.Context
 	emitter pipeline.Emitter
 	stream  av.StreamID
-	msg     pipeline.Message
 }
 
 // NewPush binds a pipeline emitter to one source stream. Runtime code uses it
@@ -58,8 +64,7 @@ func (p *Push) Packet(packet *av.Packet) (Result, error) {
 	if packet.StreamID == "" {
 		packet.StreamID = p.stream
 	}
-	p.msg = pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}
-	return p.emitDelivery(&p.msg)
+	return p.emit(pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet})
 }
 
 // Frame delivers one decoded frame. Nil is a no-op. If frame.StreamID is empty,
@@ -71,8 +76,7 @@ func (p *Push) Frame(frame *av.Frame) (Result, error) {
 	if frame.StreamID == "" {
 		frame.StreamID = p.stream
 	}
-	p.msg = pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
-	return p.emitDelivery(&p.msg)
+	return p.emit(pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame})
 }
 
 // Event delivers one out-of-band event. It is also the dynamic stream announce
@@ -88,8 +92,7 @@ func (p *Push) Event(event av.Event) (Result, error) {
 	if event.StreamID == "" {
 		event.StreamID = p.stream
 	}
-	p.msg = pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
-	return p.emitDelivery(&p.msg)
+	return p.emit(pipeline.Message{Kind: pipeline.MessageEvent, Event: &event})
 }
 
 // EOS ends the given streams (or the source's declared stream when none are
@@ -109,6 +112,15 @@ func (p *Push) EOS(streams ...av.StreamID) error {
 	return nil
 }
 
+func (p *Push) emit(msg pipeline.Message) (Result, error) {
+	pooled := pushMessagePool.Get().(*pipeline.Message)
+	*pooled = msg
+	result, err := p.emitDelivery(pooled)
+	*pooled = pipeline.Message{}
+	pushMessagePool.Put(pooled)
+	return result, err
+}
+
 func (p *Push) emitDelivery(msg *pipeline.Message) (Result, error) {
 	if de, ok := p.emitter.(pipeline.DeliveryEmitter); ok {
 		delivery, err := de.EmitDelivery(p.ctx, msg)
@@ -119,6 +131,10 @@ func (p *Push) emitDelivery(msg *pipeline.Message) (Result, error) {
 }
 
 func (p *Push) eventOnly(event av.Event) error {
-	p.msg = pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
-	return p.emitter.Emit(p.ctx, &p.msg)
+	pooled := pushMessagePool.Get().(*pipeline.Message)
+	*pooled = pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+	err := p.emitter.Emit(p.ctx, pooled)
+	*pooled = pipeline.Message{}
+	pushMessagePool.Put(pooled)
+	return err
 }

@@ -3,9 +3,11 @@ package source
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/raceflag"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -138,5 +140,65 @@ func TestPushEOSEmitsPerStream(t *testing.T) {
 		if event == nil || event.Type != av.EventEndOfStream || event.StreamID != id {
 			t.Fatalf("EOS event %d = %+v, want EndOfStream on %q", i, event, id)
 		}
+	}
+}
+
+type discardEmitter struct{}
+
+func (discardEmitter) Emit(context.Context, *pipeline.Message) error { return nil }
+
+func (discardEmitter) EmitDelivery(context.Context, *pipeline.Message) (pipeline.Delivery, error) {
+	return pipeline.Delivery{Delivered: 1}, nil
+}
+
+func TestPushConcurrentSafety(t *testing.T) {
+	push := NewPush(context.Background(), discardEmitter{}, "s")
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pkt := &av.Packet{StreamID: "s"}
+			frm := &av.Frame{StreamID: "s"}
+			for range 256 {
+				if _, err := push.Packet(pkt); err != nil {
+					t.Errorf("Packet err = %v", err)
+					return
+				}
+				if _, err := push.Frame(frm); err != nil {
+					t.Errorf("Frame err = %v", err)
+					return
+				}
+				if _, err := push.Event(av.Event{Type: av.EventType("tick"), StreamID: "s"}); err != nil {
+					t.Errorf("Event err = %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestPushZeroAllocs(t *testing.T) {
+	if raceflag.Enabled {
+		t.Skip("sync.Pool drops pooled messages under -race")
+	}
+	push := NewPush(context.Background(), discardEmitter{}, "s")
+	pkt := &av.Packet{StreamID: "s"}
+	frm := &av.Frame{StreamID: "s"}
+
+	if allocs := testing.AllocsPerRun(1000, func() {
+		if _, err := push.Packet(pkt); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("Push.Packet allocs = %v, want 0", allocs)
+	}
+	if allocs := testing.AllocsPerRun(1000, func() {
+		if _, err := push.Frame(frm); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("Push.Frame allocs = %v, want 0", allocs)
 	}
 }
