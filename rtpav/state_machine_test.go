@@ -86,7 +86,7 @@ func TestVideoFrameAssemblerErrResultFullPreservesState(t *testing.T) {
 	pc := PayloadCodec{ClockRate: 90000}
 
 	// 1. Single-packet frame with zero-cap out.Packets must return ErrResultFull and stay asmIdle.
-	fullOut := DepacketizeResult{Packets: make([]av.Packet, 0, 0)}
+	fullOut := DepacketizeResult{Packets: make([]av.Packet, 0)}
 	pkt := &rtp.Packet{Header: rtp.Header{Timestamp: 100, Marker: true}, Payload: []byte{0x10, 0x00, 0x11}}
 	if err := d.PushInto(ctx, pkt, pc, &fullOut); !errors.Is(err, ErrResultFull) {
 		t.Fatalf("err = %v, want ErrResultFull", err)
@@ -361,7 +361,7 @@ func TestJitterRingSSRCChangeErrResultFullDoesNotLoseDiscontinuity(t *testing.T)
 	}
 
 	// Push SSRC=2 with zero-cap Events: must return ErrResultFull and NOT mutate ssrc/expected.
-	fullEventsOut := JitterResult{Ready: make([]*rtp.Packet, 0, 2), Events: make([]av.Event, 0, 0)}
+	fullEventsOut := JitterResult{Ready: make([]*rtp.Packet, 0, 2), Events: make([]av.Event, 0)}
 	p2 := &rtp.Packet{Header: rtp.Header{SSRC: 2, SequenceNumber: 20}}
 	if err := jitter.PushInto(ctx, p2, &fullEventsOut); !errors.Is(err, ErrResultFull) {
 		t.Fatalf("err = %v, want ErrResultFull", err)
