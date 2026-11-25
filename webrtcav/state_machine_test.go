@@ -234,3 +234,32 @@ func TestTrackReaderCloseClearsExpiredAndTransitionsClosed(t *testing.T) {
 		t.Fatalf("UpdateCodec after Close = %v, want ErrClosed", err)
 	}
 }
+
+func TestWhipSessionAwaitConnectedRejectsFailedSession(t *testing.T) {
+	s := &whipSession{
+		config:    signalConfig{connect: time.Second},
+		connected: make(chan struct{}),
+		failed:    make(chan struct{}),
+	}
+	close(s.connected)
+	s.state.Store(whipFailed)
+	close(s.failed)
+
+	for range 32 {
+		if err := s.awaitConnected(context.Background()); !errors.Is(err, ErrWHIPDisconnected) {
+			t.Fatalf("awaitConnected() on failed session = %v, want ErrWHIPDisconnected", err)
+		}
+	}
+}
+
+func TestSignalingDropsCandidatesOnceTrickleStoppedOrClosed(t *testing.T) {
+	s := &signaling{
+		wake:  make(chan struct{}, 1),
+		state: sigTrickleStopped,
+	}
+	s.candidate(&webrtc.ICECandidate{})
+	s.candidate(nil)
+	if len(s.trickle) != 0 || s.trickleEnd {
+		t.Fatalf("candidates buffered in sigTrickleStopped: len=%d end=%v", len(s.trickle), s.trickleEnd)
+	}
+}

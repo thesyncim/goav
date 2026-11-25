@@ -182,6 +182,15 @@ func endpointURL(u *url.URL, protocol string) (*url.URL, error) {
 	return &endpoint, nil
 }
 
+type signalState uint8
+
+const (
+	sigGathering signalState = iota
+	sigTrickling
+	sigTrickleStopped
+	sigClosed
+)
+
 // signaling is the HTTP side of one WHIP or WHEP session (RFC 9725): POST
 // the offer, keep the session resource, trickle late candidates by PATCH,
 // and DELETE the resource on close.
@@ -193,6 +202,7 @@ type signaling struct {
 	wake     chan struct{}
 
 	mu           sync.Mutex
+	state        signalState
 	originHost   string
 	originScheme string
 	resource     *url.URL
@@ -201,8 +211,6 @@ type signaling struct {
 	// trickleEnd the end of gathering, until the trickle loop PATCHes them.
 	trickle    []webrtc.ICECandidateInit
 	trickleEnd bool
-	patches    bool
-	posted     bool
 	// linked is the ICE servers the answer named (Link rel="ice-server").
 	linked    []webrtc.ICEServer
 	closeOnce sync.Once
@@ -271,9 +279,17 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 	s.mu.Lock()
 	s.resource = resolved
 	s.etag = resp.Header.Get("ETag")
-	s.patches = acceptsTricklePatch(resp.Header.Values("Accept-Patch"))
 	s.linked = linkedICEServers(resp.Header.Values("Link"))
-	s.posted = true
+	trickling := false
+	if s.state == sigGathering {
+		if acceptsTricklePatch(resp.Header.Values("Accept-Patch")) {
+			s.state = sigTrickling
+			trickling = true
+		} else {
+			s.state = sigTrickleStopped
+			s.trickle, s.trickleEnd = nil, false
+		}
+	}
 	s.mu.Unlock()
 	if check != nil {
 		if err := check(string(answer)); err != nil {
@@ -283,8 +299,10 @@ func (s *signaling) exchange(ctx context.Context, endpoint *url.URL, check func(
 	if err := s.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: string(answer)}); err != nil {
 		return "", err
 	}
-	go s.trickleLoop()
-	s.signal()
+	if trickling {
+		go s.trickleLoop()
+		s.signal()
+	}
 	return string(answer), nil
 }
 
@@ -300,6 +318,8 @@ func (s *signaling) close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
+		s.state = sigClosed
+		s.trickle, s.trickleEnd = nil, false
 		resource := s.resource
 		s.mu.Unlock()
 		if resource == nil {
@@ -321,14 +341,18 @@ func (s *signaling) close() error {
 // loop, which runs once the session resource exists.
 func (s *signaling) candidate(candidate *webrtc.ICECandidate) {
 	s.mu.Lock()
+	if s.state >= sigTrickleStopped {
+		s.mu.Unlock()
+		return
+	}
 	if candidate == nil {
 		s.trickleEnd = true
 	} else {
 		s.trickle = append(s.trickle, candidate.ToJSON())
 	}
-	posted := s.posted
+	trickling := s.state == sigTrickling
 	s.mu.Unlock()
-	if posted {
+	if trickling {
 		s.signal()
 	}
 }
@@ -350,12 +374,16 @@ func (s *signaling) trickleLoop() {
 			return
 		}
 		s.mu.Lock()
-		batch, end, patches := s.trickle, s.trickleEnd, s.patches
-		s.trickle, s.trickleEnd = nil, false
-		s.mu.Unlock()
-		if !patches {
+		if s.state != sigTrickling {
+			s.mu.Unlock()
 			return
 		}
+		batch, end := s.trickle, s.trickleEnd
+		s.trickle, s.trickleEnd = nil, false
+		if end {
+			s.state = sigTrickleStopped
+		}
+		s.mu.Unlock()
 		if len(batch) != 0 || end {
 			s.patch(batch, end)
 		}
@@ -398,7 +426,10 @@ func (s *signaling) patch(candidates []webrtc.ICECandidateInit, end bool) {
 	}
 	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
 		s.mu.Lock()
-		s.patches = false
+		if s.state < sigTrickleStopped {
+			s.state = sigTrickleStopped
+			s.trickle, s.trickleEnd = nil, false
+		}
 		s.mu.Unlock()
 	}
 }

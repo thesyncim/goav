@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/interceptor"
@@ -82,6 +83,12 @@ func (s whipScheme) Destination(u *url.URL) (provider.Output, error) {
 }
 
 // whipSession is one negotiated WHIP session: the peer connection, its
+const (
+	whipConnecting uint32 = iota
+	whipConnected
+	whipFailed
+)
+
 // signaling, and its tracks' writer.
 type whipSession struct {
 	config    signalConfig
@@ -90,6 +97,7 @@ type whipSession struct {
 	cancel    context.CancelFunc
 	writer    *trackWriter
 	options   []rtpav.SendOption
+	state     atomic.Uint32
 	connected chan struct{}
 	failed    chan struct{}
 	failOnce  sync.Once
@@ -133,8 +141,11 @@ func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
-			session.connOnce.Do(func() { close(session.connected) })
+			if session.state.CompareAndSwap(whipConnecting, whipConnected) {
+				session.connOnce.Do(func() { close(session.connected) })
+			}
 		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
+			session.state.Store(whipFailed)
 			session.failOnce.Do(func() { close(session.failed) })
 		}
 	})
@@ -178,10 +189,16 @@ func (s *whipSession) linkedServers() []webrtc.ICEServer { return s.sig.linkedSe
 // awaitConnected waits until the peer connection connects, so the first
 // packets, a keyframe among them, reach the server.
 func (s *whipSession) awaitConnected(ctx context.Context) error {
+	if s.state.Load() == whipFailed {
+		return ErrWHIPDisconnected
+	}
 	deadline := time.NewTimer(s.config.connect)
 	defer deadline.Stop()
 	select {
 	case <-s.connected:
+		if s.state.Load() == whipFailed {
+			return ErrWHIPDisconnected
+		}
 		return nil
 	case <-s.failed:
 		return ErrWHIPDisconnected
@@ -229,6 +246,8 @@ func (s *whipSession) followEstimate(ctx context.Context, targets <-chan int, st
 // and DELETEs the session's resource; the writer calls it when the sender closes.
 func (s *whipSession) Close() error {
 	s.closeOnce.Do(func() {
+		s.state.Store(whipFailed)
+		s.failOnce.Do(func() { close(s.failed) })
 		s.cancel()
 		// Closing the peer connection stops its senders, which ends the
 		// writer's RTCP readers.

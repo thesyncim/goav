@@ -837,24 +837,25 @@ func (d dirStore) Remove(name string) error {
 
 type publishing struct {
 	*os.File
-	final   string
-	aborted bool
+	final string
+	state storeFileState
 }
 
 func (p *publishing) abort() {
-	if p.aborted {
+	if p.state != storeFileOpen {
 		return
 	}
-	p.aborted = true
+	p.state = storeFileAborted
 	name := p.File.Name()
 	_ = p.File.Close()
 	_ = os.Remove(name)
 }
 
 func (p *publishing) Close() error {
-	if p.aborted {
+	if p.state != storeFileOpen {
 		return nil
 	}
+	p.state = storeFileClosed
 	name := p.File.Name()
 	if err := p.File.Chmod(0o644); err != nil {
 		_ = p.File.Close()

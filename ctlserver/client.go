@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+type clientState uint8
+
+const (
+	clientOpen clientState = iota
+	clientClosing
+	clientClosed
+)
+
 // Client calls a ctl server over one connection; calls may run
 // concurrently, and watches share the connection.
 type Client struct {
@@ -20,6 +28,7 @@ type Client struct {
 	enc       *json.Encoder
 
 	mu      sync.Mutex
+	state   clientState
 	next    int64
 	pending map[string]chan response
 	watches map[string]chan Event
@@ -76,7 +85,14 @@ func splitToken(address string) (string, string) {
 }
 
 // Close closes the connection; calls in flight fail.
-func (c *Client) Close() error { return c.conn.Close() }
+func (c *Client) Close() error {
+	c.mu.Lock()
+	if c.state == clientOpen {
+		c.state = clientClosing
+	}
+	c.mu.Unlock()
+	return c.conn.Close()
+}
 
 // Call calls method with params (a struct or map, or nil) and returns its
 // result as a T; json.RawMessage keeps it raw:
@@ -113,8 +129,8 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 		rawParams = data
 	}
 	c.mu.Lock()
-	if c.err != nil {
-		err := c.err
+	if c.state != clientOpen {
+		err := c.closedErrLocked()
 		c.mu.Unlock()
 		return nil, err
 	}
@@ -211,6 +227,11 @@ func (c *Client) write(ctx context.Context, req request) error {
 // A slow reader loses events, never the task's media.
 func (c *Client) Watch(ctx context.Context, params any) (<-chan Event, error) {
 	c.mu.Lock()
+	if c.state != clientOpen {
+		err := c.closedErrLocked()
+		c.mu.Unlock()
+		return nil, err
+	}
 	c.watching++
 	c.mu.Unlock()
 	sub, err := c.Call[struct {
@@ -282,6 +303,7 @@ func (c *Client) read() {
 		}
 	}
 	c.mu.Lock()
+	c.state = clientClosed
 	c.err = err
 	c.mu.Unlock()
 	close(c.done)
@@ -305,6 +327,10 @@ func (c *Client) deliver(subscription string, e Event) {
 func (c *Client) closedErr() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.closedErrLocked()
+}
+
+func (c *Client) closedErrLocked() error {
 	if c.err != nil && !errors.Is(c.err, net.ErrClosed) {
 		return c.err
 	}
