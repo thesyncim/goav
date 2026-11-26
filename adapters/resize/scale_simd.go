@@ -80,17 +80,17 @@ func scaleHalfBox(dst, src planeBuf, rect scaleRect) {
 	}
 }
 
-func (p *planeScaler) scaleVertical(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHeight int) {
+func (p *planeScaler) scaleVertical(dst []byte, dstStride int, tmp []uint16, dstWidth, y0, y1, srcFirst int) {
 	if !useSIMDResize() {
-		p.scaleVerticalScalar(dst, dstStride, tmp, dstWidth, dstHeight)
+		p.scaleVerticalScalar(dst, dstStride, tmp, dstWidth, y0, y1, srcFirst)
 		return
 	}
-	scaleVerticalSIMD(dst, dstStride, tmp, dstWidth, dstHeight, p.y.start, p.y.weights, p.y.taps)
+	scaleVerticalSIMD(dst, dstStride, tmp, dstWidth, y0, y1, srcFirst, p.y.start, p.y.weights, p.y.taps)
 }
 
 // scaleVerticalSIMD runs the separable vertical pass in-register across chunks
 // of Uint16s.Len() columns, eliminating per-tap accumulator memory traffic.
-func scaleVerticalSIMD(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHeight int, starts []int32, allWeights []int32, yTaps int) {
+func scaleVerticalSIMD(dst []byte, dstStride int, tmp []uint16, dstWidth, y0, y1, srcFirst int, starts []int32, allWeights []int32, yTaps int) {
 	const shift = weightBits + intermediateBits
 	const round = 1 << (shift - 1)
 
@@ -101,8 +101,8 @@ func scaleVerticalSIMD(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHei
 	maskFFFF := simd.BroadcastUint32s(0xffff)
 	var buf [64]uint32
 
-	for i := range dstHeight {
-		base := int(starts[i])
+	for i := y0; i < y1; i++ {
+		base := int(starts[i]) - srcFirst
 		weights := allWeights[i*yTaps : (i+1)*yTaps]
 		out := dst[i*dstStride : i*dstStride+dstWidth]
 
