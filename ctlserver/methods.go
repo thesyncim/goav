@@ -121,19 +121,7 @@ type MethodInfo struct {
 
 func builtinMethods() []*method {
 	return []*method{
-		define("describe", "the task's graph", func(_ context.Context, s *Server, _ *session, p describeParams) (any, error) {
-			switch p.Format {
-			case "", "json":
-				return s.task.Spec(), nil
-			case "text", "dot", "mermaid":
-				target := "goav:graph"
-				if p.Format != "text" {
-					target += "?format=" + p.Format
-				}
-				return graphrender.RenderTaskURI(s.task, target)
-			}
-			return nil, invalidParams("describe: format is json, text, dot, or mermaid")
-		}),
+		define("describe", "the task's graph", describeMethod),
 		define("explain", "the task's plan", func(ctx context.Context, s *Server, _ *session, _ none) (any, error) {
 			return s.task.Explain(ctx)
 		}),
@@ -147,20 +135,7 @@ func builtinMethods() []*method {
 			return s.task.Taps(), nil
 		}),
 		define("watch", "stream events as notifications until unwatch or disconnect", watch),
-		define("unwatch", "stop a watch", func(_ context.Context, _ *Server, sess *session, p subscriptionParams) (any, error) {
-			if sess == nil {
-				return nil, invalidParams("unwatch: no watch on this connection")
-			}
-			sess.mu.Lock()
-			w, ok := sess.watches[p.Subscription]
-			delete(sess.watches, p.Subscription)
-			sess.mu.Unlock()
-			if !ok {
-				return nil, invalidParams("unwatch: no watch " + strconv.Quote(p.Subscription))
-			}
-			w.Close()
-			return struct{}{}, nil
-		}),
+		define("unwatch", "stop a watch", unwatchMethod),
 		define("bitrate", "retarget an encoded stream's bitrate", func(ctx context.Context, s *Server, _ *session, p bitrateParams) (any, error) {
 			c, err := control.SetBitrate(av.StreamID(p.Stream), p.Bitrate)
 			if err != nil {
@@ -197,94 +172,140 @@ func builtinMethods() []*method {
 		define("resume", "continue the task's timeline", func(ctx context.Context, s *Server, _ *session, _ none) (any, error) {
 			return struct{}{}, s.task.Resume(ctx)
 		}),
-		define("attach", "add a program's outputs to the running task", func(ctx context.Context, s *Server, _ *session, p attachParams) (any, error) {
-			outs, err := s.compile(p.Program)
-			if err != nil {
-				return nil, err
-			}
-			a, err := s.task.Attach(ctx, outs...)
-			if err != nil {
-				return nil, err
-			}
-			s.store(a)
-			return Attached{a.Name()}, nil
-		}),
-		define("detach", "remove an attachment", func(ctx context.Context, s *Server, _ *session, p detachParams) (any, error) {
-			a, err := s.lookup(p.Attachment)
-			if err != nil {
-				return nil, err
-			}
-			var opts []goav.DetachOption
-			switch p.Outcome {
-			case "", "close":
-			case "drain":
-				opts = append(opts, goav.DrainBranch())
-			case "abort":
-				opts = append(opts, goav.AbortBranch())
-			default:
-				return nil, invalidParams("detach: outcome is close, drain, or abort")
-			}
-			if err := s.task.Detach(ctx, a, opts...); err != nil {
-				return nil, err
-			}
-			s.forget(p.Attachment)
-			return struct{}{}, nil
-		}),
-		define("rebranch", "replace an attachment with a new program, gaplessly", func(ctx context.Context, s *Server, _ *session, p rebranchParams) (any, error) {
-			a, err := s.lookup(p.Attachment)
-			if err != nil {
-				return nil, err
-			}
-			outs, err := s.compile(p.Program)
-			if err != nil {
-				return nil, err
-			}
-			args := make([]goav.RebranchArg, 0, len(outs)+2)
-			for _, out := range outs {
-				args = append(args, out)
-			}
-			switch p.Switch {
-			case "", "now":
-			case "next-frame":
-				args = append(args, goav.SwitchAt(goav.NextFrame()))
-			case "next-keyframe":
-				args = append(args, goav.SwitchAt(goav.NextKeyframe()))
-			default:
-				at, err := time.ParseDuration(p.Switch)
-				if err != nil {
-					return nil, invalidParams("rebranch: switch is now, next-frame, next-keyframe, or a media position like 2s")
-				}
-				args = append(args, goav.SwitchAt(goav.AtMediaTime(at)))
-			}
-			switch p.Old {
-			case "", "close":
-			case "drain":
-				args = append(args, goav.DrainBranch())
-			case "abort":
-				args = append(args, goav.AbortBranch())
-			default:
-				return nil, invalidParams("rebranch: old is close, drain, or abort")
-			}
-			next, err := a.Rebranch(ctx, args...)
-			if err != nil {
-				return nil, err
-			}
-			s.forget(p.Attachment)
-			s.store(next)
-			return Attached{next.Name()}, nil
-		}),
+		define("attach", "add a program's outputs to the running task", attachMethod),
+		define("detach", "remove an attachment", detachMethod),
+		define("rebranch", "replace an attachment with a new program, gaplessly", rebranchMethod),
 		define("stop", "close the task", func(_ context.Context, s *Server, _ *session, _ none) (any, error) {
 			return struct{}{}, s.task.Close()
 		}),
-		define("capabilities", "this server's methods and the elements attached programs may use", func(_ context.Context, s *Server, _ *session, _ none) (any, error) {
-			caps := Capabilities{Protocol: protocolVersion, Elements: launch.Elements(launch.Use(s.elements...))}
-			for _, name := range s.methodNames() {
-				m := s.methods[name]
-				caps.Methods = append(caps.Methods, MethodInfo{Name: m.name, Summary: m.summary, Params: m.schema.params()})
-			}
-			return caps, nil
-		}),
+		define("capabilities", "this server's methods and the elements attached programs may use", capabilitiesMethod),
 	}
+}
+
+func describeMethod(_ context.Context, s *Server, _ *session, p describeParams) (any, error) {
+	switch p.Format {
+	case "", "json":
+		return s.task.Spec(), nil
+	case "text", "dot", "mermaid":
+		target := "goav:graph"
+		if p.Format != "text" {
+			target += "?format=" + p.Format
+		}
+		return graphrender.RenderTaskURI(s.task, target)
+	}
+	return nil, invalidParams("describe: format is json, text, dot, or mermaid")
+}
+
+func unwatchMethod(_ context.Context, _ *Server, sess *session, p subscriptionParams) (any, error) {
+	if sess == nil {
+		return nil, invalidParams("unwatch: no watch on this connection")
+	}
+	sess.mu.Lock()
+	w, ok := sess.watches[p.Subscription]
+	delete(sess.watches, p.Subscription)
+	sess.mu.Unlock()
+	if !ok {
+		return nil, invalidParams("unwatch: no watch " + strconv.Quote(p.Subscription))
+	}
+	w.Close()
+	return struct{}{}, nil
+}
+
+func attachMethod(ctx context.Context, s *Server, _ *session, p attachParams) (any, error) {
+	outs, err := s.compile(p.Program)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.task.Attach(ctx, outs...)
+	if err != nil {
+		return nil, err
+	}
+	s.store(a)
+	return Attached{a.Name()}, nil
+}
+
+func parseDetachOutcome(method, field, value string) (goav.DetachOption, bool, error) {
+	switch value {
+	case "", "close":
+		return nil, false, nil
+	case "drain":
+		return goav.DrainBranch(), true, nil
+	case "abort":
+		return goav.AbortBranch(), true, nil
+	default:
+		return nil, false, invalidParams(method + ": " + field + " is close, drain, or abort")
+	}
+}
+
+func detachMethod(ctx context.Context, s *Server, _ *session, p detachParams) (any, error) {
+	a, err := s.lookup(p.Attachment)
+	if err != nil {
+		return nil, err
+	}
+	opt, hasOpt, err := parseDetachOutcome("detach", "outcome", p.Outcome)
+	if err != nil {
+		return nil, err
+	}
+	var opts []goav.DetachOption
+	if hasOpt {
+		opts = append(opts, opt)
+	}
+	if err := s.task.Detach(ctx, a, opts...); err != nil {
+		return nil, err
+	}
+	s.forget(p.Attachment)
+	return struct{}{}, nil
+}
+
+func rebranchMethod(ctx context.Context, s *Server, _ *session, p rebranchParams) (any, error) {
+	a, err := s.lookup(p.Attachment)
+	if err != nil {
+		return nil, err
+	}
+	outs, err := s.compile(p.Program)
+	if err != nil {
+		return nil, err
+	}
+	args := make([]goav.RebranchArg, 0, len(outs)+2)
+	for _, out := range outs {
+		args = append(args, out)
+	}
+	switch p.Switch {
+	case "", "now":
+	case "next-frame":
+		args = append(args, goav.SwitchAt(goav.NextFrame()))
+	case "next-keyframe":
+		args = append(args, goav.SwitchAt(goav.NextKeyframe()))
+	default:
+		at, err := time.ParseDuration(p.Switch)
+		if err != nil {
+			return nil, invalidParams("rebranch: switch is now, next-frame, next-keyframe, or a media position like 2s")
+		}
+		args = append(args, goav.SwitchAt(goav.AtMediaTime(at)))
+	}
+	opt, hasOpt, err := parseDetachOutcome("rebranch", "old", p.Old)
+	if err != nil {
+		return nil, err
+	}
+	if hasOpt {
+		args = append(args, opt)
+	}
+	next, err := a.Rebranch(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	s.forget(p.Attachment)
+	s.store(next)
+	return Attached{next.Name()}, nil
+}
+
+func capabilitiesMethod(_ context.Context, s *Server, _ *session, _ none) (any, error) {
+	caps := Capabilities{Protocol: protocolVersion, Elements: launch.Elements(launch.Use(s.elements...))}
+	for _, name := range s.methodNames() {
+		m := s.methods[name]
+		caps.Methods = append(caps.Methods, MethodInfo{Name: m.name, Summary: m.summary, Params: m.schema.params()})
+	}
+	return caps, nil
 }
 
 func watch(_ context.Context, s *Server, sess *session, p watchParams) (any, error) {

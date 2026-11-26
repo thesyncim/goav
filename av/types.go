@@ -1,8 +1,10 @@
 package av
 
 import (
+	"maps"
 	"math"
 	"math/bits"
+	"slices"
 	"time"
 )
 
@@ -593,9 +595,43 @@ type Event struct {
 	Metadata Metadata
 }
 
+// Clone returns a deep copy of CodecParameters, detaching ExtraData bytes and
+// Attributes from the original.
+func (c CodecParameters) Clone() CodecParameters {
+	cloned := c
+	if c.ExtraData.Bytes != nil {
+		cloned.ExtraData = Buffer{Bytes: slices.Clone(c.ExtraData.Bytes)}
+	}
+	cloned.Attributes = maps.Clone(c.Attributes)
+	return cloned
+}
+
+// Clone returns a deep copy of Stream, detaching Codec fields and Metadata.
+func (s Stream) Clone() Stream {
+	cloned := s
+	cloned.Codec = s.Codec.Clone()
+	cloned.Metadata = maps.Clone(s.Metadata)
+	return cloned
+}
+
 // Reset clears the event for reuse.
 func (e *Event) Reset() {
 	*e = Event{}
+}
+
+// Clone returns a deep copy of Event, detaching Stream, Codec, and Metadata.
+func (e Event) Clone() Event {
+	cloned := e
+	if e.Stream != nil {
+		stream := e.Stream.Clone()
+		cloned.Stream = &stream
+	}
+	if e.Codec != nil {
+		codec := e.Codec.Clone()
+		cloned.Codec = &codec
+	}
+	cloned.Metadata = maps.Clone(e.Metadata)
+	return cloned
 }
 
 // RTPTimeBase returns the timebase of an RTP clock rate (1/clockRate

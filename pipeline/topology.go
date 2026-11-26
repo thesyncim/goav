@@ -473,24 +473,28 @@ func (t *topology[P]) detachLocked(ref NodeRef) (P, error) {
 		if !b.isRoutable() {
 			continue
 		}
-		routes := b.routes[:0]
-		for j := range b.routes {
-			route := b.routes[j]
-			to := route.to[:0]
-			for k := range route.to {
-				if route.to[k] != index {
-					to = append(to, route.to[k])
-				}
-			}
-			if len(to) == 0 {
-				continue
-			}
-			route.to = to
-			routes = append(routes, route)
-		}
-		b.routes = routes
+		pruneNodeRoutes(b, func(to int) bool { return to == index })
 	}
 	return n, nil
+}
+
+func pruneNodeRoutes(b *nodeBase, drop func(int) bool) {
+	routes := b.routes[:0]
+	for j := range b.routes {
+		route := b.routes[j]
+		to := route.to[:0]
+		for k := range route.to {
+			if !drop(route.to[k]) {
+				to = append(to, route.to[k])
+			}
+		}
+		if len(to) == 0 {
+			continue
+		}
+		route.to = to
+		routes = append(routes, route)
+	}
+	b.routes = routes
 }
 
 // finalStats reads a removed node's counters, as Stats would have listed

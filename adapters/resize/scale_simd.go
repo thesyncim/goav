@@ -15,11 +15,14 @@ func useSIMDResize() bool {
 // lane holds a horizontal pair (low byte = s[2k], high byte = s[2k+1]).
 // Adding low and high bytes for both source rows yields 0..1020 in uint16,
 // then +2 >> 2 produces the exact output byte in each lane's low byte.
-func scaleHalfBox(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, dstWidth, dstHeight int) {
+func scaleHalfBox(dst, src planeBuf, rect scaleRect) {
 	if !useSIMDResize() {
-		scaleHalfBoxScalar(dst, dstStride, src, srcStride, srcX, srcY, dstWidth, dstHeight)
+		scaleHalfBoxScalar(dst, src, rect)
 		return
 	}
+	dstData, dstStride := dst.data, dst.stride
+	srcData, srcStride := src.data, src.stride
+	srcX, srcY, dstWidth, dstHeight := rect.srcX, rect.srcY, rect.dstW, rect.dstH
 	step := simd.Uint8s{}.Len()
 	half := step / 2
 	vec := dstWidth - dstWidth%half
@@ -29,9 +32,9 @@ func scaleHalfBox(dst []byte, dstStride int, src []byte, srcStride int, srcX, sr
 	var buf [256]uint16
 
 	for y := range dstHeight {
-		s0 := src[(srcY+2*y)*srcStride+srcX:]
-		s1 := src[(srcY+2*y+1)*srcStride+srcX:]
-		out := dst[y*dstStride : y*dstStride+dstWidth]
+		s0 := srcData[(srcY+2*y)*srcStride+srcX:]
+		s1 := srcData[(srcY+2*y+1)*srcStride+srcX:]
+		out := dstData[y*dstStride : y*dstStride+dstWidth]
 
 		x := 0
 		for ; x < block; x += 4 * half {

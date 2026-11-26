@@ -33,16 +33,14 @@
 package hls
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"math"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -165,6 +163,7 @@ type writer struct {
 	dir, file, base string
 	buf             []byte
 	init            []byte
+	renderBuf       bytes.Buffer
 	err             error
 	state           writerState
 	inFragment      bool
@@ -406,13 +405,13 @@ func (w *writer) publishPlaylist(end bool) error {
 		}
 	}
 	full, _ := w.render(end, false)
-	if err := w.publishFile(w.file, []byte(full)); err != nil {
+	if err := w.publishFile(w.file, full); err != nil {
 		return err
 	}
 	if a, ok := w.store.(announcer); ok {
 		e := w.edgeState(end)
 		if delta, skipped := w.render(end, true); skipped {
-			e.delta = []byte(delta)
+			e.delta = bytes.Clone(delta)
 		}
 		a.announce(w.playlist, e)
 	}
@@ -435,7 +434,7 @@ func (w *writer) skipBoundary() float64 { return 6 * float64(w.targetSecs) }
 // render writes the playlist. With skip it writes the delta update a player
 // asks for with _HLS_skip=YES: the segments past the skip boundary become
 // one EXT-X-SKIP, and it reports whether there were any.
-func (w *writer) render(end, skip bool) (string, bool) {
+func (w *writer) render(end, skip bool) ([]byte, bool) {
 	listed := w.listed()
 	low := w.parts > 0 && !end
 	edge := 0.0
@@ -450,19 +449,20 @@ func (w *writer) render(end, skip bool) (string, bool) {
 			skipped++
 		}
 		if skipped == 0 {
-			return "", false
+			return nil, false
 		}
 	}
-	var b strings.Builder
+	b := &w.renderBuf
+	b.Reset()
 	version := 7
 	if skipped > 0 {
 		version = 9 // EXT-X-SKIP
 	}
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n", version)
-	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", w.targetSecs)
+	fmt.Fprintf(b, "#EXTM3U\n#EXT-X-VERSION:%d\n", version)
+	fmt.Fprintf(b, "#EXT-X-TARGETDURATION:%d\n", w.targetSecs)
 	if low {
-		fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=%.1f,PART-HOLD-BACK=%.3f\n", w.skipBoundary(), 3*w.parts.Seconds())
-		fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%.3f\n", w.parts.Seconds())
+		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=%.1f,PART-HOLD-BACK=%.3f\n", w.skipBoundary(), 3*w.parts.Seconds())
+		fmt.Fprintf(b, "#EXT-X-PART-INF:PART-TARGET=%.3f\n", w.parts.Seconds())
 	}
 	if w.window == 0 {
 		if end {
@@ -471,11 +471,11 @@ func (w *writer) render(end, skip bool) (string, bool) {
 			b.WriteString("#EXT-X-PLAYLIST-TYPE:EVENT\n")
 		}
 	}
-	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", w.sequence)
+	fmt.Fprintf(b, "#EXT-X-MEDIA-SEQUENCE:%d\n", w.sequence)
 	b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
-	fmt.Fprintf(&b, "#EXT-X-MAP:URI=%q\n", w.base+"-init.mp4")
+	fmt.Fprintf(b, "#EXT-X-MAP:URI=%q\n", w.base+"-init.mp4")
 	if skipped > 0 {
-		fmt.Fprintf(&b, "#EXT-X-SKIP:SKIPPED-SEGMENTS=%d\n", skipped)
+		fmt.Fprintf(b, "#EXT-X-SKIP:SKIPPED-SEGMENTS=%d\n", skipped)
 	}
 	// Parts are listed for the segments within three target durations of
 	// the live edge.
@@ -484,7 +484,7 @@ func (w *writer) render(end, skip bool) (string, bool) {
 			return
 		}
 		for _, p := range s.parts {
-			fmt.Fprintf(&b, "#EXT-X-PART:DURATION=%.3f,URI=%q", p.duration, p.name)
+			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%.3f,URI=%q", p.duration, p.name)
 			if p.independent {
 				b.WriteString(",INDEPENDENT=YES")
 			}
@@ -493,23 +493,23 @@ func (w *writer) render(end, skip bool) (string, bool) {
 	}
 	for _, s := range listed[skipped:] {
 		if low || w.window > 0 {
-			w.writeDate(&b, s.start)
+			w.writeDate(b, s.start)
 		}
 		writeParts(s)
-		fmt.Fprintf(&b, "#EXTINF:%.3f,\n%s\n", s.duration(), s.name)
+		fmt.Fprintf(b, "#EXTINF:%.3f,\n%s\n", s.duration(), s.name)
 	}
 	if low && w.open != nil {
-		w.writeDate(&b, w.open.start)
+		w.writeDate(b, w.open.start)
 		writeParts(*w.open)
-		fmt.Fprintf(&b, "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=%q\n", w.hint())
+		fmt.Fprintf(b, "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=%q\n", w.hint())
 	}
 	if low && w.ladder != nil {
 		// Where the other renditions stand, so a player switches to one
 		// without first reloading its playlist.
 		for _, r := range w.ladder.reports(w.variant) {
-			fmt.Fprintf(&b, "#EXT-X-RENDITION-REPORT:URI=%q,LAST-MSN=%d", relativeURI(w.dir, r.playlist), r.msn)
+			fmt.Fprintf(b, "#EXT-X-RENDITION-REPORT:URI=%q,LAST-MSN=%d", relativeURI(w.dir, r.playlist), r.msn)
 			if r.part >= 0 {
-				fmt.Fprintf(&b, ",LAST-PART=%d", r.part)
+				fmt.Fprintf(b, ",LAST-PART=%d", r.part)
 			}
 			b.WriteString("\n")
 		}
@@ -517,7 +517,7 @@ func (w *writer) render(end, skip bool) (string, bool) {
 	if end {
 		b.WriteString("#EXT-X-ENDLIST\n")
 	}
-	return b.String(), skipped > 0
+	return b.Bytes(), skipped > 0
 }
 
 // position is the newest segment the playlist lists and its newest part
@@ -536,7 +536,7 @@ func (w *writer) position() (msn, part int, ok bool) {
 	return 0, 0, false
 }
 
-func (w *writer) writeDate(b *strings.Builder, start float64) {
+func (w *writer) writeDate(b *bytes.Buffer, start float64) {
 	at := w.clock.Add(time.Duration(start * float64(time.Second))).UTC()
 	fmt.Fprintf(b, "#EXT-X-PROGRAM-DATE-TIME:%s\n", at.Format("2006-01-02T15:04:05.000Z07:00"))
 }
@@ -751,7 +751,7 @@ func readRun(b []byte) (duration uint64, sync bool) {
 		at += 4
 	}
 	stride, flagsAt := 0, -1
-	for _, f := range []uint32{0x100, 0x200, 0x400, 0x800} {
+	for _, f := range [4]uint32{0x100, 0x200, 0x400, 0x800} {
 		if flags&f != 0 {
 			if f == 0x400 {
 				flagsAt = stride
@@ -786,91 +786,6 @@ func forBoxes(b []byte, fn func(typ string, payload []byte)) {
 		fn(string(b[4:8]), b[header:size])
 		b = b[size:]
 	}
-}
-
-// Dir is a Store in a directory of the local file system. It publishes a
-// file by writing a temporary one beside it and renaming it into place,
-// readable by the web server that serves the directory.
-func Dir(path string) Store { return dirStore(path) }
-
-type dirStore string
-
-// resolve confines name inside the store directory, rejecting absolute paths,
-// backslashes, and parent-directory traversal.
-func (d dirStore) resolve(name string) (string, error) {
-	if !fs.ValidPath(name) || name == "." || strings.Contains(name, "\\") {
-		return "", fmt.Errorf("hls: invalid store path %q", name)
-	}
-	base := filepath.Clean(string(d))
-	final := filepath.Join(base, filepath.FromSlash(name))
-	if back, err := filepath.Rel(base, final); err != nil || back == ".." || strings.HasPrefix(back, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("hls: path %q escapes directory", name)
-	}
-	return final, nil
-}
-
-func (d dirStore) Create(name string) (io.WriteCloser, error) {
-	final, err := d.resolve(name)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
-		return nil, err
-	}
-	f, err := os.CreateTemp(filepath.Dir(final), "."+filepath.Base(final)+".*")
-	if err != nil {
-		return nil, err
-	}
-	return &publishing{File: f, final: final}, nil
-}
-
-func (d dirStore) Remove(name string) error {
-	final, err := d.resolve(name)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(final); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
-type publishing struct {
-	*os.File
-	final string
-	state storeFileState
-}
-
-func (p *publishing) abort() {
-	if p.state != storeFileOpen {
-		return
-	}
-	p.state = storeFileAborted
-	name := p.File.Name()
-	_ = p.File.Close()
-	_ = os.Remove(name)
-}
-
-func (p *publishing) Close() error {
-	if p.state != storeFileOpen {
-		return nil
-	}
-	p.state = storeFileClosed
-	name := p.File.Name()
-	if err := p.File.Chmod(0o644); err != nil {
-		_ = p.File.Close()
-		_ = os.Remove(name)
-		return err
-	}
-	if err := p.File.Close(); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	if err := os.Rename(name, p.final); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	return nil
 }
 
 // readSampleEntry reads a track's codec, as an RFC 6381 codecs string, and

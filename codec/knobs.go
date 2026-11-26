@@ -3,6 +3,7 @@ package codec
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -227,15 +228,16 @@ func (v KnobValues) Raw() [][2]string { return slices.Clone(v.raw) }
 // With returns a copy of v with knob name set to an already-parsed value, as
 // a live control changes it.
 func (v KnobValues) With(name, value string) KnobValues {
-	next := KnobValues{values: map[string]string{}, set: map[string]bool{}, raw: v.raw}
-	for k, val := range v.values {
-		next.values[k] = val
+	values := maps.Clone(v.values)
+	if values == nil {
+		values = map[string]string{}
 	}
-	for k, s := range v.set {
-		next.set[k] = s
+	set := maps.Clone(v.set)
+	if set == nil {
+		set = map[string]bool{}
 	}
-	next.values[name], next.set[name] = value, true
-	return next
+	values[name], set[name] = value, true
+	return KnobValues{values: values, set: set, raw: v.raw}
 }
 
 // Knob returns the descriptor's knob called name.
@@ -295,12 +297,7 @@ func (d Descriptor) ResolveKnobs(s Settings, lowLatency bool) (KnobValues, error
 			return KnobValues{}, err
 		}
 	}
-	keys := make([]string, 0, len(s.Custom))
-	for key := range s.Custom {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(s.Custom)) {
 		value := s.Custom[key]
 		if scope, ok := KnobScope(key); ok {
 			if !strings.EqualFold(scope, backend) {
@@ -345,11 +342,7 @@ func (d Descriptor) parseRaw(params string) ([][2]string, error) {
 		if d.RawKnobs != nil {
 			i := slices.IndexFunc(d.RawKnobs, func(k Knob) bool { return strings.EqualFold(k.Name, key) })
 			if i < 0 {
-				names := make([]string, len(d.RawKnobs))
-				for j := range d.RawKnobs {
-					names[j] = d.RawKnobs[j].Name
-				}
-				return nil, d.knobError(withSuggestion(fmt.Errorf("%w: %s has no raw parameter %q", ErrInvalidSetting, d.Backend.Name, key), key, names))
+				return nil, d.knobError(withSuggestion(fmt.Errorf("%w: %s has no raw parameter %q", ErrInvalidSetting, d.Backend.Name, key), key, knobNames(d.RawKnobs)))
 			}
 			parsed, err := d.RawKnobs[i].Parse(value)
 			if err != nil {
@@ -362,11 +355,16 @@ func (d Descriptor) parseRaw(params string) ([][2]string, error) {
 	return out, nil
 }
 
-func (d Descriptor) unknownKnob(name, value string) error {
-	names := make([]string, len(d.Knobs))
-	for i := range d.Knobs {
-		names[i] = d.Knobs[i].Name
+func knobNames(knobs []Knob) []string {
+	names := make([]string, len(knobs))
+	for i := range knobs {
+		names[i] = knobs[i].Name
 	}
+	return names
+}
+
+func (d Descriptor) unknownKnob(name, value string) error {
+	names := knobNames(d.Knobs)
 	err := fmt.Errorf("%w: %s takes no setting %q (settings: %s)", ErrInvalidSetting, d.Backend.Name, name, strings.Join(names, ", "))
 	if value != "" && len(name) > 0 {
 		err = withSuggestion(err, name, names)
@@ -407,14 +405,15 @@ var (
 // every codec.Setting not scoped to one backend.
 func (s Settings) KnobSettings() map[string]string {
 	out := map[string]string{}
-	for name, value := range map[string]string{
-		knobBitrate: positiveText(s.Bitrate),
-		knobGOP:     positiveText(s.KeyframeInterval),
-		knobProfile: s.Profile,
-		knobLevel:   s.Level,
-	} {
-		if value != "" {
-			out[name] = value
+	typed := [4]struct{ name, value string }{
+		{knobBitrate, positiveText(s.Bitrate)},
+		{knobGOP, positiveText(s.KeyframeInterval)},
+		{knobProfile, s.Profile},
+		{knobLevel, s.Level},
+	}
+	for _, t := range typed {
+		if t.value != "" {
+			out[t.name] = t.value
 		}
 	}
 	for key, value := range s.Custom {
@@ -447,12 +446,7 @@ func (r *SimpleRegistry) CheckScopes(id av.CodecID, s Settings) error {
 			names = append(names, desc.Backend.Name)
 		}
 	}
-	keys := make([]string, 0, len(s.Custom))
-	for key := range s.Custom {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(s.Custom)) {
 		scope, ok := KnobScope(key)
 		if !ok || slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, scope) }) {
 			continue

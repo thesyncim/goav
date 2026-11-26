@@ -286,21 +286,7 @@ func (t *topology[P]) retireFaultDomain(d *FaultDomain) {
 		nodes = append(nodes, n)
 	}
 	for _, n := range t.nodes {
-		b := n.base()
-		routes := b.routes[:0]
-		for _, route := range b.routes {
-			to := route.to[:0]
-			for _, i := range route.to {
-				if !set[i] {
-					to = append(to, i)
-				}
-			}
-			if len(to) != 0 {
-				route.to = to
-				routes = append(routes, route)
-			}
-		}
-		b.routes = routes
+		pruneNodeRoutes(n.base(), func(to int) bool { return set[to] })
 	}
 	t.rebuildLocked()
 	t.mu.Unlock()

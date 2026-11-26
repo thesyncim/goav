@@ -74,10 +74,15 @@ func readUIntPayloadScratch(r io.Reader, size uint64, scratch *[8]byte) (uint64,
 }
 
 func readIntPayload(r io.Reader, size uint64) (int64, error) {
+	var scratch [8]byte
+	return readIntPayloadScratch(r, size, &scratch)
+}
+
+func readIntPayloadScratch(r io.Reader, size uint64, scratch *[8]byte) (int64, error) {
 	if size == 0 || size > 8 {
 		return 0, ErrInvalidData
 	}
-	var scratch [8]byte
+	clear(scratch[:8-size])
 	if _, err := io.ReadFull(r, scratch[8-size:]); err != nil {
 		return 0, err
 	}

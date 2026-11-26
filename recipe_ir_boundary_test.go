@@ -282,7 +282,7 @@ var compileBoundary = map[string][]string{
 	"HumanizeShape":        {"join_arm_file.go"},
 	"JoinSpecDetail":       {"runtime_encode.go", "runtime_graph_detail.go"},
 	"BackendDetail":        {"runtime_encode.go"},
-	"JoinSyncNodeDetail":   {"audio_mix.go", "video_composite.go"},
+	"JoinSyncNodeDetail":   {"join_sync.go"},
 	"MediaTransformDetail": {"media_transform.go"},
 	"MuxNodeName":          {"destination.go", "mux_destination.go", "runtime_format_error.go"},
 	"ReadableSelector":     {"runtime_decode.go"},

@@ -2,8 +2,8 @@
 
 package resize
 
-func scaleHalfBox(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, dstWidth, dstHeight int) {
-	scaleHalfBoxScalar(dst, dstStride, src, srcStride, srcX, srcY, dstWidth, dstHeight)
+func scaleHalfBox(dst, src planeBuf, rect scaleRect) {
+	scaleHalfBoxScalar(dst, src, rect)
 }
 
 func (p *planeScaler) scaleVertical(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHeight int) {

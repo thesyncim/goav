@@ -65,17 +65,39 @@ func contentEncryptionKey(keys []ContentEncryptionKey, keyID []byte) ([]byte, er
 	return nil, ErrUnsupportedContentEncoding
 }
 
-func (m *Muxer) encryptBlockPayload(encoding blockContentEncodingInfo, payload []byte, partitions []uint32) ([]byte, error) {
-	if err := validateContentEncryptionPartitions(partitions, len(payload)); err != nil {
-		return nil, err
+type cachedContentCipher struct {
+	keyID []byte
+	block cipher.Block
+}
+
+func cachedAESBlock(cache *[]cachedContentCipher, keys []ContentEncryptionKey, keyID []byte) (cipher.Block, error) {
+	for i := range *cache {
+		if bytes.Equal((*cache)[i].keyID, keyID) {
+			return (*cache)[i].block, nil
+		}
 	}
-	key, err := contentEncryptionKey(m.options.ContentEncryptionKeys, encoding.encryption.KeyID)
+	key, err := contentEncryptionKey(keys, keyID)
 	if err != nil {
 		return nil, err
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, ErrInvalidData
+	}
+	*cache = append(*cache, cachedContentCipher{
+		keyID: append([]byte(nil), keyID...),
+		block: block,
+	})
+	return block, nil
+}
+
+func (m *Muxer) encryptBlockPayload(encoding blockContentEncodingInfo, payload []byte, partitions []uint32) ([]byte, error) {
+	if err := validateContentEncryptionPartitions(partitions, len(payload)); err != nil {
+		return nil, err
+	}
+	block, err := cachedAESBlock(&m.contentCiphers, m.options.ContentEncryptionKeys, encoding.encryption.KeyID)
+	if err != nil {
+		return nil, err
 	}
 	if err := m.ensureContentEncryptionIV(); err != nil {
 		return nil, err
@@ -216,13 +238,9 @@ func (d *Demuxer) decryptBlockPayload(encoding blockContentEncodingInfo, frame [
 		}
 		d.contentPartitions = partitions
 	}
-	key, err := contentEncryptionKey(d.options.ContentEncryptionKeys, encoding.encryption.KeyID)
+	block, err := cachedAESBlock(&d.contentCiphers, d.options.ContentEncryptionKeys, encoding.encryption.KeyID)
 	if err != nil {
 		return nil, err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, ErrInvalidData
 	}
 	var counter [aes.BlockSize]byte
 	copy(counter[:contentEncryptionIVSize], iv)

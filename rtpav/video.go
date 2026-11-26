@@ -94,7 +94,14 @@ func (d *VP8Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	}
 	start := d.packet.S == 1 && d.packet.PID == 0
 	keyframe := start && len(frame) > 0 && frame[0]&0x01 == 0
-	return d.assembler.push(ctx, pkt, payload, frame, start, pkt.Marker, keyframe, out)
+	return d.assembler.push(ctx, videoFragment{
+		timestamp: pkt.Timestamp,
+		clockRate: payloadClockRate(payload, d.assembler.stream),
+		data:      frame,
+		start:     start,
+		end:       pkt.Marker,
+		keyframe:  keyframe,
+	}, out)
 }
 
 // FlushInto discards any partial frame at end of stream.
@@ -123,7 +130,14 @@ func (d *VP9Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	}
 	keyframe := d.packet.B && !d.packet.P
 	end := pkt.Marker || d.packet.E
-	return d.assembler.push(ctx, pkt, payload, frame, d.packet.B, end, keyframe, out)
+	return d.assembler.push(ctx, videoFragment{
+		timestamp: pkt.Timestamp,
+		clockRate: payloadClockRate(payload, d.assembler.stream),
+		data:      frame,
+		start:     d.packet.B,
+		end:       end,
+		keyframe:  keyframe,
+	}, out)
 }
 
 // FlushInto discards any partial frame at end of stream.
@@ -170,118 +184,98 @@ func newVideoFrameAssembler(stream av.Stream, codec av.CodecID, options ...Video
 	}
 }
 
-func (a *videoFrameAssembler) push(
-	ctx context.Context,
-	pkt *rtp.Packet,
-	payload PayloadCodec,
-	frame []byte,
-	start bool,
-	end bool,
-	keyframe bool,
-	out *DepacketizeResult,
-) error {
+type videoFragment struct {
+	timestamp uint32
+	clockRate uint32
+	data      []byte
+	start     bool
+	end       bool
+	keyframe  bool
+}
+
+func (a *videoFrameAssembler) emitSinglePacketFrame(frag videoFragment, keyframe, lossBefore bool, out *DepacketizeResult) error {
+	if len(frag.data) > cap(a.buffer) {
+		a.dropUntilSync()
+		return ErrFrameTooLarge
+	}
+	if len(out.Packets) == cap(out.Packets) {
+		return ErrResultFull
+	}
+	if lossBefore {
+		a.lossBefore = true
+	}
+	a.beginFrame(frag.timestamp, keyframe)
+	if err := a.emitPacket(frag.timestamp, frag.clockRate, frag.data, a.keyframe, out); err != nil {
+		return err
+	}
+	a.state = asmIdle
+	return nil
+}
+
+func (a *videoFrameAssembler) push(ctx context.Context, frag videoFragment, out *DepacketizeResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	switch a.state {
 	case asmIdle:
-		if !start {
+		if !frag.start {
 			a.dropUntilSync()
-			return a.emitPendingSync(pkt.Timestamp, out)
+			return a.emitPendingSync(frag.timestamp, out)
 		}
-		if end {
-			if len(frame) > cap(a.buffer) {
-				a.dropUntilSync()
-				return ErrFrameTooLarge
-			}
-			if len(out.Packets) == cap(out.Packets) {
-				return ErrResultFull
-			}
-			a.beginFrame(pkt.Timestamp, keyframe)
-			if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, a.keyframe, out); err != nil {
-				return err
-			}
-			a.state = asmIdle
-			return nil
+		if frag.end {
+			return a.emitSinglePacketFrame(frag, frag.keyframe, false, out)
 		}
-		a.beginFrame(pkt.Timestamp, keyframe)
+		a.beginFrame(frag.timestamp, frag.keyframe)
 	case asmAssembling:
-		if start {
+		if frag.start {
 			// Previous frame never saw its end marker (truncated frame).
-			if !keyframe {
+			if !frag.keyframe {
 				a.dropUntilSync()
-				return a.emitPendingSync(pkt.Timestamp, out)
+				return a.emitPendingSync(frag.timestamp, out)
 			}
-			if end {
-				if len(frame) > cap(a.buffer) {
-					a.dropUntilSync()
-					return ErrFrameTooLarge
-				}
-				if len(out.Packets) == cap(out.Packets) {
-					return ErrResultFull
-				}
-				a.lossBefore = true
-				a.beginFrame(pkt.Timestamp, true)
-				if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, true, out); err != nil {
-					return err
-				}
-				a.state = asmIdle
-				return nil
+			if frag.end {
+				return a.emitSinglePacketFrame(frag, true, true, out)
 			}
 			a.lossBefore = true
-			a.beginFrame(pkt.Timestamp, true)
-		} else if pkt.Timestamp != a.timestamp {
+			a.beginFrame(frag.timestamp, true)
+		} else if frag.timestamp != a.timestamp {
 			a.dropUntilSync()
-			return a.emitPendingSync(pkt.Timestamp, out)
+			return a.emitPendingSync(frag.timestamp, out)
 		}
 	case asmDropping:
-		if !start {
-			return a.emitPendingSync(pkt.Timestamp, out)
+		if !frag.start {
+			return a.emitPendingSync(frag.timestamp, out)
 		}
-		if !keyframe {
+		if !frag.keyframe {
 			a.clearPartial()
-			return a.requestSyncOnFrame(pkt.Timestamp, out)
+			return a.requestSyncOnFrame(frag.timestamp, out)
 		}
-		if end {
-			if len(frame) > cap(a.buffer) {
-				a.dropUntilSync()
-				return ErrFrameTooLarge
-			}
-			if len(out.Packets) == cap(out.Packets) {
-				return ErrResultFull
-			}
-			a.beginFrame(pkt.Timestamp, true)
-			if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), frame, true, out); err != nil {
-				return err
-			}
-			a.state = asmIdle
-			return nil
+		if frag.end {
+			return a.emitSinglePacketFrame(frag, true, false, out)
 		}
-		a.beginFrame(pkt.Timestamp, true)
+		a.beginFrame(frag.timestamp, true)
 	}
 
-	if len(a.buffer)+len(frame) > cap(a.buffer) {
+	if len(a.buffer)+len(frag.data) > cap(a.buffer) {
 		a.dropUntilSync()
 		return ErrFrameTooLarge
 	}
-	if end {
+	if frag.end {
 		if len(out.Packets) == cap(out.Packets) {
 			return ErrResultFull
 		}
-		var packetPayload []byte
-		if len(a.buffer) == 0 {
-			packetPayload = frame
-		} else {
-			a.buffer = append(a.buffer, frame...)
+		packetPayload := frag.data
+		if len(a.buffer) != 0 {
+			a.buffer = append(a.buffer, frag.data...)
 			packetPayload = a.buffer
 		}
-		if err := a.emitPacket(pkt.Timestamp, payloadClockRate(payload, a.stream), packetPayload, a.keyframe, out); err != nil {
+		if err := a.emitPacket(frag.timestamp, frag.clockRate, packetPayload, a.keyframe, out); err != nil {
 			return err
 		}
 		a.state = asmIdle
 		return nil
 	}
-	a.buffer = append(a.buffer, frame...)
+	a.buffer = append(a.buffer, frag.data...)
 	return nil
 }
 

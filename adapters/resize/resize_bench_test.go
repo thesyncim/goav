@@ -40,8 +40,9 @@ func BenchmarkScalePlaneKernel(b *testing.B) {
 			var f Filter
 			b.ReportAllocs()
 			b.SetBytes(int64(tt.dstW * tt.dstH))
+			rect := scaleRect{srcX: tt.srcX, srcY: tt.srcY, srcW: tt.cropW, srcH: tt.cropH, dstW: tt.dstW, dstH: tt.dstH}
 			for i := 0; i < b.N; i++ {
-				f.scalePlane(&f.luma, &dst, &src, tt.srcW, tt.srcX, tt.srcY, tt.cropW, tt.cropH, tt.dstW, tt.dstH)
+				f.scalePlane(&f.luma, &dst, &src, tt.srcW, rect)
 			}
 		})
 	}

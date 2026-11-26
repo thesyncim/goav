@@ -122,9 +122,11 @@ func TestWebRTCLifecycleSoak(t *testing.T) {
 		if err := answerer.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(got.SSRC())}}); err != nil {
 			t.Fatal(err)
 		}
+		fbTimer := time.NewTimer(5 * time.Second)
 		select {
 		case <-feedback:
-		case <-time.After(5 * time.Second):
+			fbTimer.Stop()
+		case <-fbTimer.C:
 			t.Fatal("feedback did not reach active attachment")
 		}
 		latency := time.Since(sent)

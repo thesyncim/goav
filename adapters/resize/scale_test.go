@@ -10,7 +10,7 @@ func scaleRow(t *testing.T, src []byte, dstWidth int) []byte {
 	t.Helper()
 	var p planeScaler
 	dst := make([]byte, dstWidth)
-	p.scale(dst, dstWidth, src, len(src), 0, 0, len(src), 1, dstWidth, 1, nil)
+	p.scale(planeBuf{data: dst, stride: dstWidth}, planeBuf{data: src, stride: len(src)}, scaleRect{srcW: len(src), srcH: 1, dstW: dstWidth, dstH: 1}, nil)
 	return dst
 }
 
@@ -61,7 +61,7 @@ func TestScaleSeparableAxes(t *testing.T) {
 	}
 	var p planeScaler
 	dst := make([]byte, 4)
-	p.scale(dst, 1, src, 2, 0, 0, 2, 2, 1, 4, nil)
+	p.scale(planeBuf{data: dst, stride: 1}, planeBuf{data: src, stride: 2}, scaleRect{srcW: 2, srcH: 2, dstW: 1, dstH: 4}, nil)
 	// Columns average to 50 and 150, then rows interpolate 50 -> 150.
 	if want := []byte{50, 75, 125, 150}; !bytes.Equal(dst, want) {
 		t.Fatalf("2x2 -> 1x4 = %v, want %v", dst, want)
@@ -117,7 +117,7 @@ func TestScaleFastPathsMatchScalarReference(t *testing.T) {
 			want := make([]byte, tc.dstH*dstStride)
 
 			var fast planeScaler
-			fast.scale(got, dstStride, src, srcStride, tc.srcX, tc.srcY, tc.cropW, tc.cropH, tc.dstW, tc.dstH, nil)
+			fast.scale(planeBuf{data: got, stride: dstStride}, planeBuf{data: src, stride: srcStride}, scaleRect{srcX: tc.srcX, srcY: tc.srcY, srcW: tc.cropW, srcH: tc.cropH, dstW: tc.dstW, dstH: tc.dstH}, nil)
 
 			// Full scalar two-pass Q14 reference.
 			var ref planeScaler

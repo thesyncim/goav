@@ -176,7 +176,7 @@ func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
 			t.Fatalf("Handle(%+v) error = %v", msg, err)
 		}
 	}
-	if got := len(stage.free["a"]); got != 1 {
+	if got := len(stage.free[0]); got != 1 {
 		t.Fatalf("prealloc depth clamp left %d free frames, want 1", got)
 	}
 
@@ -283,27 +283,27 @@ func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
 	pooled := av.NewBuffer(len(arm.Planes[0].Buffer.Bytes))
 	copy(pooled.Bytes, arm.Planes[0].Buffer.Bytes)
 	arm.Planes[0].Buffer = pooled
-	clone := stage.cloneCompositeFrame(arm)
+	clone := stage.cloneCompositeFrame(0, arm)
 	if &clone.Planes[0].Buffer.Bytes[0] != &pooled.Bytes[0] || pooled.Owner.Refs() != 2 {
 		t.Fatalf("clone plane = %+v refs=%d, want the arm's bytes, retained", clone.Planes[0].Buffer, pooled.Owner.Refs())
 	}
-	stage.recycleCompositeFrame(clone)
-	if got := len(stage.free["a"]); got != 1 {
+	stage.recycleArmFrame(0, clone)
+	if got := len(stage.free[0]); got != 1 {
 		t.Fatalf("recycled free frames = %d, want 1", got)
 	}
 	if refs := pooled.Owner.Refs(); refs != 1 {
 		t.Fatalf("refs = %d after recycle, want the arm's 1", refs)
 	}
-	clone = stage.cloneCompositeFrame(arm)
+	clone = stage.cloneCompositeFrame(0, arm)
 	if clone.Planes[0].Buffer.Bytes[0] != 11 {
 		t.Fatalf("reused clone plane = %+v, want the arm's bytes", clone.Planes[0].Buffer)
 	}
-	stage.recycleCompositeFrame(clone)
+	stage.recycleArmFrame(0, clone)
 	arm.Release()
 
 	extra := compositeTestI420Frame("new-arm", 1, 1, 1, 2, 3)
 	extra.Planes = append(extra.Planes, av.Plane{Buffer: av.Buffer{Bytes: []byte{4}}})
-	clone = stage.cloneCompositeFrame(extra)
+	clone = stage.cloneCompositeFrame(-1, extra)
 	if clone.Video == nil || len(clone.Planes) != 4 {
 		t.Fatalf("unknown-arm clone = %+v, want allocated video and 4 planes", clone)
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
-	"github.com/thesyncim/goav/internal/interleave"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -15,27 +14,10 @@ import (
 // StreamID. It is a normal pipeline.Stage: the buffered runner calls Handle
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
-//
-// Contract: inputs are same-format S16 interleaved. Arm alignment follows the
-// joinSyncState mode: arrival (default — one frame per arm per step) or PTS
-// (ByPTS — arms join the step their head timestamp matches; arms whose
-// head is newer sit the step out, which IS the silence contribution since
-// silence is the summing identity). An arm that ends keeps the others mixing
-// without it. The shape solver plans per-arm conversions at compile time
-// (joinProfile.armExpected under the implicit arm policy), so mismatched arms
-// are resampled before they reach this stage; a residual format mismatch still
-// fails the first mismatched frame defensively.
 type audioMixStage struct {
-	name    string
-	out     av.StreamID
-	sync    *joinSyncState
-	free    map[av.StreamID][]*av.Frame
-	pools   *mediaPools
-	closed  bool
-	inputs  [][]byte
-	output  av.Frame
-	audio   av.AudioFrame
-	message pipeline.Message
+	joinStageBase
+	inputs [][]byte
+	audio  av.AudioFrame
 }
 
 func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode) *audioMixStage {
@@ -51,128 +33,50 @@ func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out
 		preallocDepth = 1
 	}
 	stage := &audioMixStage{
-		name:   name,
-		out:    out,
-		sync:   newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
-		free:   make(map[av.StreamID][]*av.Frame, len(inputs)),
-		pools:  pools,
+		joinStageBase: joinStageBase{
+			name:  name,
+			out:   out,
+			sync:  newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+			free:  make([][]*av.Frame, len(inputs)),
+			pools: pools,
+		},
 		inputs: make([][]byte, 0, len(inputs)),
 	}
 	stage.output.Planes = takeMediaPlanes(pools, 1)
-	stage.sync.recycle = stage.recycleMixFrame
+	stage.sync.recycle = stage.recycleArmFrame
 	for i := range inputs {
 		free := make([]*av.Frame, 0, preallocDepth)
-		for j := 0; j < preallocDepth; j++ {
+		for range preallocDepth {
 			free = append(free, &av.Frame{
 				Audio:  &av.AudioFrame{},
 				Planes: takeMediaPlanes(pools, 1),
 			})
 		}
-		stage.free[inputs[i]] = free
+		stage.free[i] = free
 	}
 	return stage
 }
-
-func (s *audioMixStage) Name() string { return s.name }
-
-// DescribeNode reports the same detail the join planner records on the planned
-// node, keeping Describe() ≡ Build() when ByPTS annotates the join.
-func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
-	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
-}
-
-// DroppedMessages implements pipeline.DropReporter: frames the join discarded
-// to stay aligned (stale catch-up heads, discontinuity flushes), surfaced as
-// the join node's Dropped count (reason "sync") in Stats and snapshots.
-func (s *audioMixStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
-
-// Admit implements pipeline.Admitter: an arm that leads the mix by
-// joinArmLeadFrames waits on its own goroutine until the mix catches up.
-func (s *audioMixStage) Admit(ctx context.Context, msg *pipeline.Message) error {
-	return s.sync.admit(ctx, msg)
-}
-
-// Arm and Admits implement interleave.Gate: an ordered run bounds the arms
-// at the turn instead of blocking in Admit.
-func (s *audioMixStage) Arm(_ interleave.Token, msg any) (int, bool) { return s.sync.arm(msg) }
-
-func (s *audioMixStage) Admits(_ interleave.Token, arm int) bool { return s.sync.admits(arm) }
 
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
-	defer s.sync.publishDepths()
+	var err error
 	switch msg.Kind {
 	case pipeline.MessageFrame:
-		if msg.Frame == nil || msg.Frame.Audio == nil {
-			return nil
+		if msg.Frame != nil && msg.Frame.Audio != nil {
+			if armIdx := s.sync.armIndex(msg.Frame.StreamID); armIdx >= 0 {
+				if !s.sync.eosEmitted && !s.sync.armStates[armIdx].eos {
+					s.sync.bufferAt(armIdx, s.cloneMixFrame(armIdx, msg.Frame))
+				}
+			}
+			err = s.drain(ctx, emitter)
 		}
-		s.sync.buffer(s.cloneMixFrame(msg.Frame))
-		return s.drain(ctx, emitter)
 	case pipeline.MessageEvent:
-		if msg.Event == nil {
-			return nil
-		}
-		switch msg.Event.Type {
-		case av.EventEndOfStream:
-			ended := s.sync.markEOS(msg.Event.StreamID)
-			// The ended arm stops gating: drain what the remaining arms can
-			// mix before (possibly) ending the joined stream.
-			if err := s.drain(ctx, emitter); err != nil {
-				return err
-			}
-			if ended {
-				out := av.Event{Type: av.EventEndOfStream, StreamID: s.out}
-				return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
-			}
-			return nil
-		case av.EventDiscontinuity:
-			if !s.sync.discontinuity(msg.Event.StreamID) {
-				return nil
-			}
-			// The joined timeline jumps with the repositioned arm: forward one
-			// discontinuity re-stamped to the join output, the same signal a
-			// seeked single-source chain delivers to its sink.
-			out := *msg.Event
-			out.StreamID = s.out
-			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
-		}
-		if msg.Event.Type == av.EventSelectActive {
-			// Control-plane events ride the data path through joins unchanged:
-			// a SelectActive heading for a selector downstream of this join
-			// (Select(Mix(a, b), Mix(c, d))) carries its target arm in
-			// Event.StreamID and is consumed by the selector — re-stamping it
-			// to the mix output would erase the target.
-			return emitter.Emit(ctx, msg)
-		}
-		return nil
-	default:
-		return nil
+		err = s.handleEvent(ctx, msg, emitter, s.drain)
 	}
-}
-
-func (s *audioMixStage) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.sync != nil {
-		s.sync.releaseAdmission()
-		s.sync.recyclePending()
-	}
-	for id, free := range s.free {
-		for i := range free {
-			s.releaseMixFrame(free[i])
-			free[i] = nil
-		}
-		delete(s.free, id)
-	}
-	if s.pools != nil {
-		s.pools.putPlanes(s.output.Planes)
-		s.output.Planes = nil
-	}
-	return nil
+	s.sync.publishDepths()
+	return err
 }
 
 func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
@@ -181,7 +85,7 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 		if !ok {
 			return nil
 		}
-		mixed, err := mixS16FramesInto(frames, s.out, &s.output, &s.audio, s.inputs)
+		mixed, err := mixS16FramesInto(frames, s.out, &s.output, &s.audio, &s.inputs)
 		if err != nil {
 			s.recycleStepFrames(frames)
 			return err
@@ -206,7 +110,7 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 
 // mixS16FramesInto sums S16-interleaved audio frames sample-by-sample with
 // clamping into a new pooled plane in dst, which the caller releases.
-func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame, inputs [][]byte) (*av.Frame, error) {
+func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame, inputsBuf *[][]byte) (*av.Frame, error) {
 	base := firstMixFrame(frames)
 	if base == nil {
 		return nil, fmt.Errorf("goav: audio mix has no participating frames")
@@ -215,6 +119,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 		return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", base.StreamID)
 	}
 	n := -1
+	inputs := *inputsBuf
 	if cap(inputs) < len(frames) {
 		inputs = make([][]byte, 0, len(frames))
 	} else {
@@ -246,6 +151,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 		}
 		inputs = append(inputs, pcm)
 	}
+	*inputsBuf = inputs
 	if n < 0 {
 		n = 0
 	}
@@ -286,8 +192,8 @@ func firstMixFrame(frames []*av.Frame) *av.Frame {
 
 // cloneMixFrame keeps an arm frame past the call that lent it: a pooled
 // header with the frame's fields and its own reference to each plane.
-func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
-	clone := s.takeMixFrame(frame.StreamID)
+func (s *audioMixStage) cloneMixFrame(armIdx int, frame *av.Frame) *av.Frame {
+	clone := s.takeMixFrame(armIdx)
 	planes := clone.Planes
 	audio := clone.Audio
 	*clone = *frame
@@ -306,8 +212,8 @@ func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
 	return clone
 }
 
-func (s *audioMixStage) takeMixFrame(id av.StreamID) *av.Frame {
-	free := s.free[id]
+func (s *audioMixStage) takeMixFrame(armIdx int) *av.Frame {
+	free := s.free[armIdx]
 	if len(free) == 0 {
 		return &av.Frame{
 			Audio:  &av.AudioFrame{},
@@ -317,34 +223,6 @@ func (s *audioMixStage) takeMixFrame(id av.StreamID) *av.Frame {
 	index := len(free) - 1
 	frame := free[index]
 	free[index] = nil
-	s.free[id] = free[:index]
+	s.free[armIdx] = free[:index]
 	return frame
 }
-
-func (s *audioMixStage) recycleStepFrames(frames []*av.Frame) {
-	for i := range frames {
-		s.recycleMixFrame(frames[i])
-		frames[i] = nil
-	}
-}
-
-func (s *audioMixStage) recycleMixFrame(frame *av.Frame) {
-	if frame == nil {
-		return
-	}
-	frame.Release()
-	id := frame.StreamID
-	s.free[id] = append(s.free[id], frame)
-}
-
-func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
-	if frame == nil {
-		return
-	}
-	if s.pools != nil {
-		s.pools.putPlanes(frame.Planes)
-		frame.Planes = nil
-	}
-}
-
-func (s *audioMixStage) enableAdmission() { s.sync.enableAdmission() }

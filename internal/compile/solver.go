@@ -76,47 +76,30 @@ func SolveRecipeIROperationShapes(operation string, env Env, stream recipeir.Str
 				mismatch := recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 				return nil, nil, appendRecipeIRAutoFixSuggestions(mismatch, current, target, next)
 			}
-			conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, target, env.Realtime, policy, preference, preferenceActive, node)
+			convOp, convDiags, after, planned, err := planAndValidateConversion(operation, env, node, i, next, current, target, policy, preference, preferenceActive)
 			if err != nil {
-				return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, target, err)
+				return nil, nil, err
 			}
-			if !planned {
+			if !planned || !expected.Accepts(after) {
 				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
-			if !policy.Covers(conversion.needed) {
-				return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, target)
-			}
-			after := RecipeIROperationOutputShape(current, conversion.operation)
-			if !expected.Accepts(after) {
-				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
-			}
-			conversion.operation.Shared = next.Shared
-			// An inserted conversion is no Stream's node: callers give it one.
-			conversion.operation.Node = -1
-			solved = append(solved, conversion.operation)
-			diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, target))
-			diagnostics = append(diagnostics, prefDiags...)
+			solved = append(solved, convOp)
+			diagnostics = append(diagnostics, convDiags...)
 			inserted = true
 			current = after
 		}
 		if policyActive {
 			desired := recipeIROperationSoftInputShape(next)
 			if !MediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
-				conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, desired, env.Realtime, policy, preference, preferenceActive, node)
+				convOp, convDiags, after, planned, err := planAndValidateConversion(operation, env, node, i, next, current, desired, policy, preference, preferenceActive)
 				if err != nil {
-					return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, desired, err)
+					return nil, nil, err
 				}
 				if planned {
-					if !policy.Covers(conversion.needed) {
-						return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, desired)
-					}
-					conversion.operation.Shared = next.Shared
-					conversion.operation.Node = -1
-					solved = append(solved, conversion.operation)
-					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, desired))
-					diagnostics = append(diagnostics, prefDiags...)
+					solved = append(solved, convOp)
+					diagnostics = append(diagnostics, convDiags...)
 					inserted = true
-					current = RecipeIROperationOutputShape(current, conversion.operation)
+					current = after
 				}
 			}
 		}
@@ -127,6 +110,37 @@ func SolveRecipeIROperationShapes(operation string, env Env, stream recipeir.Str
 		return nil, nil, nil
 	}
 	return solved, diagnostics, nil
+}
+
+func planAndValidateConversion(
+	operation string,
+	env Env,
+	node string,
+	index int,
+	next recipeir.Operation,
+	current, target shape.Spec,
+	policy shape.Policy,
+	preference shape.Spec,
+	preferenceActive bool,
+) (recipeir.Operation, []plan.Diagnostic, shape.Spec, bool, error) {
+	conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, target, env.Realtime, policy, preference, preferenceActive, node)
+	if err != nil {
+		return recipeir.Operation{}, nil, shape.Spec{}, false, recipeIRShapeSolverAdapterError(operation, node, index, next, current, target, err)
+	}
+	if !planned {
+		return recipeir.Operation{}, nil, shape.Spec{}, false, nil
+	}
+	if !policy.Covers(conversion.needed) {
+		return recipeir.Operation{}, nil, shape.Spec{}, false, recipeIRShapeConversionRefusedError(operation, node, index, next, policy, conversion, current, target)
+	}
+	conversion.operation.Shared = next.Shared
+	// An inserted conversion is no Stream's node: callers give it one.
+	conversion.operation.Node = -1
+	diags := make([]plan.Diagnostic, 0, 1+len(prefDiags))
+	diags = append(diags, shapeConversionDiagnostic(node, conversion, next, current, target))
+	diags = append(diags, prefDiags...)
+	after := RecipeIROperationOutputShape(current, conversion.operation)
+	return conversion.operation, diags, after, true, nil
 }
 
 func recipeIRChainAutoPolicy(operations []recipeir.Operation) (shape.Policy, bool) {

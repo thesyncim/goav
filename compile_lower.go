@@ -62,13 +62,16 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 	}
 	buffers := execution.buffers
 	in := composeLowering{realtime: realtime, admission: !realtime, buffers: buffers}
+	destNames := make(map[string]string, len(gp.work.Destinations))
+	for _, destination := range gp.work.Destinations {
+		destNames[destination.ID] = destination.Name
+	}
 	for _, node := range r.graph.Nodes {
 		ref := pipeline.NodeRef(node.Name)
 		switch node.Kind {
 		case compile.ComposeSource:
 			sourceInputs[ref] = node.Input
-			input := r.inputs[node.Input]
-			build, err := input.openGraphSourceBuild(ctx, service, node.Name, len(r.inputs) > 1)
+			build, err := r.inputs[node.Input].openGraphSourceBuild(ctx, service, node.Name, len(r.inputs) > 1)
 			if err != nil {
 				return err
 			}
@@ -97,44 +100,11 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 			}
 			streams[ref] = selected
 		case compile.ComposeDecode, compile.ComposeStep, compile.ComposeEncode, compile.ComposeSink, compile.ComposeRemuxSink, compile.ComposeMux, compile.ComposeRemuxMux:
-			var in []av.Stream
-			if node.Kind == compile.ComposeRemuxMux || node.Kind == compile.ComposeRemuxSink {
-				for _, from := range node.Inputs {
-					input := sourceInputs[from]
-					in = append(in, qualifyStreams(sourceStreams[input], qualifiers[input])...)
-				}
-			} else {
-				for _, input := range node.Inputs {
-					in = append(in, streams[input])
-				}
-			}
-			decodeBounds := codec.DecodeBounds{}
-			if node.Kind == compile.ComposeDecode && len(bounds) != 0 {
-				decodeBounds = providerDecodeBoundsForStream(in[0], bounds)
-			}
-			opened, err := openComposeNode(ctx, service, node, in, r.outputs, realtime, decodeBounds)
+			stream, err := r.lowerWorkNode(ctx, service, graph, node, ref, gp, destNames, streams, sourceInputs, sourceStreams, qualifiers, buffers, bounds, realtime)
 			if err != nil {
 				return err
 			}
-			switch node.Kind {
-			case compile.ComposeSink, compile.ComposeMux, compile.ComposeRemuxSink, compile.ComposeRemuxMux:
-				tx := service.destinationTxs[len(service.destinationTxs)-1]
-				tx.node = ref
-				for _, op := range gp.work.Operations {
-					if op.Node == ref && len(op.Destinations) == 1 {
-						tx.id = op.Destinations[0]
-						for _, destination := range gp.work.Destinations {
-							if destination.ID == tx.id {
-								tx.name = destination.Name
-							}
-						}
-					}
-				}
-			}
-			if err := opened.install(graph, buffers[node.Name], node.Inputs); err != nil {
-				return err
-			}
-			streams[ref] = opened.stream
+			streams[ref] = stream
 		default:
 			in.sourceStreams = sourceStreams
 			in.qualifiers = qualifiers
@@ -146,6 +116,74 @@ func (r *recipeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 		}
 	}
 	return nil
+}
+
+func (r *recipeLowerer) lowerWorkNode(
+	ctx context.Context,
+	service *builder,
+	graph pipeline.Graph,
+	node compile.ComposeNode,
+	ref pipeline.NodeRef,
+	gp graphPlan,
+	destNames map[string]string,
+	streams map[pipeline.NodeRef]av.Stream,
+	sourceInputs map[pipeline.NodeRef]int,
+	sourceStreams map[int][]av.Stream,
+	qualifiers map[int]string,
+	buffers map[string]pipeline.BufferPolicy,
+	bounds []decodeBoundsProvider,
+	realtime bool,
+) (av.Stream, error) {
+	in := collectNodeInputStreams(node, streams, sourceInputs, sourceStreams, qualifiers)
+	decodeBounds := codec.DecodeBounds{}
+	if node.Kind == compile.ComposeDecode && len(bounds) != 0 {
+		decodeBounds = providerDecodeBoundsForStream(in[0], bounds)
+	}
+	opened, err := openComposeNode(ctx, service, node, in, r.outputs, realtime, decodeBounds)
+	if err != nil {
+		return av.Stream{}, err
+	}
+	switch node.Kind {
+	case compile.ComposeSink, compile.ComposeMux, compile.ComposeRemuxSink, compile.ComposeRemuxMux:
+		bindDestinationTx(service.destinationTxs[len(service.destinationTxs)-1], ref, gp, destNames)
+	}
+	if err := opened.install(graph, buffers[node.Name], node.Inputs); err != nil {
+		return av.Stream{}, err
+	}
+	return opened.stream, nil
+}
+
+func collectNodeInputStreams(
+	node compile.ComposeNode,
+	streams map[pipeline.NodeRef]av.Stream,
+	sourceInputs map[pipeline.NodeRef]int,
+	sourceStreams map[int][]av.Stream,
+	qualifiers map[int]string,
+) []av.Stream {
+	var in []av.Stream
+	if node.Kind == compile.ComposeRemuxMux || node.Kind == compile.ComposeRemuxSink {
+		for _, from := range node.Inputs {
+			input := sourceInputs[from]
+			in = append(in, qualifyStreams(sourceStreams[input], qualifiers[input])...)
+		}
+		return in
+	}
+	for _, input := range node.Inputs {
+		in = append(in, streams[input])
+	}
+	return in
+}
+
+func bindDestinationTx(tx *destinationTransaction, ref pipeline.NodeRef, gp graphPlan, destNames map[string]string) {
+	tx.node = ref
+	for _, op := range gp.work.Operations {
+		if op.Node == ref && len(op.Destinations) == 1 {
+			tx.id = op.Destinations[0]
+			if name, ok := destNames[tx.id]; ok {
+				tx.name = name
+			}
+		}
+	}
 }
 
 // openedNode is the component one planned node opened as, and the stream it

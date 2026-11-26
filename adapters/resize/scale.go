@@ -141,39 +141,56 @@ type planeScaler struct {
 	acc  []uint32
 }
 
-// scale resamples the srcWidth x srcHeight region at (srcX, srcY) of src into
-// the dstWidth x dstHeight plane dst, using tmp (grown as needed) as the
-// intermediate. It returns tmp for reuse.
-func (p *planeScaler) scale(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int, tmp []uint16) []uint16 {
-	if srcWidth == 2*dstWidth && srcHeight == 2*dstHeight {
-		scaleHalfBox(dst, dstStride, src, srcStride, srcX, srcY, dstWidth, dstHeight)
-		return tmp
-	}
-	return p.scaleGeneral(dst, dstStride, src, srcStride, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight, tmp)
+// planeBuf is a tightly- or strided-packed 2D byte plane passed by value so it
+// stays on the stack / in registers with zero heap allocations.
+type planeBuf struct {
+	data   []byte
+	stride int
 }
 
-func (p *planeScaler) scaleGeneral(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int, tmp []uint16) []uint16 {
-	p.x.reset(srcWidth, dstWidth)
-	p.y.reset(srcHeight, dstHeight)
-	tmp = grow(tmp, srcHeight*dstWidth)
+// scaleRect describes a source crop region and destination dimensions.
+type scaleRect struct {
+	srcX, srcY int
+	srcW, srcH int
+	dstW, dstH int
+}
 
-	for r := range srcHeight {
-		base := (srcY+r)*srcStride + srcX
-		p.x.filterRow(tmp[r*dstWidth:(r+1)*dstWidth], src[base:base+srcWidth])
+// scale resamples the rect.srcW x rect.srcH region at (rect.srcX, rect.srcY) of
+// src into the rect.dstW x rect.dstH plane dst, using tmp (grown as needed) as
+// the intermediate. It returns tmp for reuse.
+func (p *planeScaler) scale(dst, src planeBuf, rect scaleRect, tmp []uint16) []uint16 {
+	if rect.srcW == 2*rect.dstW && rect.srcH == 2*rect.dstH {
+		scaleHalfBox(dst, src, rect)
+		return tmp
+	}
+	return p.scaleGeneral(dst, src, rect, tmp)
+}
+
+func (p *planeScaler) scaleGeneral(dst, src planeBuf, rect scaleRect, tmp []uint16) []uint16 {
+	p.x.reset(rect.srcW, rect.dstW)
+	p.y.reset(rect.srcH, rect.dstH)
+	tmp = grow(tmp, rect.srcH*rect.dstW)
+
+	for r := range rect.srcH {
+		base := (rect.srcY+r)*src.stride + rect.srcX
+		p.x.filterRow(tmp[r*rect.dstW:(r+1)*rect.dstW], src.data[base:base+rect.srcW])
 	}
 
-	p.scaleVertical(dst, dstStride, tmp, dstWidth, dstHeight)
+	p.scaleVertical(dst.data, dst.stride, tmp, rect.dstW, rect.dstH)
 	return tmp
 }
 
 // scaleHalfBoxScalar computes the exact 2x2 box downscale in a single pass.
 // Because Q14 weights for a 2:1 ratio are [8192, 8192] on both axes, the
 // separable two-pass result is bit-identical to (s00 + s01 + s10 + s11 + 2) >> 2.
-func scaleHalfBoxScalar(dst []byte, dstStride int, src []byte, srcStride int, srcX, srcY, dstWidth, dstHeight int) {
+func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
+	dstData, dstStride := dst.data, dst.stride
+	srcData, srcStride := src.data, src.stride
+	srcX, srcY, dstWidth, dstHeight := rect.srcX, rect.srcY, rect.dstW, rect.dstH
 	for y := range dstHeight {
-		s0 := src[(srcY+2*y)*srcStride+srcX:]
-		s1 := src[(srcY+2*y+1)*srcStride+srcX:]
-		out := dst[y*dstStride : y*dstStride+dstWidth]
+		s0 := srcData[(srcY+2*y)*srcStride+srcX:]
+		s1 := srcData[(srcY+2*y+1)*srcStride+srcX:]
+		out := dstData[y*dstStride : y*dstStride+dstWidth]
 		for x := range dstWidth {
 			sx := 2 * x
 			out[x] = byte((uint32(s0[sx]) + uint32(s0[sx+1]) + uint32(s1[sx]) + uint32(s1[sx+1]) + 2) >> 2)

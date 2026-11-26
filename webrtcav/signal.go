@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -505,23 +506,7 @@ func sdpFragment(local *webrtc.SessionDescription, candidates []webrtc.ICECandid
 		if candidate.Candidate == "" {
 			continue
 		}
-		idx := -1
-		if candidate.SDPMid != nil && *candidate.SDPMid != "" {
-			for i, md := range parsed.MediaDescriptions {
-				if mid, _ := md.Attribute("mid"); mid == *candidate.SDPMid {
-					idx = i
-					break
-				}
-			}
-		}
-		if idx < 0 && candidate.SDPMLineIndex != nil {
-			if i := int(*candidate.SDPMLineIndex); i >= 0 && i < len(parsed.MediaDescriptions) {
-				idx = i
-			}
-		}
-		if idx < 0 {
-			idx = defaultIdx
-		}
+		idx := matchCandidateSection(parsed.MediaDescriptions, candidate, defaultIdx)
 		if parsed.MediaDescriptions[idx].MediaName.Port.Value == 0 {
 			continue
 		}
@@ -548,31 +533,54 @@ func sdpFragment(local *webrtc.SessionDescription, candidates []webrtc.ICECandid
 		if !used[i] {
 			continue
 		}
-		ufrag, _ := md.Attribute("ice-ufrag")
-		if ufrag == "" {
-			ufrag = sessionUfrag
-		}
-		pwd, _ := md.Attribute("ice-pwd")
-		if pwd == "" {
-			pwd = sessionPwd
-		}
-		if ufrag == "" || pwd == "" {
-			return nil, errors.New("missing ice credentials")
-		}
-		mid, _ := md.Attribute("mid")
-		if !wroteHeader {
-			fmt.Fprintf(&b, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n", ufrag, pwd)
-			wroteHeader = true
-		}
-		fmt.Fprintf(&b, "m=%s 9 %s %s\r\na=mid:%s\r\n", md.MediaName.Media, strings.Join(md.MediaName.Protos, "/"), strings.Join(md.MediaName.Formats, " "), mid)
-		for _, cand := range grouped[i] {
-			fmt.Fprintf(&b, "a=%s\r\n", cand)
-		}
-		if end {
-			b.WriteString("a=end-of-candidates\r\n")
+		if err := writeFragmentSection(&b, md, sessionUfrag, sessionPwd, grouped[i], end, &wroteHeader); err != nil {
+			return nil, err
 		}
 	}
 	return b.Bytes(), nil
+}
+
+func matchCandidateSection(mds []*sdp.MediaDescription, candidate webrtc.ICECandidateInit, defaultIdx int) int {
+	if candidate.SDPMid != nil && *candidate.SDPMid != "" {
+		for i, md := range mds {
+			if mid, _ := md.Attribute("mid"); mid == *candidate.SDPMid {
+				return i
+			}
+		}
+	}
+	if candidate.SDPMLineIndex != nil {
+		if i := int(*candidate.SDPMLineIndex); i >= 0 && i < len(mds) {
+			return i
+		}
+	}
+	return defaultIdx
+}
+
+func writeFragmentSection(b *bytes.Buffer, md *sdp.MediaDescription, sessionUfrag, sessionPwd string, cands []string, end bool, wroteHeader *bool) error {
+	ufrag, _ := md.Attribute("ice-ufrag")
+	if ufrag == "" {
+		ufrag = sessionUfrag
+	}
+	pwd, _ := md.Attribute("ice-pwd")
+	if pwd == "" {
+		pwd = sessionPwd
+	}
+	if ufrag == "" || pwd == "" {
+		return errors.New("missing ice credentials")
+	}
+	mid, _ := md.Attribute("mid")
+	if !*wroteHeader {
+		fmt.Fprintf(b, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n", ufrag, pwd)
+		*wroteHeader = true
+	}
+	fmt.Fprintf(b, "m=%s 9 %s %s\r\na=mid:%s\r\n", md.MediaName.Media, strings.Join(md.MediaName.Protos, "/"), strings.Join(md.MediaName.Formats, " "), mid)
+	for _, cand := range cands {
+		fmt.Fprintf(b, "a=%s\r\n", cand)
+	}
+	if end {
+		b.WriteString("a=end-of-candidates\r\n")
+	}
+	return nil
 }
 
 // linkedICEServers reads the STUN/TURN servers of Link header values of

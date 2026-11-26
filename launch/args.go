@@ -312,41 +312,9 @@ func setArg(dst reflect.Value, f argField, a argNode) *Error {
 		}
 		dst.Set(reflect.ValueOf(size))
 		return nil
-	case f.typ == durationType:
-		d, err := time.ParseDuration(a.value)
-		if err != nil {
-			return bad("a duration like 2s or 20ms")
-		}
-		dst.SetInt(int64(d))
-		return nil
 	}
-	switch f.typ.Kind() {
-	case reflect.String:
-		dst.SetString(a.value)
-	case reflect.Bool:
-		b, ok := spelling.Bool(a.value)
-		if !ok {
-			return bad("true or false")
-		}
-		dst.SetBool(b)
-	case reflect.Int, reflect.Int64:
-		n, ok := spelling.Quantity(a.value)
-		if !ok {
-			return bad("a whole number (k and M suffixes multiply by 1000)")
-		}
-		dst.SetInt(int64(n))
-	case reflect.Uint, reflect.Uint32, reflect.Uint64:
-		n, ok := spelling.Quantity(a.value)
-		if !ok || n < 0 || dst.OverflowUint(uint64(n)) {
-			return bad("a non-negative whole number")
-		}
-		dst.SetUint(uint64(n))
-	case reflect.Float64:
-		n, err := strconv.ParseFloat(a.value, 64)
-		if err != nil {
-			return bad("a number")
-		}
-		dst.SetFloat(n)
+	if want, ok := spelling.SetScalar(dst, a.value); !ok && want != "" {
+		return bad(want)
 	}
 	return nil
 }

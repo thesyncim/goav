@@ -100,12 +100,7 @@ func TestStateMachineSwitchGateClosedCannotOpenGroup(t *testing.T) {
 }
 
 func TestStateMachineJoinSyncAndSelectorEOSOnce(t *testing.T) {
-	sync := joinSyncState{
-		mode:    compile.JoinSyncArrival,
-		inputs:  []av.StreamID{"a", "b"},
-		pending: make(map[av.StreamID][]*av.Frame, 2),
-		eos:     make(map[av.StreamID]struct{}, 2),
-	}
+	sync := newJoinSyncStateWithPendingCap(compile.JoinSyncArrival, []av.StreamID{"a", "b"}, 2)
 	if sync.markEOS("a") {
 		t.Fatal("markEOS(a) returned true before b ended")
 	}
@@ -116,8 +111,8 @@ func TestStateMachineJoinSyncAndSelectorEOSOnce(t *testing.T) {
 		t.Fatal("markEOS returned true a second time after EOS was emitted")
 	}
 	sync.buffer(&av.Frame{StreamID: "a"})
-	if len(sync.pending["a"]) != 0 {
-		t.Fatalf("post-EOS frame buffered: len=%d, want 0", len(sync.pending["a"]))
+	if sync.pendingCount("a") != 0 {
+		t.Fatalf("post-EOS frame buffered: len=%d, want 0", sync.pendingCount("a"))
 	}
 
 	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "out")

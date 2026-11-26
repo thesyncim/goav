@@ -405,21 +405,31 @@ func prepareOutputPlanes(planes []av.Plane, width int, height int) {
 }
 
 func (f *Filter) scaleI420(dst []av.Plane, src []av.Plane, g geometry) {
-	f.scalePlane(&f.luma, &dst[0], &src[0], g.inputWidth, g.cropX, g.cropY, g.cropWidth, g.cropHeight, g.outputWidth, g.outputHeight)
+	f.scalePlane(&f.luma, &dst[0], &src[0], g.inputWidth, scaleRect{
+		srcX: g.cropX, srcY: g.cropY, srcW: g.cropWidth, srcH: g.cropHeight, dstW: g.outputWidth, dstH: g.outputHeight,
+	})
+	chromaRect := scaleRect{
+		srcX: g.cropX / 2, srcY: g.cropY / 2, srcW: g.cropWidth / 2, srcH: g.cropHeight / 2, dstW: g.outputWidth / 2, dstH: g.outputHeight / 2,
+	}
 	for i := 1; i < 3; i++ {
-		f.scalePlane(&f.chroma, &dst[i], &src[i], g.inputWidth/2, g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
+		f.scalePlane(&f.chroma, &dst[i], &src[i], g.inputWidth/2, chromaRect)
 	}
 }
 
 // scalePlane copies a plane whose region keeps its size and resamples any
 // other.
-func (f *Filter) scalePlane(scaler *planeScaler, dst, src *av.Plane, width, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int) {
+func (f *Filter) scalePlane(scaler *planeScaler, dst, src *av.Plane, width int, rect scaleRect) {
 	srcStride := inputStride(src, width)
-	srcBytes := src.Buffer.Bytes[srcY*srcStride+srcX:]
-	if srcWidth == dstWidth && srcHeight == dstHeight && copyPlaneRows(dst.Buffer.Bytes, dst.Stride, srcBytes, srcStride, dstWidth, dstHeight) {
+	srcBytes := src.Buffer.Bytes[rect.srcY*srcStride+rect.srcX:]
+	if rect.srcW == rect.dstW && rect.srcH == rect.dstH && copyPlaneRows(dst.Buffer.Bytes, dst.Stride, srcBytes, srcStride, rect.dstW, rect.dstH) {
 		return
 	}
-	f.scratch = scaler.scale(dst.Buffer.Bytes, dst.Stride, src.Buffer.Bytes, srcStride, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight, f.scratch)
+	f.scratch = scaler.scale(
+		planeBuf{data: dst.Buffer.Bytes, stride: dst.Stride},
+		planeBuf{data: src.Buffer.Bytes, stride: srcStride},
+		rect,
+		f.scratch,
+	)
 }
 
 func inputStride(plane *av.Plane, width int) int {

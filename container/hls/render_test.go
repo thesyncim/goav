@@ -17,10 +17,11 @@ func TestDeltaUpdate(t *testing.T) {
 	}
 	w.open = &segment{number: 10, name: "d-00010.m4s", start: 10, end: 10.4, parts: []part{{name: "d-00010.0.m4s", duration: 0.2, independent: true}, {name: "d-00010.1.m4s", duration: 0.2}}}
 
-	delta, skipped := w.render(false, true)
+	deltaBytes, skipped := w.render(false, true)
 	if !skipped {
 		t.Fatal("no delta for a playlist ten segments long")
 	}
+	delta := string(deltaBytes)
 	for _, want := range []string{"#EXT-X-VERSION:9\n", "CAN-SKIP-UNTIL=6.0", "#EXT-X-MEDIA-SEQUENCE:0\n", "#EXT-X-SKIP:SKIPPED-SEGMENTS=4\n", "#EXTINF:1.000,\nd-00004.m4s\n", `#EXT-X-PRELOAD-HINT:TYPE=PART,URI="d-00010.2.m4s"`} {
 		if !strings.Contains(delta, want) {
 			t.Fatalf("delta lacks %q:\n%s", want, delta)
@@ -29,7 +30,8 @@ func TestDeltaUpdate(t *testing.T) {
 	if strings.Contains(delta, "d-00003.m4s") {
 		t.Fatalf("delta lists a skipped segment:\n%s", delta)
 	}
-	full, _ := w.render(false, false)
+	fullBytes, _ := w.render(false, false)
+	full := string(fullBytes)
 	if strings.Contains(full, "EXT-X-SKIP") || !strings.Contains(full, "#EXT-X-VERSION:7\n") || !strings.Contains(full, "d-00000.m4s") {
 		t.Fatalf("full playlist:\n%s", full)
 	}

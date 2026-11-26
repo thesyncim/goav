@@ -38,66 +38,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
-	// Downstream closure over the live routes, breadth-first; the start node
-	// itself (a source has no queue) is excluded.
-	visited := make([]bool, len(g.nodes))
-	visited[start] = true
-	frontier := []int{start}
-	for len(frontier) > 0 {
-		from := frontier[0]
-		frontier = frontier[1:]
-		routes := g.nodes[from].routes
-		for i := range routes {
-			for _, to := range routes[i].to {
-				if to < 0 || to >= len(g.nodes) || visited[to] {
-					continue
-				}
-				visited[to] = true
-				next := g.nodes[to]
-				if !next.isActive() {
-					continue
-				}
-				frontier = append(frontier, to)
-			}
-		}
-	}
-	// Mark every entry from outside this closure, then propagate that shared
-	// ownership through its descendants. Computing the full closure first
-	// makes this independent of traversal order: a fork from this source can
-	// rejoin exclusively, while an external arm contaminates every downstream
-	// queue even if another path from this source reaches it first.
-	shared := make([]bool, len(g.nodes))
-	for from, node := range g.nodes {
-		if !node.isActive() || visited[from] {
-			continue
-		}
-		for _, route := range node.routes {
-			for _, to := range route.to {
-				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].isActive() {
-					shared[to] = true
-					frontier = append(frontier, to)
-				}
-			}
-		}
-	}
-	for len(frontier) > 0 {
-		from := frontier[0]
-		frontier = frontier[1:]
-		for _, route := range g.nodes[from].routes {
-			for _, to := range route.to {
-				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].isActive() {
-					shared[to] = true
-					frontier = append(frontier, to)
-				}
-			}
-		}
-	}
-	var targets []*bufferedNode
-	for i, node := range g.nodes {
-		if i != start && visited[i] && !shared[i] && node.isActive() && node.kind != nodeSource && node.opened {
-			targets = append(targets, node)
-		}
-	}
+	targets := g.exclusiveDownstreamLocked(start)
 	// Release g.mu before draining: flushNodeQueue serializes against producers
 	// and teardown through the queue ring alone, so a drain never holds the
 	// topology lock (the node pointers are stable).
@@ -107,6 +48,68 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 		g.flushNodeQueue(node)
 	}
 	return nil
+}
+
+// exclusiveDownstreamLocked returns active non-source opened nodes reachable
+// from start that have no incoming path from outside start's downstream closure.
+func (g *bufferedRunner) exclusiveDownstreamLocked(start int) []*bufferedNode {
+	visited := g.downstreamClosureLocked(start)
+	shared := g.sharedDownstreamLocked(visited)
+	var targets []*bufferedNode
+	for i, node := range g.nodes {
+		if i != start && visited[i] && !shared[i] && node.isActive() && node.kind != nodeSource && node.opened {
+			targets = append(targets, node)
+		}
+	}
+	return targets
+}
+
+func (g *bufferedRunner) downstreamClosureLocked(start int) []bool {
+	visited := make([]bool, len(g.nodes))
+	visited[start] = true
+	frontier := []int{start}
+	for len(frontier) > 0 {
+		from := frontier[0]
+		frontier = frontier[1:]
+		for i := range g.nodes[from].routes {
+			for _, to := range g.nodes[from].routes[i].to {
+				if to < 0 || to >= len(g.nodes) || visited[to] {
+					continue
+				}
+				visited[to] = true
+				if g.nodes[to].isActive() {
+					frontier = append(frontier, to)
+				}
+			}
+		}
+	}
+	return visited
+}
+
+func (g *bufferedRunner) sharedDownstreamLocked(visited []bool) []bool {
+	shared := make([]bool, len(g.nodes))
+	var frontier []int
+	markFrom := func(from int) {
+		for _, route := range g.nodes[from].routes {
+			for _, to := range route.to {
+				if to >= 0 && to < len(g.nodes) && visited[to] && !shared[to] && g.nodes[to].isActive() {
+					shared[to] = true
+					frontier = append(frontier, to)
+				}
+			}
+		}
+	}
+	for from, node := range g.nodes {
+		if node.isActive() && !visited[from] {
+			markFrom(from)
+		}
+	}
+	for len(frontier) > 0 {
+		from := frontier[0]
+		frontier = frontier[1:]
+		markFrom(from)
+	}
+	return shared
 }
 
 // flushNodeQueue drains one node's queue atomically with respect to
