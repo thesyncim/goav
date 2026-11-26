@@ -297,6 +297,25 @@ func (f *Filter) convert(dst []byte, input []byte, count int) {
 					}
 					w1 := int32((uint64(rem) * inv) >> 16)
 					w2 := int32((uint64(2*rem) * inv) >> 16)
+					for ; j+6 <= count; j += 6 {
+						c := int32(getS16(input, (rel+2)*2))
+						diff2 := c - b
+						s0 := uint64(uint16(int16(a)))
+						s1 := uint64(uint16(int16(a + (diff*w1)>>16)))
+						s2 := uint64(uint16(int16(a + (diff*w2)>>16)))
+						s3 := uint64(uint16(int16(b)))
+						s4 := uint32(uint16(int16(b + (diff2*w1)>>16)))
+						s5 := uint32(uint16(int16(b + (diff2*w2)>>16)))
+						out := d[j*2 : j*2+12]
+						binary.LittleEndian.PutUint64(out, s0|s1<<16|s2<<32|s3<<48)
+						binary.LittleEndian.PutUint32(out[8:], s4|s5<<16)
+						rel += 2
+						if j+6 < count {
+							a = c
+							b = int32(getS16(input, (rel+1)*2))
+							diff = b - a
+						}
+					}
 					for ; j+3 <= count; j += 3 {
 						s0 := uint16(int16(a))
 						s1 := uint16(int16(a + (diff*w1)>>16))

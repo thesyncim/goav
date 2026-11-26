@@ -605,19 +605,13 @@ func filterRow3to2(out []uint16, line []byte) {
 	i, sx := 0, 0
 	for ; i+4 <= n && sx+8 <= srcLen; i, sx = i+4, sx+6 {
 		v := binary.LittleEndian.Uint64(line[sx:])
-		s0 := uint32(v & 0xff)
-		s1 := uint32((v >> 8) & 0xff)
-		s2 := uint32((v >> 16) & 0xff)
-		s3 := uint32((v >> 24) & 0xff)
-		s4 := uint32((v >> 32) & 0xff)
-		s5 := uint32((v >> 40) & 0xff)
-		m1 := s1*wLo + half
-		m4 := s4*wLo + half
+		m1 := uint32(byte(v>>8))*wLo + half
+		m4 := uint32(byte(v>>32))*wLo + half
 		o4 := out[i : i+4]
-		o4[0] = uint16((s0*wHi + m1) >> shift)
-		o4[1] = uint16((m1 + s2*wHi) >> shift)
-		o4[2] = uint16((s3*wHi + m4) >> shift)
-		o4[3] = uint16((m4 + s5*wHi) >> shift)
+		o4[0] = uint16((uint32(byte(v))*wHi + m1) >> shift)
+		o4[1] = uint16((m1 + uint32(byte(v>>16))*wHi) >> shift)
+		o4[2] = uint16((uint32(byte(v>>24))*wHi + m4) >> shift)
+		o4[3] = uint16((m4 + uint32(byte(v>>40))*wHi) >> shift)
 	}
 	for ; i+2 <= n; i, sx = i+2, sx+3 {
 		s := line[sx : sx+3 : sx+3]
