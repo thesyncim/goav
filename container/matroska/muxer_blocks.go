@@ -10,17 +10,138 @@ import (
 	"github.com/thesyncim/goav/container/ebml"
 )
 
+// blockGroupMeta holds the optional sibling elements written after idBlock
+// inside a BlockGroup, shared by single-frame and laced BlockGroups.
+type blockGroupMeta struct {
+	durationTicks        uint64
+	keyframe             bool
+	referenceBlockTimeNS []int64
+	referencePriority    uint64
+	discardPaddingNS     int64
+	codecState           []byte
+	blockAdditions       []BlockAddition
+}
+
+func (g blockGroupMeta) empty() bool {
+	return g.durationTicks == 0 &&
+		len(g.referenceBlockTimeNS) == 0 &&
+		g.referencePriority == 0 &&
+		g.discardPaddingNS == 0 &&
+		len(g.codecState) == 0 &&
+		len(g.blockAdditions) == 0
+}
+
+func (g blockGroupMeta) implicitReference() bool {
+	return g.durationTicks != 0 && !g.keyframe && len(g.referenceBlockTimeNS) == 0
+}
+
+func (g blockGroupMeta) groupEncodedSize(blockPayloadSize uint64, scaleNS int64, track Track) (uint64, error) {
+	blockHeaderSize, err := elementEncodedSize(idBlock, blockPayloadSize)
+	if err != nil {
+		return 0, err
+	}
+	groupSize := blockHeaderSize + blockPayloadSize
+	addSize := func(sz uint64, err error) error {
+		if err != nil {
+			return err
+		}
+		groupSize, err = checkedAddUint64(groupSize, sz)
+		return err
+	}
+	if len(g.blockAdditions) != 0 {
+		if err := addSize(blockAdditionsElementEncodedSize(g.blockAdditions)); err != nil {
+			return 0, err
+		}
+	}
+	if g.durationTicks != 0 {
+		if err := addSize(uintElementEncodedSize(idBlockDuration, g.durationTicks)); err != nil {
+			return 0, err
+		}
+	}
+	if g.referencePriority != 0 {
+		if err := addSize(uintElementEncodedSize(idReferencePriority, g.referencePriority)); err != nil {
+			return 0, err
+		}
+	}
+	if g.implicitReference() {
+		if err := addSize(intElementEncodedSize(idReferenceBlk, 0)); err != nil {
+			return 0, err
+		}
+	}
+	for i := range g.referenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(g.referenceBlockTimeNS[i], scaleNS, track)
+		if err := addSize(intElementEncodedSize(idReferenceBlk, ticks)); err != nil {
+			return 0, err
+		}
+	}
+	if len(g.codecState) != 0 {
+		if err := addSize(binaryElementEncodedSize(idCodecState, g.codecState)); err != nil {
+			return 0, err
+		}
+	}
+	if g.discardPaddingNS != 0 {
+		if err := addSize(intElementEncodedSize(idDiscardPad, g.discardPaddingNS)); err != nil {
+			return 0, err
+		}
+	}
+	return groupSize, nil
+}
+
+func (g blockGroupMeta) writeExtra(w *ebml.Writer, scaleNS int64, track Track) error {
+	if len(g.blockAdditions) != 0 {
+		if err := writeBlockAdditions(w, g.blockAdditions); err != nil {
+			return err
+		}
+	}
+	if g.durationTicks != 0 {
+		if err := w.WriteUInt(idBlockDuration, g.durationTicks); err != nil {
+			return err
+		}
+	}
+	if g.referencePriority != 0 {
+		if err := w.WriteUInt(idReferencePriority, g.referencePriority); err != nil {
+			return err
+		}
+	}
+	if g.implicitReference() {
+		if err := w.WriteInt(idReferenceBlk, 0); err != nil {
+			return err
+		}
+	}
+	for i := range g.referenceBlockTimeNS {
+		ticks := scaledReferenceBlockTicks(g.referenceBlockTimeNS[i], scaleNS, track)
+		if err := w.WriteInt(idReferenceBlk, ticks); err != nil {
+			return err
+		}
+	}
+	if len(g.codecState) != 0 {
+		if err := writeBinary(w, idCodecState, g.codecState); err != nil {
+			return err
+		}
+	}
+	if g.discardPaddingNS != 0 {
+		if err := w.WriteInt(idDiscardPad, g.discardPaddingNS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track) error {
 	durationTicks, err := scaledDurationTicks(packet.DurationNS, m.options.TimecodeScaleNS, track)
 	if err != nil {
 		return err
 	}
-	if durationTicks == 0 &&
-		len(packet.ReferenceBlockTimeNS) == 0 &&
-		packet.ReferencePriority == 0 &&
-		packet.DiscardPaddingNS == 0 &&
-		len(packet.CodecState) == 0 &&
-		len(packet.BlockAdditions) == 0 {
+	meta := blockGroupMeta{
+		durationTicks:        durationTicks,
+		keyframe:             packet.Keyframe,
+		referenceBlockTimeNS: packet.ReferenceBlockTimeNS,
+		referencePriority:    packet.ReferencePriority,
+		discardPaddingNS:     packet.DiscardPaddingNS,
+		codecState:           packet.CodecState,
+		blockAdditions:       packet.BlockAdditions,
+	}
+	if meta.empty() {
 		return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 	}
 	var blockPayload []byte
@@ -42,82 +163,9 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 		return err
 	}
 	blockPayloadSize := uint64(trackWidth + 3 + payloadSize)
-	blockHeaderSize, err := elementEncodedSize(idBlock, blockPayloadSize)
+	groupSize, err := meta.groupEncodedSize(blockPayloadSize, m.options.TimecodeScaleNS, track)
 	if err != nil {
 		return err
-	}
-	groupSize := blockHeaderSize + blockPayloadSize
-	if len(packet.BlockAdditions) != 0 {
-		additionsSize, err := blockAdditionsElementEncodedSize(packet.BlockAdditions)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, additionsSize)
-		if err != nil {
-			return err
-		}
-	}
-	if durationTicks != 0 {
-		durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, durationElementSize)
-		if err != nil {
-			return err
-		}
-	}
-	if packet.ReferencePriority != 0 {
-		prioritySize, err := uintElementEncodedSize(idReferencePriority, packet.ReferencePriority)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, prioritySize)
-		if err != nil {
-			return err
-		}
-	}
-	writeImplicitReference := durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0
-	if writeImplicitReference {
-		referenceSize, err := intElementEncodedSize(idReferenceBlk, 0)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, referenceSize)
-		if err != nil {
-			return err
-		}
-	}
-	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
-		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, referenceSize)
-		if err != nil {
-			return err
-		}
-	}
-	if len(packet.CodecState) != 0 {
-		stateSize, err := binaryElementEncodedSize(idCodecState, packet.CodecState)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, stateSize)
-		if err != nil {
-			return err
-		}
-	}
-	if packet.DiscardPaddingNS != 0 {
-		paddingSize, err := intElementEncodedSize(idDiscardPad, packet.DiscardPaddingNS)
-		if err != nil {
-			return err
-		}
-		groupSize, err = checkedAddUint64(groupSize, paddingSize)
-		if err != nil {
-			return err
-		}
 	}
 	if err := m.ebml.WriteHeader(idBlockGroup, groupSize); err != nil {
 		return err
@@ -130,43 +178,7 @@ func (m *Muxer) writeBlockGroup(packet Packet, blockTimecode int16, track Track)
 	if err != nil {
 		return err
 	}
-	if len(packet.BlockAdditions) != 0 {
-		if err := writeBlockAdditions(m.ebml, packet.BlockAdditions); err != nil {
-			return err
-		}
-	}
-	if durationTicks != 0 {
-		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
-			return err
-		}
-	}
-	if packet.ReferencePriority != 0 {
-		if err := m.ebml.WriteUInt(idReferencePriority, packet.ReferencePriority); err != nil {
-			return err
-		}
-	}
-	if writeImplicitReference {
-		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
-			return err
-		}
-	}
-	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
-		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
-			return err
-		}
-	}
-	if len(packet.CodecState) != 0 {
-		if err := writeBinary(m.ebml, idCodecState, packet.CodecState); err != nil {
-			return err
-		}
-	}
-	if packet.DiscardPaddingNS != 0 {
-		if err := m.ebml.WriteInt(idDiscardPad, packet.DiscardPaddingNS); err != nil {
-			return err
-		}
-	}
-	return nil
+	return meta.writeExtra(m.ebml, m.options.TimecodeScaleNS, track)
 }
 
 func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, lacing byte, payloadSize uint64, track Track, muxedFrameSizes []int, muxedPayload []byte) error {
@@ -174,7 +186,16 @@ func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, la
 	if err != nil {
 		return err
 	}
-	groupSize, err := lacedBlockGroupSize(packet, durationTicks, payloadSize, m.options.TimecodeScaleNS, track)
+	meta := blockGroupMeta{
+		durationTicks:        durationTicks,
+		keyframe:             packet.Keyframe,
+		referenceBlockTimeNS: packet.ReferenceBlockTimeNS,
+		referencePriority:    packet.ReferencePriority,
+		discardPaddingNS:     packet.DiscardPaddingNS,
+		codecState:           packet.CodecState,
+		blockAdditions:       packet.BlockAdditions,
+	}
+	groupSize, err := meta.groupEncodedSize(payloadSize, m.options.TimecodeScaleNS, track)
 	if err != nil {
 		return err
 	}
@@ -184,123 +205,7 @@ func (m *Muxer) writeLacedBlockGroup(packet LacedPacket, blockTimecode int16, la
 	if err := m.writeLacedBlock(idBlock, packet, blockTimecode, lacedBlockGroupFlags(packet), lacing, payloadSize, track, muxedFrameSizes, muxedPayload); err != nil {
 		return err
 	}
-	if len(packet.BlockAdditions) != 0 {
-		if err := writeBlockAdditions(m.ebml, packet.BlockAdditions); err != nil {
-			return err
-		}
-	}
-	if durationTicks != 0 {
-		if err := m.ebml.WriteUInt(idBlockDuration, durationTicks); err != nil {
-			return err
-		}
-	}
-	if packet.ReferencePriority != 0 {
-		if err := m.ebml.WriteUInt(idReferencePriority, packet.ReferencePriority); err != nil {
-			return err
-		}
-	}
-	if durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0 {
-		if err := m.ebml.WriteInt(idReferenceBlk, 0); err != nil {
-			return err
-		}
-	}
-	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], m.options.TimecodeScaleNS, track)
-		if err := m.ebml.WriteInt(idReferenceBlk, ticks); err != nil {
-			return err
-		}
-	}
-	if len(packet.CodecState) != 0 {
-		if err := writeBinary(m.ebml, idCodecState, packet.CodecState); err != nil {
-			return err
-		}
-	}
-	if packet.DiscardPaddingNS != 0 {
-		if err := m.ebml.WriteInt(idDiscardPad, packet.DiscardPaddingNS); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func lacedBlockGroupSize(packet LacedPacket, durationTicks uint64, lacedBlockPayloadSize uint64, scaleNS int64, track Track) (uint64, error) {
-	blockHeaderSize, err := elementEncodedSize(idBlock, lacedBlockPayloadSize)
-	if err != nil {
-		return 0, err
-	}
-	groupSize := blockHeaderSize + lacedBlockPayloadSize
-	if len(packet.BlockAdditions) != 0 {
-		additionsSize, err := blockAdditionsElementEncodedSize(packet.BlockAdditions)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, additionsSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if durationTicks != 0 {
-		durationElementSize, err := uintElementEncodedSize(idBlockDuration, durationTicks)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, durationElementSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if packet.ReferencePriority != 0 {
-		prioritySize, err := uintElementEncodedSize(idReferencePriority, packet.ReferencePriority)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, prioritySize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if durationTicks != 0 && !packet.Keyframe && len(packet.ReferenceBlockTimeNS) == 0 {
-		referenceSize, err := intElementEncodedSize(idReferenceBlk, 0)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, referenceSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	for i := range packet.ReferenceBlockTimeNS {
-		ticks := scaledReferenceBlockTicks(packet.ReferenceBlockTimeNS[i], scaleNS, track)
-		referenceSize, err := intElementEncodedSize(idReferenceBlk, ticks)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, referenceSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if len(packet.CodecState) != 0 {
-		stateSize, err := binaryElementEncodedSize(idCodecState, packet.CodecState)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, stateSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	if packet.DiscardPaddingNS != 0 {
-		paddingSize, err := intElementEncodedSize(idDiscardPad, packet.DiscardPaddingNS)
-		if err != nil {
-			return 0, err
-		}
-		groupSize, err = checkedAddUint64(groupSize, paddingSize)
-		if err != nil {
-			return 0, err
-		}
-	}
-	return groupSize, nil
+	return meta.writeExtra(m.ebml, m.options.TimecodeScaleNS, track)
 }
 
 func writeBlockAdditions(w *ebml.Writer, additions []BlockAddition) error {

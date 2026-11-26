@@ -33,7 +33,29 @@ type nameArgs struct {
 }
 
 func init() {
-	// file: an input at a pipeline's head, a destination at its tail.
+	builtin(fileElement())
+	builtin(uriElement())
+	builtin(testsrcElement())
+	builtin(hlsElement())
+	builtin(tapElement())
+	for _, el := range selectElements() {
+		builtin(el)
+	}
+	builtin(decodeElement())
+	builtin(encodeElement())
+	builtin(resizeElement())
+	builtin(resampleElement())
+	builtin(asElement())
+	builtin(bufferElement())
+	builtin(playoutElement())
+	builtin(syncElement())
+	builtin(autoElement())
+	builtin(atElement())
+	builtin(nullElement())
+	registerJoinElements()
+}
+
+func fileElement() *element {
 	type fileArgs struct {
 		Path   string `launch:",positional,required" help:"path"`
 		Format string `launch:"format"`
@@ -44,9 +66,10 @@ func init() {
 		return value{kind: kindFile, file: fileRef{path: a.Path, format: av.FormatID(a.Format)}}, nil
 	}
 	file.start, file.dest = fileValue, fileValue
-	builtin(file)
+	return file
+}
 
-	// uri: a URL, read or written like a file; a bare quoted URL is one too.
+func uriElement() *element {
 	type uriArgs struct {
 		URI    string `launch:",positional,required" help:"url"`
 		Format string `launch:"format"`
@@ -59,12 +82,10 @@ func init() {
 		return value{kind: kindFile, file: ref}, err
 	}
 	uri.start, uri.dest = uriValue, uriValue
-	builtin(uri)
+	return uri
+}
 
-	builtin(testsrcElement())
-	builtin(hlsElement())
-
-	// tap: at the start, a running task's tap; mid-pipeline, a named outlet.
+func tapElement() *element {
 	tap := define[nameArgs]("tap", "name an attach point; start from one on a running task", "operation")
 	tap.start = func(c *compiler, args reflect.Value) (value, error) {
 		if c.cfg.task == nil {
@@ -75,12 +96,15 @@ func init() {
 	tap.apply = func(_ *compiler, args reflect.Value, in value) (value, error) {
 		return value{kind: kindStream, stream: in.stream.Tap(argsOf[nameArgs](args).Name)}, nil
 	}
-	builtin(tap)
+	return tap
+}
 
+func selectElements() []*element {
 	type selectArgs struct {
 		ID    string `launch:"id"`
 		Index string `launch:"index"`
 	}
+	var out []*element
 	for _, kind := range []string{"video", "audio", "stream"} {
 		el := define[selectArgs](kind, "select the input's "+kind+" stream", "operation")
 		if kind == "stream" {
@@ -109,9 +133,12 @@ func init() {
 				return value{kind: kindStream, stream: in.input.Stream(opts...)}, nil
 			}
 		}
-		builtin(el)
+		out = append(out, el)
 	}
+	return out
+}
 
+func decodeElement() *element {
 	type decodeArgs struct {
 		Backend string `launch:"backend" help:"the backend that decodes, e.g. videotoolbox"`
 	}
@@ -123,10 +150,10 @@ func init() {
 		}
 		return value{kind: kindStream, stream: in.stream.Decode(opts...)}, nil
 	}
-	builtin(decode)
+	return decode
+}
 
-	builtin(encodeElement())
-
+func resizeElement() *element {
 	type resizeArgs struct {
 		Size   Size   `launch:"size,positional"`
 		Width  int    `launch:"width"`
@@ -153,8 +180,10 @@ func init() {
 		}
 		return value{}, &Error{Pos: -1, Msg: "resize mode " + quote(a.Mode) + " is not exact, fit, or fill"}
 	}
-	builtin(resize)
+	return resize
+}
 
+func resampleElement() *element {
 	type resampleArgs struct {
 		Rate     int `launch:"rate,positional,required"`
 		Channels int `launch:"channels,positional,required"`
@@ -164,14 +193,18 @@ func init() {
 		a := argsOf[resampleArgs](args)
 		return value{kind: kindStream, stream: in.stream.Resample(a.Rate, a.Channels)}, nil
 	}
-	builtin(resample)
+	return resample
+}
 
+func asElement() *element {
 	as := define[nameArgs]("as", "name the stream from here on (its fork and encoded stream id)", "operation")
 	as.apply = func(_ *compiler, args reflect.Value, in value) (value, error) {
 		return value{kind: kindStream, stream: in.stream.As(argsOf[nameArgs](args).Name)}, nil
 	}
-	builtin(as)
+	return as
+}
 
+func bufferElement() *element {
 	type bufferArgs struct {
 		Mode     string        `launch:"mode,positional,required"`
 		Capacity int           `launch:"capacity,positional"`
@@ -211,8 +244,10 @@ func init() {
 		}
 		return value{kind: kindStream, stream: in.stream.Buffer(b)}, nil
 	}
-	builtin(buffer)
+	return buffer
+}
 
+func playoutElement() *element {
 	type playoutArgs struct {
 		Name string `launch:"name,positional"`
 	}
@@ -220,8 +255,10 @@ func init() {
 	playout.apply = func(_ *compiler, args reflect.Value, in value) (value, error) {
 		return value{kind: kindStream, stream: in.stream.Playout(flow.Playout(firstNonEmpty(argsOf[playoutArgs](args).Name, "playout")))}, nil
 	}
-	builtin(playout)
+	return playout
+}
 
+func syncElement() *element {
 	type syncArgs struct {
 		Name      string        `launch:"name,positional,required"`
 		Tolerance time.Duration `launch:"tolerance"`
@@ -245,8 +282,10 @@ func init() {
 		}
 		return value{kind: kindStream, stream: in.stream.Sync(policy)}, nil
 	}
-	builtin(sync)
+	return sync
+}
 
+func autoElement() *element {
 	type autoArgs struct {
 		Resample bool `launch:"resample,flag"`
 		Resize   bool `launch:"resize,flag"`
@@ -270,8 +309,10 @@ func init() {
 		}
 		return value{kind: kindStream, stream: in.stream.Auto(policies...)}, nil
 	}
-	builtin(auto)
+	return auto
+}
 
+func atElement() *element {
 	type atArgs struct {
 		X int `launch:"x,positional,required"`
 		Y int `launch:"y,positional,required"`
@@ -281,8 +322,10 @@ func init() {
 		a := argsOf[atArgs](args)
 		return value{kind: kindLayer, layer: goav.At(in.stream, a.X, a.Y)}, nil
 	}
-	builtin(at)
+	return at
+}
 
+func nullElement() *element {
 	null := define[struct{}]("null", "discard what arrives", "destination")
 	null.dest = func(c *compiler, _ reflect.Value) (value, error) {
 		if d, ok := c.dests["\x00null"]; ok {
@@ -292,8 +335,10 @@ func init() {
 		c.dests["\x00null"] = d
 		return value{kind: kindDest, dest: d}, nil
 	}
-	builtin(null)
+	return null
+}
 
+func registerJoinElements() {
 	join := func(el *element, fn func(args reflect.Value, inputs []value, call *termNode) (goav.Stream, error)) {
 		el.join = func(_ *compiler, args reflect.Value, inputs []value, call *termNode) (value, error) {
 			s, err := fn(args, inputs, call)
@@ -458,38 +503,31 @@ func encodeElement() *element {
 		}
 		id := av.CodecID(a.Codec)
 		media := av.MediaType(a.Media)
-		if media == "" && !knownCodec(id) {
+		spec, known := codecSpec(id, media, opts...)
+		if media == "" && !known {
 			return value{}, &Error{Pos: -1, Msg: "goav does not know which media " + a.Codec + " encodes", Hint: "write encode " + a.Codec + " media=video (or media=audio)"}
 		}
-		return value{kind: kindStream, stream: in.stream.Encode(codecSpec(id, media, opts...))}, nil
+		return value{kind: kindStream, stream: in.stream.Encode(spec)}, nil
 	}
 	return el
 }
 
-func knownCodec(id av.CodecID) bool {
-	switch id {
-	case av.CodecVP8, av.CodecVP9, av.CodecAV1, av.CodecH264, av.CodecHEVC, av.CodecOpus:
-		return true
-	}
-	return false
-}
-
-// codecSpec is the codec package's constructor for a known codec, so a
-// program's encoder is the value Go code would build.
-func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) codec.Spec {
+// codecSpec returns the codec package's constructor for a known codec (known=true),
+// or codec.New for an arbitrary codec id (known=false).
+func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) (codec.Spec, bool) {
 	switch id {
 	case av.CodecVP8:
-		return codec.VP8(opts...)
+		return codec.VP8(opts...), true
 	case av.CodecVP9:
-		return codec.VP9(opts...)
+		return codec.VP9(opts...), true
 	case av.CodecAV1:
-		return codec.AV1(opts...)
+		return codec.AV1(opts...), true
 	case av.CodecH264:
-		return codec.H264(opts...)
+		return codec.H264(opts...), true
 	case av.CodecHEVC:
-		return codec.HEVC(opts...)
+		return codec.HEVC(opts...), true
 	case av.CodecOpus:
-		return codec.Opus(opts...)
+		return codec.Opus(opts...), true
 	}
-	return codec.New(id, media, opts...)
+	return codec.New(id, media, opts...), false
 }
