@@ -13,6 +13,13 @@ methodology changes, and migration notes.
 
 Entries since 2026-10-19 live in changelog.d/ until release.
 
+## v0.2.1
+
+- **Hot-path GC & allocation hygiene**: eliminated per-audio-callback wake channel allocations and audio/video slice churn in `player/internal/engine`, replaced per-frame `av.StreamID` map lookups in `Mix`/`Composite` joins with flat slice-indexed ring buffers and a shared `joinStageBase`, cached steady-state RTP depacketizer resolution in `rtpav`, cached AES block ciphers and reused `zlib.Resetter` in `container/matroska`, and reused playlist render buffers in `container/hls`.
+- **Maintainability & correctness**: decomposed high-complexity/deeply-nested functions across root, `internal/compile`, `pipeline`, `rtpav`, `webrtcav`, `adapters/{goav1,resize}`, `container/{matroska,mp4}`, `format`, `filter`, `codec`, `ctlserver`, and `launch`; added `av.IsMonotonicClock` (dropping `reflect` from the root package) and `Clone()` methods on `av.Stream`, `av.CodecParameters`, and `av.Event`; fixed deep-clone omissions in `container/mp4` and `codec/registry` and rejected `NaN`/`Inf` floats in `ctlserver`/`launch`.
+- Bumped `github.com/thesyncim/goav1` (`v0.2.0` -> `v0.2.4`), `github.com/thesyncim/govpx` (`v0.3.2` -> `v0.5.2`), `github.com/ebitengine/purego` (`v0.11.0` -> `v0.11.3`), and `github.com/hajimehoshi/ebiten/v2` (`v2.10.5` -> `v2.10.6`), and repinned nested modules to `v0.2.0`.
+- Speed up non-SIMD scalar kernels across audio mixing (64-bit SWAR parallel S16 add with exact overflow fallback), video resizing (SWAR 2x2 box downscale, L1 strip-tiled separable scaling, zero-tap trimming, 3:2 horizontal fast path, register-accumulated vertical pass), audio resampling, EBML VINT coding, camera pixel deinterleaving, and player YUV-to-RGBA conversion — with zero unsafe, zero assembly, and no penalty to `GOEXPERIMENT=simd` builds.
+
 ## v0.2.0
 
 - Fix: the offline order now also covers nested joins and joins with a

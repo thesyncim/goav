@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/google/go-cmp v0.7.0
-	github.com/thesyncim/goav v0.1.0-alpha.9
+	github.com/thesyncim/goav v0.2.0
 )
 
 replace github.com/thesyncim/goav => ../..
