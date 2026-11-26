@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"sync"
@@ -242,29 +243,19 @@ func (j *convertJob) rowsI420(y0, y1 int) {
 			x := cx * 2
 			o := cx * 8
 
-			l00 := (int32(yrow0[x])-16)*c.y + 1<<15
-			out0[o] = clamp8(l00 + dr)
-			out0[o+1] = clamp8(l00 + dg)
-			out0[o+2] = clamp8(l00 + db)
-			out0[o+3] = 255
+			y0 := binary.LittleEndian.Uint16(yrow0[x:])
+			l00 := (int32(y0&0xff)-16)*c.y + 1<<15
+			l01 := (int32(y0>>8)-16)*c.y + 1<<15
+			p00 := uint32(clamp8(l00+dr)) | uint32(clamp8(l00+dg))<<8 | uint32(clamp8(l00+db))<<16 | 0xff000000
+			p01 := uint32(clamp8(l01+dr)) | uint32(clamp8(l01+dg))<<8 | uint32(clamp8(l01+db))<<16 | 0xff000000
+			binary.LittleEndian.PutUint64(out0[o:], uint64(p00)|uint64(p01)<<32)
 
-			l01 := (int32(yrow0[x+1])-16)*c.y + 1<<15
-			out0[o+4] = clamp8(l01 + dr)
-			out0[o+5] = clamp8(l01 + dg)
-			out0[o+6] = clamp8(l01 + db)
-			out0[o+7] = 255
-
-			l10 := (int32(yrow1[x])-16)*c.y + 1<<15
-			out1[o] = clamp8(l10 + dr)
-			out1[o+1] = clamp8(l10 + dg)
-			out1[o+2] = clamp8(l10 + db)
-			out1[o+3] = 255
-
-			l11 := (int32(yrow1[x+1])-16)*c.y + 1<<15
-			out1[o+4] = clamp8(l11 + dr)
-			out1[o+5] = clamp8(l11 + dg)
-			out1[o+6] = clamp8(l11 + db)
-			out1[o+7] = 255
+			y1v := binary.LittleEndian.Uint16(yrow1[x:])
+			l10 := (int32(y1v&0xff)-16)*c.y + 1<<15
+			l11 := (int32(y1v>>8)-16)*c.y + 1<<15
+			p10 := uint32(clamp8(l10+dr)) | uint32(clamp8(l10+dg))<<8 | uint32(clamp8(l10+db))<<16 | 0xff000000
+			p11 := uint32(clamp8(l11+dr)) | uint32(clamp8(l11+dg))<<8 | uint32(clamp8(l11+db))<<16 | 0xff000000
+			binary.LittleEndian.PutUint64(out1[o:], uint64(p10)|uint64(p11)<<32)
 		}
 		if oddW {
 			u := int32(urow[pairs]) - 128
@@ -301,10 +292,10 @@ func (j *convertJob) rowsI420(y0, y1 int) {
 // clamp8 shifts a 16.16 fixed-point value to a byte, saturating.
 func clamp8(v int32) byte {
 	v >>= 16
-	if v < 0 {
-		return 0
-	}
-	if v > 255 {
+	if uint32(v) > 255 {
+		if v < 0 {
+			return 0
+		}
 		return 255
 	}
 	return byte(v)

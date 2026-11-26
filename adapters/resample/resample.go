@@ -2,6 +2,7 @@ package resample
 
 import (
 	"context"
+	"encoding/binary"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
@@ -234,10 +235,12 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 // inner loop performs zero integer divisions.
 func (f *Filter) convert(dst []byte, input []byte, count int) {
 	inRate, outRate := int64(f.inputRate), int64(f.outputRate)
+	outRateInt := f.outputRate
 	position := f.outPos * inRate
 	base := position / outRate
 	frac := int(position % outRate)
 	step := inRate / outRate
+	stepInt := int(step)
 	rem := int(inRate % outRate)
 	inv := (uint64(1)<<32 + uint64(outRate)/2) / uint64(outRate)
 	inPos := f.inPos
@@ -245,64 +248,250 @@ func (f *Filter) convert(dst []byte, input []byte, count int) {
 
 	switch {
 	case inCh == 1 && outCh == 1:
-		last0 := f.last[0]
-		for j := range count {
-			var a int
-			if base < inPos {
-				a = last0
-			} else {
-				a = int(getS16(input, int(base-inPos)*2))
-			}
+		last0 := int32(f.last[0])
+		d := dst[:count*2]
+		j := 0
+		for ; j < count && base < inPos; j++ {
+			a := last0
 			value := a
 			if frac != 0 {
-				var b int
+				var b int32
 				if base+1 < inPos {
 					b = last0
 				} else {
-					b = int(getS16(input, int(base+1-inPos)*2))
+					b = int32(getS16(input, int(base+1-inPos)*2))
 				}
-				w := int((uint64(frac) * inv) >> 16)
+				w := int32((uint64(frac) * inv) >> 16)
 				value = a + ((b-a)*w)>>16
 			}
-			putS16(dst, j*2, int16(value))
+			binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(value)))
 			base += step
 			frac += rem
-			if frac >= f.outputRate {
-				frac -= f.outputRate
+			if frac >= outRateInt {
+				frac -= outRateInt
 				base++
 			}
 		}
-	case inCh == 2 && outCh == 2:
-		last0, last1 := f.last[0], f.last[1]
-		for j := range count {
-			var a0, a1 int
-			if base < inPos {
-				a0, a1 = last0, last1
+		if j < count {
+			rel := int(base - inPos)
+			if stepInt == 0 {
+				v := binary.LittleEndian.Uint32(input[rel*2:])
+				a := int32(int16(v))
+				b := int32(int16(v >> 16))
+				diff := b - a
+				// Align to frac == 0 if we are on an exact 2x or 3x upsample ratio.
+				if outRateInt == 3*f.inputRate {
+					for ; j < count && frac != 0; j++ {
+						w := int32((uint64(frac) * inv) >> 16)
+						binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+(diff*w)>>16)))
+						frac += rem
+						if frac >= outRateInt {
+							frac -= outRateInt
+							rel++
+							if j+1 < count {
+								a = b
+								b = int32(getS16(input, (rel+1)*2))
+								diff = b - a
+							}
+						}
+					}
+					w1 := int32((uint64(rem) * inv) >> 16)
+					w2 := int32((uint64(2*rem) * inv) >> 16)
+					for ; j+3 <= count; j += 3 {
+						s0 := uint16(int16(a))
+						s1 := uint16(int16(a + (diff*w1)>>16))
+						s2 := uint16(int16(a + (diff*w2)>>16))
+						out := d[j*2 : j*2+6]
+						binary.LittleEndian.PutUint32(out, uint32(s0)|uint32(s1)<<16)
+						binary.LittleEndian.PutUint16(out[4:], s2)
+						rel++
+						if j+3 < count {
+							a = b
+							b = int32(getS16(input, (rel+1)*2))
+							diff = b - a
+						}
+					}
+				}
+				for ; j < count; j++ {
+					w := int32((uint64(frac) * inv) >> 16)
+					binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+(diff*w)>>16)))
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+						if j+1 < count {
+							a = b
+							b = int32(getS16(input, (rel+1)*2))
+							diff = b - a
+						}
+					}
+				}
 			} else {
-				off := int(base-inPos) * 4
-				a0, a1 = int(getS16(input, off)), int(getS16(input, off+2))
+				for ; j < count; j++ {
+					v := binary.LittleEndian.Uint32(input[rel*2:])
+					a := int32(int16(v))
+					b := int32(int16(v >> 16))
+					w := int32((uint64(frac) * inv) >> 16)
+					binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+((b-a)*w)>>16)))
+					rel += stepInt
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+					}
+				}
 			}
+		}
+	case inCh == 2 && outCh == 1:
+		last0 := int32(f.last[0])
+		d := dst[:count*2]
+		j := 0
+		for ; j < count && base < inPos; j++ {
+			a := last0
+			value := a
+			if frac != 0 {
+				var b int32
+				if base+1 < inPos {
+					b = last0
+				} else {
+					v := binary.LittleEndian.Uint32(input[int(base+1-inPos)*4:])
+					b = (int32(int16(v)) + int32(int16(v>>16))) / 2
+				}
+				w := int32((uint64(frac) * inv) >> 16)
+				value = a + ((b-a)*w)>>16
+			}
+			binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(value)))
+			base += step
+			frac += rem
+			if frac >= outRateInt {
+				frac -= outRateInt
+				base++
+			}
+		}
+		if j < count {
+			rel := int(base - inPos)
+			if stepInt == 0 {
+				v := binary.LittleEndian.Uint64(input[rel*4:])
+				a := (int32(int16(v)) + int32(int16(v>>16))) / 2
+				b := (int32(int16(v>>32)) + int32(int16(v>>48))) / 2
+				diff := b - a
+				for ; j < count; j++ {
+					w := int32((uint64(frac) * inv) >> 16)
+					binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+(diff*w)>>16)))
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+						if j+1 < count {
+							a = b
+							nv := binary.LittleEndian.Uint32(input[(rel+1)*4:])
+							b = (int32(int16(nv)) + int32(int16(nv>>16))) / 2
+							diff = b - a
+						}
+					}
+				}
+			} else {
+				for ; j < count; j++ {
+					v := binary.LittleEndian.Uint64(input[rel*4:])
+					a := (int32(int16(v)) + int32(int16(v>>16))) / 2
+					b := (int32(int16(v>>32)) + int32(int16(v>>48))) / 2
+					w := int32((uint64(frac) * inv) >> 16)
+					binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+((b-a)*w)>>16)))
+					rel += stepInt
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+					}
+				}
+			}
+		}
+	case inCh == 2 && outCh == 2:
+		last0, last1 := int32(f.last[0]), int32(f.last[1])
+		d := dst[:count*4]
+		j := 0
+		for ; j < count && base < inPos; j++ {
+			a0, a1 := last0, last1
 			v0, v1 := a0, a1
 			if frac != 0 {
-				var b0, b1 int
+				var b0, b1 int32
 				if base+1 < inPos {
 					b0, b1 = last0, last1
 				} else {
-					off := int(base+1-inPos) * 4
-					b0, b1 = int(getS16(input, off)), int(getS16(input, off+2))
+					v := binary.LittleEndian.Uint32(input[int(base+1-inPos)*4:])
+					b0, b1 = int32(int16(v)), int32(int16(v>>16))
 				}
-				w := int((uint64(frac) * inv) >> 16)
+				w := int32((uint64(frac) * inv) >> 16)
 				v0 = a0 + ((b0-a0)*w)>>16
 				v1 = a1 + ((b1-a1)*w)>>16
 			}
-			outOff := j * 4
-			putS16(dst, outOff, int16(v0))
-			putS16(dst, outOff+2, int16(v1))
+			binary.LittleEndian.PutUint32(d[j*4:], uint32(uint16(int16(v0)))|uint32(uint16(int16(v1)))<<16)
 			base += step
 			frac += rem
-			if frac >= f.outputRate {
-				frac -= f.outputRate
+			if frac >= outRateInt {
+				frac -= outRateInt
 				base++
+			}
+		}
+		if j < count {
+			rel := int(base - inPos)
+			for ; j < count; j++ {
+				v := binary.LittleEndian.Uint64(input[rel*4:])
+				a0, a1 := int32(int16(v)), int32(int16(v>>16))
+				b0, b1 := int32(int16(v>>32)), int32(int16(v>>48))
+				w := int32((uint64(frac) * inv) >> 16)
+				u0 := uint32(uint16(int16(a0 + ((b0-a0)*w)>>16)))
+				u1 := uint32(uint16(int16(a1 + ((b1-a1)*w)>>16)))
+				binary.LittleEndian.PutUint32(d[j*4:], u0|u1<<16)
+				rel += stepInt
+				frac += rem
+				if frac >= outRateInt {
+					frac -= outRateInt
+					rel++
+				}
+			}
+		}
+	case inCh == 1 && outCh == 2:
+		last0 := int32(f.last[0])
+		d := dst[:count*4]
+		j := 0
+		for ; j < count && base < inPos; j++ {
+			a := last0
+			value := a
+			if frac != 0 {
+				var b int32
+				if base+1 < inPos {
+					b = last0
+				} else {
+					b = int32(getS16(input, int(base+1-inPos)*2))
+				}
+				w := int32((uint64(frac) * inv) >> 16)
+				value = a + ((b-a)*w)>>16
+			}
+			u := uint32(uint16(int16(value)))
+			binary.LittleEndian.PutUint32(d[j*4:], u|u<<16)
+			base += step
+			frac += rem
+			if frac >= outRateInt {
+				frac -= outRateInt
+				base++
+			}
+		}
+		if j < count {
+			rel := int(base - inPos)
+			for ; j < count; j++ {
+				v := binary.LittleEndian.Uint32(input[rel*2:])
+				a := int32(int16(v))
+				b := int32(int16(v >> 16))
+				w := int32((uint64(frac) * inv) >> 16)
+				u := uint32(uint16(int16(a + ((b-a)*w)>>16)))
+				binary.LittleEndian.PutUint32(d[j*4:], u|u<<16)
+				rel += stepInt
+				frac += rem
+				if frac >= outRateInt {
+					frac -= outRateInt
+					rel++
+				}
 			}
 		}
 	default:
@@ -322,8 +511,8 @@ func (f *Filter) convert(dst []byte, input []byte, count int) {
 			}
 			base += step
 			frac += rem
-			if frac >= f.outputRate {
-				frac -= f.outputRate
+			if frac >= outRateInt {
+				frac -= outRateInt
 				base++
 			}
 		}
@@ -465,6 +654,47 @@ func inputSampleCount(frame *av.Frame, channels int) int {
 }
 
 func remapS16Channels(dst []byte, src []byte, samples int, inputChannels int, outputChannels int) {
+	switch {
+	case inputChannels == 2 && outputChannels == 1:
+		s := src[:samples*4]
+		d := dst[:samples*2]
+		i := 0
+		for ; i+4 <= samples; i += 4 {
+			in := s[i*4 : i*4+16]
+			v0 := binary.LittleEndian.Uint64(in)
+			v1 := binary.LittleEndian.Uint64(in[8:])
+			m0 := uint16((int32(int16(v0)) + int32(int16(v0>>16))) / 2)
+			m1 := uint16((int32(int16(v0>>32)) + int32(int16(v0>>48))) / 2)
+			m2 := uint16((int32(int16(v1)) + int32(int16(v1>>16))) / 2)
+			m3 := uint16((int32(int16(v1>>32)) + int32(int16(v1>>48))) / 2)
+			binary.LittleEndian.PutUint64(d[i*2:], uint64(m0)|uint64(m1)<<16|uint64(m2)<<32|uint64(m3)<<48)
+		}
+		for ; i < samples; i++ {
+			v := binary.LittleEndian.Uint32(s[i*4:])
+			m := (int32(int16(v)) + int32(int16(v>>16))) / 2
+			binary.LittleEndian.PutUint16(d[i*2:], uint16(m))
+		}
+		return
+	case inputChannels == 1 && outputChannels == 2:
+		s := src[:samples*2]
+		d := dst[:samples*4]
+		i := 0
+		for ; i+4 <= samples; i += 4 {
+			v := binary.LittleEndian.Uint64(s[i*2:])
+			s0 := v & 0xffff
+			s1 := (v >> 16) & 0xffff
+			s2 := (v >> 32) & 0xffff
+			s3 := v >> 48
+			out := d[i*4 : i*4+16]
+			binary.LittleEndian.PutUint64(out, s0|s0<<16|s1<<32|s1<<48)
+			binary.LittleEndian.PutUint64(out[8:], s2|s2<<16|s3<<32|s3<<48)
+		}
+		for ; i < samples; i++ {
+			v := uint32(binary.LittleEndian.Uint16(s[i*2:]))
+			binary.LittleEndian.PutUint32(d[i*4:], v|v<<16)
+		}
+		return
+	}
 	for sample := range samples {
 		for channel := range outputChannels {
 			value := mixedSampleS16(src, sample, inputChannels, channel, outputChannels)
@@ -493,12 +723,9 @@ func mixedSampleS16(src []byte, sample int, inputChannels int, outputChannel int
 }
 
 func getS16(data []byte, offset int) int16 {
-	value := uint16(data[offset]) | uint16(data[offset+1])<<8
-	return int16(value)
+	return int16(binary.LittleEndian.Uint16(data[offset:]))
 }
 
 func putS16(data []byte, offset int, value int16) {
-	v := uint16(value)
-	data[offset] = byte(v)
-	data[offset+1] = byte(v >> 8)
+	binary.LittleEndian.PutUint16(data[offset:], uint16(value))
 }

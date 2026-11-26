@@ -1,0 +1,1 @@
+- Speed up non-SIMD scalar kernels across audio mixing, video resizing, audio resampling, camera pixel deinterleaving, and player YUV-to-RGBA conversion using 64-bit SWAR and register-accumulated loops with zero unsafe, zero assembly, and no penalty to `GOEXPERIMENT=simd` builds.

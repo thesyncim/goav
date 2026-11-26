@@ -1,6 +1,7 @@
 package cameraav
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -30,17 +31,45 @@ func copyNV12(c Config, pts int64, y, uv []byte, yStride, uvStride int) (*av.Fra
 	uDst := f.Planes[1].Buffer.Bytes
 	vDst := f.Planes[2].Buffer.Bytes
 	cw, ch := w/2, h/2
+	const (
+		maskFF   = 0x00ff00ff00ff00ff
+		maskFFFF = 0x0000ffff0000ffff
+	)
 	for row := range ch {
 		src := uv[row*uvStride : row*uvStride+cw*2]
 		uRow := uDst[row*cw : (row+1)*cw]
 		vRow := vDst[row*cw : (row+1)*cw]
 		col := 0
-		for ; col+3 < cw; col += 4 {
-			j := col * 2
-			uRow[col], vRow[col] = src[j], src[j+1]
-			uRow[col+1], vRow[col+1] = src[j+2], src[j+3]
-			uRow[col+2], vRow[col+2] = src[j+4], src[j+5]
-			uRow[col+3], vRow[col+3] = src[j+6], src[j+7]
+		for ; col+8 <= cw; col += 8 {
+			s16 := src[col*2 : col*2+16]
+			w0 := binary.LittleEndian.Uint64(s16)
+			w1 := binary.LittleEndian.Uint64(s16[8:])
+
+			eu0 := w0 & maskFF
+			tu0 := (eu0 | (eu0 >> 8)) & maskFFFF
+			u0 := uint32(tu0 | (tu0 >> 16))
+			eu1 := w1 & maskFF
+			tu1 := (eu1 | (eu1 >> 8)) & maskFFFF
+			u1 := uint32(tu1 | (tu1 >> 16))
+			binary.LittleEndian.PutUint64(uRow[col:], uint64(u0)|uint64(u1)<<32)
+
+			ev0 := (w0 >> 8) & maskFF
+			tv0 := (ev0 | (ev0 >> 8)) & maskFFFF
+			v0 := uint32(tv0 | (tv0 >> 16))
+			ev1 := (w1 >> 8) & maskFF
+			tv1 := (ev1 | (ev1 >> 8)) & maskFFFF
+			v1 := uint32(tv1 | (tv1 >> 16))
+			binary.LittleEndian.PutUint64(vRow[col:], uint64(v0)|uint64(v1)<<32)
+		}
+		if col+4 <= cw {
+			w0 := binary.LittleEndian.Uint64(src[col*2:])
+			eu0 := w0 & maskFF
+			tu0 := (eu0 | (eu0 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint32(uRow[col:], uint32(tu0|(tu0>>16)))
+			ev0 := (w0 >> 8) & maskFF
+			tv0 := (ev0 | (ev0 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint32(vRow[col:], uint32(tv0|(tv0>>16)))
+			col += 4
 		}
 		for ; col < cw; col++ {
 			j := col * 2
@@ -63,6 +92,11 @@ func copyYUYV(c Config, pts int64, data []byte, stride int) (*av.Frame, error) {
 	uDst := f.Planes[1].Buffer.Bytes
 	vDst := f.Planes[2].Buffer.Bytes
 	cw, ch := w/2, h/2
+	const (
+		maskFF   = 0x00ff00ff00ff00ff
+		round1   = 0x0001000100010001
+		maskFFFF = 0x0000ffff0000ffff
+	)
 	// Single pass over pairs of rows: extract both luma rows and average chroma.
 	for row := range ch {
 		r0 := row * 2
@@ -72,7 +106,28 @@ func copyYUYV(c Config, pts int64, data []byte, stride int) (*av.Frame, error) {
 		yRow1 := yDst[(r0+1)*w : (r0+2)*w]
 		uRow := uDst[row*cw : (row+1)*cw]
 		vRow := vDst[row*cw : (row+1)*cw]
-		for cx := range cw {
+		cx := 0
+		for ; cx+2 <= cw; cx += 2 {
+			j := cx * 4
+			x := cx * 2
+			a := binary.LittleEndian.Uint64(src0[j:])
+			b := binary.LittleEndian.Uint64(src1[j:])
+
+			ya := a & maskFF
+			tya := (ya | (ya >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint32(yRow0[x:], uint32(tya|(tya>>16)))
+
+			yb := b & maskFF
+			tyb := (yb | (yb >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint32(yRow1[x:], uint32(tyb|(tyb>>16)))
+
+			avg := (((a >> 8) & maskFF) + ((b >> 8) & maskFF) + round1) >> 1
+			uRow[cx] = byte(avg)
+			vRow[cx] = byte(avg >> 16)
+			uRow[cx+1] = byte(avg >> 32)
+			vRow[cx+1] = byte(avg >> 48)
+		}
+		for ; cx < cw; cx++ {
 			j := cx * 4
 			x := cx * 2
 			yRow0[x] = src0[j]

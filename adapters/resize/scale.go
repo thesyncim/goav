@@ -1,6 +1,9 @@
 package resize
 
-import "math"
+import (
+	"encoding/binary"
+	"math"
+)
 
 // Resampling is separable: a horizontal pass filters each source row into a
 // 16-bit intermediate, then a vertical pass filters the intermediate's
@@ -183,15 +186,57 @@ func (p *planeScaler) scaleGeneral(dst, src planeBuf, rect scaleRect, tmp []uint
 // scaleHalfBoxScalar computes the exact 2x2 box downscale in a single pass.
 // Because Q14 weights for a 2:1 ratio are [8192, 8192] on both axes, the
 // separable two-pass result is bit-identical to (s00 + s01 + s10 + s11 + 2) >> 2.
+//
+// Processes 8 output pixels (16 source bytes per row) at a time using 64-bit
+// SWAR arithmetic: each uint64 load splits into 4 uint16 lanes holding the
+// even/odd byte pairs, sums both rows plus rounding constant 2 with zero
+// cross-lane carry (max 1022 < 65535), shifts right by 2, and packs back to
+// consecutive output bytes.
 func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
+	const (
+		maskFF   = 0x00ff00ff00ff00ff
+		round2   = 0x0002000200020002
+		maskFFFF = 0x0000ffff0000ffff
+	)
 	dstData, dstStride := dst.data, dst.stride
 	srcData, srcStride := src.data, src.stride
 	srcX, srcY, dstWidth, dstHeight := rect.srcX, rect.srcY, rect.dstW, rect.dstH
+	srcWidth := 2 * dstWidth
 	for y := range dstHeight {
-		s0 := srcData[(srcY+2*y)*srcStride+srcX:]
-		s1 := srcData[(srcY+2*y+1)*srcStride+srcX:]
+		s0Off := (srcY+2*y)*srcStride + srcX
+		s1Off := s0Off + srcStride
+		s0 := srcData[s0Off : s0Off+srcWidth]
+		s1 := srcData[s1Off : s1Off+srcWidth]
 		out := dstData[y*dstStride : y*dstStride+dstWidth]
-		for x := range dstWidth {
+		x := 0
+		for ; x+8 <= dstWidth; x += 8 {
+			sx := 2 * x
+			s0w := s0[sx : sx+16]
+			s1w := s1[sx : sx+16]
+			a0 := binary.LittleEndian.Uint64(s0w)
+			b0 := binary.LittleEndian.Uint64(s1w)
+			a1 := binary.LittleEndian.Uint64(s0w[8:])
+			b1 := binary.LittleEndian.Uint64(s1w[8:])
+
+			sum0 := (((a0 & maskFF) + ((a0 >> 8) & maskFF) + (b0 & maskFF) + ((b0 >> 8) & maskFF) + round2) >> 2) & maskFF
+			sum1 := (((a1 & maskFF) + ((a1 >> 8) & maskFF) + (b1 & maskFF) + ((b1 >> 8) & maskFF) + round2) >> 2) & maskFF
+
+			t0 := (sum0 | (sum0 >> 8)) & maskFFFF
+			t1 := (sum1 | (sum1 >> 8)) & maskFFFF
+			p0 := uint32(t0 | (t0 >> 16))
+			p1 := uint32(t1 | (t1 >> 16))
+			binary.LittleEndian.PutUint64(out[x:], uint64(p0)|uint64(p1)<<32)
+		}
+		if x+4 <= dstWidth {
+			sx := 2 * x
+			a0 := binary.LittleEndian.Uint64(s0[sx:])
+			b0 := binary.LittleEndian.Uint64(s1[sx:])
+			sum0 := (((a0 & maskFF) + ((a0 >> 8) & maskFF) + (b0 & maskFF) + ((b0 >> 8) & maskFF) + round2) >> 2) & maskFF
+			t0 := (sum0 | (sum0 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint32(out[x:], uint32(t0|(t0>>16)))
+			x += 4
+		}
+		for ; x < dstWidth; x++ {
 			sx := 2 * x
 			out[x] = byte((uint32(s0[sx]) + uint32(s0[sx+1]) + uint32(s1[sx]) + uint32(s1[sx+1]) + 2) >> 2)
 		}
@@ -199,31 +244,205 @@ func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
 }
 
 func (p *planeScaler) scaleVerticalScalar(dst []byte, dstStride int, tmp []uint16, dstWidth, dstHeight int) {
-	// The vertical pass accumulates whole intermediate rows into one output
-	// row, so every read and write walks memory in order.
-	const round = 1 << (weightBits + intermediateBits - 1)
-	p.acc = grow(p.acc, dstWidth)
-	acc := p.acc
+	// For common tap counts (2..4), accumulate directly in registers in a single
+	// pass over the intermediate rows, avoiding p.acc read/write traffic.
+	const (
+		shift = weightBits + intermediateBits
+		round = 1 << (shift - 1)
+	)
+	starts := p.y.start[:dstHeight]
 	yTaps := p.y.taps
-	for i := range dstHeight {
-		for x := range acc {
-			acc[x] = round
+	allWeights := p.y.weights[:dstHeight*yTaps]
+
+	switch yTaps {
+	case 2:
+		for i := range dstHeight {
+			base := int(starts[i])
+			w0 := uint32(allWeights[2*i])
+			w1 := uint32(allWeights[2*i+1])
+			r0 := tmp[base*dstWidth : (base+1)*dstWidth]
+			r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+			out := dst[i*dstStride : i*dstStride+dstWidth]
+			scaleVerticalRow2(out, r0, r1, w0, w1, dstWidth)
 		}
-		base := int(p.y.start[i])
-		for k, w := range p.y.weights[i*yTaps : (i+1)*yTaps] {
+		return
+	case 3:
+		for i := range dstHeight {
+			base := int(starts[i])
+			wi := 3 * i
+			w0 := uint32(allWeights[wi])
+			w1 := uint32(allWeights[wi+1])
+			w2 := uint32(allWeights[wi+2])
+			out := dst[i*dstStride : i*dstStride+dstWidth]
+			if w2 == 0 {
+				r0 := tmp[base*dstWidth : (base+1)*dstWidth]
+				r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+				scaleVerticalRow2(out, r0, r1, w0, w1, dstWidth)
+				continue
+			}
+			if w0 == 0 {
+				r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+				r2 := tmp[(base+2)*dstWidth : (base+3)*dstWidth]
+				scaleVerticalRow2(out, r1, r2, w1, w2, dstWidth)
+				continue
+			}
+			r0 := tmp[base*dstWidth : (base+1)*dstWidth]
+			r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+			r2 := tmp[(base+2)*dstWidth : (base+3)*dstWidth]
+			scaleVerticalRow3(out, r0, r1, r2, w0, w1, w2, dstWidth)
+		}
+		return
+	case 4:
+		for i := range dstHeight {
+			base := int(starts[i])
+			wi := 4 * i
+			w0 := uint32(allWeights[wi])
+			w1 := uint32(allWeights[wi+1])
+			w2 := uint32(allWeights[wi+2])
+			w3 := uint32(allWeights[wi+3])
+			out := dst[i*dstStride : i*dstStride+dstWidth]
+			if w3 == 0 {
+				r0 := tmp[base*dstWidth : (base+1)*dstWidth]
+				r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+				r2 := tmp[(base+2)*dstWidth : (base+3)*dstWidth]
+				scaleVerticalRow3(out, r0, r1, r2, w0, w1, w2, dstWidth)
+				continue
+			}
+			if w0 == 0 {
+				r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+				r2 := tmp[(base+2)*dstWidth : (base+3)*dstWidth]
+				r3 := tmp[(base+3)*dstWidth : (base+4)*dstWidth]
+				scaleVerticalRow3(out, r1, r2, r3, w1, w2, w3, dstWidth)
+				continue
+			}
+			r0 := tmp[base*dstWidth : (base+1)*dstWidth]
+			r1 := tmp[(base+1)*dstWidth : (base+2)*dstWidth]
+			r2 := tmp[(base+2)*dstWidth : (base+3)*dstWidth]
+			r3 := tmp[(base+3)*dstWidth : (base+4)*dstWidth]
+			scaleVerticalRow4(out, r0, r1, r2, r3, w0, w1, w2, w3, dstWidth)
+		}
+		return
+	}
+
+	// General path for 1 or >=5 taps: accumulate whole intermediate rows into
+	// p.acc, fusing the first non-zero tap with round initialization.
+	p.acc = grow(p.acc, dstWidth)
+	acc := p.acc[:dstWidth]
+	for i := range dstHeight {
+		base := int(starts[i])
+		first := true
+		for k, w := range allWeights[i*yTaps : (i+1)*yTaps] {
 			if w == 0 {
 				continue
 			}
 			row := tmp[(base+k)*dstWidth : (base+k+1)*dstWidth]
 			weight := uint32(w)
-			for x, v := range row[:len(acc)] {
-				acc[x] += uint32(v) * weight
+			if first {
+				first = false
+				x := 0
+				for ; x+4 <= dstWidth; x += 4 {
+					acc[x] = round + uint32(row[x])*weight
+					acc[x+1] = round + uint32(row[x+1])*weight
+					acc[x+2] = round + uint32(row[x+2])*weight
+					acc[x+3] = round + uint32(row[x+3])*weight
+				}
+				for ; x < dstWidth; x++ {
+					acc[x] = round + uint32(row[x])*weight
+				}
+				continue
+			}
+			x := 0
+			for ; x+4 <= dstWidth; x += 4 {
+				acc[x] += uint32(row[x]) * weight
+				acc[x+1] += uint32(row[x+1]) * weight
+				acc[x+2] += uint32(row[x+2]) * weight
+				acc[x+3] += uint32(row[x+3]) * weight
+			}
+			for ; x < dstWidth; x++ {
+				acc[x] += uint32(row[x]) * weight
 			}
 		}
 		out := dst[i*dstStride : i*dstStride+dstWidth]
-		for x, v := range acc[:len(out)] {
-			out[x] = byte(v >> (weightBits + intermediateBits))
+		if first {
+			clear(out)
+			continue
 		}
+		x := 0
+		for ; x+4 <= dstWidth; x += 4 {
+			out[x] = byte(acc[x] >> shift)
+			out[x+1] = byte(acc[x+1] >> shift)
+			out[x+2] = byte(acc[x+2] >> shift)
+			out[x+3] = byte(acc[x+3] >> shift)
+		}
+		for ; x < dstWidth; x++ {
+			out[x] = byte(acc[x] >> shift)
+		}
+	}
+}
+
+func scaleVerticalRow2(out []byte, r0, r1 []uint16, w0, w1 uint32, n int) {
+	const (
+		shift = weightBits + intermediateBits
+		round = 1 << (shift - 1)
+	)
+	out, r0, r1 = out[:n], r0[:n], r1[:n]
+	x := 0
+	for ; x+4 <= n; x += 4 {
+		o4 := out[x : x+4]
+		a4 := r0[x : x+4]
+		b4 := r1[x : x+4]
+		o4[0] = byte((uint32(a4[0])*w0 + uint32(b4[0])*w1 + round) >> shift)
+		o4[1] = byte((uint32(a4[1])*w0 + uint32(b4[1])*w1 + round) >> shift)
+		o4[2] = byte((uint32(a4[2])*w0 + uint32(b4[2])*w1 + round) >> shift)
+		o4[3] = byte((uint32(a4[3])*w0 + uint32(b4[3])*w1 + round) >> shift)
+	}
+	for ; x < n; x++ {
+		out[x] = byte((uint32(r0[x])*w0 + uint32(r1[x])*w1 + round) >> shift)
+	}
+}
+
+func scaleVerticalRow3(out []byte, r0, r1, r2 []uint16, w0, w1, w2 uint32, n int) {
+	const (
+		shift = weightBits + intermediateBits
+		round = 1 << (shift - 1)
+	)
+	out, r0, r1, r2 = out[:n], r0[:n], r1[:n], r2[:n]
+	x := 0
+	for ; x+4 <= n; x += 4 {
+		o4 := out[x : x+4]
+		a4 := r0[x : x+4]
+		b4 := r1[x : x+4]
+		c4 := r2[x : x+4]
+		o4[0] = byte((uint32(a4[0])*w0 + uint32(b4[0])*w1 + uint32(c4[0])*w2 + round) >> shift)
+		o4[1] = byte((uint32(a4[1])*w0 + uint32(b4[1])*w1 + uint32(c4[1])*w2 + round) >> shift)
+		o4[2] = byte((uint32(a4[2])*w0 + uint32(b4[2])*w1 + uint32(c4[2])*w2 + round) >> shift)
+		o4[3] = byte((uint32(a4[3])*w0 + uint32(b4[3])*w1 + uint32(c4[3])*w2 + round) >> shift)
+	}
+	for ; x < n; x++ {
+		out[x] = byte((uint32(r0[x])*w0 + uint32(r1[x])*w1 + uint32(r2[x])*w2 + round) >> shift)
+	}
+}
+
+func scaleVerticalRow4(out []byte, r0, r1, r2, r3 []uint16, w0, w1, w2, w3 uint32, n int) {
+	const (
+		shift = weightBits + intermediateBits
+		round = 1 << (shift - 1)
+	)
+	out, r0, r1, r2, r3 = out[:n], r0[:n], r1[:n], r2[:n], r3[:n]
+	x := 0
+	for ; x+4 <= n; x += 4 {
+		o4 := out[x : x+4]
+		a4 := r0[x : x+4]
+		b4 := r1[x : x+4]
+		c4 := r2[x : x+4]
+		d4 := r3[x : x+4]
+		o4[0] = byte((uint32(a4[0])*w0 + uint32(b4[0])*w1 + uint32(c4[0])*w2 + uint32(d4[0])*w3 + round) >> shift)
+		o4[1] = byte((uint32(a4[1])*w0 + uint32(b4[1])*w1 + uint32(c4[1])*w2 + uint32(d4[1])*w3 + round) >> shift)
+		o4[2] = byte((uint32(a4[2])*w0 + uint32(b4[2])*w1 + uint32(c4[2])*w2 + uint32(d4[2])*w3 + round) >> shift)
+		o4[3] = byte((uint32(a4[3])*w0 + uint32(b4[3])*w1 + uint32(c4[3])*w2 + uint32(d4[3])*w3 + round) >> shift)
+	}
+	for ; x < n; x++ {
+		out[x] = byte((uint32(r0[x])*w0 + uint32(r1[x])*w1 + uint32(r2[x])*w2 + uint32(r3[x])*w3 + round) >> shift)
 	}
 }
 
@@ -232,37 +451,70 @@ func (p *planeScaler) scaleVerticalScalar(dst []byte, dstStride int, tmp []uint1
 func (a *axisFilter) filterRow(out []uint16, line []byte) {
 	const half = 1 << (weightBits - intermediateBits - 1)
 	const shift = weightBits - intermediateBits
-	if a.taps == 2 {
-		for i := range out {
-			b := int(a.start[i])
-			w := a.weights[2*i : 2*i+2 : 2*i+2]
-			s := line[b : b+2 : b+2]
-			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + half) >> shift)
-		}
+	n := len(out)
+	if n == 0 {
 		return
 	}
-	if a.taps == 3 {
-		for i := range out {
-			b := int(a.start[i])
-			w := a.weights[3*i : 3*i+3 : 3*i+3]
-			s := line[b : b+3 : b+3]
-			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + int32(s[2])*w[2] + half) >> shift)
-		}
-		return
-	}
-	if a.taps == 4 {
-		for i := range out {
-			b := int(a.start[i])
-			w := a.weights[4*i : 4*i+4 : 4*i+4]
-			s := line[b : b+4 : b+4]
-			out[i] = uint16((int32(s[0])*w[0] + int32(s[1])*w[1] + int32(s[2])*w[2] + int32(s[3])*w[3] + half) >> shift)
-		}
-		return
-	}
+	starts := a.start[:n]
 	taps := a.taps
-	for i := range out {
-		b := int(a.start[i])
-		w := a.weights[i*taps : (i+1)*taps]
+	weights := a.weights[:n*taps]
+
+	switch taps {
+	case 2:
+		i, wi := 0, 0
+		for ; i+2 <= n; i, wi = i+2, wi+4 {
+			w4 := weights[wi : wi+4]
+			b0 := int(starts[i])
+			b1 := int(starts[i+1])
+			v0 := binary.LittleEndian.Uint16(line[b0:])
+			v1 := binary.LittleEndian.Uint16(line[b1:])
+			out[i] = uint16((int32(v0&0xff)*w4[0] + int32(v0>>8)*w4[1] + half) >> shift)
+			out[i+1] = uint16((int32(v1&0xff)*w4[2] + int32(v1>>8)*w4[3] + half) >> shift)
+		}
+		for ; i < n; i, wi = i+1, wi+2 {
+			b := int(starts[i])
+			v := binary.LittleEndian.Uint16(line[b:])
+			out[i] = uint16((int32(v&0xff)*weights[wi] + int32(v>>8)*weights[wi+1] + half) >> shift)
+		}
+		return
+	case 3:
+		i, wi := 0, 0
+		for ; i+2 <= n; i, wi = i+2, wi+6 {
+			w6 := weights[wi : wi+6]
+			b0 := int(starts[i])
+			b1 := int(starts[i+1])
+			s0 := line[b0 : b0+3 : b0+3]
+			s1 := line[b1 : b1+3 : b1+3]
+			out[i] = uint16((int32(s0[0])*w6[0] + int32(s0[1])*w6[1] + int32(s0[2])*w6[2] + half) >> shift)
+			out[i+1] = uint16((int32(s1[0])*w6[3] + int32(s1[1])*w6[4] + int32(s1[2])*w6[5] + half) >> shift)
+		}
+		for ; i < n; i, wi = i+1, wi+3 {
+			b := int(starts[i])
+			s := line[b : b+3 : b+3]
+			out[i] = uint16((int32(s[0])*weights[wi] + int32(s[1])*weights[wi+1] + int32(s[2])*weights[wi+2] + half) >> shift)
+		}
+		return
+	case 4:
+		i, wi := 0, 0
+		for ; i+2 <= n; i, wi = i+2, wi+8 {
+			w8 := weights[wi : wi+8]
+			b0 := int(starts[i])
+			b1 := int(starts[i+1])
+			v0 := binary.LittleEndian.Uint32(line[b0:])
+			v1 := binary.LittleEndian.Uint32(line[b1:])
+			out[i] = uint16((int32(v0&0xff)*w8[0] + int32((v0>>8)&0xff)*w8[1] + int32((v0>>16)&0xff)*w8[2] + int32(v0>>24)*w8[3] + half) >> shift)
+			out[i+1] = uint16((int32(v1&0xff)*w8[4] + int32((v1>>8)&0xff)*w8[5] + int32((v1>>16)&0xff)*w8[6] + int32(v1>>24)*w8[7] + half) >> shift)
+		}
+		for ; i < n; i, wi = i+1, wi+4 {
+			b := int(starts[i])
+			v := binary.LittleEndian.Uint32(line[b:])
+			out[i] = uint16((int32(v&0xff)*weights[wi] + int32((v>>8)&0xff)*weights[wi+1] + int32((v>>16)&0xff)*weights[wi+2] + int32(v>>24)*weights[wi+3] + half) >> shift)
+		}
+		return
+	}
+	for i := range n {
+		b := int(starts[i])
+		w := weights[i*taps : (i+1)*taps]
 		acc := int32(half)
 		for k, s := range line[b : b+taps] {
 			acc += int32(s) * w[k]
