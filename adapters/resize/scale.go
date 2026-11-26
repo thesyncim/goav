@@ -322,12 +322,15 @@ func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
 // products horizontally and vertically in registers.
 func scale3to2Scalar(dst, src planeBuf, rect scaleRect) {
 	const (
-		hHalf  = 1 << (weightBits - intermediateBits - 1)
-		hShift = weightBits - intermediateBits
-		vShift = weightBits + intermediateBits
-		vRound = 1 << (vShift - 1)
-		wHi    = 10923
-		wLo    = 5461
+		hHalf   = 1 << (weightBits - intermediateBits - 1)
+		hShift  = weightBits - intermediateBits
+		vShift  = weightBits + intermediateBits
+		vRound  = 1 << (vShift - 1)
+		wHi     = 10923
+		wLo     = 5461
+		hHalf2  = uint64(hHalf) | uint64(hHalf)<<32
+		vRound2 = uint64(vRound) | uint64(vRound)<<32
+		mask16  = 0x0000ffff0000ffff
 	)
 	dstData, dstStride := dst.data, dst.stride
 	srcData, srcStride := src.data, src.stride
@@ -346,45 +349,40 @@ func scale3to2Scalar(dst, src planeBuf, rect scaleRect) {
 
 		x, sx := 0, 0
 		for ; x+4 <= dstWidth && sx+8 <= srcWidth; x, sx = x+4, sx+6 {
+			// Pack 2 columns into 32-bit lanes of uint64 so every horizontal
+			// (max 22 bits) and vertical (max 30 bits) multiply-add runs 2-wide
+			// with zero cross-lane carry.
 			v0 := binary.LittleEndian.Uint64(s0[sx:])
+			c00 := (v0 & 0xff) | ((v0 & 0xff000000) << 8)
+			c01 := ((v0 >> 8) & 0xff) | (v0 & 0xff00000000)
+			c02 := ((v0 >> 16) & 0xff) | ((v0 >> 8) & 0xff00000000)
+			m0 := c01*wLo + hHalf2
+			h0e := ((c00*wHi + m0) >> hShift) & mask16
+			h0o := ((m0 + c02*wHi) >> hShift) & mask16
+
 			v1 := binary.LittleEndian.Uint64(s1[sx:])
+			c10 := (v1 & 0xff) | ((v1 & 0xff000000) << 8)
+			c11 := ((v1 >> 8) & 0xff) | (v1 & 0xff00000000)
+			c12 := ((v1 >> 16) & 0xff) | ((v1 >> 8) & 0xff00000000)
+			m1 := c11*wLo + hHalf2
+			h1e := (((c10*wHi+m1)>>hShift)&mask16)*wLo + vRound2
+			h1o := (((m1+c12*wHi)>>hShift)&mask16)*wLo + vRound2
+
 			v2 := binary.LittleEndian.Uint64(s2[sx:])
+			c20 := (v2 & 0xff) | ((v2 & 0xff000000) << 8)
+			c21 := ((v2 >> 8) & 0xff) | (v2 & 0xff00000000)
+			c22 := ((v2 >> 16) & 0xff) | ((v2 >> 8) & 0xff00000000)
+			m2 := c21*wLo + hHalf2
+			h2e := ((c20*wHi + m2) >> hShift) & mask16
+			h2o := ((m2 + c22*wHi) >> hShift) & mask16
 
-			// Row 0 horizontal intermediates (4 pixels).
-			m01 := uint32(byte(v0>>8))*wLo + hHalf
-			m04 := uint32(byte(v0>>32))*wLo + hHalf
-			h00 := (uint32(byte(v0))*wHi + m01) >> hShift
-			h01 := (m01 + uint32(byte(v0>>16))*wHi) >> hShift
-			h02 := (uint32(byte(v0>>24))*wHi + m04) >> hShift
-			h03 := (m04 + uint32(byte(v0>>40))*wHi) >> hShift
+			p0e := (h0e*wHi + h1e) >> vShift
+			p0o := (h0o*wHi + h1o) >> vShift
+			binary.LittleEndian.PutUint32(o0[x:], uint32(byte(p0e))|uint32(byte(p0o))<<8|uint32(byte(p0e>>32))<<16|uint32(byte(p0o>>32))<<24)
 
-			// Row 1 horizontal intermediates (shared by both output rows).
-			m11 := uint32(byte(v1>>8))*wLo + hHalf
-			m14 := uint32(byte(v1>>32))*wLo + hHalf
-			h10 := ((uint32(byte(v1))*wHi+m11)>>hShift)*wLo + vRound
-			h11 := ((m11+uint32(byte(v1>>16))*wHi)>>hShift)*wLo + vRound
-			h12 := ((uint32(byte(v1>>24))*wHi+m14)>>hShift)*wLo + vRound
-			h13 := ((m14+uint32(byte(v1>>40))*wHi)>>hShift)*wLo + vRound
-
-			// Row 2 horizontal intermediates (4 pixels).
-			m21 := uint32(byte(v2>>8))*wLo + hHalf
-			m24 := uint32(byte(v2>>32))*wLo + hHalf
-			h20 := (uint32(byte(v2))*wHi + m21) >> hShift
-			h21 := (m21 + uint32(byte(v2>>16))*wHi) >> hShift
-			h22 := (uint32(byte(v2>>24))*wHi + m24) >> hShift
-			h23 := (m24 + uint32(byte(v2>>40))*wHi) >> hShift
-
-			p00 := (h00*wHi + h10) >> vShift
-			p01 := (h01*wHi + h11) >> vShift
-			p02 := (h02*wHi + h12) >> vShift
-			p03 := (h03*wHi + h13) >> vShift
-			binary.LittleEndian.PutUint32(o0[x:], p00|p01<<8|p02<<16|p03<<24)
-
-			p10 := (h10 + h20*wHi) >> vShift
-			p11 := (h11 + h21*wHi) >> vShift
-			p12 := (h12 + h22*wHi) >> vShift
-			p13 := (h13 + h23*wHi) >> vShift
-			binary.LittleEndian.PutUint32(o1[x:], p10|p11<<8|p12<<16|p13<<24)
+			p1e := (h1e + h2e*wHi) >> vShift
+			p1o := (h1o + h2o*wHi) >> vShift
+			binary.LittleEndian.PutUint32(o1[x:], uint32(byte(p1e))|uint32(byte(p1o))<<8|uint32(byte(p1e>>32))<<16|uint32(byte(p1o>>32))<<24)
 		}
 		for ; x+2 <= dstWidth; x, sx = x+2, sx+3 {
 			a := s0[sx : sx+3 : sx+3]

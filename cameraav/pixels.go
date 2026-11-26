@@ -40,6 +40,40 @@ func copyNV12(c Config, pts int64, y, uv []byte, yStride, uvStride int) (*av.Fra
 		uRow := uDst[row*cw : (row+1)*cw]
 		vRow := vDst[row*cw : (row+1)*cw]
 		col := 0
+		for ; col+16 <= cw; col += 16 {
+			s32 := src[col*2 : col*2+32]
+			u16 := uRow[col : col+16]
+			v16 := vRow[col : col+16]
+
+			w0 := binary.LittleEndian.Uint64(s32)
+			w1 := binary.LittleEndian.Uint64(s32[8:])
+			w2 := binary.LittleEndian.Uint64(s32[16:])
+			w3 := binary.LittleEndian.Uint64(s32[24:])
+
+			eu0 := w0 & maskFF
+			tu0 := (eu0 | (eu0 >> 8)) & maskFFFF
+			eu1 := w1 & maskFF
+			tu1 := (eu1 | (eu1 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(u16, uint64(uint32(tu0|(tu0>>16)))|uint64(uint32(tu1|(tu1>>16)))<<32)
+
+			eu2 := w2 & maskFF
+			tu2 := (eu2 | (eu2 >> 8)) & maskFFFF
+			eu3 := w3 & maskFF
+			tu3 := (eu3 | (eu3 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(u16[8:], uint64(uint32(tu2|(tu2>>16)))|uint64(uint32(tu3|(tu3>>16)))<<32)
+
+			ev0 := (w0 >> 8) & maskFF
+			tv0 := (ev0 | (ev0 >> 8)) & maskFFFF
+			ev1 := (w1 >> 8) & maskFF
+			tv1 := (ev1 | (ev1 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(v16, uint64(uint32(tv0|(tv0>>16)))|uint64(uint32(tv1|(tv1>>16)))<<32)
+
+			ev2 := (w2 >> 8) & maskFF
+			tv2 := (ev2 | (ev2 >> 8)) & maskFFFF
+			ev3 := (w3 >> 8) & maskFF
+			tv3 := (ev3 | (ev3 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(v16[8:], uint64(uint32(tv2|(tv2>>16)))|uint64(uint32(tv3|(tv3>>16)))<<32)
+		}
 		for ; col+8 <= cw; col += 8 {
 			s16 := src[col*2 : col*2+16]
 			w0 := binary.LittleEndian.Uint64(s16)

@@ -233,7 +233,52 @@ func (j *convertJob) rowsI420(y0, y1 int) {
 		vrow := vp.Buffer.Bytes[vp.Offset+cy*vp.Stride : vp.Offset+cy*vp.Stride+cw]
 		out0 := j.dst[4*w*y : 4*w*(y+1)]
 		out1 := j.dst[4*w*(y+1) : 4*w*(y+2)]
-		for cx := range pairs {
+		cx := 0
+		for ; cx+2 <= pairs; cx += 2 {
+			u2 := binary.LittleEndian.Uint16(urow[cx:])
+			v2 := binary.LittleEndian.Uint16(vrow[cx:])
+			u0 := int32(byte(u2)) - 128
+			v0 := int32(byte(v2)) - 128
+			u1 := int32(byte(u2>>8)) - 128
+			v1 := int32(byte(v2>>8)) - 128
+
+			dr0 := c.rv * v0
+			dg0 := -c.gu*u0 - c.gv*v0
+			db0 := c.bu * u0
+			dr1 := c.rv * v1
+			dg1 := -c.gu*u1 - c.gv*v1
+			db1 := c.bu * u1
+
+			x := cx * 2
+			o := cx * 8
+
+			y0w := binary.LittleEndian.Uint32(yrow0[x:])
+			l00 := (int32(byte(y0w))-16)*c.y + 1<<15
+			l01 := (int32(byte(y0w>>8))-16)*c.y + 1<<15
+			l02 := (int32(byte(y0w>>16))-16)*c.y + 1<<15
+			l03 := (int32(byte(y0w>>24))-16)*c.y + 1<<15
+			p00 := uint32(clamp8(l00+dr0)) | uint32(clamp8(l00+dg0))<<8 | uint32(clamp8(l00+db0))<<16 | 0xff000000
+			p01 := uint32(clamp8(l01+dr0)) | uint32(clamp8(l01+dg0))<<8 | uint32(clamp8(l01+db0))<<16 | 0xff000000
+			p02 := uint32(clamp8(l02+dr1)) | uint32(clamp8(l02+dg1))<<8 | uint32(clamp8(l02+db1))<<16 | 0xff000000
+			p03 := uint32(clamp8(l03+dr1)) | uint32(clamp8(l03+dg1))<<8 | uint32(clamp8(l03+db1))<<16 | 0xff000000
+			o0w := out0[o : o+16]
+			binary.LittleEndian.PutUint64(o0w, uint64(p00)|uint64(p01)<<32)
+			binary.LittleEndian.PutUint64(o0w[8:], uint64(p02)|uint64(p03)<<32)
+
+			y1w := binary.LittleEndian.Uint32(yrow1[x:])
+			l10 := (int32(byte(y1w))-16)*c.y + 1<<15
+			l11 := (int32(byte(y1w>>8))-16)*c.y + 1<<15
+			l12 := (int32(byte(y1w>>16))-16)*c.y + 1<<15
+			l13 := (int32(byte(y1w>>24))-16)*c.y + 1<<15
+			p10 := uint32(clamp8(l10+dr0)) | uint32(clamp8(l10+dg0))<<8 | uint32(clamp8(l10+db0))<<16 | 0xff000000
+			p11 := uint32(clamp8(l11+dr0)) | uint32(clamp8(l11+dg0))<<8 | uint32(clamp8(l11+db0))<<16 | 0xff000000
+			p12 := uint32(clamp8(l12+dr1)) | uint32(clamp8(l12+dg1))<<8 | uint32(clamp8(l12+db1))<<16 | 0xff000000
+			p13 := uint32(clamp8(l13+dr1)) | uint32(clamp8(l13+dg1))<<8 | uint32(clamp8(l13+db1))<<16 | 0xff000000
+			o1w := out1[o : o+16]
+			binary.LittleEndian.PutUint64(o1w, uint64(p10)|uint64(p11)<<32)
+			binary.LittleEndian.PutUint64(o1w[8:], uint64(p12)|uint64(p13)<<32)
+		}
+		for ; cx < pairs; cx++ {
 			u := int32(urow[cx]) - 128
 			v := int32(vrow[cx]) - 128
 			dr := c.rv * v
