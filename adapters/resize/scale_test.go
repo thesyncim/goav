@@ -119,16 +119,36 @@ func TestScaleFastPathsMatchScalarReference(t *testing.T) {
 			var fast planeScaler
 			fast.scale(planeBuf{data: got, stride: dstStride}, planeBuf{data: src, stride: srcStride}, scaleRect{srcX: tc.srcX, srcY: tc.srcY, srcW: tc.cropW, srcH: tc.cropH, dstW: tc.dstW, dstH: tc.dstH}, nil)
 
-			// Full scalar two-pass Q14 reference.
+			// Independent naive two-pass Q14 reference.
 			var ref planeScaler
 			ref.x.reset(tc.cropW, tc.dstW)
 			ref.y.reset(tc.cropH, tc.dstH)
 			tmp := make([]uint16, tc.cropH*tc.dstW)
+			const hHalf = 1 << (weightBits - intermediateBits - 1)
+			const hShift = weightBits - intermediateBits
 			for r := range tc.cropH {
-				base := (tc.srcY+r)*srcStride + tc.srcX
-				ref.x.filterRow(tmp[r*tc.dstW:(r+1)*tc.dstW], src[base:base+tc.cropW])
+				line := src[(tc.srcY+r)*srcStride+tc.srcX : (tc.srcY+r)*srcStride+tc.srcX+tc.cropW]
+				for i := range tc.dstW {
+					b := int(ref.x.start[i])
+					acc := int32(hHalf)
+					for k := range ref.x.taps {
+						acc += int32(line[b+k]) * ref.x.weights[i*ref.x.taps+k]
+					}
+					tmp[r*tc.dstW+i] = uint16(acc >> hShift)
+				}
 			}
-			ref.scaleVerticalScalar(want, dstStride, tmp, tc.dstW, tc.dstH)
+			const vShift = weightBits + intermediateBits
+			const vRound = 1 << (vShift - 1)
+			for i := range tc.dstH {
+				base := int(ref.y.start[i])
+				for x := range tc.dstW {
+					acc := uint32(vRound)
+					for k := range ref.y.taps {
+						acc += uint32(tmp[(base+k)*tc.dstW+x]) * uint32(ref.y.weights[i*ref.y.taps+k])
+					}
+					want[i*dstStride+x] = byte(acc >> vShift)
+				}
+			}
 
 			if !bytes.Equal(got, want) {
 				for y := range tc.dstH {

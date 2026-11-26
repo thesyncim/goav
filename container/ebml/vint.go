@@ -1,7 +1,9 @@
 package ebml
 
 import (
+	"encoding/binary"
 	"io"
+	"math/bits"
 )
 
 const (
@@ -21,52 +23,67 @@ func VINTWidth(first byte) (int, error) {
 	if first == 0 {
 		return 0, ErrInvalidVINT
 	}
-	for width := 1; width <= MaxSizeWidth; width++ {
-		if first&(0x80>>uint(width-1)) != 0 {
-			return width, nil
-		}
-	}
-	return 0, ErrInvalidVINT
+	return bits.LeadingZeros8(first) + 1, nil
 }
 
 func DecodeIDVINT(src []byte) (ID, int, error) {
 	if len(src) == 0 {
 		return 0, 0, io.ErrUnexpectedEOF
 	}
-	width, err := VINTWidth(src[0])
-	if err != nil {
-		return 0, 0, err
+	b0 := src[0]
+	if b0 == 0 {
+		return 0, 0, ErrInvalidVINT
 	}
+	width := bits.LeadingZeros8(b0) + 1
 	if width > MaxIDWidth {
 		return 0, 0, ErrInvalidElementID
 	}
 	if len(src) < width {
 		return 0, 0, io.ErrUnexpectedEOF
 	}
-	var id uint64
-	for i := range width {
-		id = (id << 8) | uint64(src[i])
+	switch width {
+	case 1:
+		return ID(b0), 1, nil
+	case 2:
+		return ID(uint64(b0)<<8 | uint64(src[1])), 2, nil
+	case 3:
+		return ID(uint64(b0)<<16 | uint64(src[1])<<8 | uint64(src[2])), 3, nil
+	default:
+		return ID(binary.BigEndian.Uint32(src)), 4, nil
 	}
-	return ID(id), width, nil
 }
 
 func DecodeSizeVINT(src []byte) (Size, error) {
 	if len(src) == 0 {
 		return Size{}, io.ErrUnexpectedEOF
 	}
-	width, err := VINTWidth(src[0])
-	if err != nil {
-		return Size{}, err
+	b0 := src[0]
+	if b0 == 0 {
+		return Size{}, ErrInvalidVINT
 	}
+	width := bits.LeadingZeros8(b0) + 1
 	if len(src) < width {
 		return Size{}, io.ErrUnexpectedEOF
 	}
-	value := uint64(src[0] &^ (0x80 >> uint(width-1)))
-	for i := 1; i < width; i++ {
-		value = (value << 8) | uint64(src[i])
+	v := uint64(b0 &^ (0x80 >> uint(width-1)))
+	switch width {
+	case 1:
+		return Size{Value: v, Unknown: v == 0x7f, Width: 1}, nil
+	case 2:
+		v = v<<8 | uint64(src[1])
+		return Size{Value: v, Unknown: v == 0x3fff, Width: 2}, nil
+	case 3:
+		v = v<<16 | uint64(src[1])<<8 | uint64(src[2])
+		return Size{Value: v, Unknown: v == 0x1fffff, Width: 3}, nil
+	case 4:
+		v = v<<24 | uint64(src[1])<<16 | uint64(src[2])<<8 | uint64(src[3])
+		return Size{Value: v, Unknown: v == 0x0fffffff, Width: 4}, nil
+	default:
+		for i := 1; i < width; i++ {
+			v = (v << 8) | uint64(src[i])
+		}
+		return Size{Value: v, Unknown: v == maxVINTData(width), Width: width}, nil
 	}
-	allOnes := maxVINTData(width)
-	return Size{Value: value, Unknown: value == allOnes, Width: width}, nil
 }
 
 func DecodeUnsignedVINT(src []byte) (uint64, int, error) {
@@ -163,21 +180,20 @@ func EncodeUnsignedVINTWidth(dst []byte, value uint64, width int) (int, error) {
 }
 
 func SizeVINTWidth(value uint64) (int, error) {
-	for width := 1; width <= MaxSizeWidth; width++ {
-		if value <= maxKnownSize(width) {
-			return width, nil
-		}
+	if value > (uint64(1)<<56)-2 {
+		return 0, ErrInvalidSize
 	}
-	return 0, ErrInvalidSize
+	return (bits.Len64(value+1) + 6) / 7, nil
 }
 
 func UnsignedVINTWidth(value uint64) (int, error) {
-	for width := 1; width <= MaxSizeWidth; width++ {
-		if value <= maxVINTData(width) {
-			return width, nil
-		}
+	if value == 0 {
+		return 1, nil
 	}
-	return 0, ErrVINTOverflow
+	if value > (uint64(1)<<56)-1 {
+		return 0, ErrVINTOverflow
+	}
+	return (bits.Len64(value) + 6) / 7, nil
 }
 
 func ReadID(r io.Reader, scratch *[MaxSizeWidth]byte) (ID, int, error) {
@@ -223,6 +239,35 @@ func ReadUnsignedVINT(r io.Reader, scratch *[MaxSizeWidth]byte) (uint64, int, er
 func encodeVINT(dst []byte, value uint64, width int) (int, error) {
 	if len(dst) < width {
 		return 0, io.ErrShortBuffer
+	}
+	switch width {
+	case 1:
+		if value > 0x7f {
+			return 0, ErrVINTOverflow
+		}
+		dst[0] = byte(value) | 0x80
+		return 1, nil
+	case 2:
+		if value > 0x3fff {
+			return 0, ErrVINTOverflow
+		}
+		dst[0] = byte(value>>8) | 0x40
+		dst[1] = byte(value)
+		return 2, nil
+	case 3:
+		if value > 0x1fffff {
+			return 0, ErrVINTOverflow
+		}
+		dst[0] = byte(value>>16) | 0x20
+		dst[1] = byte(value >> 8)
+		dst[2] = byte(value)
+		return 3, nil
+	case 4:
+		if value > 0x0fffffff {
+			return 0, ErrVINTOverflow
+		}
+		binary.BigEndian.PutUint32(dst, uint32(value)|0x10000000)
+		return 4, nil
 	}
 	for i := width - 1; i >= 0; i-- {
 		dst[i] = byte(value)

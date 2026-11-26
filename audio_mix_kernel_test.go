@@ -91,11 +91,16 @@ func assertMixMatchesScalar(t *testing.T, inputs [][]byte) {
 	t.Helper()
 	n := len(inputs[0])
 	got := make([]byte, n)
+	gotScalar := make([]byte, n)
 	want := make([]byte, n)
 	mixS16Into(got, inputs, n)
-	mixS16ScalarKernel(want, inputs, n)
+	mixS16ScalarKernel(gotScalar, inputs, n)
+	mixS16ScalarRange(want, inputs, 0, n)
+	if !reflect.DeepEqual(gotScalar, want) {
+		t.Fatalf("scalar kernel output = %v, reference = %v", mixKernelReadS16(gotScalar), mixKernelReadS16(want))
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("kernel %s output = %v, scalar = %v", mixS16KernelName(), mixKernelReadS16(got), mixKernelReadS16(want))
+		t.Fatalf("kernel %s output = %v, reference = %v", mixS16KernelName(), mixKernelReadS16(got), mixKernelReadS16(want))
 	}
 }
 
