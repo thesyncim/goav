@@ -704,6 +704,24 @@ func remapS16Channels(dst []byte, src []byte, samples int, inputChannels int, ou
 		s := src[:samples*4]
 		d := dst[:samples*2]
 		i := 0
+		for ; i+8 <= samples; i += 8 {
+			in := s[i*4 : i*4+32]
+			out := d[i*2 : i*2+16]
+			v0 := binary.LittleEndian.Uint64(in)
+			v1 := binary.LittleEndian.Uint64(in[8:])
+			v2 := binary.LittleEndian.Uint64(in[16:])
+			v3 := binary.LittleEndian.Uint64(in[24:])
+			m0 := uint16((int32(int16(v0)) + int32(int16(v0>>16))) / 2)
+			m1 := uint16((int32(int16(v0>>32)) + int32(int16(v0>>48))) / 2)
+			m2 := uint16((int32(int16(v1)) + int32(int16(v1>>16))) / 2)
+			m3 := uint16((int32(int16(v1>>32)) + int32(int16(v1>>48))) / 2)
+			binary.LittleEndian.PutUint64(out, uint64(m0)|uint64(m1)<<16|uint64(m2)<<32|uint64(m3)<<48)
+			m4 := uint16((int32(int16(v2)) + int32(int16(v2>>16))) / 2)
+			m5 := uint16((int32(int16(v2>>32)) + int32(int16(v2>>48))) / 2)
+			m6 := uint16((int32(int16(v3)) + int32(int16(v3>>16))) / 2)
+			m7 := uint16((int32(int16(v3>>32)) + int32(int16(v3>>48))) / 2)
+			binary.LittleEndian.PutUint64(out[8:], uint64(m4)|uint64(m5)<<16|uint64(m6)<<32|uint64(m7)<<48)
+		}
 		for ; i+4 <= samples; i += 4 {
 			in := s[i*4 : i*4+16]
 			v0 := binary.LittleEndian.Uint64(in)

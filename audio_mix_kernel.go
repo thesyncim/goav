@@ -52,14 +52,39 @@ func mixS16ScalarKernel(dst []byte, inputs [][]byte, n int) {
 	const (
 		maskLo15 = 0x7fff7fff7fff7fff
 		maskHi1  = 0x8000800080008000
+		mask16   = 0x0000ffff0000ffff
 	)
+	if len(inputs) > 65535 {
+		mixS16ScalarRange(dst, inputs, 0, n)
+		return
+	}
 	d := dst[:n]
+	bias := int32(len(inputs)) * 32768
 	off := 0
 	swarFails := 0
 	for ; off+32 <= n; off += 32 {
-		if swarFails >= 2 {
-			mixS16ScalarExact16(d[off:off+16], inputs, off)
-			mixS16ScalarExact16(d[off+16:off+32], inputs, off+16)
+		if swarFails >= 1 {
+			var lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3 uint64
+			for _, in := range inputs {
+				in32 := in[off : off+32]
+				u0 := binary.LittleEndian.Uint64(in32) ^ maskHi1
+				u1 := binary.LittleEndian.Uint64(in32[8:]) ^ maskHi1
+				u2 := binary.LittleEndian.Uint64(in32[16:]) ^ maskHi1
+				u3 := binary.LittleEndian.Uint64(in32[24:]) ^ maskHi1
+				lo0 += u0 & mask16
+				hi0 += (u0 >> 16) & mask16
+				lo1 += u1 & mask16
+				hi1 += (u1 >> 16) & mask16
+				lo2 += u2 & mask16
+				hi2 += (u2 >> 16) & mask16
+				lo3 += u3 & mask16
+				hi3 += (u3 >> 16) & mask16
+			}
+			d32 := d[off : off+32]
+			binary.LittleEndian.PutUint64(d32, packBiasedS16x4(lo0, hi0, bias))
+			binary.LittleEndian.PutUint64(d32[8:], packBiasedS16x4(lo1, hi1, bias))
+			binary.LittleEndian.PutUint64(d32[16:], packBiasedS16x4(lo2, hi2, bias))
+			binary.LittleEndian.PutUint64(d32[24:], packBiasedS16x4(lo3, hi3, bias))
 			continue
 		}
 		in0 := inputs[0][off : off+32]
@@ -88,8 +113,27 @@ func mixS16ScalarKernel(dst []byte, inputs [][]byte, n int) {
 		}
 		if ovf&maskHi1 != 0 {
 			swarFails++
-			mixS16ScalarExact16(d[off:off+16], inputs, off)
-			mixS16ScalarExact16(d[off+16:off+32], inputs, off+16)
+			var lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3 uint64
+			for _, in := range inputs {
+				in32 := in[off : off+32]
+				u0 := binary.LittleEndian.Uint64(in32) ^ maskHi1
+				u1 := binary.LittleEndian.Uint64(in32[8:]) ^ maskHi1
+				u2 := binary.LittleEndian.Uint64(in32[16:]) ^ maskHi1
+				u3 := binary.LittleEndian.Uint64(in32[24:]) ^ maskHi1
+				lo0 += u0 & mask16
+				hi0 += (u0 >> 16) & mask16
+				lo1 += u1 & mask16
+				hi1 += (u1 >> 16) & mask16
+				lo2 += u2 & mask16
+				hi2 += (u2 >> 16) & mask16
+				lo3 += u3 & mask16
+				hi3 += (u3 >> 16) & mask16
+			}
+			d32 := d[off : off+32]
+			binary.LittleEndian.PutUint64(d32, packBiasedS16x4(lo0, hi0, bias))
+			binary.LittleEndian.PutUint64(d32[8:], packBiasedS16x4(lo1, hi1, bias))
+			binary.LittleEndian.PutUint64(d32[16:], packBiasedS16x4(lo2, hi2, bias))
+			binary.LittleEndian.PutUint64(d32[24:], packBiasedS16x4(lo3, hi3, bias))
 			continue
 		}
 		d32 := d[off : off+32]
@@ -103,23 +147,15 @@ func mixS16ScalarKernel(dst []byte, inputs [][]byte, n int) {
 	}
 }
 
-func mixS16ScalarExact16(d16 []byte, inputs [][]byte, off int) {
-	var a0, a1, a2, a3, a4, a5, a6, a7 int32
-	for _, in := range inputs {
-		in16 := in[off : off+16]
-		v0 := binary.LittleEndian.Uint64(in16)
-		v1 := binary.LittleEndian.Uint64(in16[8:])
-		a0 += int32(int16(v0))
-		a1 += int32(int16(v0 >> 16))
-		a2 += int32(int16(v0 >> 32))
-		a3 += int32(int16(v0 >> 48))
-		a4 += int32(int16(v1))
-		a5 += int32(int16(v1 >> 16))
-		a6 += int32(int16(v1 >> 32))
-		a7 += int32(int16(v1 >> 48))
-	}
-	binary.LittleEndian.PutUint64(d16, packS16x4(a0, a1, a2, a3))
-	binary.LittleEndian.PutUint64(d16[8:], packS16x4(a4, a5, a6, a7))
+func packBiasedS16x4(lo, hi uint64, bias int32) uint64 {
+	s0 := min(max(int32(uint32(lo))-bias, -32768), 32767)
+	s1 := min(max(int32(uint32(hi))-bias, -32768), 32767)
+	s2 := min(max(int32(uint32(lo>>32))-bias, -32768), 32767)
+	s3 := min(max(int32(uint32(hi>>32))-bias, -32768), 32767)
+	return uint64(uint16(s0)) |
+		uint64(uint16(s1))<<16 |
+		uint64(uint16(s2))<<32 |
+		uint64(uint16(s3))<<48
 }
 
 func mixS16Scalar2(dst, a, b []byte, n int) {
