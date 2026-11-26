@@ -4,8 +4,8 @@ go 1.27.4
 
 require (
 	github.com/ebitengine/oto/v3 v3.5.1
-	github.com/ebitengine/purego v0.11.0
-	github.com/hajimehoshi/ebiten/v2 v2.10.5
+	github.com/ebitengine/purego v0.11.3
+	github.com/hajimehoshi/ebiten/v2 v2.10.6
 	github.com/thesyncim/goav v0.1.0-alpha.9
 )
 
