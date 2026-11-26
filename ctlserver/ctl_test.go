@@ -327,9 +327,17 @@ func TestServingCostsTheDataPlaneNothing(t *testing.T) {
 				defer os.RemoveAll(dir)
 				address := "unix://" + filepath.Join(dir, "s.sock")
 				go func() { _ = server.ListenAndServe(ctx, address) }()
+				deadline := time.Now().Add(5 * time.Second)
 				var client *ctlserver.Client
 				for client == nil {
-					client, _ = ctlserver.Dial(ctx, address)
+					var dialErr error
+					client, dialErr = ctlserver.Dial(ctx, address)
+					if client != nil {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatalf("ctlserver dial timed out: %v", dialErr)
+					}
 					time.Sleep(5 * time.Millisecond)
 				}
 				defer client.Close()

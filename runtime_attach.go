@@ -336,44 +336,55 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 			if label == "" {
 				continue
 			}
-			if first, ok := seen[label]; ok {
-				if first.recipe.ShareKey != "" && first.recipe.ShareKey == destination.recipe.ShareKey {
-					switch {
-					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(destination):
-						if group.sharedSinkKeys == nil {
-							group.sharedSinkKeys = make(map[string]struct{})
-						}
-						group.sharedSinkKeys[first.recipe.ShareKey] = struct{}{}
-						continue
-					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(destination):
-						if group.sharedMuxKeys == nil {
-							group.sharedMuxKeys = make(map[string]struct{})
-						}
-						group.sharedMuxKeys[first.recipe.ShareKey] = struct{}{}
-						continue
-					}
-				}
-				return group, &BuildError{
-					Phase:     phaseRun,
-					Family:    errcode.FamilyForCode(destinationDuplicateCode),
-					Code:      destinationDuplicateCode,
-					Operation: "attach runtime branches",
-					Node:      firstNonEmpty(recipe.branch.Name, "branch"),
-					Reason:    "runtime branch group reuses one destination name",
-					fields:    errDetails(errNote("destination: "+label), errNote("first branch: "+seenBranch[label]), errNote("second branch: "+branchName)),
-					fixes: buildErrorFixes([]string{
-						"pass the same destination value to each branch in one Attach call to share it",
-						"create distinct destination values with distinct names for independent runtime destinations",
-						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
-					}),
-					cause: errUnsupportedBuild,
-				}
+			first, ok := seen[label]
+			if !ok {
+				seen[label] = destination
+				seenBranch[label] = branchName
+				continue
 			}
-			seen[label] = destination
-			seenBranch[label] = branchName
+			if tryShareGroupDestination(&group, first, destination) {
+				continue
+			}
+			return group, &BuildError{
+				Phase:     phaseRun,
+				Family:    errcode.FamilyForCode(destinationDuplicateCode),
+				Code:      destinationDuplicateCode,
+				Operation: "attach runtime branches",
+				Node:      firstNonEmpty(recipe.branch.Name, "branch"),
+				Reason:    "runtime branch group reuses one destination name",
+				fields:    errDetails(errNote("destination: "+label), errNote("first branch: "+seenBranch[label]), errNote("second branch: "+branchName)),
+				fixes: buildErrorFixes([]string{
+					"pass the same destination value to each branch in one Attach call to share it",
+					"create distinct destination values with distinct names for independent runtime destinations",
+					"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
+				}),
+				cause: errUnsupportedBuild,
+			}
 		}
 	}
 	return group, nil
+}
+
+func tryShareGroupDestination(group *runtimeBranchGroupDestinations, first, destination attachDestination) bool {
+	if first.recipe.ShareKey == "" || first.recipe.ShareKey != destination.recipe.ShareKey {
+		return false
+	}
+	switch {
+	case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(destination):
+		if group.sharedSinkKeys == nil {
+			group.sharedSinkKeys = make(map[string]struct{})
+		}
+		group.sharedSinkKeys[first.recipe.ShareKey] = struct{}{}
+		return true
+	case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(destination):
+		if group.sharedMuxKeys == nil {
+			group.sharedMuxKeys = make(map[string]struct{})
+		}
+		group.sharedMuxKeys[first.recipe.ShareKey] = struct{}{}
+		return true
+	default:
+		return false
+	}
 }
 
 func runtimeBranchDestinationCanShareSink(destination attachDestination) bool {

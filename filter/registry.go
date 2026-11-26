@@ -1,8 +1,10 @@
 package filter
 
-import "maps"
-
-import "sort"
+import (
+	"cmp"
+	"maps"
+	"slices"
+)
 
 // SimpleRegistry is the per-runtime filter registry: factories and
 // capability descriptors keyed by filter name. Registration is last-wins; it
@@ -42,10 +44,10 @@ func (r *SimpleRegistry) Factory(name string) (Factory, error) {
 // capability-driven selection (the shape solver) is deterministic.
 func (r *SimpleRegistry) Descriptors() []Descriptor {
 	out := make([]Descriptor, 0, len(r.descriptors))
-	for name := range r.descriptors {
-		out = append(out, cloneDescriptor(r.descriptors[name]))
+	for _, desc := range r.descriptors {
+		out = append(out, cloneDescriptor(desc))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b Descriptor) int { return cmp.Compare(a.Name, b.Name) })
 	return out
 }
 
@@ -61,19 +63,9 @@ func (r *SimpleRegistry) Descriptor(name string) (Descriptor, error) {
 
 func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned := desc
-	if desc.PixelFormats != nil {
-		cloned.PixelFormats = append([]string(nil), desc.PixelFormats...)
-	}
-	if desc.SampleFormats != nil {
-		cloned.SampleFormats = append([]string(nil), desc.SampleFormats...)
-	}
-	if desc.ResizeModes != nil {
-		cloned.ResizeModes = append([]ResizeMode(nil), desc.ResizeModes...)
-	}
-	if desc.Metadata == nil {
-		return cloned
-	}
-	cloned.Metadata = make(map[string]string, len(desc.Metadata))
-	maps.Copy(cloned.Metadata, desc.Metadata)
+	cloned.PixelFormats = slices.Clone(desc.PixelFormats)
+	cloned.SampleFormats = slices.Clone(desc.SampleFormats)
+	cloned.ResizeModes = slices.Clone(desc.ResizeModes)
+	cloned.Metadata = maps.Clone(desc.Metadata)
 	return cloned
 }

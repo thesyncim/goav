@@ -142,9 +142,15 @@ func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]
 		flags = defFlags
 	}
 
+	ctx := trafContext{
+		tr:         tr,
+		baseOffset: baseOffset,
+		defaults:   trexDefaults{sampleDuration: dur, sampleSize: size, sampleFlags: flags},
+		budget:     budget,
+	}
 	dts := baseDTS
 	for _, run := range runs {
-		next, err := parseTrun(r, run, tr, baseOffset, dts, dur, size, flags, budget)
+		next, err := parseTrun(r, run, &ctx, dts)
 		if err != nil {
 			return err
 		}
@@ -153,9 +159,18 @@ func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]
 	return nil
 }
 
-// parseTrun appends one run's samples to tr and returns the decode time that
-// the next run continues from.
-func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, defDur, defSize, defFlags uint32, budget *sampleBudget) (int64, error) {
+type trafContext struct {
+	tr         *track
+	baseOffset int64
+	defaults   trexDefaults
+	budget     *sampleBudget
+}
+
+// parseTrun appends one run's samples to ctx.tr and returns the decode time
+// that the next run continues from.
+func parseTrun(r io.ReaderAt, run boxHeader, ctx *trafContext, dts int64) (int64, error) {
+	tr, baseOffset, budget := ctx.tr, ctx.baseOffset, ctx.budget
+	defDur, defSize, defFlags := ctx.defaults.sampleDuration, ctx.defaults.sampleSize, ctx.defaults.sampleFlags
 	pl, err := readPayload(r, run)
 	if err != nil {
 		return dts, err
@@ -178,7 +193,7 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 	// sized by the field or the default, must fit the file-wide budget — a
 	// field-less run otherwise declares a million samples in a few bytes.
 	fieldBytes := 0
-	for _, field := range []uint32{trunSampleDuration, trunSampleSize, trunSampleFlags, trunSampleCompOffset} {
+	for _, field := range [4]uint32{trunSampleDuration, trunSampleSize, trunSampleFlags, trunSampleCompOffset} {
 		if flags&field != 0 {
 			fieldBytes += 4
 		}

@@ -113,13 +113,26 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	time.Sleep(500 * time.Millisecond)
+	waitFor := func(timeout time.Duration, cond func() bool) bool {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if cond() {
+				return true
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return cond()
+	}
+
+	if !waitFor(2*time.Second, func() bool { return e.Stats().Position >= 250*time.Millisecond }) {
+		t.Fatalf("playback did not advance past 250ms: position=%v", e.Stats().Position)
+	}
 	if err := task.Pause(ctx); err != nil {
 		t.Fatalf("task refused Pause: %v", err)
 	}
 	e.SetPaused(true)
 	paused := e.Stats().Position
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	if moved := e.Stats().Position - paused; moved > 5*time.Millisecond || moved < -5*time.Millisecond {
 		t.Fatalf("position moved %v while paused", moved)
 	}
@@ -130,15 +143,13 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	if err := e.Seek(ctx, task, 2*time.Second, true); err != nil {
 		t.Fatalf("paused seek: %v", err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	waitFor(2*time.Second, func() bool {
 		mu.Lock()
 		n := len(shown)
 		mu.Unlock()
-		if n > 0 {
-			break
-		}
-	}
-	time.Sleep(150 * time.Millisecond)
+		return n > 0
+	})
+	time.Sleep(100 * time.Millisecond)
 	mu.Lock()
 	if n := len(shown); n == 0 || n > 2 || shown[n-1] != 2*time.Second {
 		t.Fatalf("paused seek to 2s showed %v, want one picture, the keyframe at 2s", shown)
@@ -149,7 +160,8 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.SetPaused(false)
-	time.Sleep(200 * time.Millisecond)
+	resumedAt := e.Stats().Position
+	waitFor(2*time.Second, func() bool { return e.Stats().Position >= resumedAt+150*time.Millisecond })
 
 	before := e.Stats().Position
 	mu.Lock()
@@ -158,7 +170,17 @@ func TestRealDecodePlaysInSync(t *testing.T) {
 	if err := e.Seek(ctx, task, 100*time.Millisecond, false); err != nil {
 		t.Fatalf("task refused Seek: %v", err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	waitFor(2*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		count := 0
+		for _, pts := range shown {
+			if pts < before-500*time.Millisecond {
+				count++
+			}
+		}
+		return count >= 3
+	})
 	// What showed after the seek starts behind the old position and only moves
 	// forward: BeginSeek dropped the stale media, so no old picture flashed.
 	mu.Lock()

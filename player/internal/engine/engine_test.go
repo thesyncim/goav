@@ -358,7 +358,7 @@ func TestVideoDoesNotStarveAudio(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("video push blocked while audio needed data")
 	}
-	if got := len(d.e.video); got != videoHardCap {
+	if got := d.e.videoCount; got != videoHardCap {
 		t.Fatalf("video queue = %d, want the hard cap %d", got, videoHardCap)
 	}
 	if got := d.e.Stats().Dropped; got != 100-videoHardCap {
@@ -383,7 +383,7 @@ func TestVideoBackpressureReleasesOnFlushAndContext(t *testing.T) {
 	if err := <-errc; err != nil {
 		t.Fatal(err)
 	}
-	if len(d.e.video) != 0 {
+	if d.e.videoCount != 0 {
 		t.Fatal("stale frame queued after the flush")
 	}
 	d.pushAudio(0, time.Second)
@@ -541,18 +541,18 @@ func TestSeekCutsTheOldTimelinePerKind(t *testing.T) {
 	d.e.BeginSeek()
 	d.pushAudio(200*time.Millisecond, 600*time.Millisecond)                      // in flight
 	d.pushVideo(200*time.Millisecond, 600*time.Millisecond, 40*time.Millisecond) // in flight
-	if d.e.queuedLocked() != 0 || len(d.e.video) != 0 {
+	if d.e.queuedLocked() != 0 || d.e.videoCount != 0 {
 		t.Fatal("the old position's in-flight media was queued after the seek")
 	}
 	discontinuity(t, d.e) // one branch's; the cut decides, not the event
 	d.pushVideo(5*time.Second, 5120*time.Millisecond, 40*time.Millisecond)
 	d.pushAudio(620*time.Millisecond, 700*time.Millisecond) // the audio branch is still behind
-	if len(d.e.video) != 3 || d.e.queuedLocked() != 0 {
-		t.Fatalf("after the video branch landed: %d pictures, %v audio queued", len(d.e.video), d.e.queuedLocked())
+	if d.e.videoCount != 3 || d.e.queuedLocked() != 0 {
+		t.Fatalf("after the video branch landed: %d pictures, %v audio queued", d.e.videoCount, d.e.queuedLocked())
 	}
 	discontinuity(t, d.e) // the other branch's, for the same seek: no flush
 	d.pushAudio(5*time.Second, 5100*time.Millisecond)
-	if len(d.e.video) != 3 || d.e.queuedLocked() == 0 {
+	if d.e.videoCount != 3 || d.e.queuedLocked() == 0 {
 		t.Fatal("the second branch's discontinuity flushed, or its fresh audio was cut")
 	}
 	if d.e.seek.mode != seekIdle {
@@ -579,13 +579,13 @@ func TestOneSeekFlushesOnce(t *testing.T) {
 	}
 	d.pushVideo(3*time.Second, 3100*time.Millisecond, 40*time.Millisecond)
 	discontinuity(t, d.e)
-	if len(d.e.video) != 3 {
-		t.Fatalf("second discontinuity of one seek flushed fresh video: %d queued", len(d.e.video))
+	if d.e.videoCount != 3 {
+		t.Fatalf("second discontinuity of one seek flushed fresh video: %d queued", d.e.videoCount)
 	}
 	d.pushAudio(3*time.Second, 3500*time.Millisecond)
 	d.step(100 * time.Millisecond)
 	discontinuity(t, d.e) // a new seek, once the position was heard
-	if len(d.e.video) != 0 || d.e.queuedLocked() != 0 {
+	if d.e.videoCount != 0 || d.e.queuedLocked() != 0 {
 		t.Fatal("a new seek did not flush")
 	}
 }
@@ -601,7 +601,7 @@ func TestPausedSeekWaitsAndPreviews(t *testing.T) {
 	d.e.BeginSeek()
 	d.step(3 * time.Second)
 	d.pushVideo(320*time.Millisecond, 400*time.Millisecond, 40*time.Millisecond) // in flight
-	if len(d.e.video) != 0 {
+	if d.e.videoCount != 0 {
 		t.Fatal("in-flight media accepted after a long paused seek")
 	}
 	d.pushVideo(5*time.Second, 5100*time.Millisecond, 40*time.Millisecond)
@@ -623,7 +623,7 @@ func TestPausedSeekWaitsAndPreviews(t *testing.T) {
 	d.e.BeginSeek()
 	d.step(seekWait + 10*time.Millisecond)
 	d.pushVideo(5200*time.Millisecond, 5240*time.Millisecond, 40*time.Millisecond)
-	if len(d.e.video) == 0 {
+	if d.e.videoCount == 0 {
 		t.Fatal("the cut held past its wait")
 	}
 }
@@ -647,14 +647,14 @@ func TestPausedSeekResumeDoesNotDeductPausedTime(t *testing.T) {
 
 	// Stale in-flight video from the old timeline must still be cut.
 	d.pushVideo(300*time.Millisecond, 380*time.Millisecond, 40*time.Millisecond)
-	if len(d.e.video) != 0 {
-		t.Fatalf("stale video accepted after paused-seek resume: %d queued", len(d.e.video))
+	if d.e.videoCount != 0 {
+		t.Fatalf("stale video accepted after paused-seek resume: %d queued", d.e.videoCount)
 	}
 	// New position lands and exits seekCutting once both kinds land.
 	d.pushVideo(5*time.Second, 5040*time.Millisecond, 40*time.Millisecond)
 	d.pushAudio(5*time.Second, 5040*time.Millisecond)
-	if len(d.e.video) != 1 || d.e.seek.mode != seekIdle {
-		t.Fatalf("after landing: video=%d seek.mode=%d, want 1 and seekIdle", len(d.e.video), d.e.seek.mode)
+	if d.e.videoCount != 1 || d.e.seek.mode != seekIdle {
+		t.Fatalf("after landing: video=%d seek.mode=%d, want 1 and seekIdle", d.e.videoCount, d.e.seek.mode)
 	}
 }
 
@@ -710,8 +710,8 @@ func TestBeginSeekBeforeAnyMediaStaysIdle(t *testing.T) {
 		t.Fatalf("seek.mode = %d after BeginSeek with no prior media, want seekIdle", d.e.seek.mode)
 	}
 	d.pushVideo(0, 40*time.Millisecond, 40*time.Millisecond)
-	if len(d.e.video) != 1 {
-		t.Fatalf("first video frame after empty BeginSeek was dropped: %d queued", len(d.e.video))
+	if d.e.videoCount != 1 {
+		t.Fatalf("first video frame after empty BeginSeek was dropped: %d queued", d.e.videoCount)
 	}
 }
 

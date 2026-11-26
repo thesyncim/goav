@@ -73,6 +73,15 @@ type Source struct {
 	discontinuity    av.Event
 	state            atomic.Uint32
 	discardedPartial atomic.Uint64
+
+	// Steady-state depacketizer cache: avoids linearly scanning s.depacketizers
+	// on every RTP packet when PT/stream/codec are unchanged.
+	lastDepackValid bool
+	lastDepackPT    uint8
+	lastDepackID    av.CodecID
+	lastDepackMIME  string
+	lastDepackSID   av.StreamID
+	lastDepack      Depacketizer
 }
 
 type sourceTimestampState struct {
@@ -215,6 +224,7 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 			s.payloads, s.scope = payloads, scope
 			s.epochs[epochScope] = epoch
 			if event != nil {
+				s.lastDepackValid = false
 				if eventErr := s.emitEvent(ctx, emitter, event); eventErr != nil {
 					return eventErr
 				}
@@ -818,12 +828,20 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 	if id == "" {
 		id = codecIDFromMIME(payload.MIMEType)
 	}
+	if s.lastDepackValid &&
+		s.lastDepackPT == payload.PayloadType &&
+		s.lastDepackID == id &&
+		s.lastDepackMIME == payload.MIMEType &&
+		s.lastDepackSID == payload.StreamID {
+		return s.lastDepack
+	}
 	var found Depacketizer
 	matches := 0
 	for i := range s.depacketizers {
 		if s.depacketizers[i].Codec() == id {
 			stream, known := depacketizerStream(s.depacketizers[i])
 			if payload.StreamID != "" && known && stream.ID == payload.StreamID {
+				s.cacheDepacketizer(payload, id, s.depacketizers[i])
 				return s.depacketizers[i]
 			}
 			matches++
@@ -844,7 +862,19 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 			return nil
 		}
 	}
+	if found != nil {
+		s.cacheDepacketizer(payload, id, found)
+	}
 	return found
+}
+
+func (s *Source) cacheDepacketizer(payload PayloadCodec, id av.CodecID, d Depacketizer) {
+	s.lastDepackValid = true
+	s.lastDepackPT = payload.PayloadType
+	s.lastDepackID = id
+	s.lastDepackMIME = payload.MIMEType
+	s.lastDepackSID = payload.StreamID
+	s.lastDepack = d
 }
 
 // Untagged maps use a session-wide configuration generation. A tagged map
@@ -873,6 +903,58 @@ func recordEpochScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) 
 	return scope, nil
 }
 
+func (s *Source) eventScope(event *av.Event) (av.StreamID, error) {
+	if event == nil {
+		return "", nil
+	}
+	scope := event.StreamID
+	if event.Stream == nil {
+		return scope, nil
+	}
+	if scope != "" && event.Stream.ID != "" && scope != event.Stream.ID {
+		// CodecChanged can target the old ID while declaring its replacement.
+		// The new ID must not take over a sibling.
+		if event.Type != av.EventCodecChanged {
+			return "", ErrInvalidConfiguration
+		}
+		for _, stream := range s.streams {
+			if stream.ID == event.Stream.ID {
+				return "", ErrInvalidConfiguration
+			}
+		}
+		return event.Stream.ID, nil
+	}
+	if scope == "" {
+		return event.Stream.ID, nil
+	}
+	return scope, nil
+}
+
+func (s *Source) packetScope(packet *rtp.Packet, payloads PayloadMap, scope av.StreamID) (av.StreamID, error) {
+	payload, ok := payloads.Lookup(packet.PayloadType)
+	if !ok {
+		return "", ErrPayloadNotFound
+	}
+	if payload.StreamID != "" {
+		if scope != "" && scope != payload.StreamID {
+			return "", ErrInvalidConfiguration
+		}
+		return payload.StreamID, nil
+	}
+	if scope != "" {
+		return scope, nil
+	}
+	for _, stream := range s.streams {
+		if stream.Codec.ID == payload.Parameters.ID {
+			if scope != "" {
+				return "", ErrAmbiguousStream
+			}
+			scope = stream.ID
+		}
+	}
+	return scope, nil
+}
+
 func recordEventTarget(event *av.Event) av.StreamID {
 	if event == nil {
 		return ""
@@ -887,56 +969,18 @@ func recordEventTarget(event *av.Event) av.StreamID {
 }
 
 func (s *Source) recordScope(packet *rtp.Packet, event *av.Event, payloads PayloadMap) (av.StreamID, error) {
-	var scope av.StreamID
-	var target av.StreamID
-	if event != nil {
-		scope = event.StreamID
-		target = scope
-		if event.Stream != nil {
-			if scope != "" && event.Stream.ID != "" && scope != event.Stream.ID {
-				// CodecChanged can target the old ID while declaring its
-				// replacement. The new ID must not take over a sibling.
-				if event.Type != av.EventCodecChanged {
-					return "", ErrInvalidConfiguration
-				}
-				for _, stream := range s.streams {
-					if stream.ID == event.Stream.ID {
-						return "", ErrInvalidConfiguration
-					}
-				}
-				scope = event.Stream.ID
-			}
-			if scope == "" {
-				scope = event.Stream.ID
-			}
-		}
-		if target == "" {
-			target = scope
-		}
+	scope, err := s.eventScope(event)
+	if err != nil {
+		return "", err
 	}
 	if packet != nil {
-		payload, ok := payloads.Lookup(packet.PayloadType)
-		if !ok {
-			return "", ErrPayloadNotFound
-		}
-		if payload.StreamID != "" {
-			if scope != "" && scope != payload.StreamID {
-				return "", ErrInvalidConfiguration
-			}
-			scope = payload.StreamID
-		}
-		if scope == "" {
-			for _, stream := range s.streams {
-				if stream.Codec.ID == payload.Parameters.ID {
-					if scope != "" {
-						return "", ErrAmbiguousStream
-					}
-					scope = stream.ID
-				}
-			}
+		scope, err = s.packetScope(packet, payloads, scope)
+		if err != nil {
+			return "", err
 		}
 	}
-	addsStream := event != nil && event.Type == av.EventStreamAdded && event.Stream != nil && recordEventTarget(event) == scope
+	target := recordEventTarget(event)
+	addsStream := event != nil && event.Type == av.EventStreamAdded && event.Stream != nil && target == scope
 	if packet != nil && s.removed[scope] && !addsStream {
 		return "", ErrUnknownStream
 	}

@@ -106,7 +106,7 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 			}
 			dst.ReferencePriority = value
 		case idReferenceBlk:
-			ticks, err := readIntPayload(d.groupReader, child.Size.Value)
+			ticks, err := readIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
 			if err != nil {
 				return err
 			}
@@ -116,7 +116,7 @@ func (d *Demuxer) readBlockGroup(header ebml.Header, dst *Packet) (err error) {
 			if err := markElementSeen(&discardSeen); err != nil {
 				return err
 			}
-			paddingNS, err := readIntPayload(d.groupReader, child.Size.Value)
+			paddingNS, err := readIntPayloadScratch(d.groupReader, child.Size.Value, &d.uintScratch)
 			if err != nil {
 				return err
 			}
@@ -427,7 +427,7 @@ func (d *Demuxer) decodeContentEncodedBlockFrame(track Track, frame []byte, enco
 		decoded = dst.Data[:len(payload)]
 		copy(decoded, payload)
 	case blockContentTransformZlib:
-		decoded, err = zlibDecompressInto(dst.Data[:0], payload)
+		decoded, err = d.zlibDecompressInto(dst.Data[:0], payload)
 	case blockContentTransformBzlib:
 		decoded, err = bzip2DecompressInto(dst.Data[:0], payload)
 	default:
@@ -503,12 +503,26 @@ func (d *Demuxer) finishTrackCodecPayload(track Track, dst *Packet) error {
 	return nil
 }
 
-func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
-	reader, err := zlib.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		return nil, ErrInvalidData
+func (d *Demuxer) zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
+	d.zlibInput.Reset(compressed)
+	if d.zlibReader == nil {
+		reader, err := zlib.NewReader(&d.zlibInput)
+		if err != nil {
+			return nil, ErrInvalidData
+		}
+		d.zlibReader = reader
+	} else if resetter, ok := d.zlibReader.(zlib.Resetter); ok {
+		if err := resetter.Reset(&d.zlibInput, nil); err != nil {
+			return nil, ErrInvalidData
+		}
+	} else {
+		reader, err := zlib.NewReader(&d.zlibInput)
+		if err != nil {
+			return nil, ErrInvalidData
+		}
+		d.zlibReader = reader
 	}
-	return readCompressedInto(dst, reader, reader.Close)
+	return readCompressedInto(dst, d.zlibReader, d.zlibReader.Close)
 }
 
 func bzip2DecompressInto(dst []byte, compressed []byte) ([]byte, error) {

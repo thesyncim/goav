@@ -267,8 +267,5 @@ func streamFromTrack(tr Track, index int) av.Stream {
 }
 
 func cloneStream(stream av.Stream) av.Stream {
-	if len(stream.Codec.ExtraData.Bytes) != 0 {
-		stream.Codec.ExtraData.Bytes = append([]byte(nil), stream.Codec.ExtraData.Bytes...)
-	}
-	return stream
+	return stream.Clone()
 }

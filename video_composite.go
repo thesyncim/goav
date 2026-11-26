@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
-	"github.com/thesyncim/goav/internal/interleave"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -15,33 +14,18 @@ import (
 // StreamID. It is a normal pipeline.Stage: the buffered runner calls Handle
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
-//
-// Contract: inputs are I420 (YUV 4:2:0); a non-I420 frame fails the composite
-// step. Arm alignment follows the joinSyncState mode: arrival (default — one
-// frame per arm per step) or PTS (ByPTS — arms join the step their head
-// timestamp matches; an arm whose head is newer is simply not painted that
-// step, and the canvas keeps covering its last-known extent so the output
-// geometry stays stable across gap steps). An arm that ends keeps the others
-// compositing without it. PTS/Duration come from the step's timing reference
-// (arrival: the first input, exactly as before).
 type videoCompositeStage struct {
-	name   string
-	out    av.StreamID
+	joinStageBase
 	layout []compile.CompositeLayout
-	// sizes remembers each arm's most recent frame dimensions, so absent arms
-	// (gap or ended) still reserve their canvas region.
-	sizes   map[av.StreamID]compositeArmSize
-	sync    *joinSyncState
-	free    map[av.StreamID][]*av.Frame
-	pools   *mediaPools
-	closed  bool
-	output  av.Frame
-	video   av.VideoFrame
-	message pipeline.Message
+	// sizes remembers each arm's most recent frame dimensions (indexed by armIdx),
+	// so absent arms (gap or ended) still reserve their canvas region.
+	sizes []compositeArmSize
+	video av.VideoFrame
 }
 
 type compositeArmSize struct {
-	w, h int
+	w, h  int
+	known bool
 }
 
 func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode) *videoCompositeStage {
@@ -57,129 +41,52 @@ func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamI
 		preallocDepth = 1
 	}
 	stage := &videoCompositeStage{
-		name:   name,
-		out:    out,
+		joinStageBase: joinStageBase{
+			name:  name,
+			out:   out,
+			sync:  newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+			free:  make([][]*av.Frame, len(inputs)),
+			pools: pools,
+		},
 		layout: append([]compile.CompositeLayout(nil), layout...),
-		sizes:  make(map[av.StreamID]compositeArmSize, len(inputs)),
-		sync:   newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
-		free:   make(map[av.StreamID][]*av.Frame, len(inputs)),
-		pools:  pools,
+		sizes:  make([]compositeArmSize, len(inputs)),
 	}
 	stage.output.Planes = takeMediaPlanes(pools, 3)
-	stage.sync.recycle = stage.recycleCompositeFrame
+	stage.sync.recycle = stage.recycleArmFrame
 	for i := range inputs {
 		free := make([]*av.Frame, 0, preallocDepth)
-		for j := 0; j < preallocDepth; j++ {
+		for range preallocDepth {
 			free = append(free, &av.Frame{
 				Video:  &av.VideoFrame{},
 				Planes: takeMediaPlanes(pools, 3),
 			})
 		}
-		stage.free[inputs[i]] = free
+		stage.free[i] = free
 	}
 	return stage
 }
-
-func (s *videoCompositeStage) Name() string { return s.name }
-
-// DescribeNode reports the same detail the join planner records on the planned
-// node, keeping Describe() ≡ Build() when ByPTS annotates the join.
-func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
-	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: compile.JoinSyncNodeDetail(s.sync.mode)}
-}
-
-// DroppedMessages implements pipeline.DropReporter: frames the join discarded
-// to stay aligned (stale catch-up heads, discontinuity flushes), surfaced as
-// the join node's Dropped count (reason "sync") in Stats and snapshots.
-func (s *videoCompositeStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
-
-// Admit implements pipeline.Admitter: an arm that leads the composite by
-// joinArmLeadFrames waits on its own goroutine until the composite catches up.
-func (s *videoCompositeStage) Admit(ctx context.Context, msg *pipeline.Message) error {
-	return s.sync.admit(ctx, msg)
-}
-
-// Arm and Admits implement interleave.Gate: an ordered run bounds the arms
-// at the turn instead of blocking in Admit.
-func (s *videoCompositeStage) Arm(_ interleave.Token, msg any) (int, bool) { return s.sync.arm(msg) }
-
-func (s *videoCompositeStage) Admits(_ interleave.Token, arm int) bool { return s.sync.admits(arm) }
 
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
-	defer s.sync.publishDepths()
+	var err error
 	switch msg.Kind {
 	case pipeline.MessageFrame:
-		if msg.Frame == nil || msg.Frame.Video == nil {
-			return nil
+		if msg.Frame != nil && msg.Frame.Video != nil {
+			if armIdx := s.sync.armIndex(msg.Frame.StreamID); armIdx >= 0 {
+				s.sizes[armIdx] = compositeArmSize{w: msg.Frame.Video.Width, h: msg.Frame.Video.Height, known: true}
+				if !s.sync.eosEmitted && !s.sync.armStates[armIdx].eos {
+					s.sync.bufferAt(armIdx, s.cloneCompositeFrame(armIdx, msg.Frame))
+				}
+			}
+			err = s.drain(ctx, emitter)
 		}
-		s.sizes[msg.Frame.StreamID] = compositeArmSize{w: msg.Frame.Video.Width, h: msg.Frame.Video.Height}
-		s.sync.buffer(s.cloneCompositeFrame(msg.Frame))
-		return s.drain(ctx, emitter)
 	case pipeline.MessageEvent:
-		if msg.Event == nil {
-			return nil
-		}
-		switch msg.Event.Type {
-		case av.EventEndOfStream:
-			ended := s.sync.markEOS(msg.Event.StreamID)
-			// The ended arm stops gating: drain what the remaining arms can
-			// paint before (possibly) ending the joined stream.
-			if err := s.drain(ctx, emitter); err != nil {
-				return err
-			}
-			if ended {
-				out := av.Event{Type: av.EventEndOfStream, StreamID: s.out}
-				return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
-			}
-			return nil
-		case av.EventDiscontinuity:
-			if !s.sync.discontinuity(msg.Event.StreamID) {
-				return nil
-			}
-			// The joined timeline jumps with the repositioned arm: forward one
-			// discontinuity re-stamped to the join output, the same signal a
-			// seeked single-source chain delivers to its sink.
-			out := *msg.Event
-			out.StreamID = s.out
-			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
-		}
-		if msg.Event.Type == av.EventSelectActive {
-			// Control-plane events ride the data path through joins unchanged:
-			// a SelectActive heading for a selector downstream of this join
-			// carries its target arm in Event.StreamID and is consumed by the
-			// selector — re-stamping it here would erase the target.
-			return emitter.Emit(ctx, msg)
-		}
-		return nil
-	default:
-		return nil
+		err = s.handleEvent(ctx, msg, emitter, s.drain)
 	}
-}
-
-func (s *videoCompositeStage) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.sync != nil {
-		s.sync.releaseAdmission()
-		s.sync.recyclePending()
-	}
-	for id, free := range s.free {
-		for i := range free {
-			s.releaseCompositeFrame(free[i])
-			free[i] = nil
-		}
-		delete(s.free, id)
-	}
-	if s.pools != nil {
-		s.pools.putPlanes(s.output.Planes)
-		s.output.Planes = nil
-	}
-	return nil
+	s.sync.publishDepths()
+	return err
 }
 
 func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
@@ -195,7 +102,7 @@ func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitte
 			}
 			// Absent arm (gap or ended): keep the canvas covering its
 			// last-known extent so geometry stays stable across gap steps.
-			if size, known := s.sizes[s.sync.inputs[i]]; known {
+			if size := s.sizes[i]; size.known {
 				floorW = max(floorW, s.layout[i].X+size.w)
 				floorH = max(floorH, s.layout[i].Y+size.h)
 			}
@@ -394,8 +301,8 @@ func copyPlaneInside(dst []byte, dstW int, src []byte, srcStride int, srcOffset 
 
 // cloneCompositeFrame keeps an arm frame past the call that lent it: a
 // pooled header with the frame's fields and its own reference to each plane.
-func (s *videoCompositeStage) cloneCompositeFrame(frame *av.Frame) *av.Frame {
-	clone := s.takeCompositeFrame(frame.StreamID)
+func (s *videoCompositeStage) cloneCompositeFrame(armIdx int, frame *av.Frame) *av.Frame {
+	clone := s.takeCompositeFrame(armIdx)
 	planes := clone.Planes
 	video := clone.Video
 	*clone = *frame
@@ -414,8 +321,14 @@ func (s *videoCompositeStage) cloneCompositeFrame(frame *av.Frame) *av.Frame {
 	return clone
 }
 
-func (s *videoCompositeStage) takeCompositeFrame(id av.StreamID) *av.Frame {
-	free := s.free[id]
+func (s *videoCompositeStage) takeCompositeFrame(armIdx int) *av.Frame {
+	if armIdx < 0 || armIdx >= len(s.free) {
+		return &av.Frame{
+			Video:  &av.VideoFrame{},
+			Planes: takeMediaPlanes(s.pools, 3),
+		}
+	}
+	free := s.free[armIdx]
 	if len(free) == 0 {
 		return &av.Frame{
 			Video:  &av.VideoFrame{},
@@ -425,34 +338,8 @@ func (s *videoCompositeStage) takeCompositeFrame(id av.StreamID) *av.Frame {
 	index := len(free) - 1
 	frame := free[index]
 	free[index] = nil
-	s.free[id] = free[:index]
+	s.free[armIdx] = free[:index]
 	return frame
-}
-
-func (s *videoCompositeStage) recycleStepFrames(frames []*av.Frame) {
-	for i := range frames {
-		s.recycleCompositeFrame(frames[i])
-		frames[i] = nil
-	}
-}
-
-func (s *videoCompositeStage) recycleCompositeFrame(frame *av.Frame) {
-	if frame == nil {
-		return
-	}
-	frame.Release()
-	id := frame.StreamID
-	s.free[id] = append(s.free[id], frame)
-}
-
-func (s *videoCompositeStage) releaseCompositeFrame(frame *av.Frame) {
-	if frame == nil {
-		return
-	}
-	if s.pools != nil {
-		s.pools.putPlanes(frame.Planes)
-		frame.Planes = nil
-	}
 }
 
 // Limited-range I420 black: the canvas color wherever no arm paints.
@@ -472,8 +359,6 @@ func fillPlane(plane []byte, value byte) {
 		copy(plane[filled:], plane[:filled])
 	}
 }
-
-func (s *videoCompositeStage) enableAdmission() { s.sync.enableAdmission() }
 
 // i420Canvas carves the Y, U, and V planes of one canvas out of a single
 // pooled block: one pool round trip per output instead of three. Each plane

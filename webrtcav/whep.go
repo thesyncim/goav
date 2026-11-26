@@ -485,36 +485,8 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 	for {
 		packet, event, payloads, err := reader.ReadRTP(s.ctx)
 		if err != nil {
-			s.mu.Lock()
-			s.activeTracks--
-			keepAlive := s.activeTracks > 0 || s.hasPendingDeclaredLocked()
-			s.mu.Unlock()
-			if errors.Is(err, io.EOF) && keepAlive {
-				if streams, serr := reader.Streams(s.ctx); serr == nil && len(streams) > 0 {
-					stream := streams[0]
-					removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
-					s.mu.Lock()
-					closed := s.state == whepClosed
-					if !closed {
-						s.removeReaderLocked(reader, stream.ID)
-						select {
-						case s.events <- *cloneReadEvent(removed):
-						default:
-						}
-					}
-					s.mu.Unlock()
-					if !closed {
-						_ = reader.Close()
-						select {
-						case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
-						case <-s.ctx.Done():
-						}
-						return
-					}
-				} else if !s.isClosed() {
-					_ = reader.Close()
-					return
-				}
+			if s.handleTrackError(reader, err) {
+				return
 			}
 			select {
 			case s.records <- whepRecord{packet: packet, event: cloneReadEvent(event), payloads: payloads, err: err}:
@@ -532,6 +504,45 @@ func (s *whepSession) pumpTracked(reader TrackReader, preCounted bool) {
 			return
 		}
 	}
+}
+
+func (s *whepSession) handleTrackError(reader TrackReader, err error) bool {
+	s.mu.Lock()
+	s.activeTracks--
+	keepAlive := s.activeTracks > 0 || s.hasPendingDeclaredLocked()
+	s.mu.Unlock()
+	if !errors.Is(err, io.EOF) || !keepAlive {
+		return false
+	}
+	streams, serr := reader.Streams(s.ctx)
+	if serr != nil || len(streams) == 0 {
+		if !s.isClosed() {
+			_ = reader.Close()
+			return true
+		}
+		return false
+	}
+	stream := streams[0]
+	removed := &av.Event{Type: av.EventStreamRemoved, StreamID: stream.ID, Stream: &stream, Epoch: stream.Epoch}
+	s.mu.Lock()
+	closed := s.state == whepClosed
+	if !closed {
+		s.removeReaderLocked(reader, stream.ID)
+		select {
+		case s.events <- *cloneReadEvent(removed):
+		default:
+		}
+	}
+	s.mu.Unlock()
+	if closed {
+		return false
+	}
+	_ = reader.Close()
+	select {
+	case s.records <- whepRecord{event: removed, payloads: reader.PayloadMap()}:
+	case <-s.ctx.Done():
+	}
+	return true
 }
 
 func (s *whepSession) hasPendingDeclaredLocked() bool {

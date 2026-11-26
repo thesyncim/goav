@@ -178,8 +178,19 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned.Modes = slices.Clone(desc.Modes)
 	cloned.Profiles = slices.Clone(desc.Profiles)
 	cloned.Capabilities = cloneCapabilities(desc.Capabilities)
-	cloned.Knobs = slices.Clone(desc.Knobs)
-	cloned.RawKnobs = slices.Clone(desc.RawKnobs)
+	cloned.Knobs = cloneKnobs(desc.Knobs)
+	cloned.RawKnobs = cloneKnobs(desc.RawKnobs)
+	return cloned
+}
+
+func cloneKnobs(knobs []Knob) []Knob {
+	if knobs == nil {
+		return nil
+	}
+	cloned := slices.Clone(knobs)
+	for i := range cloned {
+		cloned[i].Values = slices.Clone(cloned[i].Values)
+	}
 	return cloned
 }
 

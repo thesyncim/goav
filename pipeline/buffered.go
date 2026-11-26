@@ -467,7 +467,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, m
 		return delivery, ErrUnknownNode
 	}
 	fromNode := &snap.nodes[from]
-	if !fromNode.active || fromNode.node != e.self || fromNode.node.faulted() {
+	if !fromNode.active || fromNode.node != e.self {
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)

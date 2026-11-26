@@ -26,6 +26,13 @@ func MonotonicClock() Clock {
 	return &monotonicClock{origin: time.Now()}
 }
 
+// IsMonotonicClock reports whether c is the standard process monotonic clock
+// returned by MonotonicClock.
+func IsMonotonicClock(c Clock) bool {
+	_, ok := c.(*monotonicClock)
+	return ok
+}
+
 type monotonicClock struct {
 	origin time.Time
 }

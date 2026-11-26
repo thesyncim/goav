@@ -7,6 +7,149 @@ import (
 	"github.com/thesyncim/goav/container/ebml"
 )
 
+// markSeenBit rejects duplicate singleton child elements using a compact bitmask.
+func markSeenBit(seen *uint64, bit uint) error {
+	mask := uint64(1) << bit
+	if *seen&mask != 0 {
+		return ErrInvalidData
+	}
+	*seen |= mask
+	return nil
+}
+
+func readOnceBoolFlag(r io.Reader, size uint64, seen *uint64, bit uint, dst, set *bool) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readBoolFlagPayload(r, size)
+	if err != nil {
+		return err
+	}
+	*dst = v
+	if set != nil {
+		*set = true
+	}
+	return nil
+}
+
+func readOnceString(r io.Reader, size uint64, seen *uint64, bit uint, dst *string) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readStringPayload(r, size)
+	if err != nil {
+		return err
+	}
+	*dst = v
+	return nil
+}
+
+func readOnceUInt(r io.Reader, size uint64, seen *uint64, bit uint, dst *uint64, set *bool) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readUIntPayload(r, size)
+	if err != nil {
+		return err
+	}
+	*dst = v
+	if set != nil {
+		*set = true
+	}
+	return nil
+}
+
+func readOnceIntFromUInt(r io.Reader, size uint64, seen *uint64, bit uint, dst *int, set *bool) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readIntPayloadFromUInt(r, size)
+	if err != nil {
+		return err
+	}
+	*dst = v
+	if set != nil {
+		*set = true
+	}
+	return nil
+}
+
+func readOnceNonZeroInt(r io.Reader, size uint64, seen *uint64, bit uint, dst *int) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readUIntPayload(r, size)
+	if err != nil {
+		return err
+	}
+	*dst, err = nonZeroIntFromUint(v)
+	return err
+}
+
+func readOnceNonNegativeInt64(r io.Reader, size uint64, seen *uint64, bit uint, dst *int64) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := readUIntPayload(r, size)
+	if err != nil {
+		return err
+	}
+	if v > uint64(math.MaxInt64) {
+		return ErrInvalidData
+	}
+	*dst = int64(v)
+	return nil
+}
+
+func readOnceFloat(r io.Reader, size uint64, seen *uint64, bit uint, dst *float64, set *bool, fn func(io.Reader, uint64) (float64, error)) error {
+	if err := markSeenBit(seen, bit); err != nil {
+		return err
+	}
+	v, err := fn(r, size)
+	if err != nil {
+		return err
+	}
+	*dst = v
+	if set != nil {
+		*set = true
+	}
+	return nil
+}
+
+const (
+	teSeenTrackNumber uint = iota
+	teSeenTrackUID
+	teSeenTrackType
+	teSeenCodecID
+	teSeenFlagEnabled
+	teSeenFlagDefault
+	teSeenFlagForced
+	teSeenFlagHearingImpaired
+	teSeenFlagVisualImpaired
+	teSeenFlagTextDescriptions
+	teSeenFlagOriginal
+	teSeenFlagCommentary
+	teSeenFlagLacing
+	teSeenName
+	teSeenLanguage
+	teSeenLanguageBCP
+	teSeenCodecName
+	teSeenMinCache
+	teSeenMaxCache
+	teSeenDefaultDuration
+	teSeenDefaultDecodedDuration
+	teSeenTrackTimestampScale
+	teSeenTrackOffset
+	teSeenMaxBlockAdditionID
+	teSeenCodecDecodeAll
+	teSeenCodecDelay
+	teSeenSeekPreRoll
+	teSeenContentEncodings
+	teSeenCodecPrivate
+	teSeenVideo
+	teSeenAudio
+)
+
 func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, error) {
 	if header.Size.Unknown {
 		return Track{}, ErrInvalidData
@@ -17,75 +160,44 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 	}
 	track := Track{Language: "und", TimebaseNum: 1, TimebaseDen: timeNS, CodecDecodeAll: true, FlagEnabled: true, FlagDefault: true, FlagLacing: true}
 	var codecID string
-	trackNumberSeen := false
-	trackUIDSeen := false
-	trackTypeSeen := false
-	codecIDSeen := false
-	flagEnabledSeen := false
-	flagDefaultSeen := false
-	flagForcedSeen := false
-	flagHearingImpairedSeen := false
-	flagVisualImpairedSeen := false
-	flagTextDescriptionsSeen := false
-	flagOriginalSeen := false
-	flagCommentarySeen := false
-	flagLacingSeen := false
-	nameSeen := false
-	languageSeen := false
-	languageBCPSeen := false
-	codecNameSeen := false
-	minCacheSeen := false
-	maxCacheSeen := false
-	defaultDurationSeen := false
-	defaultDecodedDurationSeen := false
-	trackTimestampScaleSeen := false
-	trackOffsetSeen := false
-	maxBlockAdditionIDSeen := false
-	codecDecodeAllSeen := false
-	codecDelaySeen := false
-	seekPreRollSeen := false
-	contentEncodingsSeen := false
-	codecPrivateSeen := false
-	videoSeen := false
-	audioSeen := false
+	var seen uint64
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
 			return Track{}, err
 		}
+		r := master.Reader()
+		sz := child.Size.Value
 		switch child.ID {
 		case idTrackNumber:
-			if trackNumberSeen {
-				return Track{}, ErrInvalidData
+			if err := markSeenBit(&seen, teSeenTrackNumber); err != nil {
+				return Track{}, err
 			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			value, err := readUIntPayload(r, sz)
 			if err != nil {
 				return Track{}, err
 			}
-			trackID, err := trackIDFromUint(value)
+			track.ID, err = trackIDFromUint(value)
 			if err != nil {
 				return Track{}, err
 			}
-			track.ID = trackID
-			trackNumberSeen = true
 		case idTrackUID:
-			if trackUIDSeen {
-				return Track{}, ErrInvalidData
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
+			if err := markSeenBit(&seen, teSeenTrackUID); err != nil {
 				return Track{}, err
 			}
-			if value == 0 {
+			value, err := readUIntPayload(r, sz)
+			if err != nil || value == 0 {
+				if err != nil {
+					return Track{}, err
+				}
 				return Track{}, ErrInvalidData
 			}
 			track.UID = value
-			trackUIDSeen = true
 		case idTrackType:
-			if trackTypeSeen {
-				return Track{}, ErrInvalidData
+			if err := markSeenBit(&seen, teSeenTrackType); err != nil {
+				return Track{}, err
 			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
+			value, err := readUIntPayload(r, sz)
 			if err != nil {
 				return Track{}, err
 			}
@@ -99,390 +211,130 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 			default:
 				track.Type = TrackUnknown
 			}
-			trackTypeSeen = true
 		case idFlagEnabled:
-			if err := markElementSeen(&flagEnabledSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagEnabled = value
-			track.FlagEnabledSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagEnabled, &track.FlagEnabled, &track.FlagEnabledSet)
 		case idFlagDefault:
-			if err := markElementSeen(&flagDefaultSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagDefault = value
-			track.FlagDefaultSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagDefault, &track.FlagDefault, &track.FlagDefaultSet)
 		case idFlagForced:
-			if err := markElementSeen(&flagForcedSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagForced = value
-			track.FlagForcedSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagForced, &track.FlagForced, &track.FlagForcedSet)
 		case idFlagHearingImpaired:
-			if err := markElementSeen(&flagHearingImpairedSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagHearingImpaired = value
-			track.FlagHearingImpairedSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagHearingImpaired, &track.FlagHearingImpaired, &track.FlagHearingImpairedSet)
 		case idFlagVisualImpaired:
-			if err := markElementSeen(&flagVisualImpairedSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagVisualImpaired = value
-			track.FlagVisualImpairedSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagVisualImpaired, &track.FlagVisualImpaired, &track.FlagVisualImpairedSet)
 		case idFlagTextDescriptions:
-			if err := markElementSeen(&flagTextDescriptionsSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagTextDescriptions = value
-			track.FlagTextDescriptionsSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagTextDescriptions, &track.FlagTextDescriptions, &track.FlagTextDescriptionsSet)
 		case idFlagOriginal:
-			if err := markElementSeen(&flagOriginalSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagOriginal = value
-			track.FlagOriginalSet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagOriginal, &track.FlagOriginal, &track.FlagOriginalSet)
 		case idFlagCommentary:
-			if err := markElementSeen(&flagCommentarySeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagCommentary = value
-			track.FlagCommentarySet = true
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagCommentary, &track.FlagCommentary, &track.FlagCommentarySet)
 		case idFlagLacing:
-			if err := markElementSeen(&flagLacingSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.FlagLacing = value
-			track.FlagLacingSet = true
-		case idName:
-			if err := markElementSeen(&nameSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readStringPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.Name = value
-		case idLanguage:
-			if err := markElementSeen(&languageSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readStringPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.Language = value
-		case idLanguageBCP:
-			if err := markElementSeen(&languageBCPSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readStringPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.LanguageBCP47 = value
-		case idCodecID:
-			if codecIDSeen {
-				return Track{}, ErrInvalidData
-			}
-			value, err := readStringPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			codecID = value
-			codecIDSeen = true
-		case idCodecName:
-			if err := markElementSeen(&codecNameSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readStringPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.CodecName = value
-		case idMinCache:
-			if err := markElementSeen(&minCacheSeen); err != nil {
-				return Track{}, err
-			}
-			track.MinCache, err = readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.MinCacheSet = true
-		case idMaxCache:
-			if err := markElementSeen(&maxCacheSeen); err != nil {
-				return Track{}, err
-			}
-			track.MaxCache, err = readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.MaxCacheSet = true
-		case idDefaultDur:
-			if err := markElementSeen(&defaultDurationSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.DefaultDurationNS = value
-		case idDefaultDecodedDur:
-			if err := markElementSeen(&defaultDecodedDurationSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readNonZeroInt64Payload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.DefaultDecodedFieldDurationNS = value
-		case idTrackTimestampScale:
-			if err := markElementSeen(&trackTimestampScaleSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readFloatPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-				return Track{}, ErrInvalidData
-			}
-			track.TrackTimestampScale = value
-			track.TrackTimestampScaleSet = true
-		case idTrackOffset:
-			if err := markElementSeen(&trackOffsetSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.TrackOffsetNS = value
-			track.TrackOffsetSet = true
-		case idMaxBlockAdditionID:
-			if err := markElementSeen(&maxBlockAdditionIDSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.MaxBlockAdditionID = value
-		case idBlockAdditionMapping:
-			mapping, err := d.parseBlockAdditionMapping(master.Reader(), child)
-			if err != nil {
-				return Track{}, err
-			}
-			track.BlockAdditionMappings = append(track.BlockAdditionMappings, mapping)
+			err = readOnceBoolFlag(r, sz, &seen, teSeenFlagLacing, &track.FlagLacing, &track.FlagLacingSet)
 		case idCodecDecodeAll:
-			if err := markElementSeen(&codecDecodeAllSeen); err != nil {
-				return Track{}, err
+			err = readOnceBoolFlag(r, sz, &seen, teSeenCodecDecodeAll, &track.CodecDecodeAll, &track.CodecDecodeAllSet)
+		case idName:
+			err = readOnceString(r, sz, &seen, teSeenName, &track.Name)
+		case idLanguage:
+			err = readOnceString(r, sz, &seen, teSeenLanguage, &track.Language)
+		case idLanguageBCP:
+			err = readOnceString(r, sz, &seen, teSeenLanguageBCP, &track.LanguageBCP47)
+		case idCodecID:
+			err = readOnceString(r, sz, &seen, teSeenCodecID, &codecID)
+		case idCodecName:
+			err = readOnceString(r, sz, &seen, teSeenCodecName, &track.CodecName)
+		case idMinCache:
+			err = readOnceUInt(r, sz, &seen, teSeenMinCache, &track.MinCache, &track.MinCacheSet)
+		case idMaxCache:
+			err = readOnceUInt(r, sz, &seen, teSeenMaxCache, &track.MaxCache, &track.MaxCacheSet)
+		case idMaxBlockAdditionID:
+			err = readOnceUInt(r, sz, &seen, teSeenMaxBlockAdditionID, &track.MaxBlockAdditionID, nil)
+		case idDefaultDur:
+			if err = markSeenBit(&seen, teSeenDefaultDuration); err == nil {
+				track.DefaultDurationNS, err = readNonZeroInt64Payload(r, sz)
 			}
-			value, err := readBoolFlagPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
+		case idDefaultDecodedDur:
+			if err = markSeenBit(&seen, teSeenDefaultDecodedDuration); err == nil {
+				track.DefaultDecodedFieldDurationNS, err = readNonZeroInt64Payload(r, sz)
 			}
-			track.CodecDecodeAll = value
-			track.CodecDecodeAllSet = true
+		case idTrackTimestampScale:
+			if err = markSeenBit(&seen, teSeenTrackTimestampScale); err == nil {
+				var value float64
+				if value, err = readFloatPayload(r, sz); err == nil {
+					if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+						err = ErrInvalidData
+					} else {
+						track.TrackTimestampScale = value
+						track.TrackTimestampScaleSet = true
+					}
+				}
+			}
+		case idTrackOffset:
+			if err = markSeenBit(&seen, teSeenTrackOffset); err == nil {
+				if track.TrackOffsetNS, err = readIntPayload(r, sz); err == nil {
+					track.TrackOffsetSet = true
+				}
+			}
+		case idBlockAdditionMapping:
+			var mapping BlockAdditionMapping
+			if mapping, err = d.parseBlockAdditionMapping(r, child); err == nil {
+				track.BlockAdditionMappings = append(track.BlockAdditionMappings, mapping)
+			}
 		case idTrackOverlay:
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
+			var value uint64
+			if value, err = readUIntPayload(r, sz); err == nil {
+				if value == 0 {
+					err = ErrInvalidData
+				} else {
+					track.TrackOverlays = append(track.TrackOverlays, value)
+				}
 			}
-			if value == 0 {
-				return Track{}, ErrInvalidData
-			}
-			track.TrackOverlays = append(track.TrackOverlays, value)
 		case idCodecDelay:
-			if err := markElementSeen(&codecDelaySeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			if value > uint64(math.MaxInt64) {
-				return Track{}, ErrInvalidData
-			}
-			track.CodecDelayNS = int64(value)
+			err = readOnceNonNegativeInt64(r, sz, &seen, teSeenCodecDelay, &track.CodecDelayNS)
 		case idSeekPreRoll:
-			if err := markElementSeen(&seekPreRollSeen); err != nil {
-				return Track{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			if value > uint64(math.MaxInt64) {
-				return Track{}, ErrInvalidData
-			}
-			track.SeekPreRollNS = int64(value)
+			err = readOnceNonNegativeInt64(r, sz, &seen, teSeenSeekPreRoll, &track.SeekPreRollNS)
 		case idTrackTranslate:
-			translate, err := d.parseTrackTranslate(master.Reader(), child)
-			if err != nil {
-				return Track{}, err
+			var translate TrackTranslate
+			if translate, err = d.parseTrackTranslate(r, child); err == nil {
+				track.TrackTranslates = append(track.TrackTranslates, translate)
 			}
-			track.TrackTranslates = append(track.TrackTranslates, translate)
 		case idContentEncodings:
-			if err := markElementSeen(&contentEncodingsSeen); err != nil {
-				return Track{}, err
+			if err = markSeenBit(&seen, teSeenContentEncodings); err == nil {
+				track.ContentEncodings, err = d.parseContentEncodings(r, child)
 			}
-			encodings, err := d.parseContentEncodings(master.Reader(), child)
-			if err != nil {
-				return Track{}, err
-			}
-			track.ContentEncodings = encodings
 		case idCodecPrivate:
-			if err := markElementSeen(&codecPrivateSeen); err != nil {
-				return Track{}, err
+			if err = markSeenBit(&seen, teSeenCodecPrivate); err == nil {
+				track.CodecPrivate, err = readBinaryPayload(r, sz)
 			}
-			value, err := readBinaryPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return Track{}, err
-			}
-			track.CodecPrivate = value
 		case idVideo:
-			if videoSeen {
-				return Track{}, ErrInvalidData
+			if err = markSeenBit(&seen, teSeenVideo); err == nil {
+				track.Video, err = d.parseVideo(r, child)
 			}
-			video, err := d.parseVideo(master.Reader(), child)
-			if err != nil {
-				return Track{}, err
-			}
-			track.Video = video
-			videoSeen = true
 		case idAudio:
-			if audioSeen {
-				return Track{}, ErrInvalidData
+			if err = markSeenBit(&seen, teSeenAudio); err == nil {
+				track.Audio, err = d.parseAudio(r, child)
 			}
-			audio, err := d.parseAudio(master.Reader(), child)
-			if err != nil {
-				return Track{}, err
-			}
-			track.Audio = audio
-			audioSeen = true
 		default:
-			if err := appendUnknownChildElement(master.Reader(), child, isKnownTrackEntryElement, &track.UnknownElements); err != nil {
-				return Track{}, err
-			}
+			err = appendUnknownChildElement(r, child, isKnownTrackEntryElement, &track.UnknownElements)
+		}
+		if err != nil {
+			return Track{}, err
 		}
 	}
 	if err := master.Validate(); err != nil {
 		return Track{}, err
 	}
-	if !trackNumberSeen || !trackTypeSeen || !codecIDSeen {
+	const requiredMask = (uint64(1) << teSeenTrackNumber) | (uint64(1) << teSeenTrackType) | (uint64(1) << teSeenCodecID)
+	if seen&requiredMask != requiredMask {
 		return Track{}, ErrInvalidData
 	}
-	if (track.Type == TrackVideo && !videoSeen) || (track.Type == TrackAudio && !audioSeen) {
+	if (track.Type == TrackVideo && seen&(uint64(1)<<teSeenVideo) == 0) ||
+		(track.Type == TrackAudio && seen&(uint64(1)<<teSeenAudio) == 0) {
 		return Track{}, ErrInvalidData
 	}
 	if track.UID == 0 {
 		track.UID = uint64(track.ID)
 	}
-	track.Codec = codecFromMatroskaID(codecID, track.CodecPrivate)
-	if codecID == codecIDMS {
-		format, err := parseMSACMWaveFormat(track.CodecPrivate)
-		if err != nil {
-			return Track{}, err
-		}
-		track.Codec = codecFromMSACMTag(format.FormatTag)
-		track.Audio.SampleRate = format.SampleRate
-		track.Audio.Channels = format.Channels
-		track.Audio.BitDepth = format.BitsPerSample
-		if track.Codec == CodecPCMU || track.Codec == CodecPCMA {
-			if err := validateG711MSACMWaveFormat(format, track.Codec); err != nil {
-				return Track{}, err
-			}
-		}
-	}
-	if track.Codec == CodecOpus && len(track.CodecPrivate) != 0 {
-		head, err := parseOpusHead(track.CodecPrivate)
-		if err != nil {
-			return Track{}, err
-		}
-		track.Audio.Channels = head.Channels
-		if track.CodecDelayNS == 0 {
-			track.CodecDelayNS = opusCodecDelayNS(head.PreSkip)
-		}
-		if track.SeekPreRollNS == 0 {
-			track.SeekPreRollNS = opusDefaultSeekPreRollNS
-		}
-	}
-	if track.Codec == CodecVorbis {
-		private, err := parseVorbisCodecPrivate(track.CodecPrivate)
-		if err != nil {
-			return Track{}, err
-		}
-		track.Audio.Channels = private.Channels
-		track.Audio.SampleRate = private.SampleRate
-	}
-	if track.Codec == CodecFLAC {
-		private, err := parseFLACCodecPrivate(track.CodecPrivate)
-		if err != nil {
-			return Track{}, err
-		}
-		track.Audio.Channels = private.Channels
-		track.Audio.SampleRate = private.SampleRate
-		track.Audio.BitDepth = private.BitsPerSample
-	}
-	if track.Codec == CodecAAC {
-		private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
-		if err != nil {
-			return Track{}, err
-		}
-		track.Audio.Channels = private.Channels
-		track.Audio.SampleRate = private.SampleRate
-	}
-	if track.Codec == CodecAV1 && len(track.CodecPrivate) != 0 {
-		if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
-			return Track{}, err
-		}
-	}
-	if track.Codec == CodecH264 && len(track.CodecPrivate) != 0 {
-		if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
-			return Track{}, err
-		}
-	}
-	if track.Codec == CodecH265 && len(track.CodecPrivate) != 0 {
-		if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
-			return Track{}, err
-		}
+	if err := applyTrackCodecPrivate(codecID, &track); err != nil {
+		return Track{}, err
 	}
 	if err := validateTrackBlockAdditionMetadata(track); err != nil {
 		return Track{}, err
@@ -494,6 +346,81 @@ func (d *Demuxer) parseTrackEntry(parent io.Reader, header ebml.Header) (Track, 
 		return Track{}, ErrInvalidData
 	}
 	return track, nil
+}
+
+func applyTrackCodecPrivate(codecID string, track *Track) error {
+	track.Codec = codecFromMatroskaID(codecID, track.CodecPrivate)
+	if codecID == codecIDMS {
+		format, err := parseMSACMWaveFormat(track.CodecPrivate)
+		if err != nil {
+			return err
+		}
+		track.Codec = codecFromMSACMTag(format.FormatTag)
+		track.Audio.SampleRate = format.SampleRate
+		track.Audio.Channels = format.Channels
+		track.Audio.BitDepth = format.BitsPerSample
+		if track.Codec == CodecPCMU || track.Codec == CodecPCMA {
+			return validateG711MSACMWaveFormat(format, track.Codec)
+		}
+		return nil
+	}
+	switch track.Codec {
+	case CodecOpus:
+		if len(track.CodecPrivate) != 0 {
+			head, err := parseOpusHead(track.CodecPrivate)
+			if err != nil {
+				return err
+			}
+			track.Audio.Channels = head.Channels
+			if track.CodecDelayNS == 0 {
+				track.CodecDelayNS = opusCodecDelayNS(head.PreSkip)
+			}
+			if track.SeekPreRollNS == 0 {
+				track.SeekPreRollNS = opusDefaultSeekPreRollNS
+			}
+		}
+	case CodecVorbis:
+		private, err := parseVorbisCodecPrivate(track.CodecPrivate)
+		if err != nil {
+			return err
+		}
+		track.Audio.Channels = private.Channels
+		track.Audio.SampleRate = private.SampleRate
+	case CodecFLAC:
+		private, err := parseFLACCodecPrivate(track.CodecPrivate)
+		if err != nil {
+			return err
+		}
+		track.Audio.Channels = private.Channels
+		track.Audio.SampleRate = private.SampleRate
+		track.Audio.BitDepth = private.BitsPerSample
+	case CodecAAC:
+		private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
+		if err != nil {
+			return err
+		}
+		track.Audio.Channels = private.Channels
+		track.Audio.SampleRate = private.SampleRate
+	case CodecAV1:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
+				return err
+			}
+		}
+	case CodecH264:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+				return err
+			}
+		}
+	case CodecH265:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (d *Demuxer) parseTrackTranslate(parent io.Reader, header ebml.Header) (TrackTranslate, error) {
@@ -910,223 +837,56 @@ func (d *Demuxer) parseVideo(parent io.Reader, header ebml.Header) (VideoConfig,
 		return VideoConfig{}, err
 	}
 	var video VideoConfig
-	flagInterlacedSeen := false
-	fieldOrderSeen := false
-	stereoModeSeen := false
-	alphaModeSeen := false
-	pixelWidthSeen := false
-	pixelHeightSeen := false
-	pixelCropBottomSeen := false
-	pixelCropTopSeen := false
-	pixelCropLeftSeen := false
-	pixelCropRightSeen := false
-	displayWidthSeen := false
-	displayHeightSeen := false
-	displayUnitSeen := false
-	aspectRatioTypeSeen := false
-	colourSeen := false
-	projectionSeen := false
+	var seen uint64
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoConfig{}, err
 		}
+		r := master.Reader()
+		sz := child.Size.Value
 		switch child.ID {
 		case idFlagInterlaced:
-			if err := markElementSeen(&flagInterlacedSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.FlagInterlaced, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.FlagInterlacedSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 0, &video.FlagInterlaced, &video.FlagInterlacedSet)
 		case idFieldOrder:
-			if err := markElementSeen(&fieldOrderSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.FieldOrder, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.FieldOrderSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 1, &video.FieldOrder, &video.FieldOrderSet)
 		case idStereoMode:
-			if err := markElementSeen(&stereoModeSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.StereoMode, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.StereoModeSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 2, &video.StereoMode, &video.StereoModeSet)
 		case idAlphaMode:
-			if err := markElementSeen(&alphaModeSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.AlphaMode, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.AlphaModeSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 3, &video.AlphaMode, &video.AlphaModeSet)
 		case idPixelWidth:
-			if err := markElementSeen(&pixelWidthSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.Width, err = nonZeroIntFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceNonZeroInt(r, sz, &seen, 4, &video.Width)
 		case idPixelHeight:
-			if err := markElementSeen(&pixelHeightSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.Height, err = nonZeroIntFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceNonZeroInt(r, sz, &seen, 5, &video.Height)
 		case idPixelCropBottom:
-			if err := markElementSeen(&pixelCropBottomSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.PixelCropBottom, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceIntFromUInt(r, sz, &seen, 6, &video.PixelCropBottom, nil)
 		case idPixelCropTop:
-			if err := markElementSeen(&pixelCropTopSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.PixelCropTop, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceIntFromUInt(r, sz, &seen, 7, &video.PixelCropTop, nil)
 		case idPixelCropLeft:
-			if err := markElementSeen(&pixelCropLeftSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.PixelCropLeft, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceIntFromUInt(r, sz, &seen, 8, &video.PixelCropLeft, nil)
 		case idPixelCropRight:
-			if err := markElementSeen(&pixelCropRightSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.PixelCropRight, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceIntFromUInt(r, sz, &seen, 9, &video.PixelCropRight, nil)
 		case idDisplayWidth:
-			if err := markElementSeen(&displayWidthSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.DisplayWidth, err = nonZeroIntFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceNonZeroInt(r, sz, &seen, 10, &video.DisplayWidth)
 		case idDisplayHeight:
-			if err := markElementSeen(&displayHeightSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.DisplayHeight, err = nonZeroIntFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceNonZeroInt(r, sz, &seen, 11, &video.DisplayHeight)
 		case idDisplayUnit:
-			if err := markElementSeen(&displayUnitSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.DisplayUnit, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
+			err = readOnceIntFromUInt(r, sz, &seen, 12, &video.DisplayUnit, nil)
 		case idAspectRatioType:
-			if err := markElementSeen(&aspectRatioTypeSeen); err != nil {
-				return VideoConfig{}, err
-			}
-			value, err := readUIntPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.AspectRatioType, err = intFromUint(value)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.AspectRatioTypeSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 13, &video.AspectRatioType, &video.AspectRatioTypeSet)
 		case idColour:
-			if err := markElementSeen(&colourSeen); err != nil {
-				return VideoConfig{}, err
+			if err = markSeenBit(&seen, 14); err == nil {
+				video.Colour, err = d.parseColour(r, child)
 			}
-			colour, err := d.parseColour(master.Reader(), child)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.Colour = colour
 		case idProjection:
-			if err := markElementSeen(&projectionSeen); err != nil {
-				return VideoConfig{}, err
+			if err = markSeenBit(&seen, 15); err == nil {
+				video.Projection, err = d.parseProjection(r, child)
 			}
-			projection, err := d.parseProjection(master.Reader(), child)
-			if err != nil {
-				return VideoConfig{}, err
-			}
-			video.Projection = projection
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
-				return VideoConfig{}, err
-			}
+			err = skipElement(r, child)
+		}
+		if err != nil {
+			return VideoConfig{}, err
 		}
 	}
 	if err := master.Validate(); err != nil {
@@ -1220,156 +980,50 @@ func (d *Demuxer) parseColour(parent io.Reader, header ebml.Header) (VideoColour
 		return VideoColourConfig{}, err
 	}
 	var colour VideoColourConfig
-	matrixSeen := false
-	bitsPerChannelSeen := false
-	chromaSubsamplingHorzSeen := false
-	chromaSubsamplingVertSeen := false
-	cbSubsamplingHorzSeen := false
-	cbSubsamplingVertSeen := false
-	chromaSitingHorzSeen := false
-	chromaSitingVertSeen := false
-	rangeSeen := false
-	transferSeen := false
-	primariesSeen := false
-	maxCLLSeen := false
-	maxFALLSeen := false
-	masteringSeen := false
+	var seen uint64
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoColourConfig{}, err
 		}
+		r := master.Reader()
+		sz := child.Size.Value
 		switch child.ID {
 		case idMatrixCoefficients:
-			if err := markElementSeen(&matrixSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MatrixCoefficients, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MatrixCoefficientsSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 0, &colour.MatrixCoefficients, &colour.MatrixCoefficientsSet)
 		case idBitsPerChannel:
-			if err := markElementSeen(&bitsPerChannelSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.BitsPerChannel, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.BitsPerChannelSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 1, &colour.BitsPerChannel, &colour.BitsPerChannelSet)
 		case idChromaSubsampleHorz:
-			if err := markElementSeen(&chromaSubsamplingHorzSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSubsamplingHorzSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 2, &colour.ChromaSubsamplingHorz, &colour.ChromaSubsamplingHorzSet)
 		case idChromaSubsampleVert:
-			if err := markElementSeen(&chromaSubsamplingVertSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSubsamplingVertSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 3, &colour.ChromaSubsamplingVert, &colour.ChromaSubsamplingVertSet)
 		case idCbSubsampleHorz:
-			if err := markElementSeen(&cbSubsamplingHorzSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.CbSubsamplingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.CbSubsamplingHorzSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 4, &colour.CbSubsamplingHorz, &colour.CbSubsamplingHorzSet)
 		case idCbSubsampleVert:
-			if err := markElementSeen(&cbSubsamplingVertSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.CbSubsamplingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.CbSubsamplingVertSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 5, &colour.CbSubsamplingVert, &colour.CbSubsamplingVertSet)
 		case idChromaSitingHorz:
-			if err := markElementSeen(&chromaSitingHorzSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSitingHorz, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSitingHorzSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 6, &colour.ChromaSitingHorz, &colour.ChromaSitingHorzSet)
 		case idChromaSitingVert:
-			if err := markElementSeen(&chromaSitingVertSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSitingVert, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.ChromaSitingVertSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 7, &colour.ChromaSitingVert, &colour.ChromaSitingVertSet)
 		case idColourRange:
-			if err := markElementSeen(&rangeSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.Range, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.RangeSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 8, &colour.Range, &colour.RangeSet)
 		case idTransferChar:
-			if err := markElementSeen(&transferSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.TransferCharacteristics, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.TransferCharacteristicsSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 9, &colour.TransferCharacteristics, &colour.TransferCharacteristicsSet)
 		case idPrimaries:
-			if err := markElementSeen(&primariesSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.Primaries, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.PrimariesSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 10, &colour.Primaries, &colour.PrimariesSet)
 		case idMaxCLL:
-			if err := markElementSeen(&maxCLLSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MaxCLL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MaxCLLSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 11, &colour.MaxCLL, &colour.MaxCLLSet)
 		case idMaxFALL:
-			if err := markElementSeen(&maxFALLSeen); err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MaxFALL, err = readIntPayloadFromUInt(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MaxFALLSet = true
+			err = readOnceIntFromUInt(r, sz, &seen, 12, &colour.MaxFALL, &colour.MaxFALLSet)
 		case idMasteringMetadata:
-			if err := markElementSeen(&masteringSeen); err != nil {
-				return VideoColourConfig{}, err
+			if err = markSeenBit(&seen, 13); err == nil {
+				colour.MasteringMetadata, err = d.parseMasteringMetadata(r, child)
 			}
-			metadata, err := d.parseMasteringMetadata(master.Reader(), child)
-			if err != nil {
-				return VideoColourConfig{}, err
-			}
-			colour.MasteringMetadata = metadata
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
-				return VideoColourConfig{}, err
-			}
+			err = skipElement(r, child)
+		}
+		if err != nil {
+			return VideoColourConfig{}, err
 		}
 	}
 	if err := master.Validate(); err != nil {
@@ -1387,116 +1041,40 @@ func (d *Demuxer) parseMasteringMetadata(parent io.Reader, header ebml.Header) (
 		return VideoMasteringMetadataConfig{}, err
 	}
 	var metadata VideoMasteringMetadataConfig
-	primaryRXSeen := false
-	primaryRYSeen := false
-	primaryGXSeen := false
-	primaryGYSeen := false
-	primaryBXSeen := false
-	primaryBYSeen := false
-	whitePointXSeen := false
-	whitePointYSeen := false
-	luminanceMaxSeen := false
-	luminanceMinSeen := false
+	var seen uint64
 	for !master.Done() {
 		child, err := master.ReadHeader()
 		if err != nil {
 			return VideoMasteringMetadataConfig{}, err
 		}
+		r := master.Reader()
+		sz := child.Size.Value
 		switch child.ID {
 		case idPrimaryRX:
-			if err := markElementSeen(&primaryRXSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryRChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryRChromaticityXSet = true
+			err = readOnceFloat(r, sz, &seen, 0, &metadata.PrimaryRChromaticityX, &metadata.PrimaryRChromaticityXSet, readChromaticityPayload)
 		case idPrimaryRY:
-			if err := markElementSeen(&primaryRYSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryRChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryRChromaticityYSet = true
+			err = readOnceFloat(r, sz, &seen, 1, &metadata.PrimaryRChromaticityY, &metadata.PrimaryRChromaticityYSet, readChromaticityPayload)
 		case idPrimaryGX:
-			if err := markElementSeen(&primaryGXSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryGChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryGChromaticityXSet = true
+			err = readOnceFloat(r, sz, &seen, 2, &metadata.PrimaryGChromaticityX, &metadata.PrimaryGChromaticityXSet, readChromaticityPayload)
 		case idPrimaryGY:
-			if err := markElementSeen(&primaryGYSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryGChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryGChromaticityYSet = true
+			err = readOnceFloat(r, sz, &seen, 3, &metadata.PrimaryGChromaticityY, &metadata.PrimaryGChromaticityYSet, readChromaticityPayload)
 		case idPrimaryBX:
-			if err := markElementSeen(&primaryBXSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryBChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryBChromaticityXSet = true
+			err = readOnceFloat(r, sz, &seen, 4, &metadata.PrimaryBChromaticityX, &metadata.PrimaryBChromaticityXSet, readChromaticityPayload)
 		case idPrimaryBY:
-			if err := markElementSeen(&primaryBYSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryBChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.PrimaryBChromaticityYSet = true
+			err = readOnceFloat(r, sz, &seen, 5, &metadata.PrimaryBChromaticityY, &metadata.PrimaryBChromaticityYSet, readChromaticityPayload)
 		case idWhitePointX:
-			if err := markElementSeen(&whitePointXSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.WhitePointChromaticityX, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.WhitePointChromaticityXSet = true
+			err = readOnceFloat(r, sz, &seen, 6, &metadata.WhitePointChromaticityX, &metadata.WhitePointChromaticityXSet, readChromaticityPayload)
 		case idWhitePointY:
-			if err := markElementSeen(&whitePointYSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.WhitePointChromaticityY, err = readChromaticityPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.WhitePointChromaticityYSet = true
+			err = readOnceFloat(r, sz, &seen, 7, &metadata.WhitePointChromaticityY, &metadata.WhitePointChromaticityYSet, readChromaticityPayload)
 		case idLuminanceMax:
-			if err := markElementSeen(&luminanceMaxSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.LuminanceMax, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.LuminanceMaxSet = true
+			err = readOnceFloat(r, sz, &seen, 8, &metadata.LuminanceMax, &metadata.LuminanceMaxSet, readNonNegativeFloatPayload)
 		case idLuminanceMin:
-			if err := markElementSeen(&luminanceMinSeen); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.LuminanceMin, err = readNonNegativeFloatPayload(master.Reader(), child.Size.Value)
-			if err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
-			metadata.LuminanceMinSet = true
+			err = readOnceFloat(r, sz, &seen, 9, &metadata.LuminanceMin, &metadata.LuminanceMinSet, readNonNegativeFloatPayload)
 		default:
-			if err := skipElement(master.Reader(), child); err != nil {
-				return VideoMasteringMetadataConfig{}, err
-			}
+			err = skipElement(r, child)
+		}
+		if err != nil {
+			return VideoMasteringMetadataConfig{}, err
 		}
 	}
 	if err := master.Validate(); err != nil {

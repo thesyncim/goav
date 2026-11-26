@@ -68,21 +68,26 @@ type Engine struct {
 	wake  chan struct{}
 	epoch uint64
 
-	// Audio renderer state.
-	chunks    []audioChunk
-	pos       float64
-	queued    time.Duration
-	lastPTS   time.Duration
-	audio     audioPhase
-	waitStart int64
-	segs      [segments]segment
-	segHead   int
-	segCount  int
-	audibleTo int64
+	// Audio renderer state (ring buffer over chunks + sample slice freelist).
+	chunks     []audioChunk
+	chunkHead  int
+	chunkCount int
+	samplePool [][]int16
+	pos        float64
+	queued     time.Duration
+	lastPTS    time.Duration
+	audio      audioPhase
+	waitStart  int64
+	segs       [segments]segment
+	segHead    int
+	segCount   int
+	audibleTo  int64
 
-	// Video queue: frames held by reference, PTS kept alongside.
-	video          []*av.Frame
-	vpts           []time.Duration
+	// Video queue: fixed ring buffer of frames held by reference, PTS alongside.
+	video          [videoHardCap]*av.Frame
+	vpts           [videoHardCap]time.Duration
+	videoHead      int
+	videoCount     int
 	firstVideoAt   time.Duration
 	firstVideoSet  bool
 	presentedFresh bool
@@ -285,7 +290,7 @@ func New(latency time.Duration, mono func() time.Duration) *Engine {
 	if latency <= 0 {
 		latency = DefaultLatency
 	}
-	e := &Engine{latency: latency, rate: 1, wake: make(chan struct{})}
+	e := &Engine{latency: latency, rate: 1}
 	e.clock = NewDeviceClock(OutputRate, e.playedFrames, mono)
 	return e
 }
@@ -317,10 +322,74 @@ func (e *Engine) playedFrames() int64 {
 	return max(played, 0)
 }
 
-// signalLocked wakes every producer waiting for queue space.
+// wakeChanLocked returns the current wake channel, allocating it lazily only
+// when a goroutine actually parks.
+func (e *Engine) wakeChanLocked() <-chan struct{} {
+	if e.wake == nil {
+		e.wake = make(chan struct{})
+	}
+	return e.wake
+}
+
+// signalLocked wakes every producer waiting for queue space. When nobody is
+// parked (the steady-state audio callback), this does zero allocations.
 func (e *Engine) signalLocked() {
-	close(e.wake)
-	e.wake = make(chan struct{})
+	if e.wake != nil {
+		close(e.wake)
+		e.wake = nil
+	}
+}
+
+const maxSamplePool = 16
+
+func (e *Engine) takeSamples(n int) []int16 {
+	e.mu.Lock()
+	for i := len(e.samplePool) - 1; i >= 0; i-- {
+		if cap(e.samplePool[i]) >= n {
+			buf := e.samplePool[i][:n]
+			last := len(e.samplePool) - 1
+			e.samplePool[i] = e.samplePool[last]
+			e.samplePool[last] = nil
+			e.samplePool = e.samplePool[:last]
+			e.mu.Unlock()
+			return buf
+		}
+	}
+	e.mu.Unlock()
+	return make([]int16, n)
+}
+
+func (e *Engine) putSamplesLocked(buf []int16) {
+	if cap(buf) == 0 || len(e.samplePool) >= maxSamplePool {
+		return
+	}
+	e.samplePool = append(e.samplePool, buf[:0])
+}
+
+func (e *Engine) chunkAtLocked(i int) *audioChunk {
+	return &e.chunks[(e.chunkHead+i)%len(e.chunks)]
+}
+
+func (e *Engine) pushChunkLocked(c audioChunk) {
+	if e.chunkCount == len(e.chunks) {
+		newCap := max(len(e.chunks)*2, 8)
+		grown := make([]audioChunk, newCap)
+		if e.chunkCount > 0 {
+			n := copy(grown, e.chunks[e.chunkHead:])
+			copy(grown[n:], e.chunks[:e.chunkHead])
+		}
+		e.chunks = grown
+		e.chunkHead = 0
+	}
+	e.chunks[(e.chunkHead+e.chunkCount)%len(e.chunks)] = c
+	e.chunkCount++
+}
+
+func (e *Engine) pushVideoLocked(f *av.Frame, pts time.Duration) {
+	idx := (e.videoHead + e.videoCount) % videoHardCap
+	e.video[idx] = f
+	e.vpts[idx] = pts
+	e.videoCount++
 }
 
 // Fill renders the next len(out)/BytesPerFrame device frames into out as
@@ -334,7 +403,7 @@ func (e *Engine) Fill(out []byte) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	start := e.written.Load()
-	if !e.paused && e.audio == audioPrerolling && len(e.chunks) > 0 {
+	if !e.paused && e.audio == audioPrerolling && e.chunkCount > 0 {
 		waited := framesToDuration(start-e.waitStart, OutputRate)
 		if e.queuedLocked() >= e.latency || e.phase != engineActive || waited >= 2*e.latency {
 			e.audio = audioPlaying
@@ -372,8 +441,8 @@ func (e *Engine) Fill(out []byte) int {
 // interpolation: varispeed, so the pitch follows the rate).
 func (e *Engine) renderLocked(out []byte, n int) int {
 	i := 0
-	for i < n && len(e.chunks) > 0 {
-		c := &e.chunks[0]
+	for i < n && e.chunkCount > 0 {
+		c := e.chunkAtLocked(0)
 		frames := c.frames()
 		idx := int(e.pos)
 		if idx >= frames {
@@ -385,15 +454,18 @@ func (e *Engine) renderLocked(out []byte, n int) int {
 		l1, r1 := l0, r0
 		if idx+1 < frames {
 			l1, r1 = c.samples[2*idx+2], c.samples[2*idx+3]
-		} else if len(e.chunks) > 1 && len(e.chunks[1].samples) >= 2 {
-			l1, r1 = e.chunks[1].samples[0], e.chunks[1].samples[1]
+		} else if e.chunkCount > 1 {
+			next := e.chunkAtLocked(1)
+			if len(next.samples) >= 2 {
+				l1, r1 = next.samples[0], next.samples[1]
+			}
 		}
 		binary.LittleEndian.PutUint16(out[i*BytesPerFrame:], uint16(lerp(l0, l1, frac)))
 		binary.LittleEndian.PutUint16(out[i*BytesPerFrame+2:], uint16(lerp(r0, r1, frac)))
 		e.pos += e.rate * float64(c.rate) / OutputRate
 		i++
 	}
-	for len(e.chunks) > 0 && int(e.pos) >= e.chunks[0].frames() {
+	for e.chunkCount > 0 && int(e.pos) >= e.chunkAtLocked(0).frames() {
 		e.popChunkLocked()
 	}
 	return i
@@ -404,14 +476,16 @@ func lerp(a, b int16, t float32) int16 {
 }
 
 func (e *Engine) popChunkLocked() {
-	c := e.chunks[0]
+	c := e.chunks[e.chunkHead]
 	e.pos -= float64(c.frames())
 	e.queued -= c.duration()
 	e.lastPTS = c.pts + c.duration()
-	e.chunks[0] = audioChunk{}
-	e.chunks = e.chunks[1:]
-	if len(e.chunks) == 0 {
-		e.chunks = nil
+	e.putSamplesLocked(c.samples)
+	e.chunks[e.chunkHead] = audioChunk{}
+	e.chunkHead = (e.chunkHead + 1) % len(e.chunks)
+	e.chunkCount--
+	if e.chunkCount == 0 {
+		e.chunkHead = 0
 		e.pos = 0
 		e.queued = 0
 	}
@@ -419,18 +493,18 @@ func (e *Engine) popChunkLocked() {
 
 // headPTSLocked is the media time of the next sample to render.
 func (e *Engine) headPTSLocked() time.Duration {
-	if len(e.chunks) == 0 {
+	if e.chunkCount == 0 {
 		return e.lastPTS
 	}
-	c := e.chunks[0]
+	c := e.chunkAtLocked(0)
 	return c.pts + time.Duration(e.pos/float64(c.rate)*float64(time.Second))
 }
 
 func (e *Engine) queuedLocked() time.Duration {
-	if len(e.chunks) == 0 {
+	if e.chunkCount == 0 {
 		return 0
 	}
-	return e.queued - time.Duration(e.pos/float64(e.chunks[0].rate)*float64(time.Second))
+	return e.queued - time.Duration(e.pos/float64(e.chunkAtLocked(0).rate)*float64(time.Second))
 }
 
 // recordLocked appends a device segment, extending the last one instead when
@@ -485,10 +559,10 @@ func (e *Engine) masterLocked(now time.Duration) (time.Duration, bool) {
 		e.position = pts
 		return pts, true
 	}
-	if e.ext.state == extClockUnset && len(e.vpts) > 0 && !e.sawAudio && now-e.firstVideoAt >= e.latency {
+	if e.ext.state == extClockUnset && e.videoCount > 0 && !e.sawAudio && now-e.firstVideoAt >= e.latency {
 		// Video only: start the external clock at the first frame once the
 		// latency has passed without any audio arriving.
-		e.ext.set(e.vpts[0], now, e.paused)
+		e.ext.set(e.vpts[e.videoHead], now, e.paused)
 	}
 	if e.ext.state == extClockUnset {
 		return 0, false
@@ -517,13 +591,18 @@ func Decide(pts []time.Duration, m, early time.Duration) (drop int, present bool
 func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.video) == 0 {
+	if e.videoCount == 0 {
 		return nil
 	}
 	m, ok := e.masterLocked(now)
 	drop, present := 0, false
 	if ok {
-		drop, present = Decide(e.vpts, m, earlyTolerance)
+		var ptsBuf [videoHardCap]time.Duration
+		n := copy(ptsBuf[:], e.vpts[e.videoHead:min(e.videoHead+e.videoCount, videoHardCap)])
+		if n < e.videoCount {
+			copy(ptsBuf[n:], e.vpts[:e.videoCount-n])
+		}
+		drop, present = Decide(ptsBuf[:e.videoCount], m, earlyTolerance)
 	}
 	for range drop {
 		e.popVideoLocked().Release()
@@ -532,8 +611,8 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 	// A seek while paused still shows the new position's first picture: a
 	// preview, which leaves the epoch unplayed.
 	preview := false
-	if !present && e.paused && !e.presentedFresh && len(e.video) > 0 {
-		present, m, ok, preview = true, e.vpts[0], true, true
+	if !present && e.paused && !e.presentedFresh && e.videoCount > 0 {
+		present, m, ok, preview = true, e.vpts[e.videoHead], true, true
 	}
 	if !present {
 		if drop > 0 {
@@ -541,7 +620,7 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 		}
 		return nil
 	}
-	pts := e.vpts[0]
+	pts := e.vpts[e.videoHead]
 	f := e.popVideoLocked()
 	e.presented++
 	e.presentedFresh = true
@@ -562,12 +641,12 @@ func abs(d time.Duration) time.Duration {
 }
 
 func (e *Engine) popVideoLocked() *av.Frame {
-	f := e.video[0]
-	e.video[0] = nil
-	e.video = e.video[1:]
-	e.vpts = e.vpts[1:]
-	if len(e.video) == 0 {
-		e.video, e.vpts = e.video[:0:0], e.vpts[:0:0]
+	f := e.video[e.videoHead]
+	e.video[e.videoHead] = nil
+	e.videoHead = (e.videoHead + 1) % videoHardCap
+	e.videoCount--
+	if e.videoCount == 0 {
+		e.videoHead = 0
 	}
 	return f
 }
@@ -575,7 +654,7 @@ func (e *Engine) popVideoLocked() *av.Frame {
 // PushAudio queues an audio frame, converted to stereo s16 at its own rate,
 // blocking while the queue holds more than latency+readAhead of media.
 func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
-	chunk, err := audioChunkOf(f)
+	chunk, err := e.audioChunkOf(f)
 	if err != nil || len(chunk.samples) == 0 {
 		return err
 	}
@@ -586,6 +665,7 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 		now := e.clock.Now()
 		e.mu.Lock()
 		if e.phase == engineClosed || e.epoch != epoch || e.seek.stale(kindAudio, chunk.pts, now, e.paused) {
+			e.putSamplesLocked(chunk.samples)
 			e.mu.Unlock()
 			return nil
 		}
@@ -594,17 +674,20 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 			if e.audio == audioEmpty {
 				e.audio, e.waitStart = audioPrerolling, e.written.Load()
 			}
-			e.chunks = append(e.chunks, chunk)
+			e.pushChunkLocked(chunk)
 			e.newest[kindAudio], e.have[kindAudio] = max(e.newest[kindAudio], chunk.pts), true
 			e.queued += chunk.duration()
 			e.mu.Unlock()
 			return nil
 		}
-		wake := e.wake
+		wake := e.wakeChanLocked()
 		e.mu.Unlock()
 		select {
 		case <-wake:
 		case <-ctx.Done():
+			e.mu.Lock()
+			e.putSamplesLocked(chunk.samples)
+			e.mu.Unlock()
 			return ctx.Err()
 		}
 	}
@@ -646,27 +729,22 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 		ahead := time.Duration(0)
 		if m, ok := e.masterLocked(now); ok {
 			ahead = pts - m
-		} else if len(e.vpts) > 0 {
-			ahead = pts - e.vpts[0]
+		} else if e.videoCount > 0 {
+			ahead = pts - e.vpts[e.videoHead]
 		}
 		audioNeedsData := e.sawAudio && e.phase == engineActive && e.queuedLocked() < e.latency
-		if len(e.video) < videoHardCap && (ahead < e.latency+readAhead || audioNeedsData) {
-			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
+		if audioNeedsData || (e.videoCount < videoHardCap && ahead < e.latency+readAhead) {
+			if e.videoCount >= videoHardCap {
+				e.popVideoLocked().Release()
+				e.dropped++
+			}
+			e.pushVideoLocked(ref, pts)
 			e.queuedPictureLocked()
 			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
 			e.mu.Unlock()
 			return nil
 		}
-		if audioNeedsData {
-			e.popVideoLocked().Release()
-			e.dropped++
-			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
-			e.queuedPictureLocked()
-			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
-			e.mu.Unlock()
-			return nil
-		}
-		wake := e.wake
+		wake := e.wakeChanLocked()
 		e.mu.Unlock()
 		select {
 		case <-wake:
@@ -764,14 +842,16 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 		e.mu.Lock()
 		ready := e.pictured
 		closed := e.phase == engineClosed
-		wake := e.wake
-		e.mu.Unlock()
 		if ready {
+			e.mu.Unlock()
 			return true
 		}
 		if closed {
+			e.mu.Unlock()
 			return false
 		}
+		wake := e.wakeChanLocked()
+		e.mu.Unlock()
 		select {
 		case <-wake:
 		case <-ctx.Done():
@@ -790,11 +870,17 @@ func (e *Engine) flushLocked() {
 	}
 	e.newest, e.have = [kinds]time.Duration{}, [kinds]bool{}
 	e.epoch++
-	for _, f := range e.video {
-		f.Release()
+	for e.videoCount > 0 {
+		e.popVideoLocked().Release()
 	}
-	e.video, e.vpts = nil, nil
-	e.chunks, e.pos, e.queued = nil, 0, 0
+	for e.chunkCount > 0 {
+		c := e.chunks[e.chunkHead]
+		e.putSamplesLocked(c.samples)
+		e.chunks[e.chunkHead] = audioChunk{}
+		e.chunkHead = (e.chunkHead + 1) % len(e.chunks)
+		e.chunkCount--
+	}
+	e.chunkHead, e.pos, e.queued = 0, 0, 0
 	e.audio = audioEmpty
 	e.ext.reset()
 	e.firstVideoSet, e.presentedFresh = false, false
@@ -849,7 +935,7 @@ func (e *Engine) End() {
 func (e *Engine) Drained() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.phase != engineActive && len(e.chunks) == 0 && len(e.video) == 0 && e.playedFrames() >= e.audibleTo
+	return e.phase != engineActive && e.chunkCount == 0 && e.videoCount == 0 && e.playedFrames() >= e.audibleTo
 }
 
 // Close releases queued frames and unblocks producers for good.
@@ -881,7 +967,7 @@ func (e *Engine) Stats() Stats {
 // audioChunkOf converts an interleaved s16 or f32 frame of any channel count
 // to stereo s16 (mono is duplicated; beyond two channels the front pair is
 // kept).
-func audioChunkOf(f *av.Frame) (audioChunk, error) {
+func (e *Engine) audioChunkOf(f *av.Frame) (audioChunk, error) {
 	a := f.Audio
 	if a == nil || a.Channels <= 0 || a.SampleRate <= 0 {
 		return audioChunk{}, fmt.Errorf("player: audio frame without a valid audio header")
@@ -909,7 +995,10 @@ func audioChunkOf(f *av.Frame) (audioChunk, error) {
 	if a.Samples > 0 {
 		frames = min(frames, a.Samples)
 	}
-	out := make([]int16, 2*frames)
+	if frames == 0 {
+		return audioChunk{pts: pts, rate: a.SampleRate}, nil
+	}
+	out := e.takeSamples(2 * frames)
 	sample := func(i int) int16 {
 		if width == 2 {
 			return int16(binary.LittleEndian.Uint16(data[2*i:]))

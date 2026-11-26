@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,10 +53,6 @@ type timelineEpoch struct {
 
 var _ av.Clock = (*timeline)(nil)
 
-// monotonicClockType identifies av.MonotonicClock instances (the type is
-// unexported), read once per timeline at construction.
-var monotonicClockType = reflect.TypeOf(av.MonotonicClock())
-
 // newTimeline anchors a timeline at zero on the inner clock's current reading,
 // running at 1x. A nil inner clock falls back to av.MonotonicClock, matching
 // the pacing default.
@@ -65,7 +60,7 @@ func newTimeline(inner av.Clock) *timeline {
 	if inner == nil {
 		inner = av.MonotonicClock()
 	}
-	t := &timeline{inner: inner, monotonic: reflect.TypeOf(inner) == monotonicClockType}
+	t := &timeline{inner: inner, monotonic: av.IsMonotonicClock(inner)}
 	t.epoch.Store(&timelineEpoch{wallAnchor: inner.Now(), rate: 1})
 	change := make(chan struct{})
 	t.change.Store(&change)

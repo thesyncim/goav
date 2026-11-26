@@ -174,10 +174,7 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 
 	rtpPayload, err := d.state.packetizeLowOverhead(pkt.Payload.Bytes, sync)
 	if err != nil {
-		if dropping {
-			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-		}
-		return mapGoav1Error(err)
+		return d.decodeFailure(out, dropping, err)
 	}
 	if len(rtpPayload) == 0 {
 		return nil
@@ -185,10 +182,7 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 
 	if d.state.dec == nil {
 		if err := d.state.ensureDecoder([][]byte{rtpPayload}); err != nil {
-			if dropping {
-				return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-			}
-			return mapGoav1Error(err)
+			return d.decodeFailure(out, dropping, err)
 		}
 	}
 
@@ -200,13 +194,17 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 		}
 	}
 	if err != nil {
-		if dropping {
-			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-		}
-		return mapGoav1Error(err)
+		return d.decodeFailure(out, dropping, err)
 	}
 	d.lifecycle = goav1DecoderDecoding
 	return d.appendDecodedFrames(pkt, frames, out)
+}
+
+func (d *Decoder) decodeFailure(out *codec.DecodeResult, dropping bool, err error) error {
+	if dropping {
+		return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+	}
+	return mapGoav1Error(err)
 }
 
 func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out *codec.DecodeResult) error {
@@ -242,10 +240,7 @@ func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out 
 	dropping := d.lifecycle == goav1DecoderDropping
 	hdr, _, err := backend.ParseRTPAggregationHeader(pkt.Payload.Bytes)
 	if err != nil {
-		if dropping {
-			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-		}
-		return mapGoav1Error(err)
+		return d.decodeFailure(out, dropping, err)
 	}
 	sync := pkt.Keyframe || hdr.StartsNewCodedVideoSequence
 	if dropping && !sync {
@@ -256,68 +251,7 @@ func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out 
 	}
 
 	if d.state.dec == nil {
-		if afterLoss {
-			d.state.resetInitFragments()
-		}
-		if !d.state.appendInitFragment(pkt.Payload.Bytes) {
-			d.lifecycle = goav1DecoderDropping
-			if dropping {
-				return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-			}
-			return codec.ErrUnsupportedFormat
-		}
-		if hdr.ContinuesNext {
-			if sync {
-				d.lifecycle = goav1DecoderAwaitingSeqHeader
-			}
-			return nil
-		}
-		if err := d.state.ensureDecoder(d.state.initPayloads); err != nil {
-			if strings.Contains(err.Error(), "did not identify a bind event") {
-				if sync {
-					d.lifecycle = goav1DecoderAwaitingSeqHeader
-				}
-				return nil
-			}
-			d.state.resetInitFragments()
-			if dropping {
-				return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-			}
-			return mapGoav1Error(err)
-		}
-		var lastFrames []*backend.Frame
-		for i, frag := range d.state.initPayloads {
-			var frames []*backend.Frame
-			if i == 0 && afterLoss {
-				frames, err = d.state.dec.DecodeRTPPayloadAfterLoss(frag)
-			} else {
-				frames, err = d.state.dec.DecodeRTPPayload(frag)
-			}
-			if err != nil {
-				d.state.resetInitFragments()
-				if dropping {
-					return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-				}
-				return mapGoav1Error(err)
-			}
-			if len(frames) > 0 {
-				lastFrames = frames
-			}
-		}
-		if len(lastFrames) == 0 {
-			// Sequence/frame headers arrived without a completing tile group yet;
-			// keep accumulating initPayloads so the decoder arena is sized with
-			// at least one completed frame output slot.
-			d.state.dec.Close()
-			d.state.dec = nil
-			if sync {
-				d.lifecycle = goav1DecoderAwaitingSeqHeader
-			}
-			return nil
-		}
-		d.state.resetInitFragments()
-		d.lifecycle = goav1DecoderDecoding
-		return d.appendDecodedFrames(pkt, lastFrames, out)
+		return d.initDecoderFromRTP(pkt, hdr, afterLoss, sync, dropping, out)
 	}
 
 	var frames []*backend.Frame
@@ -332,13 +266,80 @@ func (d *Decoder) DecodeRTPPayloadInto(ctx context.Context, pkt *av.Packet, out 
 		}
 	}
 	if err != nil {
-		if dropping {
-			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
-		}
-		return mapGoav1Error(err)
+		return d.decodeFailure(out, dropping, err)
 	}
 	d.lifecycle = goav1DecoderDecoding
 	return d.appendDecodedFrames(pkt, frames, out)
+}
+
+// initDecoderFromRTP accumulates initial RTP fragments until a sequence header
+// and completing tile group allow creating and priming the underlying decoder.
+// Kept out-of-line so the steady-state DecodeRTPPayloadInto path stays compact.
+func (d *Decoder) initDecoderFromRTP(
+	pkt *av.Packet,
+	hdr backend.RTPAggregationHeader,
+	afterLoss, sync, dropping bool,
+	out *codec.DecodeResult,
+) error {
+	if afterLoss {
+		d.state.resetInitFragments()
+	}
+	if !d.state.appendInitFragment(pkt.Payload.Bytes) {
+		d.lifecycle = goav1DecoderDropping
+		if dropping {
+			return d.appendKeyframeRequest(out, "av1 waiting for keyframe")
+		}
+		return codec.ErrUnsupportedFormat
+	}
+	if hdr.ContinuesNext {
+		if sync {
+			d.lifecycle = goav1DecoderAwaitingSeqHeader
+		}
+		return nil
+	}
+	if err := d.state.ensureDecoder(d.state.initPayloads); err != nil {
+		if strings.Contains(err.Error(), "did not identify a bind event") {
+			if sync {
+				d.lifecycle = goav1DecoderAwaitingSeqHeader
+			}
+			return nil
+		}
+		d.state.resetInitFragments()
+		return d.decodeFailure(out, dropping, err)
+	}
+	var lastFrames []*backend.Frame
+	for i, frag := range d.state.initPayloads {
+		var (
+			frames []*backend.Frame
+			err    error
+		)
+		if i == 0 && afterLoss {
+			frames, err = d.state.dec.DecodeRTPPayloadAfterLoss(frag)
+		} else {
+			frames, err = d.state.dec.DecodeRTPPayload(frag)
+		}
+		if err != nil {
+			d.state.resetInitFragments()
+			return d.decodeFailure(out, dropping, err)
+		}
+		if len(frames) > 0 {
+			lastFrames = frames
+		}
+	}
+	if len(lastFrames) == 0 {
+		// Sequence/frame headers arrived without a completing tile group yet;
+		// keep accumulating initPayloads so the decoder arena is sized with
+		// at least one completed frame output slot.
+		d.state.dec.Close()
+		d.state.dec = nil
+		if sync {
+			d.lifecycle = goav1DecoderAwaitingSeqHeader
+		}
+		return nil
+	}
+	d.state.resetInitFragments()
+	d.lifecycle = goav1DecoderDecoding
+	return d.appendDecodedFrames(pkt, lastFrames, out)
 }
 
 func (d *Decoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error {

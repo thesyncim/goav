@@ -43,3 +43,21 @@ func FuzzDemuxerMalformedInputs(f *testing.F) {
 		}
 	})
 }
+
+func FuzzDemuxer(f *testing.F) {
+	f.Add(makeMatroskaData(&testing.T{}, 1))
+	f.Add([]byte{0x1a, 0x45, 0xdf, 0xa3, 0x80})
+	f.Fuzz(func(t *testing.T, data []byte) {
+		demuxer, err := NewDemuxer(bytes.NewReader(data), DemuxerOptions{MaxElementSize: 1 << 20})
+		if err != nil {
+			return
+		}
+		packet := Packet{Data: make([]byte, 0, 64)}
+		for range 16 {
+			err := demuxer.ReadPacket(&packet)
+			if err != nil {
+				return
+			}
+		}
+	})
+}

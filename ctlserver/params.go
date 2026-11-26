@@ -3,10 +3,8 @@ package ctlserver
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -160,43 +158,7 @@ func setParam(dst reflect.Value, f paramField, raw json.RawMessage) *Error {
 	bad := func(want string) *Error {
 		return invalidParams(fmt.Sprintf("param %q: %q is not %s", f.Name, text, want))
 	}
-	switch {
-	case f.typ == durationType:
-		d, err := time.ParseDuration(text)
-		if err != nil {
-			return bad("a duration like 2s or 20ms")
-		}
-		dst.SetInt(int64(d))
-		return nil
-	}
-	switch f.typ.Kind() {
-	case reflect.String:
-		dst.SetString(text)
-	case reflect.Bool:
-		b, ok := spelling.Bool(text)
-		if !ok {
-			return bad("true or false")
-		}
-		dst.SetBool(b)
-	case reflect.Int, reflect.Int64:
-		n, ok := spelling.Quantity(text)
-		if !ok {
-			return bad("a whole number (k and M multiply by 1000)")
-		}
-		dst.SetInt(int64(n))
-	case reflect.Uint32:
-		n, ok := spelling.Quantity(text)
-		if !ok || n < 0 || n > math.MaxUint32 {
-			return bad("a non-negative whole number")
-		}
-		dst.SetUint(uint64(n))
-	case reflect.Float64:
-		n, err := strconv.ParseFloat(text, 64)
-		if err != nil {
-			return bad("a number")
-		}
-		dst.SetFloat(n)
-	case reflect.Slice:
+	if f.typ.Kind() == reflect.Slice {
 		var parts []string
 		for _, p := range strings.Split(text, ",") {
 			if p = strings.TrimSpace(p); p != "" {
@@ -204,6 +166,12 @@ func setParam(dst reflect.Value, f paramField, raw json.RawMessage) *Error {
 			}
 		}
 		dst.Set(reflect.ValueOf(parts))
+		return nil
+	}
+	if want, ok := spelling.SetScalar(dst, text); !ok {
+		if want != "" {
+			return bad(want)
+		}
 	}
 	return nil
 }

@@ -254,36 +254,7 @@ func (o *timeOrder) pass(self int) bool {
 		o.settle()
 	}
 	for {
-		next := -1
-		for i := range o.turns {
-			if o.turns[i].state.Load() == timeTurnUnstarted {
-				next = i
-				break
-			}
-		}
-		if next < 0 {
-			held := -1
-			var earliest, heldAt int64
-			for i := range o.turns {
-				turn := &o.turns[i]
-				if turn.state.Load() != timeTurnWaiting {
-					continue
-				}
-				at := turn.at.Load()
-				if turn.heldBack() {
-					if held < 0 || at < heldAt {
-						held, heldAt = i, at
-					}
-					continue
-				}
-				if next < 0 || at < earliest {
-					next, earliest = i, at
-				}
-			}
-			if next < 0 {
-				next = held
-			}
-		}
+		next := o.selectNext()
 		if next < 0 {
 			return false
 		}
@@ -299,6 +270,36 @@ func (o *timeOrder) pass(self int) bool {
 		turn.grant <- struct{}{}
 		return false
 	}
+}
+
+func (o *timeOrder) selectNext() int {
+	for i := range o.turns {
+		if o.turns[i].state.Load() == timeTurnUnstarted {
+			return i
+		}
+	}
+	next, held := -1, -1
+	var earliest, heldAt int64
+	for i := range o.turns {
+		turn := &o.turns[i]
+		if turn.state.Load() != timeTurnWaiting {
+			continue
+		}
+		at := turn.at.Load()
+		if turn.heldBack() {
+			if held < 0 || at < heldAt {
+				held, heldAt = i, at
+			}
+			continue
+		}
+		if next < 0 || at < earliest {
+			next, earliest = i, at
+		}
+	}
+	if next >= 0 {
+		return next
+	}
+	return held
 }
 
 // enter parks source i until its first turn.

@@ -113,35 +113,12 @@ func (g *recipeGraph) isolationPlans(result compile.Result) ([]isolationPlan, er
 		if out.failure != IsolateBranch {
 			continue
 		}
-		selected := map[int]bool{}
-		for _, dest := range out.dests {
-			for j, sibling := range g.outputs {
-				if j != i && slices.Contains(sibling.dests, dest) {
-					return nil, unsafeIsolationError("isolated Outputs cannot share destinations", nil)
-				}
-			}
-			selected[g.node(dest).Output] = true
+		selected, err := g.selectExclusiveOutputSlots(i)
+		if err != nil {
+			return nil, err
 		}
-		terminals := map[pipeline.NodeRef]bool{}
 		p := isolationPlan{id: fmt.Sprintf("output-%d", i+1)}
-		for _, n := range result.Graph.Nodes {
-			switch n.Kind {
-			case compile.ComposeSink, compile.ComposeMux, compile.ComposeRemuxSink, compile.ComposeRemuxMux:
-				if n.Output >= len(result.OutputSlots) || !selected[result.OutputSlots[n.Output]] {
-					continue
-				}
-				terminals[pipeline.NodeRef(n.Name)] = true
-				for _, op := range result.Work.Operations {
-					if op.Node == pipeline.NodeRef(n.Name) {
-						p.destinations = append(p.destinations, op.Destinations...)
-						if p.name == "" {
-							p.name = op.Branch
-						}
-					}
-				}
-			}
-		}
-		var err error
+		terminals := collectIsolationTerminals(result, selected, &p)
 		p.nodes, err = exclusiveSuffix(result.Graph.Nodes, terminals)
 		if err != nil {
 			return nil, err
@@ -150,6 +127,46 @@ func (g *recipeGraph) isolationPlans(result compile.Result) ([]isolationPlan, er
 		plans = append(plans, p)
 	}
 	return plans, nil
+}
+
+func (g *recipeGraph) selectExclusiveOutputSlots(owner int) (map[int]bool, error) {
+	dests := g.outputs[owner].dests
+	selected := make(map[int]bool, len(dests))
+	for _, dest := range dests {
+		for j, sibling := range g.outputs {
+			if j != owner && slices.Contains(sibling.dests, dest) {
+				return nil, unsafeIsolationError("isolated Outputs cannot share destinations", nil)
+			}
+		}
+		selected[g.node(dest).Output] = true
+	}
+	return selected, nil
+}
+
+func collectIsolationTerminals(result compile.Result, selected map[int]bool, p *isolationPlan) map[pipeline.NodeRef]bool {
+	terminals := make(map[pipeline.NodeRef]bool)
+	for _, n := range result.Graph.Nodes {
+		switch n.Kind {
+		case compile.ComposeSink, compile.ComposeMux, compile.ComposeRemuxSink, compile.ComposeRemuxMux:
+		default:
+			continue
+		}
+		if n.Output >= len(result.OutputSlots) || !selected[result.OutputSlots[n.Output]] {
+			continue
+		}
+		ref := pipeline.NodeRef(n.Name)
+		terminals[ref] = true
+		for _, op := range result.Work.Operations {
+			if op.Node != ref {
+				continue
+			}
+			p.destinations = append(p.destinations, op.Destinations...)
+			if p.name == "" {
+				p.name = op.Branch
+			}
+		}
+	}
+	return terminals
 }
 
 func (t *task) installIsolation(plans []isolationPlan, txs []*destinationTransaction, work []compile.WorkDestination, attachment *runtimeAttachment) ([]*isolatedBranch, error) {

@@ -671,121 +671,12 @@ func validateTrack(track Track) error {
 	}
 	switch track.Type {
 	case TrackAudio:
-		if track.Audio.SampleRate < 0 || track.Audio.OutputSampleRate < 0 || track.Audio.Channels < 0 || track.Audio.BitDepth < 0 {
-			return ErrInvalidTrack
-		}
-		switch track.Codec {
-		case CodecOpus:
-			if len(track.CodecPrivate) == 0 && !canWriteDefaultOpusHead(track) {
-				return ErrInvalidTrack
-			}
-		case CodecVorbis:
-			if len(track.CodecPrivate) == 0 {
-				return ErrInvalidTrack
-			}
-			private, err := parseVorbisCodecPrivate(track.CodecPrivate)
-			if err != nil {
-				return ErrInvalidTrack
-			}
-			if track.Audio.SampleRate != 0 && track.Audio.SampleRate != private.SampleRate {
-				return ErrInvalidTrack
-			}
-			if track.Audio.Channels != 0 && track.Audio.Channels != private.Channels {
-				return ErrInvalidTrack
-			}
-		case CodecFLAC:
-			if len(track.CodecPrivate) == 0 {
-				return ErrInvalidTrack
-			}
-			private, err := parseFLACCodecPrivate(track.CodecPrivate)
-			if err != nil {
-				return ErrInvalidTrack
-			}
-			if track.Audio.SampleRate != 0 && track.Audio.SampleRate != private.SampleRate {
-				return ErrInvalidTrack
-			}
-			if track.Audio.Channels != 0 && track.Audio.Channels != private.Channels {
-				return ErrInvalidTrack
-			}
-			if track.Audio.BitDepth != 0 && track.Audio.BitDepth != private.BitsPerSample {
-				return ErrInvalidTrack
-			}
-		case CodecAAC:
-			if len(track.CodecPrivate) == 0 {
-				return ErrInvalidTrack
-			}
-			private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
-			if err != nil {
-				return ErrInvalidTrack
-			}
-			if track.Audio.SampleRate != 0 && track.Audio.SampleRate != private.SampleRate {
-				return ErrInvalidTrack
-			}
-			if track.Audio.Channels != 0 && track.Audio.Channels != private.Channels {
-				return ErrInvalidTrack
-			}
-		case CodecPCMU, CodecPCMA:
-			if len(track.CodecPrivate) != 0 {
-				format, err := parseMSACMWaveFormat(track.CodecPrivate)
-				if err != nil {
-					return ErrInvalidTrack
-				}
-				if err := validateG711MSACMWaveFormat(format, track.Codec); err != nil {
-					return ErrInvalidTrack
-				}
-				if track.Audio.SampleRate != 0 && track.Audio.SampleRate != format.SampleRate {
-					return ErrInvalidTrack
-				}
-				if track.Audio.Channels != 0 && track.Audio.Channels != format.Channels {
-					return ErrInvalidTrack
-				}
-				if track.Audio.BitDepth != 0 && track.Audio.BitDepth != format.BitsPerSample {
-					return ErrInvalidTrack
-				}
-			} else if !canWriteDefaultMSACMWaveFormat(track) {
-				return ErrInvalidTrack
-			}
-		default:
-			return ErrInvalidTrack
+		if err := validateAudioTrack(track); err != nil {
+			return err
 		}
 	case TrackVideo:
-		if track.Video.Width < 0 || track.Video.Height < 0 ||
-			track.Video.FlagInterlaced < 0 || track.Video.FieldOrder < 0 ||
-			track.Video.StereoMode < 0 || track.Video.AlphaMode < 0 ||
-			track.Video.PixelCropBottom < 0 || track.Video.PixelCropTop < 0 ||
-			track.Video.PixelCropLeft < 0 || track.Video.PixelCropRight < 0 ||
-			track.Video.DisplayWidth < 0 || track.Video.DisplayHeight < 0 ||
-			track.Video.DisplayUnit < 0 || track.Video.AspectRatioType < 0 {
-			return ErrInvalidTrack
-		}
-		if err := validateVideoColour(track.Video.Colour); err != nil {
+		if err := validateVideoTrack(track); err != nil {
 			return err
-		}
-		if err := validateVideoProjection(track.Video.Projection); err != nil {
-			return err
-		}
-		switch track.Codec {
-		case CodecAV1:
-			if len(track.CodecPrivate) != 0 {
-				if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
-					return ErrInvalidTrack
-				}
-			}
-		case CodecH264:
-			if len(track.CodecPrivate) != 0 {
-				if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
-					return ErrInvalidTrack
-				}
-			}
-		case CodecH265:
-			if len(track.CodecPrivate) != 0 {
-				if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
-					return ErrInvalidTrack
-				}
-			}
-		case CodecVP8, CodecVP9:
-		default:
-			return ErrInvalidTrack
 		}
 	case TrackSubtitle:
 		if track.Codec != CodecTextUTF8 || len(track.CodecPrivate) != 0 {
@@ -794,6 +685,119 @@ func validateTrack(track Track) error {
 	}
 	if (track.TimebaseNum == 0) != (track.TimebaseDen == 0) ||
 		track.TimebaseNum < 0 || track.TimebaseDen < 0 {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func checkAudioFormatMatch(audio AudioConfig, sampleRate, channels, bitDepth int) error {
+	if audio.SampleRate != 0 && sampleRate != 0 && audio.SampleRate != sampleRate {
+		return ErrInvalidTrack
+	}
+	if audio.Channels != 0 && channels != 0 && audio.Channels != channels {
+		return ErrInvalidTrack
+	}
+	if audio.BitDepth != 0 && bitDepth != 0 && audio.BitDepth != bitDepth {
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateAudioTrack(track Track) error {
+	if track.Audio.SampleRate < 0 || track.Audio.OutputSampleRate < 0 || track.Audio.Channels < 0 || track.Audio.BitDepth < 0 {
+		return ErrInvalidTrack
+	}
+	switch track.Codec {
+	case CodecOpus:
+		if len(track.CodecPrivate) == 0 && !canWriteDefaultOpusHead(track) {
+			return ErrInvalidTrack
+		}
+	case CodecVorbis:
+		if len(track.CodecPrivate) == 0 {
+			return ErrInvalidTrack
+		}
+		private, err := parseVorbisCodecPrivate(track.CodecPrivate)
+		if err != nil {
+			return ErrInvalidTrack
+		}
+		return checkAudioFormatMatch(track.Audio, private.SampleRate, private.Channels, 0)
+	case CodecFLAC:
+		if len(track.CodecPrivate) == 0 {
+			return ErrInvalidTrack
+		}
+		private, err := parseFLACCodecPrivate(track.CodecPrivate)
+		if err != nil {
+			return ErrInvalidTrack
+		}
+		return checkAudioFormatMatch(track.Audio, private.SampleRate, private.Channels, private.BitsPerSample)
+	case CodecAAC:
+		if len(track.CodecPrivate) == 0 {
+			return ErrInvalidTrack
+		}
+		private, err := parseAACAudioSpecificConfig(track.CodecPrivate)
+		if err != nil {
+			return ErrInvalidTrack
+		}
+		return checkAudioFormatMatch(track.Audio, private.SampleRate, private.Channels, 0)
+	case CodecPCMU, CodecPCMA:
+		if len(track.CodecPrivate) == 0 {
+			if !canWriteDefaultMSACMWaveFormat(track) {
+				return ErrInvalidTrack
+			}
+			return nil
+		}
+		format, err := parseMSACMWaveFormat(track.CodecPrivate)
+		if err != nil {
+			return ErrInvalidTrack
+		}
+		if err := validateG711MSACMWaveFormat(format, track.Codec); err != nil {
+			return ErrInvalidTrack
+		}
+		return checkAudioFormatMatch(track.Audio, format.SampleRate, format.Channels, format.BitsPerSample)
+	default:
+		return ErrInvalidTrack
+	}
+	return nil
+}
+
+func validateVideoTrack(track Track) error {
+	v := track.Video
+	if v.Width < 0 || v.Height < 0 ||
+		v.FlagInterlaced < 0 || v.FieldOrder < 0 ||
+		v.StereoMode < 0 || v.AlphaMode < 0 ||
+		v.PixelCropBottom < 0 || v.PixelCropTop < 0 ||
+		v.PixelCropLeft < 0 || v.PixelCropRight < 0 ||
+		v.DisplayWidth < 0 || v.DisplayHeight < 0 ||
+		v.DisplayUnit < 0 || v.AspectRatioType < 0 {
+		return ErrInvalidTrack
+	}
+	if err := validateVideoColour(v.Colour); err != nil {
+		return err
+	}
+	if err := validateVideoProjection(v.Projection); err != nil {
+		return err
+	}
+	switch track.Codec {
+	case CodecAV1:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseAV1CodecConfigurationRecord(track.CodecPrivate); err != nil {
+				return ErrInvalidTrack
+			}
+		}
+	case CodecH264:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseAVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+				return ErrInvalidTrack
+			}
+		}
+	case CodecH265:
+		if len(track.CodecPrivate) != 0 {
+			if _, err := parseHEVCDecoderConfigurationRecord(track.CodecPrivate); err != nil {
+				return ErrInvalidTrack
+			}
+		}
+	case CodecVP8, CodecVP9:
+	default:
 		return ErrInvalidTrack
 	}
 	return nil

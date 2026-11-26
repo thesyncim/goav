@@ -57,6 +57,7 @@ type Muxer struct {
 	encryptionPayload      bytes.Buffer
 	lacePayload            []byte
 	zlibWriter             *zlib.Writer
+	contentCiphers         []cachedContentCipher
 	contentEncryptionIV    [contentEncryptionIVSize]byte
 	contentEncryptionIVSet bool
 }

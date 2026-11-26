@@ -1,6 +1,7 @@
 package matroska
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"math"
@@ -85,6 +86,9 @@ type Demuxer struct {
 	uintScratch           [8]byte
 	contentBuffer         []byte
 	contentPartitions     []uint32
+	contentCiphers        []cachedContentCipher
+	zlibInput             bytes.Reader
+	zlibReader            io.ReadCloser
 	pendingHeader         ebml.Header
 	pendingHeaderSet      bool
 }
@@ -331,80 +335,65 @@ func (d *Demuxer) ReadPacket(dst *Packet) error {
 			if d.cluster == clusterUnknownSize && isUnknownClusterTerminator(header.ID) {
 				d.cluster = clusterNone
 				d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
-			} else if header.ID == idCluster {
-				if err := d.enterCluster(header); err != nil {
+			} else {
+				done, err := d.readClusterElement(header, dst)
+				if err != nil || done {
 					return err
 				}
 				continue
-			} else {
-				switch header.ID {
-				case idTimestamp:
-					value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
-					if err != nil {
-						return err
-					}
-					if value > uint64(math.MaxInt64) {
-						return ErrInvalidData
-					}
-					d.clusterTimecode = int64(value)
-				case idSimpleBlock:
-					return d.finishClusterPacket(d.readSimpleBlock(header, dst), dst)
-				case idBlockGroup:
-					return d.finishClusterPacket(d.readBlockGroup(header, dst), dst)
-				case idVoid, idCRC32:
-					if err := skipElement(d.reader, header); err != nil {
-						return err
-					}
-				default:
-					if err := d.readUnknownClusterElement(header); err != nil {
-						return err
-					}
-				}
-				continue
 			}
 		}
-		switch header.ID {
-		case idSeekHead:
-			if err := d.parseSegmentSeekHead(header); err != nil {
-				return err
-			}
-		case idInfo:
-			if err := d.parseSegmentInfo(header); err != nil {
-				return err
-			}
-		case idTracks:
-			if err := d.parseSegmentTracks(header); err != nil {
-				return err
-			}
-		case idAttachments:
-			if err := d.parseSegmentAttachments(header); err != nil {
-				return err
-			}
-		case idChapters:
-			if err := d.parseSegmentChapters(header); err != nil {
-				return err
-			}
-		case idTags:
-			if err := d.parseSegmentTags(header); err != nil {
-				return err
-			}
-		case idCues:
-			if err := d.parseSegmentCues(header); err != nil {
-				return err
-			}
-		case idCluster:
-			if err := d.enterCluster(header); err != nil {
-				return err
-			}
-		case idVoid, idCRC32:
-			if err := skipElement(d.reader, header); err != nil {
-				return err
-			}
-		default:
-			if err := skipElement(d.reader, header); err != nil {
-				return err
-			}
+		if err := d.readSegmentElement(header); err != nil {
+			return err
 		}
+	}
+}
+
+func (d *Demuxer) readClusterElement(header ebml.Header, dst *Packet) (bool, error) {
+	switch header.ID {
+	case idCluster:
+		return false, d.enterCluster(header)
+	case idTimestamp:
+		value, err := readUIntPayloadScratch(d.reader, header.Size.Value, &d.uintScratch)
+		if err != nil {
+			return false, err
+		}
+		if value > uint64(math.MaxInt64) {
+			return false, ErrInvalidData
+		}
+		d.clusterTimecode = int64(value)
+		return false, nil
+	case idSimpleBlock:
+		return true, d.finishClusterPacket(d.readSimpleBlock(header, dst), dst)
+	case idBlockGroup:
+		return true, d.finishClusterPacket(d.readBlockGroup(header, dst), dst)
+	case idVoid, idCRC32:
+		return false, skipElement(d.reader, header)
+	default:
+		return false, d.readUnknownClusterElement(header)
+	}
+}
+
+func (d *Demuxer) readSegmentElement(header ebml.Header) error {
+	switch header.ID {
+	case idSeekHead:
+		return d.parseSegmentSeekHead(header)
+	case idInfo:
+		return d.parseSegmentInfo(header)
+	case idTracks:
+		return d.parseSegmentTracks(header)
+	case idAttachments:
+		return d.parseSegmentAttachments(header)
+	case idChapters:
+		return d.parseSegmentChapters(header)
+	case idTags:
+		return d.parseSegmentTags(header)
+	case idCues:
+		return d.parseSegmentCues(header)
+	case idCluster:
+		return d.enterCluster(header)
+	default:
+		return skipElement(d.reader, header)
 	}
 }
 
@@ -509,11 +498,19 @@ func (d *Demuxer) hasTrackUID(uid uint64) bool {
 }
 
 func (d *Demuxer) track(id uint32) (Track, bool) {
-	index, ok := d.trackIndex(id)
+	t, ok := d.trackPtr(id)
 	if !ok {
 		return Track{}, false
 	}
-	return d.tracks[index], true
+	return *t, true
+}
+
+func (d *Demuxer) trackPtr(id uint32) (*Track, bool) {
+	index, ok := d.trackIndex(id)
+	if !ok {
+		return nil, false
+	}
+	return &d.tracks[index], true
 }
 
 func (d *Demuxer) trackIndex(id uint32) (int, bool) {

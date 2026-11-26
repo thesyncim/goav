@@ -310,6 +310,145 @@ func (p *attachPlan) nodeIndex(ref pipeline.NodeRef) (int, bool) {
 	return 0, false
 }
 
+type attachBranchChecker struct {
+	plan         *attachPlan
+	index        int
+	name         string
+	recipeStream recipeir.Stream
+	current      shape.Spec
+	live         av.Stream
+	realtime     bool
+	encoded      bool
+	copied       bool
+}
+
+func (c *attachBranchChecker) needsRuntime(work, fix string) error {
+	if c.plan.task.runtime != nil {
+		return nil
+	}
+	return runtimeBranchInvalidError("runtime branch "+work+" requires the bundled runtime", "build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching "+fix)
+}
+
+func (c *attachBranchChecker) checkDecode() error {
+	if err := c.needsRuntime("decoding", "decode branches"); err != nil {
+		return err
+	}
+	if c.current.Domain != shape.DomainPacket {
+		return runtimeBranchDecodeDomainError(c.name, c.current)
+	}
+	if c.live.Codec.ID == "" {
+		return runtimeBranchDecodeCodecMissingError(c.name, c.current)
+	}
+	planned := c.recipeStream
+	planned.Selector = compile.StreamSelectFromStream(c.live)
+	rt := c.plan.task.runtime
+	if _, err := rt.codecs.DecoderFactory(c.live.Codec.ID); err != nil {
+		return publicError(compile.RecipeDecodeAdapterError("attach runtime branch", planned, c.live.Codec.ID, rt.codecs, err))
+	}
+	if err := publicError(compile.ValidateDecodeAdapterDescriptors("attach runtime branch", planned, rt.codecs, compile.DecodeAdapterRequestFromStream(c.live, planned))); err != nil {
+		return err
+	}
+	c.current.Domain = shape.DomainFrame
+	return nil
+}
+
+func (c *attachBranchChecker) checkTransform(operation recipeir.Operation) error {
+	if compile.RecipeIRTransformEmpty(operation.Transform) {
+		return nil
+	}
+	if err := c.needsRuntime("transforms", "resize/resample branches"); err != nil {
+		return err
+	}
+	if c.current.Domain != shape.DomainFrame {
+		return runtimeBranchInvalidError(
+			"runtime branch transforms require a frame tap",
+			"attach transform branches from task.Tap(name) where name is declared after Decode, Resize, Resample, or a frame stage",
+		)
+	}
+	if err := validateTransformSpec("attach runtime branch", c.name, operation.Transform); err != nil {
+		return err
+	}
+	node, _ := c.plan.node(operation)
+	transform := c.plan.plan.Nodes[node].Transform
+	planned := c.recipeStream
+	planned.Selector.Type = compile.FirstNonEmptyMedia(c.live.Type, c.live.Codec.Type, planned.Selector.Type)
+	rt := c.plan.task.runtime
+	if _, err := rt.filters.Factory(transform.Factory); err != nil {
+		return publicError(compile.RecipeTransformAdapterError("attach runtime branch", planned, transform.Factory, err))
+	}
+	if desc, err := rt.filters.Descriptor(transform.Factory); err == nil {
+		if err := publicError(compile.ValidateRecipeIRTransformAdapterDescriptor("attach runtime branch", planned, operation.Transform, transform.Factory, desc)); err != nil {
+			return err
+		}
+	}
+	want, kind := av.MediaVideo, "resize"
+	if operation.Transform.Kind == recipeir.TransformResample {
+		want, kind = av.MediaAudio, "resample"
+	}
+	if c.live.Type != want && c.live.Codec.Type != want {
+		return runtimeBranchTransformMediaError(c.name, kind, want, runtimeBranchStreamMedia(c.live))
+	}
+	out, err := applyMediaTransformToStream(c.live, transform)
+	if err != nil {
+		return runtimeBranchTransformError(transform.Name, err)
+	}
+	c.live = out
+	c.current = mediaShapeFromRuntimeBranchStream(c.live, c.current)
+	return nil
+}
+
+func (c *attachBranchChecker) checkTap(operation recipeir.Operation) error {
+	if operation.Tap.Name == "" {
+		return nil
+	}
+	terminal := recipeIROperationTapIsTerminalPacket(operation)
+	if !terminal {
+		if err := validateTapDomain("attach runtime branch", c.name, compile.TapRef{Name: operation.Tap.Name, Domain: operation.Tap.Domain}, c.current.Domain); err != nil {
+			return err
+		}
+	}
+	if declared := c.plan.declared[operation.Tap.Name]; declared.node == operation.Node {
+		declared.shape, declared.stream, declared.ok = c.current, c.live, true
+		c.plan.declared[operation.Tap.Name] = declared
+	}
+	if terminal && !c.encoded && !c.copied {
+		// A packet tap after work the branch does not do names no point of it.
+		return nil
+	}
+	c.plan.taps = append(c.plan.taps, runtimeBranchTap(operation.Tap.Name, c.plan.plan.ParentRef(c.index, operation.Node), c.current, operation.Tap.After))
+	return nil
+}
+
+func (c *attachBranchChecker) checkEncode(operation recipeir.Operation) error {
+	if err := c.needsRuntime("encoding", "encode branches"); err != nil {
+		return err
+	}
+	if c.current.Domain != shape.DomainFrame {
+		return runtimeBranchEncodeDomainError(c.name, c.current)
+	}
+	if err := publicError(compile.ValidateRecipeEncode(operation.Encode, "attach runtime branch", c.name)); err != nil {
+		return err
+	}
+	planned := c.recipeStream
+	planned.Selector.Type = compile.FirstNonEmptyMedia(c.live.Type, c.live.Codec.Type, planned.Selector.Type)
+	rt := c.plan.task.runtime
+	if _, err := rt.codecs.EncoderFactory(operation.Encode.ID); err != nil {
+		return publicError(compile.RecipeEncodeAdapterCodecError("attach runtime branch", planned, operation.Encode.ID, rt.codecs, err))
+	}
+	node, _ := c.plan.node(operation)
+	_, out, err := prepareEncodeConfig(c.live, c.plan.plan.Nodes[node].Request, c.realtime)
+	if err != nil {
+		return err
+	}
+	if err := publicError(compile.ValidateEncodeAdapterDescriptors("attach runtime branch", planned, rt.codecs, compile.EncodeAdapterRequestFromPreparedStream(operation.Encode, out))); err != nil {
+		return err
+	}
+	c.live = out
+	c.current = streamPacketShapeFromRuntimeBranchStream(c.live, c.current)
+	c.encoded = true
+	return nil
+}
+
 // checkBranch checks one branch against its anchor's live shape — what only
 // the running task knows: the anchor's domain, codec, and media, and the
 // adapters its work needs there — and records the taps it declares.
@@ -320,8 +459,6 @@ func (p *attachPlan) checkBranch(index int) error {
 	name := branch.name
 	current, live := branch.anchor.shape, branch.anchor.stream
 	if branch.anchor.ref == "" {
-		// A tap an earlier branch declares: its shape is what that branch
-		// carries there.
 		declared := p.declared[branch.anchor.tap]
 		if !declared.ok {
 			return runtimeBranchTapMissingError(branch.anchor.tap, t.tapsLocked())
@@ -346,139 +483,45 @@ func (p *attachPlan) checkBranch(index int) error {
 	if err := validatePlayoutPolicyForRecipeIROperations("attach runtime branch", name, live, operations); err != nil {
 		return err
 	}
-	realtime := t.effectiveRealtime()
-	needsRuntime := func(work string, fix string) error {
-		if t.runtime != nil {
-			return nil
-		}
-		return runtimeBranchInvalidError("runtime branch "+work+" requires the bundled runtime", "build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching "+fix)
+	checker := attachBranchChecker{
+		plan:         p,
+		index:        index,
+		name:         name,
+		recipeStream: recipeStream,
+		current:      current,
+		live:         live,
+		realtime:     t.effectiveRealtime(),
 	}
-	encoded, copied := false, false
 	for i, operation := range operations {
+		var err error
 		switch operation.Kind {
 		case plan.OpDecode:
-			if err := needsRuntime("decoding", "decode branches"); err != nil {
-				return err
-			}
-			if current.Domain != shape.DomainPacket {
-				return runtimeBranchDecodeDomainError(name, current)
-			}
-			if live.Codec.ID == "" {
-				return runtimeBranchDecodeCodecMissingError(name, current)
-			}
-			planned := recipeStream
-			planned.Selector = compile.StreamSelectFromStream(live)
-			if _, err := t.runtime.codecs.DecoderFactory(live.Codec.ID); err != nil {
-				return publicError(compile.RecipeDecodeAdapterError("attach runtime branch", planned, live.Codec.ID, t.runtime.codecs, err))
-			}
-			if err := publicError(compile.ValidateDecodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, compile.DecodeAdapterRequestFromStream(live, planned))); err != nil {
-				return err
-			}
-			current.Domain = shape.DomainFrame
+			err = checker.checkDecode()
 		case plan.OpShape:
-			if compile.MediaShapeEmpty(operation.Shape) {
-				break
+			if !compile.MediaShapeEmpty(operation.Shape) {
+				if err = publicError(compile.ValidateShapeAnnotationDomain("attach runtime branch", name, i, checker.current, operation.Shape)); err == nil {
+					checker.current = shape.Merge(checker.current, operation.Shape)
+				}
 			}
-			if err := publicError(compile.ValidateShapeAnnotationDomain("attach runtime branch", name, i, current, operation.Shape)); err != nil {
-				return err
-			}
-			current = shape.Merge(current, operation.Shape)
 		case plan.OpTransform:
-			if compile.RecipeIRTransformEmpty(operation.Transform) {
-				break
-			}
-			if err := needsRuntime("transforms", "resize/resample branches"); err != nil {
-				return err
-			}
-			if current.Domain != shape.DomainFrame {
-				return runtimeBranchInvalidError(
-					"runtime branch transforms require a frame tap",
-					"attach transform branches from task.Tap(name) where name is declared after Decode, Resize, Resample, or a frame stage",
-				)
-			}
-			if err := validateTransformSpec("attach runtime branch", name, operation.Transform); err != nil {
-				return err
-			}
-			node, _ := p.node(operation)
-			transform := p.plan.Nodes[node].Transform
-			planned := recipeStream
-			planned.Selector.Type = compile.FirstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
-			if _, err := t.runtime.filters.Factory(transform.Factory); err != nil {
-				return publicError(compile.RecipeTransformAdapterError("attach runtime branch", planned, transform.Factory, err))
-			}
-			if desc, err := t.runtime.filters.Descriptor(transform.Factory); err == nil {
-				if err := publicError(compile.ValidateRecipeIRTransformAdapterDescriptor("attach runtime branch", planned, operation.Transform, transform.Factory, desc)); err != nil {
-					return err
-				}
-			}
-			want, kind := av.MediaVideo, "resize"
-			if operation.Transform.Kind == recipeir.TransformResample {
-				want, kind = av.MediaAudio, "resample"
-			}
-			if live.Type != want && live.Codec.Type != want {
-				return runtimeBranchTransformMediaError(name, kind, want, runtimeBranchStreamMedia(live))
-			}
-			out, err := applyMediaTransformToStream(live, transform)
-			if err != nil {
-				return runtimeBranchTransformError(transform.Name, err)
-			}
-			live = out
-			current = mediaShapeFromRuntimeBranchStream(live, current)
+			err = checker.checkTransform(operation)
 		case plan.OpTap:
-			if operation.Tap.Name == "" {
-				break
-			}
-			terminal := recipeIROperationTapIsTerminalPacket(operation)
-			if !terminal {
-				if err := validateTapDomain("attach runtime branch", name, compile.TapRef{Name: operation.Tap.Name, Domain: operation.Tap.Domain}, current.Domain); err != nil {
-					return err
-				}
-			}
-			if declared := p.declared[operation.Tap.Name]; declared.node == operation.Node {
-				declared.shape, declared.stream, declared.ok = current, live, true
-				p.declared[operation.Tap.Name] = declared
-			}
-			if terminal && !encoded && !copied {
-				// A packet tap after work the branch does not do names no
-				// point of it.
-				break
-			}
-			p.taps = append(p.taps, runtimeBranchTap(operation.Tap.Name, p.plan.ParentRef(index, operation.Node), current, operation.Tap.After))
+			err = checker.checkTap(operation)
 		case plan.OpEncode:
-			if err := needsRuntime("encoding", "encode branches"); err != nil {
-				return err
-			}
-			if current.Domain != shape.DomainFrame {
-				return runtimeBranchEncodeDomainError(name, current)
-			}
-			if err := publicError(compile.ValidateRecipeEncode(operation.Encode, "attach runtime branch", name)); err != nil {
-				return err
-			}
-			planned := recipeStream
-			planned.Selector.Type = compile.FirstNonEmptyMedia(live.Type, live.Codec.Type, planned.Selector.Type)
-			if _, err := t.runtime.codecs.EncoderFactory(operation.Encode.ID); err != nil {
-				return publicError(compile.RecipeEncodeAdapterCodecError("attach runtime branch", planned, operation.Encode.ID, t.runtime.codecs, err))
-			}
-			node, _ := p.node(operation)
-			_, out, err := prepareEncodeConfig(live, p.plan.Nodes[node].Request, realtime)
-			if err != nil {
-				return err
-			}
-			if err := publicError(compile.ValidateEncodeAdapterDescriptors("attach runtime branch", planned, t.runtime.codecs, compile.EncodeAdapterRequestFromPreparedStream(operation.Encode, out))); err != nil {
-				return err
-			}
-			live = out
-			current = streamPacketShapeFromRuntimeBranchStream(live, current)
-			encoded = true
+			err = checker.checkEncode(operation)
 		case plan.OpCopy:
-			if current.Domain != shape.DomainPacket {
-				return runtimeBranchCopyDomainError(name, current)
+			if checker.current.Domain != shape.DomainPacket {
+				err = runtimeBranchCopyDomainError(name, checker.current)
+			} else {
+				checker.copied = true
 			}
-			copied = true
+		}
+		if err != nil {
+			return err
 		}
 	}
 	if attachDestinationsHaveMux(branch.destinations) {
-		if !encoded && !copied {
+		if !checker.encoded && !checker.copied {
 			return runtimeBranchEncodeMissingError(name)
 		}
 		if t.runtime == nil {
@@ -487,11 +530,11 @@ func (p *attachPlan) checkBranch(index int) error {
 				"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching file or URI branches",
 			)
 		}
-		if live.Codec.ID == "" {
-			return runtimeBranchMuxCodecMissingError(name, current)
+		if checker.live.Codec.ID == "" {
+			return runtimeBranchMuxCodecMissingError(name, checker.current)
 		}
 	}
-	branch.stream = live
+	branch.stream = checker.live
 	if branch.anchor.ref != "" {
 		if _, ok := p.anchors[branch.anchor.ref]; !ok {
 			p.anchors[branch.anchor.ref] = streamOrAnchor(branch.anchor, name)

@@ -1,10 +1,11 @@
 package format
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"maps"
-	"sort"
+	"slices"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -24,25 +25,66 @@ var (
 	ErrResultFull = errors.New("format: result capacity full")
 )
 
+type factoryStore[F any] struct {
+	factories   map[av.FormatID]F
+	descriptors map[av.FormatID]Descriptor
+}
+
+func newFactoryStore[F any]() factoryStore[F] {
+	return factoryStore[F]{
+		factories:   make(map[av.FormatID]F),
+		descriptors: make(map[av.FormatID]Descriptor),
+	}
+}
+
+func (s *factoryStore[F]) register(desc Descriptor, factory F) {
+	if desc.Format != "" {
+		s.factories[desc.Format] = factory
+		s.descriptors[desc.Format] = cloneDescriptor(desc)
+	}
+}
+
+func (s *factoryStore[F]) factory(format av.FormatID) (F, error) {
+	factory, ok := s.factories[format]
+	if !ok {
+		var zero F
+		return zero, ErrNotFound
+	}
+	return factory, nil
+}
+
+func (s *factoryStore[F]) descriptor(format av.FormatID) (Descriptor, error) {
+	desc, ok := s.descriptors[format]
+	if !ok {
+		return Descriptor{}, ErrNotFound
+	}
+	return cloneDescriptor(desc), nil
+}
+
+func (s *factoryStore[F]) allDescriptors() []Descriptor {
+	out := make([]Descriptor, 0, len(s.descriptors))
+	for _, desc := range s.descriptors {
+		out = append(out, cloneDescriptor(desc))
+	}
+	slices.SortFunc(out, func(a, b Descriptor) int { return cmp.Compare(a.Format, b.Format) })
+	return out
+}
+
 // SimpleRegistry is the per-runtime format registry: probers for detection
 // plus demuxer/muxer factories and capability descriptors keyed by format id.
 // Registration is last-wins; it is populated at runtime construction and
 // read-only afterwards.
 type SimpleRegistry struct {
-	probers            []Prober
-	demuxers           map[av.FormatID]DemuxerFactory
-	demuxerDescriptors map[av.FormatID]Descriptor
-	muxers             map[av.FormatID]MuxerFactory
-	muxerDescriptors   map[av.FormatID]Descriptor
+	probers  []Prober
+	demuxers factoryStore[DemuxerFactory]
+	muxers   factoryStore[MuxerFactory]
 }
 
 // NewRegistry returns an empty format registry.
 func NewRegistry() *SimpleRegistry {
 	return &SimpleRegistry{
-		demuxers:           make(map[av.FormatID]DemuxerFactory),
-		demuxerDescriptors: make(map[av.FormatID]Descriptor),
-		muxers:             make(map[av.FormatID]MuxerFactory),
-		muxerDescriptors:   make(map[av.FormatID]Descriptor),
+		demuxers: newFactoryStore[DemuxerFactory](),
+		muxers:   newFactoryStore[MuxerFactory](),
 	}
 }
 
@@ -64,9 +106,8 @@ func (r *SimpleRegistry) RegisterDemuxer(format av.FormatID, factory DemuxerFact
 // RegisterDemuxerDescriptor records a demuxer factory together with the
 // capability descriptor validation reads.
 func (r *SimpleRegistry) RegisterDemuxerDescriptor(desc Descriptor, factory DemuxerFactory) {
-	if factory != nil && desc.Format != "" {
-		r.demuxers[desc.Format] = factory
-		r.demuxerDescriptors[desc.Format] = cloneDescriptor(desc)
+	if factory != nil {
+		r.demuxers.register(desc, factory)
 	}
 }
 
@@ -81,9 +122,8 @@ func (r *SimpleRegistry) RegisterMuxer(format av.FormatID, factory MuxerFactory)
 // RegisterMuxerDescriptor records a muxer factory together with the
 // capability descriptor destination validation reads.
 func (r *SimpleRegistry) RegisterMuxerDescriptor(desc Descriptor, factory MuxerFactory) {
-	if factory != nil && desc.Format != "" {
-		r.muxers[desc.Format] = factory
-		r.muxerDescriptors[desc.Format] = cloneDescriptor(desc)
+	if factory != nil {
+		r.muxers.register(desc, factory)
 	}
 }
 
@@ -118,74 +158,41 @@ func (r *SimpleRegistry) Probe(ctx context.Context, request ProbeRequest) (Probe
 // DemuxerFactory returns the demuxer factory registered for a format id, or
 // ErrNotFound.
 func (r *SimpleRegistry) DemuxerFactory(format av.FormatID) (DemuxerFactory, error) {
-	factory, ok := r.demuxers[format]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	return factory, nil
+	return r.demuxers.factory(format)
 }
 
 // DemuxerDescriptor returns the capability descriptor registered for a
 // format's demuxer, or ErrNotFound.
 func (r *SimpleRegistry) DemuxerDescriptor(format av.FormatID) (Descriptor, error) {
-	desc, ok := r.demuxerDescriptors[format]
-	if !ok {
-		return Descriptor{}, ErrNotFound
-	}
-	return cloneDescriptor(desc), nil
+	return r.demuxers.descriptor(format)
 }
 
 // DemuxerDescriptors lists every registered demuxer descriptor sorted by format.
 func (r *SimpleRegistry) DemuxerDescriptors() []Descriptor {
-	out := make([]Descriptor, 0, len(r.demuxerDescriptors))
-	for id := range r.demuxerDescriptors {
-		out = append(out, cloneDescriptor(r.demuxerDescriptors[id]))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Format < out[j].Format })
-	return out
+	return r.demuxers.allDescriptors()
 }
 
 // MuxerFactory returns the muxer factory registered for a format id, or
 // ErrNotFound.
 func (r *SimpleRegistry) MuxerFactory(format av.FormatID) (MuxerFactory, error) {
-	factory, ok := r.muxers[format]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	return factory, nil
+	return r.muxers.factory(format)
 }
 
 // MuxerDescriptor returns the capability descriptor registered for a
 // format's muxer, or ErrNotFound.
 func (r *SimpleRegistry) MuxerDescriptor(format av.FormatID) (Descriptor, error) {
-	desc, ok := r.muxerDescriptors[format]
-	if !ok {
-		return Descriptor{}, ErrNotFound
-	}
-	return cloneDescriptor(desc), nil
+	return r.muxers.descriptor(format)
 }
 
 // MuxerDescriptors lists every registered muxer descriptor sorted by format.
 func (r *SimpleRegistry) MuxerDescriptors() []Descriptor {
-	out := make([]Descriptor, 0, len(r.muxerDescriptors))
-	for id := range r.muxerDescriptors {
-		out = append(out, cloneDescriptor(r.muxerDescriptors[id]))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Format < out[j].Format })
-	return out
+	return r.muxers.allDescriptors()
 }
 
 func cloneDescriptor(desc Descriptor) Descriptor {
 	cloned := desc
-	if desc.Media != nil {
-		cloned.Media = append([]av.MediaType(nil), desc.Media...)
-	}
-	if desc.Codecs != nil {
-		cloned.Codecs = append([]av.CodecID(nil), desc.Codecs...)
-	}
-	if desc.Metadata != nil {
-		cloned.Metadata = make(av.Metadata, len(desc.Metadata))
-		maps.Copy(cloned.Metadata, desc.Metadata)
-	}
+	cloned.Media = slices.Clone(desc.Media)
+	cloned.Codecs = slices.Clone(desc.Codecs)
+	cloned.Metadata = maps.Clone(desc.Metadata)
 	return cloned
 }
