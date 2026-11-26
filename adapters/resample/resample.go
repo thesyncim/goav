@@ -394,6 +394,32 @@ func (f *Filter) convert(dst []byte, input []byte, count int) {
 				a := (int32(int16(v)) + int32(int16(v>>16))) / 2
 				b := (int32(int16(v>>32)) + int32(int16(v>>48))) / 2
 				diff := b - a
+				limit := count - 1
+				for ; j+2 <= limit; j += 2 {
+					w0 := int32((uint64(frac) * inv) >> 16)
+					s0 := uint32(uint16(int16(a + (diff*w0)>>16)))
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+						a = b
+						nv := binary.LittleEndian.Uint32(input[(rel+1)*4:])
+						b = (int32(int16(nv)) + int32(int16(nv>>16))) / 2
+						diff = b - a
+					}
+					w1 := int32((uint64(frac) * inv) >> 16)
+					s1 := uint32(uint16(int16(a + (diff*w1)>>16)))
+					binary.LittleEndian.PutUint32(d[j*2:], s0|s1<<16)
+					frac += rem
+					if frac >= outRateInt {
+						frac -= outRateInt
+						rel++
+						a = b
+						nv := binary.LittleEndian.Uint32(input[(rel+1)*4:])
+						b = (int32(int16(nv)) + int32(int16(nv>>16))) / 2
+						diff = b - a
+					}
+				}
 				for ; j < count; j++ {
 					w := int32((uint64(frac) * inv) >> 16)
 					binary.LittleEndian.PutUint16(d[j*2:], uint16(int16(a+(diff*w)>>16)))

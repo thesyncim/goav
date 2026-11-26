@@ -184,6 +184,10 @@ func (p *planeScaler) scale(dst, src planeBuf, rect scaleRect, tmp []uint16) []u
 		scaleHalfBox(dst, src, rect)
 		return tmp
 	}
+	if 2*rect.srcW == 3*rect.dstW && 2*rect.srcH == 3*rect.dstH {
+		scale3to2Scalar(dst, src, rect)
+		return tmp
+	}
 	return p.scaleGeneral(dst, src, rect, tmp)
 }
 
@@ -251,6 +255,32 @@ func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
 		s1 := srcData[s1Off : s1Off+srcWidth]
 		out := dstData[y*dstStride : y*dstStride+dstWidth]
 		x := 0
+		for ; x+16 <= dstWidth; x += 16 {
+			sx := 2 * x
+			s0w := s0[sx : sx+32]
+			s1w := s1[sx : sx+32]
+			o16 := out[x : x+16]
+
+			a0 := binary.LittleEndian.Uint64(s0w)
+			b0 := binary.LittleEndian.Uint64(s1w)
+			a1 := binary.LittleEndian.Uint64(s0w[8:])
+			b1 := binary.LittleEndian.Uint64(s1w[8:])
+			sum0 := (((a0 & maskFF) + ((a0 >> 8) & maskFF) + (b0 & maskFF) + ((b0 >> 8) & maskFF) + round2) >> 2) & maskFF
+			sum1 := (((a1 & maskFF) + ((a1 >> 8) & maskFF) + (b1 & maskFF) + ((b1 >> 8) & maskFF) + round2) >> 2) & maskFF
+			t0 := (sum0 | (sum0 >> 8)) & maskFFFF
+			t1 := (sum1 | (sum1 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(o16, uint64(uint32(t0|(t0>>16)))|uint64(uint32(t1|(t1>>16)))<<32)
+
+			a2 := binary.LittleEndian.Uint64(s0w[16:])
+			b2 := binary.LittleEndian.Uint64(s1w[16:])
+			a3 := binary.LittleEndian.Uint64(s0w[24:])
+			b3 := binary.LittleEndian.Uint64(s1w[24:])
+			sum2 := (((a2 & maskFF) + ((a2 >> 8) & maskFF) + (b2 & maskFF) + ((b2 >> 8) & maskFF) + round2) >> 2) & maskFF
+			sum3 := (((a3 & maskFF) + ((a3 >> 8) & maskFF) + (b3 & maskFF) + ((b3 >> 8) & maskFF) + round2) >> 2) & maskFF
+			t2 := (sum2 | (sum2 >> 8)) & maskFFFF
+			t3 := (sum3 | (sum3 >> 8)) & maskFFFF
+			binary.LittleEndian.PutUint64(o16[8:], uint64(uint32(t2|(t2>>16)))|uint64(uint32(t3|(t3>>16)))<<32)
+		}
 		for ; x+8 <= dstWidth; x += 8 {
 			sx := 2 * x
 			s0w := s0[sx : sx+16]
@@ -281,6 +311,102 @@ func scaleHalfBoxScalar(dst, src planeBuf, rect scaleRect) {
 		for ; x < dstWidth; x++ {
 			sx := 2 * x
 			out[x] = byte((uint32(s0[sx]) + uint32(s0[sx+1]) + uint32(s1[sx]) + uint32(s1[sx+1]) + 2) >> 2)
+		}
+	}
+}
+
+// scale3to2Scalar computes the bit-exact 3:2 Q14 separable downscale (e.g.
+// 1080p -> 720p) in a single pass with zero intermediate buffer traffic.
+// Every 3 source rows produce 2 output rows; every 6 source columns produce 4
+// output columns per row (8 output pixels total), sharing the middle sample
+// products horizontally and vertically in registers.
+func scale3to2Scalar(dst, src planeBuf, rect scaleRect) {
+	const (
+		hHalf  = 1 << (weightBits - intermediateBits - 1)
+		hShift = weightBits - intermediateBits
+		vShift = weightBits + intermediateBits
+		vRound = 1 << (vShift - 1)
+		wHi    = 10923
+		wLo    = 5461
+	)
+	dstData, dstStride := dst.data, dst.stride
+	srcData, srcStride := src.data, src.stride
+	srcX, srcY, dstWidth, dstHeight := rect.srcX, rect.srcY, rect.dstW, rect.dstH
+	srcWidth := rect.srcW
+
+	for y, sy := 0, srcY; y+2 <= dstHeight; y, sy = y+2, sy+3 {
+		r0Off := sy*srcStride + srcX
+		r1Off := r0Off + srcStride
+		r2Off := r1Off + srcStride
+		s0 := srcData[r0Off : r0Off+srcWidth]
+		s1 := srcData[r1Off : r1Off+srcWidth]
+		s2 := srcData[r2Off : r2Off+srcWidth]
+		o0 := dstData[y*dstStride : y*dstStride+dstWidth]
+		o1 := dstData[(y+1)*dstStride : (y+1)*dstStride+dstWidth]
+
+		x, sx := 0, 0
+		for ; x+4 <= dstWidth && sx+8 <= srcWidth; x, sx = x+4, sx+6 {
+			v0 := binary.LittleEndian.Uint64(s0[sx:])
+			v1 := binary.LittleEndian.Uint64(s1[sx:])
+			v2 := binary.LittleEndian.Uint64(s2[sx:])
+
+			// Row 0 horizontal intermediates (4 pixels).
+			m01 := uint32(byte(v0>>8))*wLo + hHalf
+			m04 := uint32(byte(v0>>32))*wLo + hHalf
+			h00 := (uint32(byte(v0))*wHi + m01) >> hShift
+			h01 := (m01 + uint32(byte(v0>>16))*wHi) >> hShift
+			h02 := (uint32(byte(v0>>24))*wHi + m04) >> hShift
+			h03 := (m04 + uint32(byte(v0>>40))*wHi) >> hShift
+
+			// Row 1 horizontal intermediates (shared by both output rows).
+			m11 := uint32(byte(v1>>8))*wLo + hHalf
+			m14 := uint32(byte(v1>>32))*wLo + hHalf
+			h10 := ((uint32(byte(v1))*wHi+m11)>>hShift)*wLo + vRound
+			h11 := ((m11+uint32(byte(v1>>16))*wHi)>>hShift)*wLo + vRound
+			h12 := ((uint32(byte(v1>>24))*wHi+m14)>>hShift)*wLo + vRound
+			h13 := ((m14+uint32(byte(v1>>40))*wHi)>>hShift)*wLo + vRound
+
+			// Row 2 horizontal intermediates (4 pixels).
+			m21 := uint32(byte(v2>>8))*wLo + hHalf
+			m24 := uint32(byte(v2>>32))*wLo + hHalf
+			h20 := (uint32(byte(v2))*wHi + m21) >> hShift
+			h21 := (m21 + uint32(byte(v2>>16))*wHi) >> hShift
+			h22 := (uint32(byte(v2>>24))*wHi + m24) >> hShift
+			h23 := (m24 + uint32(byte(v2>>40))*wHi) >> hShift
+
+			p00 := (h00*wHi + h10) >> vShift
+			p01 := (h01*wHi + h11) >> vShift
+			p02 := (h02*wHi + h12) >> vShift
+			p03 := (h03*wHi + h13) >> vShift
+			binary.LittleEndian.PutUint32(o0[x:], p00|p01<<8|p02<<16|p03<<24)
+
+			p10 := (h10 + h20*wHi) >> vShift
+			p11 := (h11 + h21*wHi) >> vShift
+			p12 := (h12 + h22*wHi) >> vShift
+			p13 := (h13 + h23*wHi) >> vShift
+			binary.LittleEndian.PutUint32(o1[x:], p10|p11<<8|p12<<16|p13<<24)
+		}
+		for ; x+2 <= dstWidth; x, sx = x+2, sx+3 {
+			a := s0[sx : sx+3 : sx+3]
+			b := s1[sx : sx+3 : sx+3]
+			c := s2[sx : sx+3 : sx+3]
+
+			m0 := uint32(a[1])*wLo + hHalf
+			h00 := (uint32(a[0])*wHi + m0) >> hShift
+			h01 := (m0 + uint32(a[2])*wHi) >> hShift
+
+			m1 := uint32(b[1])*wLo + hHalf
+			h10 := ((uint32(b[0])*wHi+m1)>>hShift)*wLo + vRound
+			h11 := ((m1+uint32(b[2])*wHi)>>hShift)*wLo + vRound
+
+			m2 := uint32(c[1])*wLo + hHalf
+			h20 := (uint32(c[0])*wHi + m2) >> hShift
+			h21 := (m2 + uint32(c[2])*wHi) >> hShift
+
+			o0[x] = byte((h00*wHi + h10) >> vShift)
+			o0[x+1] = byte((h01*wHi + h11) >> vShift)
+			o1[x] = byte((h10 + h20*wHi) >> vShift)
+			o1[x+1] = byte((h11 + h21*wHi) >> vShift)
 		}
 	}
 }
