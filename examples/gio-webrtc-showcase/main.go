@@ -20,6 +20,8 @@ func main() {
 	headless := flag.Bool("headless", false, "run without opening the native macOS window")
 	flag.Parse()
 
+	ensureMacOSAppBundle(*headless)
+
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)

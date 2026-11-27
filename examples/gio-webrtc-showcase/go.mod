@@ -7,9 +7,8 @@ require (
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/webrtc/v4 v4.2.24
-	github.com/thesyncim/goav v0.2.0
-	github.com/thesyncim/goav/cameraav v0.0.0
-	github.com/thesyncim/goav/rtpav v0.0.0-20261124213030-4062f221251b
+	github.com/thesyncim/goav v0.2.2
+	github.com/thesyncim/goav/cameraav v0.0.0-20261127110425-2dfc380babea
 	github.com/thesyncim/goav/webrtcav v0.0.0-20261124213030-4062f221251b
 )
 
@@ -28,6 +27,7 @@ require (
 	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/pion/turn/v5 v5.1.2 // indirect
+	github.com/thesyncim/goav/rtpav v0.0.0-20261124213030-4062f221251b // indirect
 	github.com/thesyncim/goav1 v0.2.4 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
 	github.com/thesyncim/gopus v0.2.11 // indirect
@@ -37,11 +37,4 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-)
-
-replace (
-	github.com/thesyncim/goav => ../..
-	github.com/thesyncim/goav/cameraav => ../../cameraav
-	github.com/thesyncim/goav/rtpav => ../../rtpav
-	github.com/thesyncim/goav/webrtcav => ../../webrtcav
 )

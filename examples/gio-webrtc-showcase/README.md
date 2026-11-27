@@ -4,14 +4,13 @@ A **zero-cgo (`CGO_ENABLED=0`)**, **zero-FFmpeg**, **100% pure-Go** native macOS
 
 Capture your **macOS camera** (`cameraav`) and **macOS display** (`screenav`) natively via `purego`, compose live **Picture-in-Picture** or **Side-by-Side** scenes (`goav.Composite`), fan out simultaneous **VP8 / VP9 / AV1** WebRTC simulcast tracks, record locally to **WebM / MKV / MP4**, serve a live **LL-HLS** origin, and push **WHIP** — all from one running `goav.Task`, with a **Live `goav` Code & Pipeline Graph Inspector** showing how ~15 lines of Go power the entire studio.
 
-## Run on macOS (Zero cgo!)
+## Run on macOS (One Command, Zero cgo, No Clone!)
 
 ```sh
-chmod +x run-macos.sh
-CGO_ENABLED=0 GOEXPERIMENT=simd go run -exec ./run-macos.sh .
+CGO_ENABLED=0 GOEXPERIMENT=simd go run github.com/thesyncim/goav/examples/gio-webrtc-showcase@latest
 ```
 
-The `run-macos.sh` wrapper bundles the `CGO_ENABLED=0` binary into a cached, ad-hoc signed `goav Studio.app` with `NSCameraUsageDescription` and `NSScreenCaptureUsageDescription` so macOS can prompt for Camera and Screen Recording access cleanly.
+On macOS, the binary automatically wraps and re-execs itself inside a cached, ad-hoc signed `goav Studio.app` with `NSCameraUsageDescription` and `NSScreenCaptureUsageDescription` so macOS can prompt for Camera and Screen Recording access cleanly — no `cd`, no `-exec` wrapper, and no cgo required.
 
 ### Headless / LAN Mode
 
