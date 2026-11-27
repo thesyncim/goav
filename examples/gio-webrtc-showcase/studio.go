@@ -924,7 +924,7 @@ func (s *studio) StartRecording(ctx context.Context, format, codecName string, b
 	if err != nil {
 		return recordingStatus{}, err
 	}
-	recDir := "recordings"
+	recDir := recordingDir()
 	if err := os.MkdirAll(recDir, 0o755); err != nil {
 		return recordingStatus{}, err
 	}
@@ -961,6 +961,16 @@ func (s *studio) StartRecording(ctx context.Context, format, codecName string, b
 	s.recordEventLocked("info", "record", fmt.Sprintf("recording started: %s (%s)", fullPath, strings.ToUpper(codecName)))
 	s.notifyLocked()
 	return s.recordingStatusLocked(), nil
+}
+
+func recordingDir() string {
+	if dir := os.Getenv("GOAV_STUDIO_RECORDINGS_DIR"); dir != "" {
+		return dir
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, "Movies", "goav-studio")
+	}
+	return filepath.Join(os.TempDir(), "goav-studio-recordings")
 }
 
 func (s *studio) StopRecording(ctx context.Context) (recordingStatus, error) {

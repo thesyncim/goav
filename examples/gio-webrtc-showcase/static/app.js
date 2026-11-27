@@ -505,15 +505,22 @@
     });
   });
 
-  $("btn-record").addEventListener("click", () => {
-    if (state?.recording?.active) {
-      api("POST", "/api/record/stop");
-    } else {
-      api("POST", "/api/record/start", {
-        format: $("rec-format").value,
-        codec: $("rec-codec").value,
-        bitrate: 1800000,
-      });
+  $("btn-record").addEventListener("click", async () => {
+    try {
+      if (state?.recording?.active) {
+        const res = await api("POST", "/api/record/stop");
+        if (res?.recording?.path) {
+          $("rec-path").textContent = `Saved: ${res.recording.path} (${Math.round((res.recording.bytes || 0) / 1024)} KB)`;
+        }
+      } else {
+        await api("POST", "/api/record/start", {
+          format: $("rec-format").value,
+          codec: $("rec-codec").value,
+          bitrate: 1800000,
+        });
+      }
+    } catch (e) {
+      $("rec-path").textContent = `Error: ${e.message}`;
     }
   });
 
