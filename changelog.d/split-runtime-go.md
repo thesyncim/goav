@@ -1,0 +1,1 @@
+- Decompose `runtime.go` by extracting explicit-graph builder (`runtime_builder.go`), destination transaction ledger (`runtime_destination.go`), and plan report cloning (`runtime_plan_clone.go`) into focused files.

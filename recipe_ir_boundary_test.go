@@ -218,7 +218,7 @@ var compileBoundary = map[string][]string{
 	"Result":           {"branch_failure.go"},
 	"StreamRulePlan":   {"compile_attach.go"},
 	// the work plan Describe, Explain, and the task read
-	"ClonePlanDiagnostics":            {"runtime.go"},
+	"ClonePlanDiagnostics":            {"runtime_plan_clone.go"},
 	"CloneWorkDestinations":           {"runtime.go"},
 	"CloneWorkPlan":                   {"graph_plan.go"},
 	"DiagnosticBufferedExecution":     {"recipe_explain.go"},
@@ -306,7 +306,7 @@ var compileBoundary = map[string][]string{
 	"ValidateRecipeIROperationShapes":            {"runtime_attach.go"},
 	"ValidateRecipeIRTransformAdapterDescriptor": {"attach_plan.go"},
 	"ValidateShapeAnnotationDomain":              {"attach_plan.go"},
-	"ValidateStageComponent":                     {"graph.go", "runtime.go", "runtime_plan.go"},
+	"ValidateStageComponent":                     {"graph.go", "runtime_builder.go", "runtime_plan.go"},
 	// mux and adapter facts Explain and attach check
 	"CheckKnownMuxCompatibility":  {"runtime_attach.go"},
 	"CopyMuxStreamFacts":          {"recipe_explain.go"},
@@ -322,7 +322,7 @@ var compileBoundary = map[string][]string{
 	"CloneBuffer":                            {"mux_destination.go"},
 	"CloneCodecSettings":                     {"runtime_decode.go"},
 	"CloneCodecSpec":                         {"input.go", "operation.go", "recipe_explain.go"},
-	"CloneMetadata":                          {"destination.go", "mux_destination.go", "recipe_explain.go", "runtime.go"},
+	"CloneMetadata":                          {"destination.go", "mux_destination.go", "recipe_explain.go", "runtime_plan_clone.go"},
 	"CodecAdapterRequest":                    {"recipe_explain.go", "runtime_encode.go"},
 	"CodecMedia":                             {"attach_plan.go", "runtime_attach.go"},
 	"CodecSpecHasParameters":                 {"runtime_decode.go"},
