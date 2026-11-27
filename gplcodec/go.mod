@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728
-	github.com/thesyncim/goav v0.2.0
+	github.com/thesyncim/goav v0.2.3-0.20261127191726-1b01b6990df9
 )
 
 require (

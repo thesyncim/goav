@@ -6,7 +6,7 @@ require (
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/ebitengine/purego v0.11.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
-	github.com/thesyncim/goav v0.2.0
+	github.com/thesyncim/goav v0.2.3-0.20261127191726-1b01b6990df9
 )
 
 require (
