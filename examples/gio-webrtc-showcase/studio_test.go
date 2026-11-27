@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,9 +16,7 @@ func TestStudioEverythingEndToEnd(t *testing.T) {
 	defer cancel()
 
 	tmpDir := t.TempDir()
-	origWD, _ := os.Getwd()
-	_ = os.Chdir(tmpDir)
-	defer func() { _ = os.Chdir(origWD) }()
+	t.Setenv("GOAV_STUDIO_RECORDINGS_DIR", tmpDir)
 
 	st := newStudio("http://127.0.0.1:8080")
 	if err := st.Start(ctx); err != nil {
