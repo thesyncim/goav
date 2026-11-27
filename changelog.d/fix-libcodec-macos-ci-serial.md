@@ -1,1 +1,0 @@
-- Run `libcodec-macos` CI tests with `-p 1` to avoid concurrent VideoToolbox hardware session contention on paravirtualized `macos-latest` runners.

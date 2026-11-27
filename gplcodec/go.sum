@@ -12,8 +12,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 h1:AK/gB43Mnz4qBh1lJC/2cX9udRlYB1QiyQynGo3vu1E=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
-github.com/thesyncim/goav1 v0.2.4 h1:za+AKiLJ81asHpqxDWNVFfx3RbRiFU3oSYnvz0A8wtc=
-github.com/thesyncim/goav1 v0.2.4/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
+github.com/thesyncim/goav1 v0.2.6 h1:84XxNHuvRGROryJnujPoieZsF9MbcZA9etH5HaJUU/Q=
+github.com/thesyncim/goav1 v0.2.6/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
 github.com/thesyncim/gopus v0.2.11 h1:hkQdinldkEyy91pjSegSpzpSyj2meZw7/mNeuvi8XqA=

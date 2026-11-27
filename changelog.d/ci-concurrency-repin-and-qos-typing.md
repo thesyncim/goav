@@ -1,2 +1,0 @@
-- Promote `QoSLateness` and `QoSDropped` to typed fields on `av.Event` for zero-allocation `EventQoS` reporting.
-- Add PR `concurrency:` auto-cancel groups to `.github/workflows/ci.yml` and `.github/workflows/camera.yml`, and repin nested `go.mod` modules to `bce3f85b9498`.

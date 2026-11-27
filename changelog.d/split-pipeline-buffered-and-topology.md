@@ -1,1 +1,0 @@
-- Split `pipeline/buffered.go` into `buffered.go` and `buffered_emit.go`, and split `pipeline/topology.go` into `topology.go` and `topology_lifecycle.go`.

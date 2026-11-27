@@ -10,8 +10,8 @@ github.com/hajimehoshi/ebiten/v2 v2.10.6 h1:GXnY8UMglSjsszZJpBxbqzdQHkmWqS0vMxD/
 github.com/hajimehoshi/ebiten/v2 v2.10.6/go.mod h1:sUj89hH41Ph6bkTrdSrkKZYtGl0OENrkb7w1Y7xsJUc=
 github.com/jfreymuth/pulse v0.1.3 h1:bc5TdxiB8E+2INnFjFWWgyfgXtz2IyNNNCX+Wt/ZD14=
 github.com/jfreymuth/pulse v0.1.3/go.mod h1:cpYspI6YljhkUf1WLXLLDmeaaPFc3CnGLjDZf9dZ4no=
-github.com/thesyncim/goav1 v0.2.4 h1:za+AKiLJ81asHpqxDWNVFfx3RbRiFU3oSYnvz0A8wtc=
-github.com/thesyncim/goav1 v0.2.4/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
+github.com/thesyncim/goav1 v0.2.6 h1:84XxNHuvRGROryJnujPoieZsF9MbcZA9etH5HaJUU/Q=
+github.com/thesyncim/goav1 v0.2.6/go.mod h1:IoePgiWq9qWaDgVFyqqBskBeP8v6KZGLRTVYqHw+Rn8=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
 github.com/thesyncim/gopus v0.2.11 h1:hkQdinldkEyy91pjSegSpzpSyj2meZw7/mNeuvi8XqA=

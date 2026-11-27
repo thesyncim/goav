@@ -1,1 +1,0 @@
-- Update `libcodec/proof/extbackend/go.mod` root pin to `v0.2.3-0.20261127194215-bce3f85b9498` so `go test ./...` passes without `go mod tidy`.
