@@ -495,8 +495,6 @@ func (t *Task) Explain(context.Context) (plan.Report, error) {
 }
 
 // EncoderDescriptors lists encoder factories registered on the task runtime.
-// It is intentionally outside the public Task interface: control-plane helpers
-// use it through an optional interface when a task can describe its runtime.
 func (t *Task) EncoderDescriptors() []codec.Descriptor {
 	if t == nil || t.runtime == nil || t.runtime.codecs == nil {
 		return nil
@@ -715,7 +713,7 @@ func (t *Task) Snapshot() TaskSnapshot {
 }
 
 func (t *Task) promoteClosedLocked(pendingCleanup int) {
-	if t.phase != taskFinalizing && t.phase != taskClosing {
+	if t.phase != taskFinalizing {
 		return
 	}
 	if !t.attachmentClosePending && pendingCleanup == 0 {

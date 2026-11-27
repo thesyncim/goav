@@ -585,15 +585,16 @@ const (
 	// the new position.
 	EventSeek EventType = "seek"
 	// EventRate carries a task-wide playback-rate change (1 = realtime, 2 = 2x,
-	// 0.5 = half; positive only) in Event.Metadata[MetadataRate]. Build with
-	// RateMetadata and read with EventRateValue.
+	// 0.5 = half; positive only) in Event.Rate (with EventRateValue falling back
+	// to Metadata[MetadataRate] for legacy callers).
 	EventRate EventType = "rate"
 	// EventSegment asks a source to play [start, end) and end naturally. Start
-	// rides Event.Timestamp; exclusive end rides Event.Metadata[MetadataSegmentEnd]
-	// (SegmentEndMetadata / EventSegmentEnd).
+	// rides Event.Timestamp; exclusive end rides Event.End (with EventSegmentEnd
+	// falling back to Metadata[MetadataSegmentEnd]).
 	EventSegment EventType = "segment"
 	// EventBitrateChanged asks encoders on its path to retarget bitrate without
-	// restarting (Event.Metadata[MetadataBitrate] in bits/sec).
+	// restarting (Event.Bitrate in bits/sec, with EventBitrate falling back to
+	// Metadata[MetadataBitrate]).
 	EventBitrateChanged EventType = "bitrate_changed"
 	// EventSelectActive asks a running Select stage to switch its active arm
 	// to Event.StreamID. Select stages consume it; joins forward it unchanged.

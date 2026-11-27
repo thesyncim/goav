@@ -106,7 +106,6 @@ type reconnectingSource struct {
 
 	message pipeline.Message
 	event   av.Event
-	stream  av.Stream
 }
 
 func newReconnectingSource(first reconnectSession, detail string, reopen func(context.Context) (reconnectSession, error), policy reconnectPolicy, clock av.Clock, report func(av.Event)) pipeline.Source {
@@ -307,8 +306,8 @@ func (s *reconnectingSource) announce(ctx context.Context, emitter pipeline.Emit
 		}
 	}
 	for _, stream := range drift.added {
-		s.stream = qualifyStream(stream, s.qualifier)
-		if err := s.emit(ctx, emitter, av.Event{Type: av.EventStreamAdded, StreamID: s.stream.ID, Stream: &s.stream}); err != nil {
+		qualified := qualifyStream(stream, s.qualifier)
+		if err := s.emit(ctx, emitter, av.Event{Type: av.EventStreamAdded, StreamID: qualified.ID, Stream: &qualified}); err != nil {
 			return err
 		}
 	}
@@ -404,10 +403,6 @@ type countingEmitter struct {
 	pipeline.Emitter
 	n   atomic.Int64
 	ids map[av.StreamID]av.StreamID
-	// mu guards stream, the renamed copy of an event's stream: the event's
-	// own belongs to the source.
-	mu     sync.Mutex
-	stream av.Stream
 }
 
 type countingDeliveryEmitter struct {
@@ -424,26 +419,23 @@ func sessionEmitter(emitter pipeline.Emitter, ids map[av.StreamID]av.StreamID) s
 }
 
 func (e *countingEmitter) Emit(ctx context.Context, msg *pipeline.Message) error {
-	unlock := e.observe(msg)
-	defer unlock()
+	e.observe(msg)
 	return e.Emitter.Emit(ctx, msg)
 }
 
 func (e countingDeliveryEmitter) EmitDelivery(ctx context.Context, msg *pipeline.Message) (pipeline.Delivery, error) {
-	unlock := e.observe(msg)
-	defer unlock()
+	e.observe(msg)
 	return e.delivery.EmitDelivery(ctx, msg)
 }
 
 func (e *countingEmitter) media() int64 { return e.n.Load() }
 
-func noUnlock() {}
-
 // observe counts a packet or frame and renames its stream; an event with a
-// renamed stream holds the scratch copy until delivered.
-func (e *countingEmitter) observe(msg *pipeline.Message) func() {
+// renamed stream gets its own copy so async buffered workers and watchers never
+// alias a scratch field.
+func (e *countingEmitter) observe(msg *pipeline.Message) {
 	if msg == nil {
-		return noUnlock
+		return
 	}
 	switch {
 	case msg.Kind == pipeline.MessagePacket && msg.Packet != nil:
@@ -462,15 +454,12 @@ func (e *countingEmitter) observe(msg *pipeline.Message) func() {
 		}
 		if msg.Event.Stream != nil {
 			if id, ok := e.ids[msg.Event.Stream.ID]; ok {
-				e.mu.Lock()
-				e.stream = *msg.Event.Stream
-				e.stream.ID = id
-				msg.Event.Stream = &e.stream
-				return e.mu.Unlock
+				renamed := *msg.Event.Stream
+				renamed.ID = id
+				msg.Event.Stream = &renamed
 			}
 		}
 	}
-	return noUnlock
 }
 
 // Live marks an input live: it delivers on its own clock (a capture device on

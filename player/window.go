@@ -22,6 +22,7 @@ const (
 	windowRunning windowState = iota
 	windowEnded
 	windowClosed
+	windowEndedClosed
 )
 
 // game is the ebiten side of a Window: it presents the engine's video on
@@ -84,7 +85,7 @@ func runWindow(g *game) error {
 func (g *game) result() (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.state == windowEnded, g.taskErr
+	return g.state == windowEnded || g.state == windowEndedClosed, g.taskErr
 }
 
 func (g *game) setStatus(s string) {
@@ -102,7 +103,11 @@ func (g *game) wakeControls() {
 
 func (g *game) stopControls() {
 	g.mu.Lock()
-	g.state = windowClosed
+	if g.state == windowEnded || g.state == windowEndedClosed {
+		g.state = windowEndedClosed
+	} else {
+		g.state = windowClosed
+	}
 	g.mu.Unlock()
 	g.wakeControls()
 }
@@ -113,7 +118,7 @@ func (g *game) runControls() {
 	for range g.ctrlWake {
 		for {
 			g.mu.Lock()
-			if g.state == windowClosed {
+			if g.state >= windowClosed {
 				g.mu.Unlock()
 				return
 			}

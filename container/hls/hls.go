@@ -229,8 +229,9 @@ func (w *writer) Write(p []byte) (int, error) {
 		return 0, errors.New("hls: writer is closed")
 	}
 	w.buf = append(w.buf, p...)
+	consumed := 0
 	for {
-		box, size, ok, err := nextBox(w.buf)
+		box, size, ok, err := nextBox(w.buf[consumed:])
 		if err != nil {
 			w.fail(err)
 			return 0, err
@@ -242,7 +243,10 @@ func (w *writer) Write(p []byte) (int, error) {
 			w.fail(err)
 			return 0, err
 		}
-		w.buf = w.buf[:copy(w.buf, w.buf[size:])]
+		consumed += size
+	}
+	if consumed > 0 {
+		w.buf = w.buf[:copy(w.buf, w.buf[consumed:])]
 	}
 	return len(p), nil
 }

@@ -76,6 +76,12 @@ func TestGameWindowStateResult(t *testing.T) {
 	if finished, err := g.result(); !finished || !errors.Is(err, wantErr) {
 		t.Fatalf("ended result = (%v, %v), want (true, %v)", finished, err, wantErr)
 	}
+	// stopControls runs in defer when runWindow returns; it must preserve the
+	// ended result so Window.Run does not hang waiting on an already-drained done.
+	g.stopControls()
+	if finished, err := g.result(); !finished || !errors.Is(err, wantErr) {
+		t.Fatalf("ended+closed result = (%v, %v), want (true, %v)", finished, err, wantErr)
+	}
 }
 
 // Rapid bursts of pause, rate, and seek controls must coalesce cleanly without

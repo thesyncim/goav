@@ -121,6 +121,7 @@ type bufferedMessage struct {
 	packet  av.Packet
 	frame   av.Frame
 	event   av.Event
+	stream  av.Stream
 	audio   av.AudioFrame
 	video   av.VideoFrame
 	planes  []av.Plane

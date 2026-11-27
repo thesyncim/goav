@@ -109,16 +109,10 @@ func internWireString(b []byte) string {
 		return string(av.PixelFormatGray8)
 	case bytesEqualString(b, string(av.PixelFormatI420)):
 		return string(av.PixelFormatI420)
-	case bytesEqualString(b, string(av.PixelFormatYUV420P)):
-		return string(av.PixelFormatYUV420P)
 	case bytesEqualString(b, string(av.PixelFormatI422)):
 		return string(av.PixelFormatI422)
-	case bytesEqualString(b, string(av.PixelFormatYUV422P)):
-		return string(av.PixelFormatYUV422P)
 	case bytesEqualString(b, string(av.PixelFormatI444)):
 		return string(av.PixelFormatI444)
-	case bytesEqualString(b, string(av.PixelFormatYUV444P)):
-		return string(av.PixelFormatYUV444P)
 	default:
 		return string(b)
 	}
