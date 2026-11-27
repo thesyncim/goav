@@ -1,0 +1,1 @@
+- Remove 4 unused helper functions (`firstNonEmpty`, `stringAllowed`, `assertClockSleeps`, `compositeTestChromaAt`) flagged by `staticcheck` (`U1000`).

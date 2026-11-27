@@ -506,13 +506,6 @@ func normalizeAV1SettingKey(key string) string {
 	return key
 }
 
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 func pickPositive(a, b int) int {
 	if a > 0 {
 		return a
