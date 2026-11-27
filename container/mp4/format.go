@@ -21,7 +21,7 @@ type DemuxerFactory struct{}
 // Register installs the MP4 demuxer and muxer for av.FormatMP4. The default
 // prober already detects ISO BMFF (ftyp magic and the .mp4/.mov family of
 // extensions), so no prober is registered here.
-func Register(registry *format.SimpleRegistry) {
+func Register(registry *format.Registry) {
 	if registry == nil {
 		return
 	}

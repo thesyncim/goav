@@ -141,7 +141,7 @@ type config struct {
 	files FileSystem
 	// uris is the schemes URIs grants; nil grants none and "" grants all.
 	uris     map[string]bool
-	task     goav.Task
+	task     *goav.Task
 	hls      *hls.Server
 	elements map[string]*element
 	err      error
@@ -193,7 +193,7 @@ func (c *config) grants(scheme string) bool {
 
 // Task compiles a program against a running task, for task.Attach: a
 // pipeline may start at one of its taps, tap live ! encode vp8 ! file p.webm.
-func Task(task goav.Task) Option {
+func Task(task *goav.Task) Option {
 	return func(c *config) { c.task = task }
 }
 

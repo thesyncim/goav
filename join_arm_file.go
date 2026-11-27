@@ -17,20 +17,27 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+type conformState uint8
+
+const (
+	conformUnbound conformState = iota
+	conformPassthrough
+	conformConverting
+	conformClosed
+)
+
 // joinConformStage converts one arm's frames to the join's format as they
 // arrive: it builds its converter from the first frame's format through the
 // shape solver, rebuilds it when the format changes, and passes frames already
 // in the format through untouched. Target facts left zero keep the frame's.
 type joinConformStage struct {
-	name     string
-	detail   string
-	service  *builder
-	target   shape.Spec
-	realtime bool
-	// format is the frame format the converter was built for; converter is
-	// nil while frames pass through.
+	name      string
+	detail    string
+	service   *builder
+	target    shape.Spec
+	realtime  bool
+	state     conformState
 	format    shape.Spec
-	bound     bool
 	converter pipeline.Stage
 }
 
@@ -45,29 +52,35 @@ func (s *joinConformStage) DescribeNode() pipeline.NodeSpec {
 }
 
 func (s *joinConformStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if s.state == conformClosed {
+		return pipeline.ErrClosed
+	}
 	if msg != nil && msg.Kind == pipeline.MessageFrame && msg.Frame != nil {
-		if format := frameFormat(msg.Frame); !s.bound || format != s.format {
+		if format := frameFormat(msg.Frame); s.state == conformUnbound || format != s.format {
 			if err := s.bind(ctx, format, msg.Frame.StreamID); err != nil {
 				return err
 			}
 		}
 	}
-	if s.converter == nil {
-		return emitter.Emit(ctx, msg)
+	if s.state == conformConverting {
+		return s.converter.Handle(ctx, msg, emitter)
 	}
-	return s.converter.Handle(ctx, msg, emitter)
+	return emitter.Emit(ctx, msg)
 }
 
-// bind builds the converter from format to the target, or none when format
-// already is the target.
+// bind builds the converter from format to the target, or switches to
+// passthrough when format already matches the target. On error, state resets
+// to conformUnbound so a retry never silently bypasses conversion.
 func (s *joinConformStage) bind(ctx context.Context, format shape.Spec, id av.StreamID) error {
 	if s.converter != nil {
-		s.converter.Close()
+		_ = s.converter.Close()
 		s.converter = nil
 	}
-	s.format, s.bound = format, true
+	s.state = conformUnbound
 	expected := conformedShape(format, s.target)
 	if shape.Conversions(format, expected).Empty() {
+		s.format = format
+		s.state = conformPassthrough
 		return nil
 	}
 	conversion, planned, err := refuse2(compile.PlanShapeConversion(s.service.runtime.compileEnv(), format, expected, s.realtime))
@@ -83,13 +96,21 @@ func (s *joinConformStage) bind(ctx context.Context, format shape.Spec, id av.St
 	if err != nil {
 		return err
 	}
+	s.format = format
 	s.converter = stage
+	s.state = conformConverting
 	return nil
 }
 
 func (s *joinConformStage) Close() error {
+	if s.state == conformClosed {
+		return nil
+	}
+	s.state = conformClosed
 	if s.converter != nil {
-		return s.converter.Close()
+		conv := s.converter
+		s.converter = nil
+		return conv.Close()
 	}
 	return nil
 }

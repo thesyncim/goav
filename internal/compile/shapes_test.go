@@ -66,7 +66,7 @@ func TestShapeSolverFormatHelperContracts(t *testing.T) {
 		{name: "partial frame size", got: formatFrameSize(0, 720), want: "0x720"},
 		{name: "frame size", got: formatFrameSize(1280, 720), want: "1280x720"},
 		{name: "unknown media format", got: formatMediaFormat(""), want: "unknown format"},
-		{name: "media format", got: formatMediaFormat(av.SampleFormatF32), want: av.SampleFormatF32},
+		{name: "media format", got: formatMediaFormat(string(av.SampleFormatF32)), want: string(av.SampleFormatF32)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -16,7 +16,7 @@ func TestDescriptor(t *testing.T) {
 	if !desc.Supports(codec.ModeDecode) || desc.Supports(codec.ModeEncode) {
 		t.Fatalf("decode descriptor modes = %v", desc.Modes)
 	}
-	for _, pixelFormat := range []string{
+	for _, pixelFormat := range []av.PixelFormat{
 		av.PixelFormatI420,
 		av.PixelFormatYUV420P,
 		av.PixelFormatI422,

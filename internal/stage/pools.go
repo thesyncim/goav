@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"sync"
@@ -8,7 +8,7 @@ import (
 
 const mediaPoolMaxEntries = 64
 
-type mediaPools struct {
+type MediaPools struct {
 	mu sync.Mutex
 
 	metadata    []av.Metadata
@@ -16,18 +16,11 @@ type mediaPools struct {
 	videoPlanes [][]av.Plane
 }
 
-func newMediaPools() *mediaPools {
-	return &mediaPools{}
+func NewMediaPools() *MediaPools {
+	return &MediaPools{}
 }
 
-func runtimeMediaPools(rt *Runtime) *mediaPools {
-	if rt == nil {
-		return nil
-	}
-	return rt.mediaPools
-}
-
-func (p *mediaPools) takeMetadata() av.Metadata {
+func (p *MediaPools) TakeMetadata() av.Metadata {
 	if p == nil {
 		return make(av.Metadata)
 	}
@@ -44,7 +37,7 @@ func (p *mediaPools) takeMetadata() av.Metadata {
 	return metadata
 }
 
-func (p *mediaPools) putMetadata(metadata av.Metadata) {
+func (p *MediaPools) PutMetadata(metadata av.Metadata) {
 	if p == nil || metadata == nil {
 		return
 	}
@@ -56,11 +49,11 @@ func (p *mediaPools) putMetadata(metadata av.Metadata) {
 	p.mu.Unlock()
 }
 
-func takeMediaPlanes(pools *mediaPools, count int) []av.Plane {
-	return pools.takePlanes(count)
+func takeMediaPlanes(pools *MediaPools, count int) []av.Plane {
+	return pools.TakePlanes(count)
 }
 
-func (p *mediaPools) takePlanes(count int) []av.Plane {
+func (p *MediaPools) TakePlanes(count int) []av.Plane {
 	if p == nil {
 		return make([]av.Plane, count)
 	}
@@ -79,7 +72,7 @@ func (p *mediaPools) takePlanes(count int) []av.Plane {
 	return make([]av.Plane, count)
 }
 
-func (p *mediaPools) putPlanes(planes []av.Plane) {
+func (p *MediaPools) PutPlanes(planes []av.Plane) {
 	if p == nil || len(planes) == 0 {
 		return
 	}
@@ -109,4 +102,15 @@ func popPlaneSlice(pool [][]av.Plane) ([]av.Plane, [][]av.Plane) {
 	planes := pool[index]
 	pool[index] = nil
 	return planes, pool[:index]
+}
+
+// PlanePoolCounts returns the number of pooled audio and video plane slices.
+func (p *MediaPools) PlanePoolCounts() (audio, video int) {
+	if p == nil {
+		return 0, 0
+	}
+	p.mu.Lock()
+	audio, video = len(p.audioPlanes), len(p.videoPlanes)
+	p.mu.Unlock()
+	return audio, video
 }

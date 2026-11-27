@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
@@ -68,9 +69,9 @@ func New(options ...runconfig.Option) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	var pools *mediaPools
+	var pools *stage.MediaPools
 	if config.MediaPools {
-		pools = newMediaPools()
+		pools = stage.NewMediaPools()
 	}
 	return &Runtime{
 		codecs:           config.Codecs,
@@ -105,15 +106,15 @@ func mustNew(options ...runconfig.Option) *Runtime {
 // unexported: construction and adapter registration go through runconfig
 // options.
 type Runtime struct {
-	codecs           *codec.SimpleRegistry
-	filters          *filter.SimpleRegistry
-	formats          *format.SimpleRegistry
+	codecs           *codec.Registry
+	filters          *filter.Registry
+	formats          *format.Registry
 	buffer           pipeline.BufferPolicy
 	realtime         bool
 	clock            av.Clock
 	eventCapacity    int
 	closeWaitTimeout time.Duration
-	mediaPools       *mediaPools
+	mediaPools       *stage.MediaPools
 	shapeDeltas      []runconfig.ShapeDeltaContributor
 	// qosPolicy is the opt-in per-runtime QoS policy started on every task
 	// this runtime builds (runconfig.WithQoSPolicy).
@@ -233,7 +234,7 @@ func (b *builder) Routes(routes ...pipeline.Route) *builder {
 	return b
 }
 
-func (b *builder) Build(ctx context.Context) (Task, error) {
+func (b *builder) Build(ctx context.Context) (*Task, error) {
 	b.destinationTxs = nil
 	b.requireRunOK = true
 	graph, err := b.newGraph(ctx)
@@ -249,7 +250,7 @@ func (b *builder) Build(ctx context.Context) (Task, error) {
 	task := newTask(graph, b.runtime, b.destinationTxs...)
 	// Explicit-graph sources are caller-built and pace themselves, so the
 	// task timeline has no paced consumers; it exists for uniform task shape.
-	task.timeline = newTimeline(b.runtime.clock)
+	task.timeline = stage.NewTimeline(b.runtime.clock)
 	// Explicit graphs lower no gates, but buffered MaxLatency shedding still
 	// reports QoS on the graph event stream, so the policy applies here too.
 	task.startQoSPolicy(b.runtime.qosPolicy)
@@ -387,7 +388,33 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 	})
 }
 
-type task struct {
+// taskLifecycle groups the task's execution and shutdown state guarded by
+// lifecycleMu. lifecycleMu is never held while waiting for graph work.
+// Lock order: attachMu may be acquired before lifecycleMu; the reverse is forbidden.
+type taskLifecycle struct {
+	lifecycleMu            sync.Mutex
+	closeGate              chan struct{}
+	phase                  taskPhase
+	runActive              bool
+	closeAbandoned         bool
+	attachmentClosePending bool
+	runErr                 error
+	closeErr               error
+	activeAttachments      map[*runtimeAttachment]struct{}
+}
+
+// taskAttachments groups live branch attachment state guarded by attachMu.
+type taskAttachments struct {
+	attachMu    contextMutex
+	attachments map[*runtimeAttachment]struct{}
+	branchTaps  []TapSnapshot
+	isolated    []*isolatedBranch
+}
+
+// Task is a built media composition produced by Runtime.Build: it runs and
+// closes the graph, reports plans/specs/snapshots/stats, and supports live
+// branch attach/detach, out-of-band controls, pause/resume, and event watches.
+type Task struct {
 	graph   pipeline.Graph
 	runtime *Runtime
 	// realtime and buffer hold the task's resolved execution policy so the
@@ -400,7 +427,7 @@ type task struct {
 	// timeline is the task-wide clock service every paced source sleeps on;
 	// control.Rate scales it so all paced delivery re-anchors together. Nil
 	// only for tasks assembled outside the build paths (unit-test graphs).
-	timeline         *timeline
+	timeline         *stage.Timeline
 	destinations     []*destinationTransaction
 	rootDestinations []compile.WorkDestination
 	// encoders are the encode stages the build opened; stream-addressed
@@ -409,10 +436,6 @@ type task struct {
 	taps               []TapSnapshot
 	explainReport      plan.Report
 	explainReportReady bool
-	branchTaps         []TapSnapshot
-	attachMu           contextMutex
-	attachments        map[*runtimeAttachment]struct{}
-	isolated           []*isolatedBranch
 
 	// watch fans the graph's event stream out to filtered Watch subscribers.
 	watch eventWatch
@@ -421,18 +444,8 @@ type task struct {
 	// build before the task escapes; nil when the job declared no rules.
 	rules *taskStreamRules
 
-	// lifecycleMu orders Run completion, Close abandonment, and attachment
-	// finalization ownership. It is never held while waiting for graph work.
-	// attachMu may be acquired before lifecycleMu; the reverse is forbidden.
-	lifecycleMu            sync.Mutex
-	closeGate              chan struct{}
-	phase                  taskPhase
-	runActive              bool
-	closeAbandoned         bool
-	attachmentClosePending bool
-	runErr                 error
-	closeErr               error
-	activeAttachments      map[*runtimeAttachment]struct{}
+	taskAttachments
+	taskLifecycle
 }
 
 type taskPhase uint8
@@ -446,12 +459,12 @@ const (
 	taskClosed
 )
 
-func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinationTransaction) *task {
+func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinationTransaction) *Task {
 	return newTaskWithRootDestinations(graph, runtime, nil, destinations...)
 }
 
-func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []compile.WorkDestination, destinations ...*destinationTransaction) *task {
-	t := &task{
+func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []compile.WorkDestination, destinations ...*destinationTransaction) *Task {
+	t := &Task{
 		graph:            graph,
 		runtime:          runtime,
 		destinations:     destinations,
@@ -463,11 +476,11 @@ func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDes
 	return t
 }
 
-func (t *task) Spec() pipeline.Spec {
+func (t *Task) Spec() pipeline.Spec {
 	return t.graph.Spec()
 }
 
-func (t *task) Explain(context.Context) (plan.Report, error) {
+func (t *Task) Explain(context.Context) (plan.Report, error) {
 	if t.explainReportReady {
 		report := clonePlanReport(t.explainReport)
 		report.Graph = t.Spec()
@@ -484,7 +497,7 @@ func (t *task) Explain(context.Context) (plan.Report, error) {
 // EncoderDescriptors lists encoder factories registered on the task runtime.
 // It is intentionally outside the public Task interface: control-plane helpers
 // use it through an optional interface when a task can describe its runtime.
-func (t *task) EncoderDescriptors() []codec.Descriptor {
+func (t *Task) EncoderDescriptors() []codec.Descriptor {
 	if t == nil || t.runtime == nil || t.runtime.codecs == nil {
 		return nil
 	}
@@ -517,7 +530,7 @@ func (t *task) EncoderDescriptors() []codec.Descriptor {
 }
 
 // MuxerDescriptors lists muxer factories registered on the task runtime.
-func (t *task) MuxerDescriptors() []format.Descriptor {
+func (t *Task) MuxerDescriptors() []format.Descriptor {
 	if t == nil || t.runtime == nil || t.runtime.formats == nil {
 		return nil
 	}
@@ -599,8 +612,8 @@ func clonePlanAdapterRequirements(requirements []plan.AdapterRequirement) []plan
 		out[i] = requirements[i]
 		out[i].Media = append([]av.MediaType(nil), requirements[i].Media...)
 		out[i].Codecs = append([]av.CodecID(nil), requirements[i].Codecs...)
-		out[i].PixelFormats = append([]string(nil), requirements[i].PixelFormats...)
-		out[i].SampleFormats = append([]string(nil), requirements[i].SampleFormats...)
+		out[i].PixelFormats = append([]av.PixelFormat(nil), requirements[i].PixelFormats...)
+		out[i].SampleFormats = append([]av.SampleFormat(nil), requirements[i].SampleFormats...)
 		out[i].ResizeModes = append([]filter.ResizeMode(nil), requirements[i].ResizeModes...)
 		out[i].Metadata = compile.CloneMetadata(requirements[i].Metadata)
 	}
@@ -613,7 +626,7 @@ func clonePipelineSpec(spec pipeline.Spec) pipeline.Spec {
 	return spec
 }
 
-func (t *task) Run(ctx context.Context) error {
+func (t *Task) Run(ctx context.Context) error {
 	t.lifecycleMu.Lock()
 	switch t.phase {
 	case taskBuilt:
@@ -647,17 +660,17 @@ func (t *task) Run(ctx context.Context) error {
 	return err
 }
 
-func (t *task) Stats() pipeline.GraphStats {
+func (t *Task) Stats() pipeline.GraphStats {
 	return t.graph.Stats()
 }
 
-func (t *task) Taps() []TapSnapshot {
+func (t *Task) Taps() []TapSnapshot {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	return t.tapsLocked()
 }
 
-func (t *task) Snapshot() TaskSnapshot {
+func (t *Task) Snapshot() TaskSnapshot {
 	if t == nil {
 		return TaskSnapshot{}
 	}
@@ -692,7 +705,7 @@ func (t *task) Snapshot() TaskSnapshot {
 		State:        state,
 		Err:          outcome,
 		Error:        errorText(outcome),
-		Paused:       t.timeline != nil && t.timeline.pausedNow(),
+		Paused:       t.timeline != nil && t.timeline.PausedNow(),
 		Spec:         t.Spec(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
@@ -701,7 +714,7 @@ func (t *task) Snapshot() TaskSnapshot {
 	}
 }
 
-func (t *task) promoteClosedLocked(pendingCleanup int) {
+func (t *Task) promoteClosedLocked(pendingCleanup int) {
 	if t.phase != taskFinalizing && t.phase != taskClosing {
 		return
 	}
@@ -710,7 +723,7 @@ func (t *task) promoteClosedLocked(pendingCleanup int) {
 	}
 }
 
-func (t *task) lifecycleStates() (TaskState, DestinationState) {
+func (t *Task) lifecycleStates() (TaskState, DestinationState) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	return t.lifecycleStatesLocked(errors.Join(t.runErr, t.closeErr))
@@ -720,7 +733,7 @@ func (t *task) lifecycleStates() (TaskState, DestinationState) {
 // the task's still-open destinations from the explicit taskPhase under
 // lifecycleMu. Run only determines whether finalization may commit; Close and
 // the individual destination ledgers record what actually happened.
-func (t *task) lifecycleStatesLocked(outcome error) (TaskState, DestinationState) {
+func (t *Task) lifecycleStatesLocked(outcome error) (TaskState, DestinationState) {
 	switch t.phase {
 	case taskBuilt:
 		return TaskBuilt, DestinationOpen
@@ -782,7 +795,7 @@ func taskSnapshotDestinations(root []DestinationSnapshot, branches []BranchSnaps
 	return out
 }
 
-func (t *task) Detach(ctx context.Context, attachment Attachment, options ...DetachOption) error {
+func (t *Task) Detach(ctx context.Context, attachment Attachment, options ...DetachOption) error {
 	input, err := runtimeDetachInputFromArgs(ctx, attachment, options)
 	if err != nil {
 		return err
@@ -822,7 +835,7 @@ func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, opti
 	return input, nil
 }
 
-func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachInput) error {
+func (t *Task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachInput) error {
 	if input.runtime != nil {
 		return t.stopAttachment(ctx, input)
 	}
@@ -846,7 +859,7 @@ func nilAttachmentDetachError() error {
 
 // stopAttachments keeps removal's upstream-first queue drain and final stats.
 // A deadline bounds both the attachment lock and each built-in node wait.
-func (t *task) stopAttachments(ctx context.Context) (bool, error) {
+func (t *Task) stopAttachments(ctx context.Context) (bool, error) {
 	if err := t.attachMu.LockContext(ctx); err != nil {
 		return false, err
 	}
@@ -860,7 +873,7 @@ func (t *task) stopAttachments(ctx context.Context) (bool, error) {
 	return true, err
 }
 
-func (t *task) stopAttachmentsLocked(ctx context.Context) error {
+func (t *Task) stopAttachmentsLocked(ctx context.Context) error {
 	t.lifecycleMu.Lock()
 	disposition := oldBranchDetach
 	if t.closeAbandoned {
@@ -878,7 +891,7 @@ func (t *task) stopAttachmentsLocked(ctx context.Context) error {
 // A concurrent Attach or Detach may own attachMu past this Close's deadline.
 // The graph is already shutting down; this pass retires the remaining handles
 // after that operation releases the lock. It never waits for handler cleanup.
-func (t *task) finishAttachmentShutdown() {
+func (t *Task) finishAttachmentShutdown() {
 	t.lifecycleMu.Lock()
 	if t.attachmentClosePending {
 		t.lifecycleMu.Unlock()
@@ -902,11 +915,11 @@ func (t *task) finishAttachmentShutdown() {
 	}()
 }
 
-func (t *task) Close() error {
+func (t *Task) Close() error {
 	return t.CloseContext(context.Background())
 }
 
-func (t *task) CloseContext(ctx context.Context) error {
+func (t *Task) CloseContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -972,13 +985,13 @@ func (t *task) CloseContext(ctx context.Context) error {
 	return outcome
 }
 
-func (t *task) finishDestinations(runErr error) {
+func (t *Task) finishDestinations(runErr error) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	t.finishDestinationsLocked(runErr)
 }
 
-func (t *task) finishDestinationsLocked(runErr error) {
+func (t *Task) finishDestinationsLocked(runErr error) {
 	ok := runErr == nil
 	for i := range t.destinations {
 		if t.destinations[i] == nil {
@@ -1024,7 +1037,7 @@ func withoutShutdownError(err error) error {
 	return err
 }
 
-func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination string, attachment *runtimeAttachment, cause error) {
+func (t *Task) publishDestinationLifecycleEvent(kind av.EventType, destination string, attachment *runtimeAttachment, cause error) {
 	if t == nil || destination == "" {
 		return
 	}
@@ -1038,16 +1051,14 @@ func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination s
 		reason = "destination finalization failed"
 	}
 	event := av.Event{
-		Type:   kind,
-		Reason: reason,
-		Cause:  cause,
-		Metadata: av.Metadata{
-			av.MetadataDestinationName: destination,
-		},
+		Type:            kind,
+		Reason:          reason,
+		Cause:           cause,
+		DestinationName: destination,
 	}
 	if attachment != nil {
-		event.Metadata[av.MetadataAttachmentID] = attachment.ID()
-		event.Metadata[av.MetadataAttachmentName] = attachment.Name()
+		event.AttachmentID = attachment.ID()
+		event.AttachmentName = attachment.Name()
 	}
 	t.watch.publish(event)
 }
@@ -1147,14 +1158,14 @@ func (r *Runtime) compileEnv() compile.Env {
 	}
 }
 
-func (t *task) effectiveRealtime() bool {
+func (t *Task) effectiveRealtime() bool {
 	if t == nil {
 		return false
 	}
 	return t.realtime || (t.runtime != nil && t.runtime.realtime)
 }
 
-func (t *task) effectiveBuffer() pipeline.BufferPolicy {
+func (t *Task) effectiveBuffer() pipeline.BufferPolicy {
 	if t == nil {
 		return pipeline.BufferPolicy{}
 	}
@@ -1167,7 +1178,7 @@ func (t *task) effectiveBuffer() pipeline.BufferPolicy {
 	return pipeline.BufferPolicy{}
 }
 
-func (t *task) compileEnv() compile.Env {
+func (t *Task) compileEnv() compile.Env {
 	if t == nil || t.runtime == nil {
 		return compile.Env{}
 	}
@@ -1180,7 +1191,7 @@ func (t *task) compileEnv() compile.Env {
 // newLoweringBuilder constructs a per-operation builder carrying this task's
 // resolved execution environment (clock, realtime, buffer, QoS, controls) so
 // runtime attach shares the exact lowering setup of initial build.
-func (t *task) newLoweringBuilder() *builder {
+func (t *Task) newLoweringBuilder() *builder {
 	return &builder{
 		runtime:   t.runtime,
 		clock:     t.playoutClock(),

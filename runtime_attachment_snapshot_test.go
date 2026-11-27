@@ -200,7 +200,7 @@ func TestRuntimeAttachmentSpecAndStatsFiltering(t *testing.T) {
 		OutPackets:       4,
 		OutFrames:        1,
 		Dropped:          2,
-		DropReasons:      map[pipeline.DropPolicy]uint64{pipeline.DropOldest: 2},
+		DropReasons:      map[pipeline.DropReason]uint64{pipeline.DropReasonOldest: 2},
 		LastEvent:        av.Event{Type: av.EventBackpressure, StreamID: "audio"},
 		LastEventPresent: true,
 	}
@@ -209,14 +209,14 @@ func TestRuntimeAttachmentSpecAndStatsFiltering(t *testing.T) {
 		OutMessages:      1,
 		OutEvents:        1,
 		Dropped:          1,
-		DropReasons:      map[pipeline.DropPolicy]uint64{pipeline.DropNewest: 1},
+		DropReasons:      map[pipeline.DropReason]uint64{pipeline.DropReasonNewest: 1},
 		LastEvent:        av.Event{Type: av.EventEndOfStream, StreamID: "audio"},
 		LastEventPresent: true,
 	}
 	sourceStats := pipeline.NodeStats{
 		OutMessages: 99,
 		Dropped:     99,
-		DropReasons: map[pipeline.DropPolicy]uint64{pipeline.DropBlock: 99},
+		DropReasons: map[pipeline.DropReason]uint64{pipeline.DropReasonBlock: 99},
 	}
 	stats := pipeline.GraphStats{Nodes: map[string]pipeline.NodeStats{
 		"preview-copy": copyStats,
@@ -229,7 +229,7 @@ func TestRuntimeAttachmentSpecAndStatsFiltering(t *testing.T) {
 		Frames:           1,
 		Events:           1,
 		Dropped:          3,
-		DropReasons:      map[pipeline.DropPolicy]uint64{pipeline.DropOldest: 2, pipeline.DropNewest: 1},
+		DropReasons:      map[pipeline.DropReason]uint64{pipeline.DropReasonOldest: 2, pipeline.DropReasonNewest: 1},
 		Delivered:        8,
 		LastEvent:        sinkStats.LastEvent,
 		LastEventPresent: true,
@@ -242,8 +242,8 @@ func TestRuntimeAttachmentSpecAndStatsFiltering(t *testing.T) {
 	if !reflect.DeepEqual(gotStats, wantStats) {
 		t.Fatalf("branchStatsForNodes = %#v, want %#v", gotStats, wantStats)
 	}
-	gotStats.Nodes["preview-copy"].DropReasons[pipeline.DropOldest] = 99
-	if stats.Nodes["preview-copy"].DropReasons[pipeline.DropOldest] != 2 {
+	gotStats.Nodes["preview-copy"].DropReasons[pipeline.DropReasonOldest] = 99
+	if stats.Nodes["preview-copy"].DropReasons[pipeline.DropReasonOldest] != 2 {
 		t.Fatalf("branchStatsForNodes reused node drop-reason map: %#v", stats.Nodes["preview-copy"].DropReasons)
 	}
 	if got := branchStatsForNodes(stats, nil); !reflect.DeepEqual(got, pipeline.GraphStats{}) {
@@ -298,19 +298,19 @@ func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("opened still wins when observed with abandon", func(t *testing.T) {
+	t.Run("opened still wins when gates later close", func(t *testing.T) {
 		_, attachment := newBoundaryDetachAttachment(t)
 		group := newSwitchGroup(switchNextFrame)
 		gate := group.gate()
+		group.markOpen()
 		if err := gate.Close(); err != nil {
 			t.Fatal(err)
 		}
-		group.markOpen()
 
 		attachment.detachReplacedAtBoundary(group, oldBranchAbort)
 
 		if !attachment.stopped {
-			t.Fatal("opened abandoned boundary did not detach replaced attachment")
+			t.Fatal("opened boundary did not detach replaced attachment")
 		}
 		outcome, ok := attachment.detachOutcome.Load().(DestinationState)
 		if !ok || outcome != DestinationAborted {
@@ -319,7 +319,7 @@ func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
 	})
 }
 
-func newBoundaryDetachAttachment(t *testing.T) (*task, *runtimeAttachment) {
+func newBoundaryDetachAttachment(t *testing.T) (*Task, *runtimeAttachment) {
 	t.Helper()
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)

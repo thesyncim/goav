@@ -105,37 +105,29 @@ const MetadataMediaType = "media_type"
 // EventBitrateChanged events.
 const MetadataBitrate = "bitrate_bps"
 
-// MetadataAttachmentID is the Event.Metadata key carrying a runtime branch
-// attachment id on EventBranchAttached and EventBranchDetached.
-const MetadataAttachmentID = "attachment_id"
+// SampleFormat names a decoded audio sample layout. Open string: adapters may
+// introduce more.
+type SampleFormat string
 
-// MetadataAttachmentName is the Event.Metadata key carrying a runtime branch
-// attachment name on EventBranchAttached and EventBranchDetached.
-const MetadataAttachmentName = "attachment_name"
-
-// MetadataDetachDisposition is the Event.Metadata key carrying how a detached
-// branch finalized its destinations: "detach", "drain", or "abort".
-const MetadataDetachDisposition = "detach_disposition"
-
-// MetadataDestinationName is the Event.Metadata key carrying the destination
-// finalized by a destination lifecycle event.
-const MetadataDestinationName = "destination_name"
+// PixelFormat names a decoded video pixel layout. Open string: adapters may
+// introduce more.
+type PixelFormat string
 
 // Sample and pixel format names used in CodecParameters, AudioFrame, and
 // VideoFrame. Open strings: adapters may introduce more.
 const (
-	SampleFormatS16  = "s16"
-	SampleFormatF32  = "f32"
-	PixelFormatGray8 = "gray8"
+	SampleFormatS16  SampleFormat = "s16"
+	SampleFormatF32  SampleFormat = "f32"
+	PixelFormatGray8 PixelFormat  = "gray8"
 	// Planar 8-bit YUV formats. PixelFormatYUV420P, PixelFormatYUV422P, and
 	// PixelFormatYUV444P alias the canonical I420/I422/I444 names (identical
 	// 3-plane Y, U, V memory layout).
-	PixelFormatI420    = "i420"
-	PixelFormatYUV420P = PixelFormatI420
-	PixelFormatI422    = "i422"
-	PixelFormatYUV422P = PixelFormatI422
-	PixelFormatI444    = "i444"
-	PixelFormatYUV444P = PixelFormatI444
+	PixelFormatI420    PixelFormat = "i420"
+	PixelFormatYUV420P PixelFormat = PixelFormatI420
+	PixelFormatI422    PixelFormat = "i422"
+	PixelFormatYUV422P PixelFormat = PixelFormatI422
+	PixelFormatI444    PixelFormat = "i444"
+	PixelFormatYUV444P PixelFormat = PixelFormatI444
 )
 
 // TimeBase is the rational unit (Num/Den seconds) timestamp and duration
@@ -177,9 +169,19 @@ func (b TimeBase) FromDuration(duration time.Duration) (int64, bool) {
 	return RescaleValue(int64(duration), TimeBase{Num: 1, Den: int64(time.Second)}, b)
 }
 
-// Rescale converts the timestamp to another timebase.
+// Rescale converts the timestamp to another timebase, truncating toward zero.
 func (t Timestamp) Rescale(base TimeBase) (Timestamp, bool) {
 	value, ok := RescaleValue(t.Value, t.Base, base)
+	if !ok {
+		return Timestamp{}, false
+	}
+	return Timestamp{Value: value, Base: base}, true
+}
+
+// RescaleNearest converts the timestamp to another timebase, rounding halves
+// away from zero to avoid cumulative truncation drift.
+func (t Timestamp) RescaleNearest(base TimeBase) (Timestamp, bool) {
+	value, ok := RescaleValueNearest(t.Value, t.Base, base)
 	if !ok {
 		return Timestamp{}, false
 	}
@@ -204,9 +206,19 @@ func (t Timestamp) Sub(previous Timestamp) (Duration, bool) {
 	return Duration{Value: delta, Base: t.Base}, true
 }
 
-// Rescale converts the duration to another timebase.
+// Rescale converts the duration to another timebase, truncating toward zero.
 func (d Duration) Rescale(base TimeBase) (Duration, bool) {
 	value, ok := RescaleValue(d.Value, d.Base, base)
+	if !ok {
+		return Duration{}, false
+	}
+	return Duration{Value: value, Base: base}, true
+}
+
+// RescaleNearest converts the duration to another timebase, rounding halves
+// away from zero.
+func (d Duration) RescaleNearest(base TimeBase) (Duration, bool) {
+	value, ok := RescaleValueNearest(d.Value, d.Base, base)
 	if !ok {
 		return Duration{}, false
 	}
@@ -252,13 +264,24 @@ func DurationFromStdDuration(duration time.Duration, base TimeBase) (Duration, b
 	return Duration{Value: value, Base: base}, true
 }
 
-// RescaleValue converts value from one rational timebase to another.
+// RescaleValue converts value from one rational timebase to another,
+// truncating toward zero.
 func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
+	return rescaleValue(value, from, to, false)
+}
+
+// RescaleValueNearest converts value from one rational timebase to another,
+// rounding halves away from zero.
+func RescaleValueNearest(value int64, from TimeBase, to TimeBase) (int64, bool) {
+	return rescaleValue(value, from, to, true)
+}
+
+func rescaleValue(value int64, from TimeBase, to TimeBase, nearest bool) (int64, bool) {
 	if !from.Valid() || !to.Valid() {
 		return 0, false
 	}
-	if value == 0 {
-		return 0, true
+	if value == 0 || from == to {
+		return value, true
 	}
 	negative := value < 0
 	if negative {
@@ -289,12 +312,29 @@ func RescaleValue(value int64, from TimeBase, to TimeBase) (int64, bool) {
 
 	q2, rem := bits.Div64(0, p2, uint64(d))
 	q1, rem := bits.Div64(rem, p1, uint64(d))
-	q0, _ := bits.Div64(rem, p0, uint64(d))
+	q0, remD := bits.Div64(rem, p0, uint64(d))
 
 	f2, rem := bits.Div64(0, q2, uint64(e))
 	f1, rem := bits.Div64(rem, q1, uint64(e))
-	f0, _ := bits.Div64(rem, q0, uint64(e))
-	if f2 != 0 || f1 != 0 || f0 > uint64(maxInt64) {
+	f0, remE := bits.Div64(rem, q0, uint64(e))
+	if f2 != 0 || f1 != 0 {
+		return 0, false
+	}
+	if nearest && (remE != 0 || remD != 0) {
+		// Exact remainder R = remE*d + remD; round up when 2*R >= d*e.
+		// Since d, e <= maxInt64, d*e < 2^126 and 2*R < 2^127 (no uint128 overflow).
+		dHi, dLo := bits.Mul64(uint64(d), uint64(e))
+		rHi, rLo := bits.Mul64(remE, uint64(d))
+		var c0 uint64
+		rLo, c0 = bits.Add64(rLo, remD, 0)
+		rHi += c0
+		twoRLo, c1 := bits.Add64(rLo, rLo, 0)
+		twoRHi := rHi + rHi + c1
+		if twoRHi > dHi || (twoRHi == dHi && twoRLo >= dLo) {
+			f0++
+		}
+	}
+	if f0 > uint64(maxInt64) {
 		return 0, false
 	}
 	value = int64(f0)
@@ -316,11 +356,11 @@ type CodecParameters struct {
 	SampleRate    int       `json:"sampleRate,omitempty"`
 	Channels      int       `json:"channels,omitempty"`
 	ChannelLayout string    `json:"channelLayout,omitempty"`
-	Width         int       `json:"width,omitempty"`
-	Height        int       `json:"height,omitempty"`
-	PixelFormat   string    `json:"pixelFormat,omitempty"`
-	SampleFormat  string    `json:"sampleFormat,omitempty"`
-	ExtraData     Buffer    `json:"extraData,omitzero"`
+	Width         int          `json:"width,omitempty"`
+	Height        int          `json:"height,omitempty"`
+	PixelFormat   PixelFormat  `json:"pixelFormat,omitempty"`
+	SampleFormat  SampleFormat `json:"sampleFormat,omitempty"`
+	ExtraData     Buffer       `json:"extraData,omitzero"`
 	Attributes    Metadata  `json:"attributes,omitempty"`
 }
 
@@ -425,7 +465,7 @@ func (p *Plane) Reset() {
 type VideoFrame struct {
 	Width       int
 	Height      int
-	PixelFormat string
+	PixelFormat PixelFormat
 }
 
 // AudioFrame is the audio-specific header of a Frame: layout, sample format,
@@ -434,7 +474,7 @@ type AudioFrame struct {
 	SampleRate    int
 	Channels      int
 	ChannelLayout string
-	SampleFormat  string
+	SampleFormat  SampleFormat
 	Samples       int
 }
 
@@ -492,14 +532,13 @@ const (
 	// StreamID is the discovered stream.
 	EventAttachError EventType = "attach_error"
 	// EventBranchAttached reports that task.Attach added a runtime branch
-	// group. Metadata carries MetadataAttachmentID and MetadataAttachmentName.
+	// group. AttachmentID and AttachmentName identify the branch.
 	EventBranchAttached EventType = "branch_attached"
 	// EventBranchFailed reports the first returned handler error in an
 	// isolated branch. The durable branch snapshot retains Cause.
 	EventBranchFailed EventType = "branch_failed"
 	// EventBranchDetached reports that task.Detach removed a runtime branch
-	// group. Metadata carries MetadataAttachmentID, MetadataAttachmentName, and
-	// MetadataDetachDisposition.
+	// group. AttachmentID, AttachmentName, and DetachDisposition identify it.
 	EventBranchDetached EventType = "branch_detached"
 	// EventDestinationCommitted reports that a task or runtime branch
 	// destination was committed.
@@ -587,12 +626,23 @@ type Event struct {
 	// Rate carries the playback rate multiplier for EventRate.
 	Rate float64
 	// End carries the exclusive media end position for EventSegment.
-	End      time.Duration
-	Stream   *Stream
-	Codec    *CodecParameters
-	Cause    error
-	Reason   string
-	Metadata Metadata
+	End time.Duration
+	// AttachmentID and AttachmentName identify the runtime branch on
+	// EventBranchAttached, EventBranchDetached, and branch destination events.
+	AttachmentID   string
+	AttachmentName string
+	// DetachDisposition carries how a detached branch finalized its
+	// destinations ("detach", "drain", or "abort") on EventBranchDetached.
+	DetachDisposition string
+	// DestinationName carries the finalized destination name on
+	// EventDestinationCommitted, EventDestinationAborted,
+	// EventDestinationClosed, and EventDestinationCommitError.
+	DestinationName string
+	Stream          *Stream
+	Codec           *CodecParameters
+	Cause           error
+	Reason          string
+	Metadata        Metadata
 }
 
 // Clone returns a deep copy of CodecParameters, detaching ExtraData bytes and

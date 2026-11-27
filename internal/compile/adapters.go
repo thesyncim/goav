@@ -150,7 +150,7 @@ func liveDecodeStream(inputs []recipeir.Input, stream recipeir.Stream) (av.Strea
 	return selected, true
 }
 
-func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.Registry, cause error) error {
 	code := builderr.DecodeAdapterMissingCode
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
@@ -191,14 +191,14 @@ func RecipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID 
 	}
 }
 
-func ValidateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request CodecAdapterRequest) error {
+func ValidateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.Registry, request CodecAdapterRequest) error {
 	return validateCodecBackend(operation, recipeIRStreamName(stream), registry, request, codec.ModeDecode)
 }
 
 // validateCodecBackend refuses a request no registered backend serves. A
 // codec with no backend at all passes: the missing-adapter checks own that
 // refusal.
-func validateCodecBackend(operation string, node string, registry *codec.SimpleRegistry, request CodecAdapterRequest, mode codec.Mode) error {
+func validateCodecBackend(operation string, node string, registry *codec.Registry, request CodecAdapterRequest, mode codec.Mode) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -298,8 +298,8 @@ func validateRecipeIREncodeAdapters(operation string, env Env, streams []recipei
 type CodecAdapterRequest struct {
 	Codec        av.CodecID
 	Media        av.MediaType
-	SampleFormat string
-	PixelFormat  string
+	SampleFormat av.SampleFormat
+	PixelFormat  av.PixelFormat
 	SampleRate   int
 	Channels     int
 	Backend      string
@@ -390,7 +390,7 @@ func recipeIRStreamResize(stream recipeir.Stream) filter.ResizeConfig {
 // the request (naming the backends that can), or when no backend fits. A
 // codec with no backend at all returns the bare selection error: callers
 // report that as the missing-adapter refusal.
-func SelectCodecBackend(operation string, node string, registry *codec.SimpleRegistry, request CodecAdapterRequest, mode codec.Mode) (codec.Choice, error) {
+func SelectCodecBackend(operation string, node string, registry *codec.Registry, request CodecAdapterRequest, mode codec.Mode) (codec.Choice, error) {
 	choice, err := registry.Select(request.Need(mode))
 	if err == nil {
 		if scopeErr := registry.CheckScopes(request.Codec, request.Settings); scopeErr != nil {
@@ -494,7 +494,7 @@ func codecBackendRefusal(operation string, node string, request CodecAdapterRequ
 // EncodeBackendDetail is the Describe detail naming the backend that serves
 // request at plan time, "backend=videotoolbox (hardware)", or "" when none
 // serves it yet.
-func EncodeBackendDetail(registry *codec.SimpleRegistry, request CodecAdapterRequest) string {
+func EncodeBackendDetail(registry *codec.Registry, request CodecAdapterRequest) string {
 	if registry == nil || request.Codec == "" {
 		return ""
 	}
@@ -525,7 +525,7 @@ func recipeIRStreamResample(stream recipeir.Stream) filter.ResampleConfig {
 	return filter.ResampleConfig{}
 }
 
-func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
+func recipeIRStreamSampleFormat(stream recipeir.Stream) av.SampleFormat {
 	transforms := recipeIRStreamTransforms(stream)
 	for _, transform := range slices.Backward(transforms) {
 		if transform.Kind == recipeir.TransformResample && transform.Resample.SampleFormat != "" {
@@ -535,7 +535,7 @@ func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
 	return ""
 }
 
-func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
+func recipeIRStreamPixelFormat(stream recipeir.Stream) av.PixelFormat {
 	transforms := recipeIRStreamTransforms(stream)
 	for _, transform := range slices.Backward(transforms) {
 		if transform.Kind == recipeir.TransformResize && transform.Resize.PixelFormat != "" {
@@ -545,7 +545,7 @@ func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
 	return ""
 }
 
-func ValidateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request CodecAdapterRequest) error {
+func ValidateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.Registry, request CodecAdapterRequest) error {
 	return validateCodecBackend(operation, recipeIRStreamName(stream), registry, request, codec.ModeEncode)
 }
 
@@ -604,10 +604,10 @@ func codecAdapterIncompatibilityField(request CodecAdapterRequest, descriptors [
 	}
 	mediaDescriptors := descriptorsMatchingMedia(descriptors, request.Media)
 	if request.SampleFormat != "" && !codecDescriptorsSampleFormatCompatible(mediaDescriptors, request.SampleFormat) {
-		return "sample_format", request.SampleFormat, strings.Join(descriptorSupportedSampleFormats(mediaDescriptors), ",")
+		return "sample_format", string(request.SampleFormat), strings.Join(descriptorSupportedSampleFormats(mediaDescriptors), ",")
 	}
 	if request.PixelFormat != "" && !codecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
-		return "pixel_format", request.PixelFormat, strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
+		return "pixel_format", string(request.PixelFormat), strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
 	}
 	if rates := descriptorSupportedSampleRates(mediaDescriptors); request.SampleRate > 0 && len(rates) != 0 && !slices.Contains(rates, request.SampleRate) {
 		return "sample_rate", strconv.Itoa(request.SampleRate), joinInts(rates)
@@ -676,26 +676,26 @@ func descriptorsMatchingMedia(descriptors []codec.Descriptor, media av.MediaType
 	return out
 }
 
-func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat string) bool {
+func codecDescriptorsSampleFormatCompatible(descriptors []codec.Descriptor, sampleFormat av.SampleFormat) bool {
 	if sampleFormat == "" {
 		return true
 	}
 	for i := range descriptors {
 		formats := descriptors[i].Capabilities.SampleFormats
-		if len(formats) == 0 || stringAllowed(formats, sampleFormat) {
+		if len(formats) == 0 || slices.Contains(formats, sampleFormat) {
 			return true
 		}
 	}
 	return false
 }
 
-func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat string) bool {
+func codecDescriptorsPixelFormatCompatible(descriptors []codec.Descriptor, pixelFormat av.PixelFormat) bool {
 	if pixelFormat == "" {
 		return true
 	}
 	for i := range descriptors {
 		formats := descriptors[i].Capabilities.PixelFormats
-		if len(formats) == 0 || stringAllowed(formats, pixelFormat) {
+		if len(formats) == 0 || slices.Contains(formats, pixelFormat) {
 			return true
 		}
 	}
@@ -717,7 +717,9 @@ func descriptorSupportedMedia(descriptors []codec.Descriptor) []av.MediaType {
 func descriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
-		out = MergeStringList(out, descriptors[i].Capabilities.SampleFormats)
+		for _, f := range descriptors[i].Capabilities.SampleFormats {
+			out = MergeStringList(out, []string{string(f)})
+		}
 	}
 	return out
 }
@@ -725,14 +727,16 @@ func descriptorSupportedSampleFormats(descriptors []codec.Descriptor) []string {
 func descriptorSupportedPixelFormats(descriptors []codec.Descriptor) []string {
 	var out []string
 	for i := range descriptors {
-		out = MergeStringList(out, descriptors[i].Capabilities.PixelFormats)
+		for _, f := range descriptors[i].Capabilities.PixelFormats {
+			out = MergeStringList(out, []string{string(f)})
+		}
 	}
 	return out
 }
 
-func MergeStringList(existing []string, next []string) []string {
+func MergeStringList[S ~string](existing []S, next []S) []S {
 	for i := range next {
-		if next[i] == "" || stringAllowed(existing, next[i]) {
+		if next[i] == "" || slices.Contains(existing, next[i]) {
 			continue
 		}
 		existing = append(existing, next[i])
@@ -740,11 +744,11 @@ func MergeStringList(existing []string, next []string) []string {
 	return existing
 }
 
-func recipeEncodeAdapterError(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, cause error) error {
+func recipeEncodeAdapterError(operation string, stream recipeir.Stream, registry *codec.Registry, cause error) error {
 	return RecipeEncodeAdapterCodecError(operation, stream, OperationsEncodeSpec(stream.Operations).ID, registry, cause)
 }
 
-func RecipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+func RecipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.Registry, cause error) error {
 	code := builderr.EncodeAdapterMissingCode
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {

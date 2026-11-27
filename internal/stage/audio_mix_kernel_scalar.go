@@ -1,6 +1,6 @@
 //go:build !goexperiment.simd || purego
 
-package goav
+package stage
 
 // mixS16VectorKernel reports no vector kernel: default builds (no
 // GOEXPERIMENT=simd) and purego builds mix with the scalar loop.

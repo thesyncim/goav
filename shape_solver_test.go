@@ -17,7 +17,7 @@ import (
 
 // solverTestAudioSource declares an audio frame source with explicit format
 // facts and pushes one frame matching them.
-func solverTestAudioSource(id av.StreamID, rate int, channels int, sampleFormat string) Input {
+func solverTestAudioSource(id av.StreamID, rate int, channels int, sampleFormat av.SampleFormat) Input {
 	return Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(rate, channels, sampleFormat), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
@@ -303,7 +303,7 @@ func TestAutoInsertsFormatConvertThroughRegisteredAdapter(t *testing.T) {
 		Name:          "sampleconv",
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		Realtime:      true,
 		Stateless:     true,
 	}, factory))
@@ -403,7 +403,7 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 		})
 	rt := solverTestOpusRuntime(
 		testBundleFilters(),
-		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 	outs := []Output{
 		source.Audio().
@@ -447,7 +447,7 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 		})
 	rt := solverTestOpusRuntime(
 		testBundleFilters(),
-		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 
 	directOuts := []Output{

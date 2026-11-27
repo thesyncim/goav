@@ -169,7 +169,7 @@ func collectIsolationTerminals(result compile.Result, selected map[int]bool, p *
 	return terminals
 }
 
-func (t *task) installIsolation(plans []isolationPlan, txs []*destinationTransaction, work []compile.WorkDestination, attachment *runtimeAttachment) ([]*isolatedBranch, error) {
+func (t *Task) installIsolation(plans []isolationPlan, txs []*destinationTransaction, work []compile.WorkDestination, attachment *runtimeAttachment) ([]*isolatedBranch, error) {
 	if len(plans) == 0 {
 		return nil, nil
 	}
@@ -218,7 +218,7 @@ func branchSpecForNodes(spec pipeline.Spec, nodes []pipeline.NodeRef) pipeline.S
 	return out
 }
 
-func (t *task) isolatedSnapshot(b *isolatedBranch, stats pipeline.GraphStats) BranchSnapshot {
+func (t *Task) isolatedSnapshot(b *isolatedBranch, stats pipeline.GraphStats) BranchSnapshot {
 	fault := b.domain.Snapshot()
 	state := BranchAttached
 	_, destState := t.lifecycleStates()

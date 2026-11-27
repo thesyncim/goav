@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -26,13 +27,13 @@ import (
 // --- Consolidated from naming_timing_contract_test.go ---
 
 func TestFrameDurationNSContracts(t *testing.T) {
-	if got := frameDurationNS(&av.Frame{Duration: av.Duration{Value: 20, Base: av.TimeBase{Num: 1, Den: 1000}}}); got != int64(20*time.Millisecond) {
+	if got := stage.FrameDurationNS(&av.Frame{Duration: av.Duration{Value: 20, Base: av.TimeBase{Num: 1, Den: 1000}}}); got != int64(20*time.Millisecond) {
 		t.Fatalf("explicit frame duration = %d", got)
 	}
-	if got := frameDurationNS(&av.Frame{Audio: &av.AudioFrame{SampleRate: 48000, Samples: 960}}); got != int64(20*time.Millisecond) {
+	if got := stage.FrameDurationNS(&av.Frame{Audio: &av.AudioFrame{SampleRate: 48000, Samples: 960}}); got != int64(20*time.Millisecond) {
 		t.Fatalf("audio-derived frame duration = %d", got)
 	}
-	if got := frameDurationNS(&av.Frame{}); got != 0 {
+	if got := stage.FrameDurationNS(&av.Frame{}); got != 0 {
 		t.Fatalf("empty frame duration = %d, want 0", got)
 	}
 }
@@ -86,7 +87,7 @@ func TestTaskTapsDoNotInferFromGraphNodePrefixes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	task := &task{graph: graph}
+	task := &Task{graph: graph}
 	if taps := task.Taps(); len(taps) != 0 {
 		t.Fatalf("Taps() = %+v, want no prefix-inferred taps", taps)
 	}

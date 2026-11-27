@@ -66,7 +66,7 @@ func Run(ctx context.Context, outs ...goav.Output) error {
 }
 
 // Build builds outs with the default bundled runtime without starting them.
-func Build(ctx context.Context, outs ...goav.Output) (goav.Task, error) {
+func Build(ctx context.Context, outs ...goav.Output) (*goav.Task, error) {
 	return Default().Build(ctx, outs...)
 }
 

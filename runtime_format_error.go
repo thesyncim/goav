@@ -185,7 +185,7 @@ func quoteFormat(id av.FormatID) string {
 
 // containerChoices lists the containers a registry can write and the codecs
 // each carries, for a refusal that has to name a different one.
-func containerChoices(registry *format.SimpleRegistry) string {
+func containerChoices(registry *format.Registry) string {
 	if registry == nil {
 		return ""
 	}

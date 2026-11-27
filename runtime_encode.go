@@ -312,10 +312,10 @@ func encodeOpenError(node string, request compile.CodecAdapterRequest, cause err
 		details = append(details, "channels="+strconv.Itoa(request.Channels))
 	}
 	if request.SampleFormat != "" {
-		details = append(details, "sample_format="+request.SampleFormat)
+		details = append(details, "sample_format="+string(request.SampleFormat))
 	}
 	if request.PixelFormat != "" {
-		details = append(details, "pixel_format="+request.PixelFormat)
+		details = append(details, "pixel_format="+string(request.PixelFormat))
 	}
 	return &BuildError{
 		Phase:     phaseBuild,

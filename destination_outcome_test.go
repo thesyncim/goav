@@ -67,7 +67,7 @@ func TestDestinationFinalizationKeepsIndependentStickyOutcomes(t *testing.T) {
 	count := 0
 	for event := range events {
 		count++
-		if event.Metadata[av.MetadataDestinationName] == "bad" && (event.Type != av.EventDestinationCommitError || !errors.Is(event.Cause, closeErr)) {
+		if event.DestinationName == "bad" && (event.Type != av.EventDestinationCommitError || !errors.Is(event.Cause, closeErr)) {
 			t.Fatalf("bad destination event = %+v", event)
 		}
 	}

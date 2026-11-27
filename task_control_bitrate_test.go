@@ -126,7 +126,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := built.(*task)
+	task := built
 	t.Cleanup(func() { _ = task.Close() })
 
 	runErr := make(chan error, 1)
@@ -170,7 +170,7 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := built.(*task)
+	task := built
 	t.Cleanup(func() { _ = task.Close() })
 
 	if mode := task.Spec().Execution.Mode; mode != "direct" {
@@ -328,7 +328,7 @@ func TestSetBitrateTargetsOneRendition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := built.(*task)
+	task := built
 	t.Cleanup(func() { _ = task.Close() })
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()

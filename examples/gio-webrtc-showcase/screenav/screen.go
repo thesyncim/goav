@@ -140,17 +140,26 @@ type captureDevice interface {
 	Close() error
 }
 
+type screenSourceState uint8
+
+const (
+	screenIdle screenSourceState = iota
+	screenRunning
+	screenClosing
+	screenClosed
+)
+
 type source struct {
-	config          Config
-	device          captureDevice
-	buffers         *framePool
-	queue           chan *av.Frame
-	dropped         atomic.Uint64
-	mu              sync.Mutex
-	started, closed bool
-	cancel          context.CancelFunc
-	done            chan struct{}
-	closeErr        error
+	config   Config
+	device   captureDevice
+	buffers  *framePool
+	queue    chan *av.Frame
+	dropped  atomic.Uint64
+	mu       sync.Mutex
+	state    screenSourceState
+	cancel   context.CancelFunc
+	done     chan struct{}
+	closeErr error
 }
 
 func (*source) Name() string { return "screen" }
@@ -196,15 +205,15 @@ func (s *source) offer(frame *av.Frame) {
 func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result error) {
 	parent := ctx
 	s.mu.Lock()
-	if s.closed {
+	switch s.state {
+	case screenClosing, screenClosed:
 		s.mu.Unlock()
 		return pipeline.ErrClosed
-	}
-	if s.started {
+	case screenRunning:
 		s.mu.Unlock()
 		return errors.New("screenav: source already started")
 	}
-	s.started = true
+	s.state = screenRunning
 	ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 
@@ -230,7 +239,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 			result = errors.Join(result, native.run)
 		}
 		s.mu.Lock()
-		ownClose := s.closed && parent.Err() == nil
+		ownClose := s.state == screenClosing && parent.Err() == nil
 		s.mu.Unlock()
 		if ownClose && errors.Is(result, context.Canceled) {
 			result = pipeline.ErrClosed
@@ -244,7 +253,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 				releaseFrame(frame)
 			default:
 				s.mu.Lock()
-				s.closed = true
+				s.state = screenClosed
 				if s.buffers != nil {
 					s.buffers.close()
 				}
@@ -344,7 +353,8 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 
 func (s *source) Close() error {
 	s.mu.Lock()
-	if s.closed {
+	switch s.state {
+	case screenClosing, screenClosed:
 		done := s.done
 		s.mu.Unlock()
 		<-done
@@ -352,9 +362,8 @@ func (s *source) Close() error {
 		err := s.closeErr
 		s.mu.Unlock()
 		return err
-	}
-	s.closed = true
-	if s.started {
+	case screenRunning:
+		s.state = screenClosing
 		s.cancel()
 		s.mu.Unlock()
 		<-s.done
@@ -362,15 +371,18 @@ func (s *source) Close() error {
 		err := s.closeErr
 		s.mu.Unlock()
 		return err
+	default: // screenIdle
+		s.state = screenClosing
+		s.mu.Unlock()
+		err := s.device.Close()
+		if s.buffers != nil {
+			s.buffers.close()
+		}
+		s.mu.Lock()
+		s.state = screenClosed
+		s.closeErr = err
+		close(s.done)
+		s.mu.Unlock()
+		return err
 	}
-	s.mu.Unlock()
-	err := s.device.Close()
-	if s.buffers != nil {
-		s.buffers.close()
-	}
-	s.mu.Lock()
-	s.closeErr = err
-	close(s.done)
-	s.mu.Unlock()
-	return err
 }

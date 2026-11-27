@@ -116,16 +116,25 @@ type captureDevice interface {
 	Run(context.Context, func(*av.Frame)) error
 	Close() error
 }
+type cameraSourceState uint8
+
+const (
+	camIdle cameraSourceState = iota
+	camRunning
+	camClosing
+	camClosed
+)
+
 type source struct {
-	device          captureDevice
-	buffers         *framePool
-	queue           chan *av.Frame
-	dropped         atomic.Uint64
-	mu              sync.Mutex
-	started, closed bool
-	cancel          context.CancelFunc
-	done            chan struct{}
-	closeErr        error
+	device   captureDevice
+	buffers  *framePool
+	queue    chan *av.Frame
+	dropped  atomic.Uint64
+	mu       sync.Mutex
+	state    cameraSourceState
+	cancel   context.CancelFunc
+	done     chan struct{}
+	closeErr error
 }
 
 func (*source) Name() string { return "camera" }
@@ -168,15 +177,15 @@ func (s *source) offer(frame *av.Frame) {
 func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result error) {
 	parent := ctx
 	s.mu.Lock()
-	if s.closed {
+	switch s.state {
+	case camClosing, camClosed:
 		s.mu.Unlock()
 		return pipeline.ErrClosed
-	}
-	if s.started {
+	case camRunning:
 		s.mu.Unlock()
 		return errors.New("cameraav: source already started")
 	}
-	s.started = true
+	s.state = camRunning
 	ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 	type outcome struct{ run, close error }
@@ -199,7 +208,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 			result = errors.Join(result, native.run)
 		}
 		s.mu.Lock()
-		ownClose := s.closed && parent.Err() == nil
+		ownClose := s.state == camClosing && parent.Err() == nil
 		s.mu.Unlock()
 		if ownClose && errors.Is(result, context.Canceled) {
 			result = pipeline.ErrClosed
@@ -213,7 +222,7 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 				releaseFrame(frame)
 			default:
 				s.mu.Lock()
-				s.closed = true
+				s.state = camClosed
 				if s.buffers != nil {
 					s.buffers.close()
 				}
@@ -258,7 +267,8 @@ func (s *source) Start(ctx context.Context, emitter pipeline.Emitter) (result er
 }
 func (s *source) Close() error {
 	s.mu.Lock()
-	if s.closed {
+	switch s.state {
+	case camClosing, camClosed:
 		done := s.done
 		s.mu.Unlock()
 		<-done
@@ -266,9 +276,8 @@ func (s *source) Close() error {
 		err := s.closeErr
 		s.mu.Unlock()
 		return err
-	}
-	s.closed = true
-	if s.started {
+	case camRunning:
+		s.state = camClosing
 		s.cancel()
 		s.mu.Unlock()
 		<-s.done
@@ -276,15 +285,18 @@ func (s *source) Close() error {
 		err := s.closeErr
 		s.mu.Unlock()
 		return err
+	default: // camIdle
+		s.state = camClosing
+		s.mu.Unlock()
+		err := s.device.Close()
+		if s.buffers != nil {
+			s.buffers.close()
+		}
+		s.mu.Lock()
+		s.state = camClosed
+		s.closeErr = err
+		close(s.done)
+		s.mu.Unlock()
+		return err
 	}
-	s.mu.Unlock()
-	err := s.device.Close()
-	if s.buffers != nil {
-		s.buffers.close()
-	}
-	s.mu.Lock()
-	s.closeErr = err
-	close(s.done)
-	s.mu.Unlock()
-	return err
 }

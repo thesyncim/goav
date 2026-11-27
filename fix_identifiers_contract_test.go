@@ -49,23 +49,22 @@ func TestStringLiteralAPIReferencesResolve(t *testing.T) {
 	for _, dir := range []string{filepath.Join("internal", "compile"), filepath.Join("internal", "builderr")} {
 		files[dir] = parseDir(t, fset, dir)
 	}
-	// task.X names a method of the task a Build returns.
+	// task.X names an exported method of *Task returned by Build.
 	exported["task"] = map[string]bool{}
 	for _, file := range files["goav"] {
-		ast.Inspect(file, func(n ast.Node) bool {
-			spec, ok := n.(*ast.TypeSpec)
-			if !ok || spec.Name.Name != "Task" {
-				return true
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 || !fn.Name.IsExported() {
+				continue
 			}
-			if iface, ok := spec.Type.(*ast.InterfaceType); ok {
-				for _, method := range iface.Methods.List {
-					for _, name := range method.Names {
-						exported["task"][name.Name] = true
-					}
-				}
+			recvType := fn.Recv.List[0].Type
+			if star, ok := recvType.(*ast.StarExpr); ok {
+				recvType = star.X
 			}
-			return false
-		})
+			if ident, ok := recvType.(*ast.Ident); ok && ident.Name == "Task" {
+				exported["task"][fn.Name.Name] = true
+			}
+		}
 	}
 
 	reference := regexp.MustCompile(`\b([a-z][a-z0-9]*)\.([A-Z][A-Za-z0-9]*)`)

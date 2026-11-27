@@ -72,21 +72,3 @@ func joinLayerNilError(join string, index int) error {
 		cause: errUnsupportedBuild,
 	}
 }
-
-// joinAtOutsideCompositeError refuses At outside a Composite: only a canvas
-// places its inputs.
-func joinAtOutsideCompositeError(join string, index int) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(streamInvalidCode),
-		Code:      streamInvalidCode,
-		Operation: "build recipe",
-		Node:      join,
-		Reason:    fmt.Sprintf("%s input %d is placed with At, which positions Composite inputs only", join, index+1),
-		fixes: buildErrorFixes([]string{
-			"pass the Stream itself: goav.Mix(a, b)",
-			"place inputs on a canvas with goav.Composite(cam, goav.At(screen, 640, 0))",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}

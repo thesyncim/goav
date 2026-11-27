@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
@@ -37,9 +38,9 @@ func eventMsg(eventType av.EventType, id av.StreamID) *pipeline.Message {
 
 func requireJoinTaskGraph(t *testing.T, built any, runner string) {
 	t.Helper()
-	internal, ok := built.(*task)
+	internal, ok := built.(*Task)
 	if !ok {
-		t.Fatalf("task type = %T, want *task", built)
+		t.Fatalf("task type = %T, want *Task", built)
 	}
 	got := reflect.TypeOf(internal.graph).String()
 	if !strings.Contains(got, runner) {
@@ -109,7 +110,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 // summing identity), then the PTS-matched pairs sum — never a[i]+b[i+1] as
 // arrival pairing would produce.
 func TestAudioMixSyncByPTSAlignsOffsetArms(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
+	mix := stagepkg.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -145,7 +146,7 @@ func TestAudioMixSyncByPTSAlignsOffsetArms(t *testing.T) {
 // already-mixed timeline (duplicate/backwards PTS without a discontinuity) is
 // dropped to catch up, never replayed.
 func TestAudioMixSyncByPTSDropsStaleFrames(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
+	mix := stagepkg.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -179,7 +180,7 @@ func TestAudioMixSyncByPTSDropsStaleFrames(t *testing.T) {
 // (Seek/Segment repositioned it) flushes that arm's pending queue, re-syncs at
 // the new position, and forwards one discontinuity on the joined stream.
 func TestAudioMixSyncByPTSFlushesArmOnDiscontinuity(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
+	mix := stagepkg.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -216,7 +217,7 @@ func TestAudioMixSyncByPTSFlushesArmOnDiscontinuity(t *testing.T) {
 // TestAudioMixArrivalIgnoresDiscontinuity pins the arrival contract: arrival
 // joins pair by order only, so a discontinuity neither flushes nor forwards.
 func TestAudioMixArrivalIgnoresDiscontinuity(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
+	mix := stagepkg.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -236,7 +237,7 @@ func TestAudioMixArrivalIgnoresDiscontinuity(t *testing.T) {
 // TestAudioMixEndedArmStopsGating: when one arm ends early the remaining arms
 // keep mixing without it; the joined stream ends only when every arm ends.
 func TestAudioMixEndedArmStopsGating(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
+	mix := stagepkg.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -281,7 +282,7 @@ func compositeSyncTestFrame(id av.StreamID, ptsMS int64, w, h int, y, u, v byte)
 // arms whose head matches the step time; the canvas keeps covering the absent
 // arm's last-known extent so the geometry stays stable.
 func TestVideoCompositeSyncByPTSPaintsPresentArms(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := stagepkg.NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncPTS)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
@@ -305,8 +306,8 @@ func TestVideoCompositeSyncByPTSPaintsPresentArms(t *testing.T) {
 	if got := compositeTestYAt(gap, 0, 0); got != 100 {
 		t.Fatalf("Y at (0,0)=%d, want 100 (arm a painted)", got)
 	}
-	if got := compositeTestYAt(gap, 5, 1); got != compositeBlackLuma {
-		t.Fatalf("Y at (5,1)=%d, want %d (absent arm b not painted)", got, compositeBlackLuma)
+	if got := compositeTestYAt(gap, 5, 1); got != stagepkg.CompositeBlackLuma {
+		t.Fatalf("Y at (5,1)=%d, want %d (absent arm b not painted)", got, stagepkg.CompositeBlackLuma)
 	}
 
 	if err := stage.Handle(ctx, frameMsg(compositeSyncTestFrame("a", 20, 4, 4, 100, 10, 20)), emit); err != nil {

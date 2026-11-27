@@ -36,8 +36,8 @@ type Descriptor struct {
 	Name          string
 	Input         av.MediaType
 	Output        av.MediaType
-	PixelFormats  []string
-	SampleFormats []string
+	PixelFormats  []av.PixelFormat
+	SampleFormats []av.SampleFormat
 	ResizeModes   []ResizeMode
 	Realtime      bool
 	Stateless     bool
@@ -93,7 +93,7 @@ type Config struct {
 type ResizeConfig struct {
 	Width       int
 	Height      int
-	PixelFormat string
+	PixelFormat av.PixelFormat
 	Mode        ResizeMode
 }
 
@@ -125,7 +125,7 @@ type ResampleConfig struct {
 	SampleRate    int
 	Channels      int
 	ChannelLayout string
-	SampleFormat  string
+	SampleFormat  av.SampleFormat
 }
 
 // Factory opens filters for a registered descriptor; registries hold

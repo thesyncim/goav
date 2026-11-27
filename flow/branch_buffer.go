@@ -132,19 +132,19 @@ func (b BranchBuffer) String() string {
 // DropReason keys GraphStats.DropReasons / NodeStats.DropReasons: why the runtime
 // shed a message. Use the DropReason* constants to read those maps without
 // importing the pipeline package.
-type DropReason = pipeline.DropPolicy
+type DropReason = pipeline.DropReason
 
 const (
 	// DropReasonOldest: a DropOldest branch dropped the queued head to admit a newer message.
-	DropReasonOldest DropReason = pipeline.DropOldest
+	DropReasonOldest DropReason = pipeline.DropReasonOldest
 	// DropReasonNewest: a DropNewest branch refused the incoming message and kept the queue.
-	DropReasonNewest DropReason = pipeline.DropNewest
+	DropReasonNewest DropReason = pipeline.DropReasonNewest
 	// DropReasonStale: a message older than the branch BufferMaxDelay was shed.
 	DropReasonStale DropReason = pipeline.DropStale
 	// DropReasonOverflow: a message that would exceed the branch BufferMaxBytes budget was shed.
 	DropReasonOverflow DropReason = pipeline.DropOverflow
 	// DropReasonUntilSync: messages dropped until the next keyframe/sync point.
-	DropReasonUntilSync DropReason = pipeline.DropUntilSync
+	DropReasonUntilSync DropReason = pipeline.DropReasonUntilSync
 	// DropReasonNonKeyVideo: a non-keyframe video message was dropped.
-	DropReasonNonKeyVideo DropReason = pipeline.DropNonKeyVideo
+	DropReasonNonKeyVideo DropReason = pipeline.DropReasonNonKeyVideo
 )

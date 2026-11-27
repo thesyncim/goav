@@ -2,11 +2,20 @@
 
 package main
 
-import "github.com/thesyncim/goav/player"
+import (
+	"context"
+
+	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/player"
+)
 
 type playerWindow struct{ *player.Window }
 
 func newWindow() window { return playerWindow{player.New()} }
+
+func (w playerWindow) Run(ctx context.Context, task *goav.Task) error {
+	return w.Window.Run(ctx, task)
+}
 
 func (w playerWindow) summary() *playStats {
 	s := w.Stats()

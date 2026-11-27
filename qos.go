@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -49,14 +50,14 @@ func claimQoSWindow(last *atomic.Int64, now time.Duration) bool {
 // finished task attaches itself. Reports published before attach are dropped —
 // nothing flows before the task exists.
 type qosReporter struct {
-	task atomic.Pointer[task]
+	task atomic.Pointer[Task]
 }
 
 func newQoSReporter() *qosReporter {
 	return &qosReporter{}
 }
 
-func (r *qosReporter) attach(t *task) {
+func (r *qosReporter) attach(t *Task) {
 	if r != nil && t != nil {
 		r.task.Store(t)
 	}
@@ -86,7 +87,7 @@ func bindGateDeps(stage pipeline.Stage, clock av.Clock, report func(av.Event)) {
 	switch gate := stage.(type) {
 	case *playoutGate:
 		gate.bindClock(clock)
-		markTimelinePaced(clock)
+		stagepkg.MarkTimelinePaced(clock)
 		if report != nil {
 			gate.report = report
 		}
@@ -106,7 +107,7 @@ func bindGateDeps(stage pipeline.Stage, clock av.Clock, report func(av.Event)) {
 // Cause; refusal events carry no lateness payload, so EventQoSReport screens
 // them out and the policy never reacts to its own refusals. The goroutine
 // exits when the subscription closes with the task.
-func (t *task) startQoSPolicy(policy func(av.Event) []control.Control) {
+func (t *Task) startQoSPolicy(policy func(av.Event) []control.Control) {
 	if t == nil || policy == nil {
 		return
 	}
@@ -114,7 +115,7 @@ func (t *task) startQoSPolicy(policy func(av.Event) []control.Control) {
 	go t.runQoSPolicy(sub, policy)
 }
 
-func (t *task) runQoSPolicy(sub Subscription, policy func(av.Event) []control.Control) {
+func (t *Task) runQoSPolicy(sub Subscription, policy func(av.Event) []control.Control) {
 	for event := range sub.Events() {
 		if _, _, ok := av.EventQoSReport(&event); !ok {
 			continue

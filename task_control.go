@@ -24,7 +24,7 @@ import (
 // their admitted tail so another source's media cannot be lost. Rate is task-wide: it scales the
 // task's shared timeline, which every paced consumer (clock-aware sources and
 // playout gates) sleeps on, and never targets a node.
-func (t *task) Control(ctx context.Context, ctrl control.Control) error {
+func (t *Task) Control(ctx context.Context, ctrl control.Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 // accepted, without delivering one. Graphs without the capability (the direct
 // runner) probe as accepted: they also have nothing to flush, so ordering is
 // moot and delivery reports the real refusal.
-func (t *task) probeSourceControl(node pipeline.NodeRef) error {
+func (t *Task) probeSourceControl(node pipeline.NodeRef) error {
 	prober, ok := t.graph.(pipeline.SourceControlProber)
 	if !ok {
 		return nil
@@ -96,7 +96,7 @@ func (t *task) probeSourceControl(node pipeline.NodeRef) error {
 // flushSeekBacklog drains exclusive downstream queues of pre-seek media before
 // delivering the seek control. Running probe -> flush -> deliver ensures a
 // refused seek never drops media and flush never sheds post-seek frames.
-func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
+func (t *Task) flushSeekBacklog(node pipeline.NodeRef) error {
 	flusher, ok := t.graph.(pipeline.DownstreamFlusher)
 	if !ok {
 		return nil
@@ -111,7 +111,7 @@ func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
 // Pause/Resume: tasks with nothing paced to scale (an offline task pumps as
 // fast as the graph drains) keep the format.ErrRateUnsupported contract, and
 // closed tasks refuse with control.ErrNotRunning.
-func (t *task) controlRate(ctrl control.Control) error {
+func (t *Task) controlRate(ctrl control.Control) error {
 	if ctrl.Node() != "" || ctrl.Tap() != "" {
 		return fmt.Errorf("goav: rate is task-wide: it scales the shared task timeline for every paced consumer; send control.Rate without At/AtTap: %w", control.ErrInvalid)
 	}
@@ -125,7 +125,7 @@ func (t *task) controlRate(ctrl control.Control) error {
 // target source nodes, which have no queue or serial worker, so they go through
 // the graph's SourceInjector. Everything else rides the target node's queue
 // through NodeInjector.
-func (t *task) controlDeliver(ctrl control.Control) (func(context.Context, pipeline.NodeRef, *pipeline.Message) error, error) {
+func (t *Task) controlDeliver(ctrl control.Control) (func(context.Context, pipeline.NodeRef, *pipeline.Message) error, error) {
 	if ctrl.TargetsSources() {
 		injector, ok := t.graph.(pipeline.SourceInjector)
 		if !ok {
@@ -140,7 +140,7 @@ func (t *task) controlDeliver(ctrl control.Control) (func(context.Context, pipel
 	return injector.Inject, nil
 }
 
-func (t *task) controlTargets(ctrl control.Control) ([]pipeline.NodeRef, error) {
+func (t *Task) controlTargets(ctrl control.Control) ([]pipeline.NodeRef, error) {
 	if ctrl.Node() != "" && ctrl.Tap() != "" {
 		return nil, fmt.Errorf("goav: control targets both node %q and tap %q; choose exactly one target: %w", ctrl.Node(), ctrl.Tap(), control.ErrAmbiguousTarget)
 	}
@@ -186,7 +186,7 @@ func implicitControlTargets(kind string, targets []pipeline.NodeRef) ([]pipeline
 	}
 }
 
-func (t *task) controlSourceNodes() []pipeline.NodeRef {
+func (t *Task) controlSourceNodes() []pipeline.NodeRef {
 	spec := t.Spec()
 	var targets []pipeline.NodeRef
 	for _, node := range spec.Nodes {
@@ -197,7 +197,7 @@ func (t *task) controlSourceNodes() []pipeline.NodeRef {
 	return targets
 }
 
-func (t *task) controlEntryNodes() []pipeline.NodeRef {
+func (t *Task) controlEntryNodes() []pipeline.NodeRef {
 	spec := t.Spec()
 	sources := make(map[pipeline.NodeRef]struct{}, len(spec.Nodes))
 	for _, node := range spec.Nodes {
@@ -225,7 +225,7 @@ func (t *task) controlEntryNodes() []pipeline.NodeRef {
 // and reaches only its encoder. A control addressed to a source stream finds
 // none here and enters at the graph's entry nodes, reaching every encoder of
 // that source.
-func (t *task) encoderNodesProducing(stream av.StreamID) []pipeline.NodeRef {
+func (t *Task) encoderNodesProducing(stream av.StreamID) []pipeline.NodeRef {
 	if stream == "" {
 		return nil
 	}

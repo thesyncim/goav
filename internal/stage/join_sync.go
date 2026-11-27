@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -77,7 +77,7 @@ type joinArmState struct {
 // EOS semantics (both modes): an ended arm stops gating — its buffered frames
 // still participate, then the remaining arms keep joining without it; the
 // joined stream ends only when every arm has ended.
-type joinSyncState struct {
+type JoinSyncState struct {
 	mode       compile.JoinSyncMode
 	armStates  []joinArmState
 	armMap     map[av.StreamID]int // populated only when len(armStates) > 8
@@ -123,7 +123,7 @@ type joinArmGate struct {
 
 // armIndex returns the index of id in armStates, or -1 if unknown.
 // Linear scan for <= 8 arms avoids string map hashing on the hot path.
-func (s *joinSyncState) armIndex(id av.StreamID) int {
+func (s *JoinSyncState) armIndex(id av.StreamID) int {
 	if s.armMap != nil {
 		if idx, ok := s.armMap[id]; ok {
 			return idx
@@ -142,7 +142,7 @@ func (s *joinSyncState) armIndex(id av.StreamID) int {
 // when every arm has its own upstream: an arm that shares an upstream with a
 // sibling (a tap arm) could otherwise block the very producer the sibling
 // needs to deliver the frame that frees it.
-func (s *joinSyncState) enableAdmission() {
+func (s *JoinSyncState) enableAdmission() {
 	for i := range s.armStates {
 		s.armStates[i].gate = &joinArmGate{wake: make(chan struct{}, 1), arm: i}
 	}
@@ -156,7 +156,7 @@ func (s *joinSyncState) enableAdmission() {
 // Events and frames of unknown arms pass. Frames in flight between admit and
 // Handle are not counted, so the bound is the lead plus the join's input
 // queue, and nothing leaks when a delivery is shed.
-func (s *joinSyncState) admit(ctx context.Context, msg *pipeline.Message) error {
+func (s *JoinSyncState) admit(ctx context.Context, msg *pipeline.Message) error {
 	if !s.admissionEnabled || msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
 		return nil
 	}
@@ -182,7 +182,7 @@ func (s *joinSyncState) admit(ctx context.Context, msg *pipeline.Message) error 
 
 // arm names the arm a frame message belongs to (interleave.Gate), false for
 // what admit always passes.
-func (s *joinSyncState) arm(m any) (int, bool) {
+func (s *JoinSyncState) arm(m any) (int, bool) {
 	msg, _ := m.(*pipeline.Message)
 	if !s.admissionEnabled || msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
 		return 0, false
@@ -197,7 +197,7 @@ func (s *joinSyncState) arm(m any) (int, bool) {
 // admits reports, without blocking, whether admit would take more of arm
 // now: the time order's check (interleave.Gate) before it grants the turn to
 // a source that feeds the arm.
-func (s *joinSyncState) admits(arm int) bool {
+func (s *JoinSyncState) admits(arm int) bool {
 	if arm < 0 || arm >= len(s.armStates) || s.armStates[arm].gate == nil || s.armStates[arm].gate.depth.Load() < joinArmLeadFrames {
 		return true
 	}
@@ -211,7 +211,7 @@ func (s *joinSyncState) admits(arm int) bool {
 
 // publishDepths mirrors each arm's pending depth for admit and wakes an arm
 // whose depth fell below the lead. The stages call it after every Handle.
-func (s *joinSyncState) publishDepths() {
+func (s *JoinSyncState) publishDepths() {
 	if !s.admissionEnabled {
 		return
 	}
@@ -236,13 +236,13 @@ func (s *joinSyncState) publishDepths() {
 }
 
 // releaseAdmission frees every waiting producer; the stages call it on Close.
-func (s *joinSyncState) releaseAdmission() {
+func (s *JoinSyncState) releaseAdmission() {
 	if s.released != nil {
 		s.releasedOnce.Do(func() { close(s.released) })
 	}
 }
 
-func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.StreamID, pendingCap int) *joinSyncState {
+func NewJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.StreamID, pendingCap int) *JoinSyncState {
 	if pendingCap < 1 {
 		pendingCap = 1
 	}
@@ -260,7 +260,7 @@ func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.Strea
 			armMap[id] = i
 		}
 	}
-	return &joinSyncState{
+	return &JoinSyncState{
 		mode:      mode,
 		armStates: arms,
 		armMap:    armMap,
@@ -271,7 +271,7 @@ func newJoinSyncStateWithPendingCap(mode compile.JoinSyncMode, inputs []av.Strea
 
 // bufferAt queues one arm frame (already cloned by the stage) into armIdx,
 // recycling frames whose arm is unknown or already ended.
-func (s *joinSyncState) bufferAt(armIdx int, frame *av.Frame) {
+func (s *JoinSyncState) bufferAt(armIdx int, frame *av.Frame) {
 	if s.eosEmitted || armIdx < 0 || armIdx >= len(s.armStates) || s.armStates[armIdx].eos {
 		s.recycleFrame(armIdx, frame)
 		return
@@ -280,12 +280,12 @@ func (s *joinSyncState) bufferAt(armIdx int, frame *av.Frame) {
 }
 
 // buffer queues one arm frame by StreamID lookup.
-func (s *joinSyncState) buffer(frame *av.Frame) {
+func (s *JoinSyncState) Buffer(frame *av.Frame) {
 	s.bufferAt(s.armIndex(frame.StreamID), frame)
 }
 
 // pendingCount returns the number of buffered frames for id (used by tests).
-func (s *joinSyncState) pendingCount(id av.StreamID) int {
+func (s *JoinSyncState) PendingCount(id av.StreamID) int {
 	idx := s.armIndex(id)
 	if idx < 0 {
 		return 0
@@ -296,7 +296,7 @@ func (s *joinSyncState) pendingCount(id av.StreamID) int {
 // markEOS records an arm's end of stream and reports whether every arm ended
 // for the first time. A stream-less EOS marks every declared arm ended; unknown
 // stream IDs are ignored.
-func (s *joinSyncState) markEOS(id av.StreamID) bool {
+func (s *JoinSyncState) MarkEOS(id av.StreamID) bool {
 	if s.eosEmitted {
 		return false
 	}
@@ -324,7 +324,7 @@ func (s *joinSyncState) markEOS(id av.StreamID) bool {
 // re-syncs at the arm's new position instead of mixing stale frames. It
 // reports whether it acted: arrival joins ignore discontinuities — arrival
 // order is their only contract, preserved unchanged.
-func (s *joinSyncState) discontinuity(id av.StreamID) bool {
+func (s *JoinSyncState) discontinuity(id av.StreamID) bool {
 	if s.mode != compile.JoinSyncPTS {
 		return false
 	}
@@ -347,7 +347,7 @@ func (s *joinSyncState) discontinuity(id av.StreamID) bool {
 
 // ready reports whether a step can advance: at least one arm has a buffered
 // frame and every arm without one has ended.
-func (s *joinSyncState) ready() bool {
+func (s *JoinSyncState) ready() bool {
 	any := false
 	for i := range s.armStates {
 		if s.armStates[i].queue.count != 0 {
@@ -365,7 +365,7 @@ func (s *joinSyncState) ready() bool {
 // input order, nil where an arm contributes nothing this step (gap or ended).
 // ref indexes the timing-reference frame the output stamps PTS/Duration from;
 // it is never nil when ok.
-func (s *joinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
+func (s *JoinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
 	if s.mode == compile.JoinSyncPTS {
 		s.dropStale()
 	}
@@ -386,7 +386,7 @@ func (s *joinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
 	return frames, ref, true
 }
 
-func (s *joinSyncState) stepFrames() []*av.Frame {
+func (s *JoinSyncState) stepFrames() []*av.Frame {
 	if cap(s.frames) < len(s.armStates) {
 		s.frames = make([]*av.Frame, len(s.armStates))
 	}
@@ -396,7 +396,7 @@ func (s *joinSyncState) stepFrames() []*av.Frame {
 }
 
 // selectArrival fills every pending head into its slot (the arrival step).
-func (s *joinSyncState) selectArrival(frames []*av.Frame) int {
+func (s *JoinSyncState) selectArrival(frames []*av.Frame) int {
 	ref := -1
 	for i := range s.armStates {
 		head := s.armStates[i].queue.peek()
@@ -413,7 +413,7 @@ func (s *joinSyncState) selectArrival(frames []*av.Frame) int {
 
 // selectPTS fills the participant slots for one PTS step and returns the
 // timing-reference index — the arm whose head defines t.
-func (s *joinSyncState) selectPTS(frames []*av.Frame) int {
+func (s *JoinSyncState) selectPTS(frames []*av.Frame) int {
 	tIndex, tNS := -1, int64(0)
 	for i := range s.armStates {
 		head := s.armStates[i].queue.peek()
@@ -453,7 +453,7 @@ func (s *joinSyncState) selectPTS(frames []*av.Frame) int {
 // already-emitted timeline by more than half their own duration — the arm fell
 // behind (duplicate or backwards PTS without a discontinuity), so the join
 // catches up instead of replaying time.
-func (s *joinSyncState) dropStale() {
+func (s *JoinSyncState) dropStale() {
 	if s.nextNS == joinSyncNSUnset {
 		return
 	}
@@ -471,13 +471,13 @@ func (s *joinSyncState) dropStale() {
 	}
 }
 
-func (s *joinSyncState) recycleFrame(armIdx int, frame *av.Frame) {
+func (s *JoinSyncState) recycleFrame(armIdx int, frame *av.Frame) {
 	if s.recycle != nil && frame != nil {
 		s.recycle(armIdx, frame)
 	}
 }
 
-func (s *joinSyncState) recyclePending() {
+func (s *JoinSyncState) recyclePending() {
 	if s == nil {
 		return
 	}
@@ -492,7 +492,7 @@ func (s *joinSyncState) recyclePending() {
 
 // droppedFrames reports the running catch-up drop total — the value the join
 // stages expose through pipeline.DropReporter. Safe concurrently with Handle.
-func (s *joinSyncState) droppedFrames() uint64 {
+func (s *JoinSyncState) droppedFrames() uint64 {
 	return s.dropped.Load()
 }
 
@@ -501,9 +501,9 @@ func (s *joinSyncState) droppedFrames() uint64 {
 type joinStageBase struct {
 	name    string
 	out     av.StreamID
-	sync    *joinSyncState
+	sync    *JoinSyncState
 	free    [][]*av.Frame
-	pools   *mediaPools
+	pools   *MediaPools
 	closed  bool
 	output  av.Frame
 	message pipeline.Message
@@ -530,7 +530,7 @@ func (b *joinStageBase) Arm(_ interleave.Token, msg any) (int, bool) { return b.
 
 func (b *joinStageBase) Admits(_ interleave.Token, arm int) bool { return b.sync.admits(arm) }
 
-func (b *joinStageBase) enableAdmission() { b.sync.enableAdmission() }
+func (b *joinStageBase) EnableAdmission() { b.sync.enableAdmission() }
 
 func (b *joinStageBase) handleEvent(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter, drain func(context.Context, pipeline.Emitter) error) error {
 	if msg.Event == nil {
@@ -538,7 +538,7 @@ func (b *joinStageBase) handleEvent(ctx context.Context, msg *pipeline.Message, 
 	}
 	switch msg.Event.Type {
 	case av.EventEndOfStream:
-		ended := b.sync.markEOS(msg.Event.StreamID)
+		ended := b.sync.MarkEOS(msg.Event.StreamID)
 		if err := drain(ctx, emitter); err != nil {
 			return err
 		}
@@ -587,7 +587,7 @@ func (b *joinStageBase) releaseFramePlanes(frame *av.Frame) {
 		return
 	}
 	if b.pools != nil {
-		b.pools.putPlanes(frame.Planes)
+		b.pools.PutPlanes(frame.Planes)
 		frame.Planes = nil
 	}
 }
@@ -609,7 +609,7 @@ func (b *joinStageBase) Close() error {
 		b.free[i] = nil
 	}
 	if b.pools != nil {
-		b.pools.putPlanes(b.output.Planes)
+		b.pools.PutPlanes(b.output.Planes)
 		b.output.Planes = nil
 	}
 	return nil
@@ -629,6 +629,11 @@ func framePTSNS(frame *av.Frame) (int64, bool) {
 // frameDurationNS reports the frame's span on the nanosecond clock: the
 // declared Duration when usable, else the audio length derived from
 // samples/rate, else 0 (exact-match tolerance).
+// FrameDurationNS reports the frame's span on the nanosecond clock: the
+// explicit Duration when valid, else the sample count over the sample rate for
+// audio frames, else 0.
+func FrameDurationNS(frame *av.Frame) int64 { return frameDurationNS(frame) }
+
 func frameDurationNS(frame *av.Frame) int64 {
 	if d, ok := frame.Duration.ToDuration(); ok && d > 0 {
 		return int64(d)

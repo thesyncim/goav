@@ -16,7 +16,7 @@ func NewDecoderFactory() DecoderFactory {
 	return DecoderFactory{}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	if registry == nil {
 		return
 	}

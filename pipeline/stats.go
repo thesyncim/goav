@@ -93,11 +93,11 @@ func observeIn(n *nodeCounters, msg *Message, cold *coldStats) {
 }
 
 // observeDrop records a dropped message at node n.
-func observeDrop(n *nodeCounters, policy DropPolicy, cold *coldStats) {
+func observeDrop(n *nodeCounters, reason DropReason, cold *coldStats) {
 	if n != nil {
 		n.dropped.Add(1)
 	}
-	cold.recordDrop(n, policy)
+	cold.recordDrop(n, reason)
 }
 
 func (c *coldStats) recordOutEvent(n *nodeCounters, ev *av.Event) {
@@ -129,52 +129,52 @@ func (c *coldStats) recordNodeEvent(n *nodeCounters, ev *av.Event) {
 // Every reason the pipeline records has a lock-free counter, so a node that
 // sheds on every message under overload takes no lock; only a custom
 // BufferPolicy.Drop string falls back to the cold map.
-func (c *coldStats) recordDrop(n *nodeCounters, policy DropPolicy) {
-	if policy == "" {
-		policy = DropNever
+func (c *coldStats) recordDrop(n *nodeCounters, reason DropReason) {
+	if reason == "" {
+		reason = DropReasonNever
 	}
 	d := &c.drops
 	if n != nil {
 		d = &n.drops
 	}
-	if i := dropReasonSlot(policy); i >= 0 {
+	if i := dropReasonSlot(reason); i >= 0 {
 		d.known[i].Add(1)
 		return
 	}
-	c.recordCustomDrop(d, policy)
+	c.recordCustomDrop(d, reason)
 }
 
 // recordCustomDrop counts a shed under a reason the pipeline does not know (a
-// custom BufferPolicy.Drop string), in the cold map.
-func (c *coldStats) recordCustomDrop(d *dropCounts, policy DropPolicy) {
+// custom DropReason string), in the cold map.
+func (c *coldStats) recordCustomDrop(d *dropCounts, reason DropReason) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if d.other == nil {
-		d.other = make(map[DropPolicy]uint64)
+		d.other = make(map[DropReason]uint64)
 	}
-	d.other[policy]++
+	d.other[reason]++
 }
 
 // dropReasons lists the reasons the pipeline records itself, in the order of
 // dropCounts.known.
-var dropReasons = [...]DropPolicy{
-	DropNever, DropOldest, DropNewest, DropUntilSync, DropNonKeyVideo, DropBlock,
+var dropReasons = [...]DropReason{
+	DropReasonNever, DropReasonOldest, DropReasonNewest, DropReasonUntilSync, DropReasonNonKeyVideo, DropReasonBlock,
 	DropStale, DropOverflow, DropSync, DropFlush, DropObserver,
 }
 
-func dropReasonSlot(policy DropPolicy) int {
-	switch policy {
-	case DropNever:
+func dropReasonSlot(reason DropReason) int {
+	switch reason {
+	case DropReasonNever:
 		return 0
-	case DropOldest:
+	case DropReasonOldest:
 		return 1
-	case DropNewest:
+	case DropReasonNewest:
 		return 2
-	case DropUntilSync:
+	case DropReasonUntilSync:
 		return 3
-	case DropNonKeyVideo:
+	case DropReasonNonKeyVideo:
 		return 4
-	case DropBlock:
+	case DropReasonBlock:
 		return 5
 	case DropStale:
 		return 6
@@ -195,25 +195,25 @@ func dropReasonSlot(policy DropPolicy) int {
 // known reason, and other for custom reasons, guarded by coldStats.mu.
 type dropCounts struct {
 	known [len(dropReasons)]atomic.Uint64
-	other map[DropPolicy]uint64
+	other map[DropReason]uint64
 }
 
 // addTo adds the counts into reasons, allocating it on the first nonzero
 // count. The caller holds coldStats.mu (for other).
-func (d *dropCounts) addTo(reasons map[DropPolicy]uint64) map[DropPolicy]uint64 {
+func (d *dropCounts) addTo(reasons map[DropReason]uint64) map[DropReason]uint64 {
 	for i := range d.known {
 		if v := d.known[i].Load(); v > 0 {
 			if reasons == nil {
-				reasons = make(map[DropPolicy]uint64)
+				reasons = make(map[DropReason]uint64)
 			}
 			reasons[dropReasons[i]] += v
 		}
 	}
-	for policy, v := range d.other {
+	for reason, v := range d.other {
 		if reasons == nil {
-			reasons = make(map[DropPolicy]uint64)
+			reasons = make(map[DropReason]uint64)
 		}
-		reasons[policy] += v
+		reasons[reason] += v
 	}
 	return reasons
 }
@@ -248,19 +248,19 @@ func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters, repor
 		}
 		ns := nodes[i].snapshotLocked()
 		if len(ns.DropReasons) > 0 && stats.DropReasons == nil {
-			stats.DropReasons = make(map[DropPolicy]uint64, len(ns.DropReasons))
+			stats.DropReasons = make(map[DropReason]uint64, len(ns.DropReasons))
 		}
-		for policy, v := range ns.DropReasons {
-			stats.DropReasons[policy] += v
+		for reason, v := range ns.DropReasons {
+			stats.DropReasons[reason] += v
 		}
 		if i < len(reported) && reported[i] > 0 {
 			ns.Dropped += reported[i]
 			if ns.DropReasons == nil {
-				ns.DropReasons = make(map[DropPolicy]uint64, 1)
+				ns.DropReasons = make(map[DropReason]uint64, 1)
 			}
 			ns.DropReasons[DropSync] += reported[i]
 			if stats.DropReasons == nil {
-				stats.DropReasons = make(map[DropPolicy]uint64, 1)
+				stats.DropReasons = make(map[DropReason]uint64, 1)
 			}
 			stats.DropReasons[DropSync] += reported[i]
 		}
@@ -351,10 +351,10 @@ func (r *retiredCounts) fold(n *nodeBase, cold *coldStats) {
 		if len(c.drops.other) > 0 {
 			cold.mu.Lock()
 			if r.counters.drops.other == nil {
-				r.counters.drops.other = make(map[DropPolicy]uint64, len(c.drops.other))
+				r.counters.drops.other = make(map[DropReason]uint64, len(c.drops.other))
 			}
-			for policy, v := range c.drops.other {
-				r.counters.drops.other[policy] += v
+			for reason, v := range c.drops.other {
+				r.counters.drops.other[reason] += v
 			}
 			cold.mu.Unlock()
 		}

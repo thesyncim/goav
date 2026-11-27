@@ -165,11 +165,11 @@ func transformConfig(transform recipeir.Transform) map[string]string {
 	case recipeir.TransformResize:
 		putConfigInt(config, "width", transform.Resize.Width)
 		putConfigInt(config, "height", transform.Resize.Height)
-		putConfigString(config, "pixelFormat", transform.Resize.PixelFormat)
+		putConfigString(config, "pixelFormat", string(transform.Resize.PixelFormat))
 	case recipeir.TransformResample:
 		putConfigInt(config, "sampleRate", transform.Resample.SampleRate)
 		putConfigInt(config, "channels", transform.Resample.Channels)
-		putConfigString(config, "sampleFormat", transform.Resample.SampleFormat)
+		putConfigString(config, "sampleFormat", string(transform.Resample.SampleFormat))
 	}
 	if len(config) == 0 {
 		return nil
@@ -331,11 +331,11 @@ func shapeTransformConfig(spec shape.Spec) map[string]string {
 	case av.MediaVideo:
 		putConfigInt(config, "width", spec.Width)
 		putConfigInt(config, "height", spec.Height)
-		putConfigString(config, "pixelFormat", spec.PixelFormat)
+		putConfigString(config, "pixelFormat", string(spec.PixelFormat))
 	case av.MediaAudio:
 		putConfigInt(config, "sampleRate", spec.SampleRate)
 		putConfigInt(config, "channels", spec.Channels)
-		putConfigString(config, "sampleFormat", spec.SampleFormat)
+		putConfigString(config, "sampleFormat", string(spec.SampleFormat))
 	}
 	if len(config) == 0 {
 		return nil
@@ -557,8 +557,8 @@ func filterAdapterRequirement(rt *Runtime, name string, requiredBy string) plan.
 	}
 	requirement.Input = desc.Input
 	requirement.Output = desc.Output
-	requirement.PixelFormats = append([]string(nil), desc.PixelFormats...)
-	requirement.SampleFormats = append([]string(nil), desc.SampleFormats...)
+	requirement.PixelFormats = append([]av.PixelFormat(nil), desc.PixelFormats...)
+	requirement.SampleFormats = append([]av.SampleFormat(nil), desc.SampleFormats...)
 	requirement.ResizeModes = append([]filter.ResizeMode(nil), desc.ResizeModes...)
 	requirement.Realtime = desc.Realtime
 	requirement.Stateless = desc.Stateless
@@ -794,10 +794,10 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 			requirement.Output = av.MediaType(details["actual_output"])
 		}
 		if details["field"] == "pixel_format" {
-			requirement.PixelFormats = splitDetailCSV(details["supported"])
+			requirement.PixelFormats = splitDetailTyped[av.PixelFormat](details["supported"])
 		}
 		if details["field"] == "sample_format" {
-			requirement.SampleFormats = splitDetailCSV(details["supported"])
+			requirement.SampleFormats = splitDetailTyped[av.SampleFormat](details["supported"])
 		}
 		if details["field"] == "resize_mode" {
 			requirement.ResizeModes = resizeModesFromStrings(splitDetailCSV(details["supported"]))
@@ -827,17 +827,29 @@ func applyCodecDetailsFromBuildError(requirement *plan.AdapterRequirement, detai
 		requirement.Media = mediaTypesFromStrings(splitDetailCSV(details["supported"]))
 	}
 	if details["supported_sample_formats"] != "" {
-		requirement.SampleFormats = splitDetailCSV(details["supported_sample_formats"])
+		requirement.SampleFormats = splitDetailTyped[av.SampleFormat](details["supported_sample_formats"])
 	}
 	if details["field"] == "sample_format" && details["supported"] != "" && len(requirement.SampleFormats) == 0 {
-		requirement.SampleFormats = splitDetailCSV(details["supported"])
+		requirement.SampleFormats = splitDetailTyped[av.SampleFormat](details["supported"])
 	}
 	if details["supported_pixel_formats"] != "" {
-		requirement.PixelFormats = splitDetailCSV(details["supported_pixel_formats"])
+		requirement.PixelFormats = splitDetailTyped[av.PixelFormat](details["supported_pixel_formats"])
 	}
 	if details["field"] == "pixel_format" && details["supported"] != "" && len(requirement.PixelFormats) == 0 {
-		requirement.PixelFormats = splitDetailCSV(details["supported"])
+		requirement.PixelFormats = splitDetailTyped[av.PixelFormat](details["supported"])
 	}
+}
+
+func splitDetailTyped[S ~string](raw string) []S {
+	parts := splitDetailCSV(raw)
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]S, len(parts))
+	for i := range parts {
+		out[i] = S(parts[i])
+	}
+	return out
 }
 
 func adapterRequirementStatus(code errcode.Code) string {

@@ -17,7 +17,7 @@ import (
 )
 
 func TestStreamRuleAttachmentTrackingContracts(t *testing.T) {
-	task := &task{rules: &taskStreamRules{attached: make(map[av.StreamID][]streamRuleAttachment)}}
+	task := &Task{rules: &taskStreamRules{attached: make(map[av.StreamID][]streamRuleAttachment)}}
 	task.trackStreamRuleAttachment("audio", 1, nil)
 	if task.streamRuleAttached("audio", 1) {
 		t.Fatal("nil attachment tracked, want ignored")
@@ -33,7 +33,7 @@ func TestStreamRuleAttachmentTrackingContracts(t *testing.T) {
 }
 
 func TestInstallAndRunStreamRulesContracts(t *testing.T) {
-	var nilTask *task
+	var nilTask *Task
 	announcer := &streamAnnouncer{}
 	nilTask.installStreamRules(announcer, "demux", shape.DomainPacket, []streamRule{{match: MatchMedia(av.MediaAudio)}})
 	if announcer.task.Load() != nil {
@@ -101,7 +101,7 @@ func (f announceTestEmitter) Emit(_ context.Context, msg *pipeline.Message) erro
 func TestHandleStreamAddedGuardContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
-	task := &task{}
+	task := &Task{}
 	events := task.watch.subscribe(source, 4, []EventFilter{WatchTypes(av.EventAttachError)}).Events()
 	task.rules = &taskStreamRules{
 		source: "demux",
@@ -175,7 +175,7 @@ func TestStreamRuleMatcherUsesAnnouncementTime(t *testing.T) {
 }
 
 func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
-	task := &task{rules: &taskStreamRules{
+	task := &Task{rules: &taskStreamRules{
 		source: "demux",
 		domain: shape.DomainPacket,
 	}}
@@ -223,7 +223,7 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 
 func TestStreamRuleRemoveInputCapturesTrackedBranches(t *testing.T) {
 	attachment := &runtimeAttachment{id: "att-1", name: "late"}
-	task := &task{rules: &taskStreamRules{
+	task := &Task{rules: &taskStreamRules{
 		attached: map[av.StreamID][]streamRuleAttachment{
 			"audio": {
 				{rule: 0, attachment: attachment},
@@ -300,7 +300,7 @@ func TestStreamRuleBranchNamesContract(t *testing.T) {
 func TestPublishStreamRuleErrorContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
-	task := &task{}
+	task := &Task{}
 	events := task.watch.subscribe(source, 2, []EventFilter{WatchTypes(av.EventAttachError)}).Events()
 	cause := errors.New("attach failed")
 

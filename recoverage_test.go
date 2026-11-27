@@ -108,7 +108,7 @@ func TestAttachMediaMismatchRefusesBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer built.Close()
-	built.(*task).taps = []TapSnapshot{{
+	built.taps = []TapSnapshot{{
 		Name: "video.frames", MediaKind: av.MediaVideo, Domain: shape.DomainFrame, Node: "source",
 		Shape: shape.Spec{Domain: shape.DomainFrame, MediaKind: av.MediaVideo, StreamID: "video", Width: 640, Height: 360, PixelFormat: av.PixelFormatYUV420P},
 	}}
@@ -131,7 +131,7 @@ func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer built.Close()
-	live := built.(*task)
+	live := built
 	branches, err := live.attachBranches([]Output{
 		live.Tap("audio.frames").As("levels").To(discardSink("levels")),
 		live.Route(pipeline.Route{From: "select-audio"}).As("expert").To(discardSink("expert")),

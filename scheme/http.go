@@ -197,6 +197,14 @@ func icecast(header http.Header) bool {
 }
 
 // httpReader is an io.ReadSeeker and io.ReaderAt over an HTTP resource.
+type httpMode uint8
+
+const (
+	httpModeProgressive httpMode = iota
+	httpModeRanged
+	httpModeLive
+)
+
 // Calls serialize, so ReadAt is safe for concurrent use.
 type httpReader struct {
 	client  *http.Client
@@ -211,10 +219,8 @@ type httpReader struct {
 	origin       string
 	originScheme string
 	// size is the resource length, or -1 when the server does not say.
-	size   int64
-	ranges bool
-	// live is a progressive stream without a length, or an Icecast one.
-	live bool
+	size int64
+	mode httpMode
 	// validator is the If-Range value: a strong ETag, else Last-Modified.
 	validator string
 	etag      string
@@ -271,21 +277,23 @@ func (r *httpReader) open() error {
 			resp.Body.Close()
 			return fmt.Errorf("http: malformed Content-Range %q", resp.Header.Get("Content-Range"))
 		}
-		r.ranges, r.size, r.nextEnd = true, total, end+1
+		r.mode, r.size, r.nextEnd = httpModeRanged, total, end+1
 		r.attach(resp, 0, end+1)
 	case http.StatusOK:
 		r.size = resp.ContentLength
-		r.live = r.size < 0 || icecast(resp.Header)
-		if r.live {
+		if r.size < 0 || icecast(resp.Header) {
 			// A live stream has no finite EOF boundary even if a relay reports
 			// a placeholder Content-Length.
+			r.mode = httpModeLive
 			r.size = -1
+		} else {
+			r.mode = httpModeProgressive
 		}
 		r.attach(resp, 0, -1)
 	case http.StatusRequestedRangeNotSatisfiable:
 		// Only an empty resource refuses bytes=0-.
 		resp.Body.Close()
-		r.ranges, r.size = true, 0
+		r.mode, r.size = httpModeRanged, 0
 	default:
 		resp.Body.Close()
 		return statusError(resp)
@@ -414,7 +422,7 @@ func (r *httpReader) Size() int64 {
 func (r *httpReader) Live() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.live
+	return r.mode == httpModeLive
 }
 
 // Close ends every request, unblocking a pending read.
@@ -444,7 +452,7 @@ func (r *httpReader) readAt(p []byte, off int64) (int, error) {
 	if r.size >= 0 && off >= r.size {
 		return 0, io.EOF
 	}
-	if !r.ranges {
+	if r.mode != httpModeRanged {
 		return r.readProgressive(p, off)
 	}
 	if off < int64(len(r.head)) {
@@ -561,7 +569,7 @@ func (r *httpReader) readProgressive(p []byte, off int64) (int, error) {
 		return n, nil
 	}
 	if r.body == nil || off < r.body.at {
-		if r.live {
+		if r.mode == httpModeLive {
 			return 0, errLiveBehind
 		}
 		if err := r.restart(); err != nil {
@@ -596,7 +604,7 @@ func (r *httpReader) fromWindow(p []byte, off int64) (int, bool) {
 func (r *httpReader) progressiveFailure(err error) error {
 	b := r.body
 	if err == io.EOF && r.ctx.Err() == nil && !b.guard.stalled.Load() {
-		if r.live {
+		if r.mode == httpModeLive {
 			// A live stream does not end: its end is a dropped connection,
 			// which goav.Reconnect recovers from.
 			r.release()

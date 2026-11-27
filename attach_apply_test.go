@@ -126,7 +126,7 @@ func TestRebranchAtKeyframeDeliversTheSwitchingKeyframe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer live.Close()
-	built := live.(*task)
+	built := live
 	hooked := &ingressHookGraph{Graph: built.graph}
 	built.graph = hooked
 	runErr := make(chan error, 1)

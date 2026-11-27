@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -109,9 +110,9 @@ type reconnectingSource struct {
 }
 
 func newReconnectingSource(first reconnectSession, detail string, reopen func(context.Context) (reconnectSession, error), policy reconnectPolicy, clock av.Clock, report func(av.Event)) pipeline.Source {
-	if tl, ok := clock.(*timeline); ok {
+	if tl, ok := clock.(*stage.Timeline); ok {
 		// Backoff waits wall time, not the task's (pausable) media time.
-		clock = tl.inner
+		clock = tl.Inner()
 	}
 	if clock == nil {
 		clock = av.MonotonicClock()

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
@@ -113,7 +114,7 @@ func openProviderSource(ctx context.Context, src provider.Source, name string, d
 	}
 	if aware, ok := source.(provider.ClockUser); ok && clock != nil {
 		aware.UseClock(clock)
-		markTimelinePaced(clock)
+		stage.MarkTimelinePaced(clock)
 	}
 	spec := src.SourceShape()
 	domain := spec.Domain

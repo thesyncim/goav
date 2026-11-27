@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -30,7 +30,7 @@ import (
 // av.EventSelectActive event names the target input in Event.StreamID, calls
 // SetActive, and is consumed (not forwarded). control.SelectActive builds that
 // control.
-type selectorStage struct {
+type Selector struct {
 	name        string
 	inputs      []av.StreamID
 	out         av.StreamID
@@ -42,8 +42,8 @@ type selectorStage struct {
 	message     pipeline.Message
 }
 
-func newSelectorStage(name string, inputs []av.StreamID, out av.StreamID) *selectorStage {
-	return &selectorStage{
+func NewSelector(name string, inputs []av.StreamID, out av.StreamID) *Selector {
+	return &Selector{
 		name:   name,
 		inputs: append([]av.StreamID(nil), inputs...),
 		out:    out,
@@ -51,13 +51,13 @@ func newSelectorStage(name string, inputs []av.StreamID, out av.StreamID) *selec
 	}
 }
 
-func (s *selectorStage) Name() string { return s.name }
+func (s *Selector) Name() string { return s.name }
 
 // SetActive switches the forwarded input. It is safe to call concurrently with
 // Handle: the new id is published with a single atomic store. An id that is not
 // one of the configured inputs is rejected so a typo cannot silently mute the
 // output.
-func (s *selectorStage) SetActive(id av.StreamID) error {
+func (s *Selector) SetActive(id av.StreamID) error {
 	for i := range s.inputs {
 		if s.inputs[i] == id {
 			s.activeIndex.Store(int32(i))
@@ -79,8 +79,11 @@ func joinStreamIDs(ids []av.StreamID) string {
 	return out.String()
 }
 
+// ActiveID returns the currently active input id (empty if none configured).
+func (s *Selector) ActiveID() av.StreamID { return s.activeID() }
+
 // activeID returns the currently active input id (empty if none configured).
-func (s *selectorStage) activeID() av.StreamID {
+func (s *Selector) activeID() av.StreamID {
 	if len(s.inputs) == 0 {
 		return ""
 	}
@@ -91,7 +94,7 @@ func (s *selectorStage) activeID() av.StreamID {
 	return s.inputs[index]
 }
 
-func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+func (s *Selector) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	active := s.activeID()
 	switch msg.Kind {
 	case pipeline.MessageFrame:
@@ -161,4 +164,4 @@ func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 	}
 }
 
-func (s *selectorStage) Close() error { return nil }
+func (s *Selector) Close() error { return nil }

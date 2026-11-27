@@ -109,15 +109,20 @@ func (b *Buffer) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// The pool: power-of-two size classes from 64 B to 128 MiB, one sync.Pool
-// each. Larger buffers are allocated exactly and left to the garbage
-// collector when released.
+// The pool: sub-power-of-two size classes from 64 B to 128 MiB (4 subdivisions
+// per power-of-two octave above 64 B), one sync.Pool each. This caps internal
+// fragmentation on large video frames at ~12.5-20% instead of up to 50% while
+// keeping O(1) class lookup. Larger buffers are allocated exactly and left to
+// the garbage collector when released.
 const (
 	minBlockShift = 6
 	maxBlockShift = 27
+	subClassBits  = 2
+	subClasses    = 1 << subClassBits
+	numBlockClass = 1 + (maxBlockShift-minBlockShift)*subClasses
 )
 
-var blockPools [maxBlockShift - minBlockShift + 1]sync.Pool
+var blockPools [numBlockClass]sync.Pool
 
 // block is one pooled allocation and the reference count over it.
 type block struct {
@@ -134,18 +139,35 @@ func takeBlock(n int) *block {
 	} else if pooled, _ := blockPools[class].Get().(*block); pooled != nil {
 		b = pooled
 	} else {
-		b = &block{class: int8(class), data: make([]byte, 1<<(class+minBlockShift))}
+		b = &block{class: int8(class), data: make([]byte, classSize(class))}
 	}
 	b.refs.Store(1)
 	return b
 }
 
 func blockClass(n int) int {
-	shift := max(bits.Len(uint(n-1)), minBlockShift)
+	if n <= 1<<minBlockShift {
+		return 0
+	}
+	shift := bits.Len(uint(n - 1))
 	if shift > maxBlockShift {
 		return -1
 	}
-	return shift - minBlockShift
+	base := 1 << (shift - 1)
+	stepShift := shift - 1 - subClassBits
+	sub := (n - base - 1) >> stepShift
+	return 1 + (shift-minBlockShift-1)*subClasses + sub
+}
+
+func classSize(class int) int {
+	if class == 0 {
+		return 1 << minBlockShift
+	}
+	oct := (class - 1) / subClasses
+	sub := (class - 1) % subClasses
+	base := 1 << (oct + minBlockShift)
+	step := 1 << (oct + minBlockShift - subClassBits)
+	return base + (sub+1)*step
 }
 
 // Retain adds a reference. Retaining a buffer whose last reference is gone is

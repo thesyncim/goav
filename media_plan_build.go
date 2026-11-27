@@ -3,15 +3,16 @@ package goav
 import (
 	"context"
 
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
+func buildGraphPlanTask(ctx context.Context, gp graphPlan) (*Task, error) {
 	runtime := runtimeForGraphExecution(gp.runtime)
 	// One shared timeline, QoS reporter, and control seam per task — kept on
 	// the per-build builder and finished task so the shared Runtime remains
 	// strictly immutable across concurrent builds and runs.
-	timeline := newTimeline(runtime.clock)
+	timeline := stage.NewTimeline(runtime.clock)
 	qos := newQoSReporter()
 	controls := &taskControls{}
 	if err := validateGraphPlanLowering(gp); err != nil {

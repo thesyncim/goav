@@ -82,8 +82,8 @@ func TestRegistryDescriptorsAreCopied(t *testing.T) {
 		Modes:    []Mode{ModeDecode},
 		Profiles: []string{"lowdelay"},
 		Capabilities: Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
-			PixelFormats:  []string{av.PixelFormatI420},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
+			PixelFormats:  []av.PixelFormat{av.PixelFormatI420},
 			RTPPayloads:   []string{"audio/opus"},
 			BuildTags:     []string{"tag"},
 		},

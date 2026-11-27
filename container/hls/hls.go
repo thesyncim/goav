@@ -149,7 +149,8 @@ type writerState uint8
 const (
 	writerAwaitingInit writerState = iota // before ftyp/moov
 	writerGotFtyp                         // ftyp buffered, awaiting moov
-	writerReady                           // init segment published, accepting media fragments
+	writerReady                           // init segment published, awaiting moof
+	writerInFragment                      // moof seen, awaiting mdat
 	writerClosed                          // cleanly finalized
 	writerFailed                          // sticky error recorded in err
 )
@@ -166,7 +167,6 @@ type writer struct {
 	renderBuf       bytes.Buffer
 	err             error
 	state           writerState
-	inFragment      bool
 
 	// timescales maps each track to its media timescale; anchor is the
 	// track whose times place fragments: the first video track, else the
@@ -302,16 +302,16 @@ func (w *writer) handle(box []byte) error {
 		}
 		w.part = append(w.part[:0], box...)
 		w.partStart, w.partEnd, w.partKey = start, end, independent
-		w.inFragment = true
+		w.state = writerInFragment
 	default: // mdat, which ends the fragment, and anything else of it
-		if !w.inFragment {
+		if w.state != writerInFragment {
 			return nil
 		}
 		w.part = append(w.part, box...)
 		if string(box[4:8]) != "mdat" {
 			return nil
 		}
-		w.inFragment = false
+		w.state = writerReady
 		if w.open == nil {
 			w.open = &segment{number: w.next, name: fmt.Sprintf("%s-%05d.m4s", w.base, w.next), start: w.partStart, end: w.partStart}
 			w.next++
@@ -601,7 +601,7 @@ func (w *writer) Close() error {
 			return err
 		}
 	}
-	if w.state != writerReady {
+	if w.state != writerReady && w.state != writerInFragment {
 		w.state = writerClosed
 		w.announceEnded()
 		return nil

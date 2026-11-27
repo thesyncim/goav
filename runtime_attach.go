@@ -44,7 +44,7 @@ func (m *contextMutex) Unlock() { <-m.gate }
 // finalize a partially installed attachment with an undecided disposition.
 // Only transactions and stages are read through this lifecycle registry;
 // those slices are immutable before publication.
-func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
+func (t *Task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	if t.phase >= taskClosing {
@@ -66,7 +66,7 @@ func (t *task) beginAttachmentLifecycle(a *runtimeAttachment) bool {
 	return true
 }
 
-func (t *task) setAttachmentDisposition(a *runtimeAttachment, disposition oldBranchDisposition) {
+func (t *Task) setAttachmentDisposition(a *runtimeAttachment, disposition oldBranchDisposition) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	switch disposition {
@@ -85,7 +85,7 @@ func (t *task) setAttachmentDisposition(a *runtimeAttachment, disposition oldBra
 
 // An accepted drain remains owned until removal finishes. A racing whole-task
 // Close must still abandon it if upstream work has not finished draining.
-func (t *task) endAttachmentLifecycle(a *runtimeAttachment) (aborted bool) {
+func (t *Task) endAttachmentLifecycle(a *runtimeAttachment) (aborted bool) {
 	t.lifecycleMu.Lock()
 	defer t.lifecycleMu.Unlock()
 	aborted = a.phase == attachAborting
@@ -169,7 +169,7 @@ type Attachment interface {
 // lowering, opens every planned node, and then applies the patch atomically
 // to the running graph: a failed attach rolls every applied node back and
 // leaves the task unchanged.
-func (t *task) attach(ctx context.Context, specs ...attachBranch) (Attachment, error) {
+func (t *Task) attach(ctx context.Context, specs ...attachBranch) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -509,7 +509,7 @@ func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) TapSnapshot 
 
 // attachRuntimeBranches plans the group below its anchors, opens it, and
 // applies it to the running graph as one attachment.
-func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInput) (Attachment, error) {
+func (t *Task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInput) (Attachment, error) {
 	if err := t.attachMu.LockContext(ctx); err != nil {
 		return nil, err
 	}

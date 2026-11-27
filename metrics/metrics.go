@@ -24,8 +24,14 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// StatsSource is the narrow view of a *goav.Task that metrics reads.
+type StatsSource interface {
+	Stats() pipeline.GraphStats
+	Snapshot() goav.TaskSnapshot
+}
+
 // Handler serves the task's counters and states as Prometheus text.
-func Handler(task goav.Task) http.Handler {
+func Handler(task StatsSource) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var buf bytes.Buffer
 		write(&buf, collect(task))
@@ -37,7 +43,7 @@ func Handler(task goav.Task) http.Handler {
 // Publish exposes the task's stats and snapshot (state, branches,
 // destinations) as the expvar variable name, rendered as JSON on demand. Like
 // expvar.Publish it panics if name is already taken.
-func Publish(name string, task goav.Task) {
+func Publish(name string, task StatsSource) {
 	expvar.Publish(name, expvar.Func(func() any {
 		snap := task.Snapshot()
 		return struct {
@@ -60,7 +66,7 @@ type family struct {
 	samples          []sample
 }
 
-func collect(task goav.Task) []*family {
+func collect(task StatsSource) []*family {
 	var fams []*family
 	add := func(name, help, kind string) *family {
 		f := &family{name: "goav_" + name, help: help, kind: kind}
@@ -116,7 +122,7 @@ func collect(task goav.Task) []*family {
 		}
 		sort.Strings(reasons)
 		for _, r := range reasons {
-			put(drops, float64(dr[pipeline.DropPolicy(r)]), "node", n, "reason", r)
+			put(drops, float64(dr[pipeline.DropReason(r)]), "node", n, "reason", r)
 		}
 	}
 

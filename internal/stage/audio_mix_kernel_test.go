@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"encoding/binary"
@@ -10,8 +10,8 @@ import (
 )
 
 func TestMixS16KernelDispatch(t *testing.T) {
-	if want := wantMixS16KernelPrefix(); !strings.HasPrefix(mixS16KernelName(), want) {
-		t.Fatalf("mix kernel = %q, want prefix %q", mixS16KernelName(), want)
+	if want := wantMixS16KernelPrefix(); !strings.HasPrefix(MixS16KernelName(), want) {
+		t.Fatalf("mix kernel = %q, want prefix %q", MixS16KernelName(), want)
 	}
 }
 
@@ -49,7 +49,7 @@ func TestMixS16KernelMatchesScalar(t *testing.T) {
 		}},
 	}
 	for _, tt := range corpus {
-		t.Run(fmt.Sprintf("arms=%d/samples=%d/kernel=%s", tt.arms, tt.samples, mixS16KernelName()), func(t *testing.T) {
+		t.Run(fmt.Sprintf("arms=%d/samples=%d/kernel=%s", tt.arms, tt.samples, MixS16KernelName()), func(t *testing.T) {
 			assertMixMatchesScalar(t, mixKernelCorpusInputs(tt.arms, tt.samples, tt.pattern))
 		})
 	}
@@ -93,14 +93,14 @@ func assertMixMatchesScalar(t *testing.T, inputs [][]byte) {
 	got := make([]byte, n)
 	gotScalar := make([]byte, n)
 	want := make([]byte, n)
-	mixS16Into(got, inputs, n)
+	MixS16Into(got, inputs, n)
 	mixS16ScalarKernel(gotScalar, inputs, n)
 	mixS16ScalarRange(want, inputs, 0, n)
 	if !reflect.DeepEqual(gotScalar, want) {
 		t.Fatalf("scalar kernel output = %v, reference = %v", mixKernelReadS16(gotScalar), mixKernelReadS16(want))
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("kernel %s output = %v, reference = %v", mixS16KernelName(), mixKernelReadS16(got), mixKernelReadS16(want))
+		t.Fatalf("kernel %s output = %v, reference = %v", MixS16KernelName(), mixKernelReadS16(got), mixKernelReadS16(want))
 	}
 }
 
@@ -110,12 +110,12 @@ func BenchmarkMixS16Kernel(b *testing.B) {
 			return int16((sample%257)*64 - arm*97 - 8192)
 		})
 		n := len(inputs[0])
-		b.Run(fmt.Sprintf("selected/%s/arms=%d", mixS16KernelName(), arms), func(b *testing.B) {
+		b.Run(fmt.Sprintf("selected/%s/arms=%d", MixS16KernelName(), arms), func(b *testing.B) {
 			dst := make([]byte, n)
 			b.ReportAllocs()
 			b.SetBytes(int64(n * arms))
 			for b.Loop() {
-				mixS16Into(dst, inputs, n)
+				MixS16Into(dst, inputs, n)
 			}
 		})
 		b.Run(fmt.Sprintf("scalar/arms=%d", arms), func(b *testing.B) {

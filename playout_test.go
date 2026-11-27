@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
@@ -144,10 +145,7 @@ func TestPlayoutSinkFreezesOnPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer live.Close()
-	internal, ok := live.(*task)
-	if !ok {
-		t.Fatalf("live task = %T, want *task", live)
-	}
+	internal := live
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- live.Run(ctx) }()
@@ -264,7 +262,7 @@ func TestPlayoutRateChangeRetimesDelivery(t *testing.T) {
 // tolerance still delivers.
 func TestPlayoutDropLateShedsOverdueMedia(t *testing.T) {
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := stage.NewTimeline(clock)
 	gate := newPlayoutGate(flow.Playout("preview").WithDropLate(10 * time.Millisecond))
 	gate.bindClock(timeline)
 	emit := &syncCollectEmitter{}
@@ -297,7 +295,7 @@ func TestPlayoutDropLateShedsOverdueMedia(t *testing.T) {
 // on its first message instead of sleeping out the media-time jump.
 func TestPlayoutDiscontinuityResetsAnchor(t *testing.T) {
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := stage.NewTimeline(clock)
 	gate := newPlayoutGate(flow.Playout("preview"))
 	gate.bindClock(timeline)
 	emit := &syncCollectEmitter{}
@@ -342,7 +340,7 @@ func TestPlayoutOperationCloneUsesSeparateGateWithSharedAnchor(t *testing.T) {
 	}
 
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := stage.NewTimeline(clock)
 	originalGate.bindClock(timeline)
 	clonedGate.bindClock(timeline)
 	if err := originalGate.Handle(context.Background(), syncPacketMessage("v", 0), syncNoopEmitter{}); err != nil {
@@ -460,6 +458,56 @@ func TestExplainReportsPathLatency(t *testing.T) {
 	for _, decision := range ungated.Decisions {
 		if decision.Code == "path_latency_budget" {
 			t.Fatalf("ungated path reported a latency budget: %+v", decision)
+		}
+	}
+}
+
+type recordingTestClock struct {
+	mu     sync.Mutex
+	now    time.Duration
+	sleeps []time.Duration
+}
+
+func (c *recordingTestClock) Now() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *recordingTestClock) Sleep(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.sleeps = append(c.sleeps, d)
+	if d > 0 {
+		c.now += d
+	}
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *recordingTestClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.now += d
+	c.mu.Unlock()
+}
+
+func (c *recordingTestClock) Sleeps() []time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]time.Duration(nil), c.sleeps...)
+}
+
+func assertClockSleeps(t *testing.T, clock *recordingTestClock, want ...time.Duration) {
+	t.Helper()
+	got := clock.Sleeps()
+	if len(got) != len(want) {
+		t.Fatalf("clock sleeps = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("clock sleeps = %v, want %v", got, want)
 		}
 	}
 }

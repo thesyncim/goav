@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // StreamID. It is a normal pipeline.Stage: the buffered runner calls Handle
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
-type videoCompositeStage struct {
+type VideoComposite struct {
 	joinStageBase
 	layout []compile.CompositeLayout
 	// sizes remembers each arm's most recent frame dimensions (indexed by armIdx),
@@ -28,23 +28,23 @@ type compositeArmSize struct {
 	known bool
 }
 
-func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode) *videoCompositeStage {
-	return newVideoCompositeStageWithPrealloc(name, inputs, out, layout, mode, 1)
+func NewVideoComposite(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode) *VideoComposite {
+	return NewVideoCompositeWithPrealloc(name, inputs, out, layout, mode, 1)
 }
 
-func newVideoCompositeStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int) *videoCompositeStage {
-	return newVideoCompositeStageWithPreallocAndPools(name, inputs, out, layout, mode, preallocDepth, nil)
+func NewVideoCompositeWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int) *VideoComposite {
+	return NewVideoCompositeWithPreallocAndPools(name, inputs, out, layout, mode, preallocDepth, nil)
 }
 
-func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int, pools *mediaPools) *videoCompositeStage {
+func NewVideoCompositeWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, layout []compile.CompositeLayout, mode compile.JoinSyncMode, preallocDepth int, pools *MediaPools) *VideoComposite {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
-	stage := &videoCompositeStage{
+	stage := &VideoComposite{
 		joinStageBase: joinStageBase{
 			name:  name,
 			out:   out,
-			sync:  newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+			sync:  NewJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
 			free:  make([][]*av.Frame, len(inputs)),
 			pools: pools,
 		},
@@ -66,7 +66,7 @@ func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamI
 	return stage
 }
 
-func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+func (s *VideoComposite) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
@@ -89,7 +89,7 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 	return err
 }
 
-func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
+func (s *VideoComposite) drain(ctx context.Context, emitter pipeline.Emitter) error {
 	for {
 		frames, ref, ok := s.sync.step()
 		if !ok {
@@ -301,7 +301,7 @@ func copyPlaneInside(dst []byte, dstW int, src []byte, srcStride int, srcOffset 
 
 // cloneCompositeFrame keeps an arm frame past the call that lent it: a
 // pooled header with the frame's fields and its own reference to each plane.
-func (s *videoCompositeStage) cloneCompositeFrame(armIdx int, frame *av.Frame) *av.Frame {
+func (s *VideoComposite) cloneCompositeFrame(armIdx int, frame *av.Frame) *av.Frame {
 	clone := s.takeCompositeFrame(armIdx)
 	planes := clone.Planes
 	video := clone.Video
@@ -321,7 +321,7 @@ func (s *videoCompositeStage) cloneCompositeFrame(armIdx int, frame *av.Frame) *
 	return clone
 }
 
-func (s *videoCompositeStage) takeCompositeFrame(armIdx int) *av.Frame {
+func (s *VideoComposite) takeCompositeFrame(armIdx int) *av.Frame {
 	if armIdx < 0 || armIdx >= len(s.free) {
 		return &av.Frame{
 			Video:  &av.VideoFrame{},
@@ -344,8 +344,10 @@ func (s *videoCompositeStage) takeCompositeFrame(armIdx int) *av.Frame {
 
 // Limited-range I420 black: the canvas color wherever no arm paints.
 const (
-	compositeBlackLuma     = 16
-	compositeNeutralChroma = 128
+	CompositeBlackLuma     = 16
+	CompositeNeutralChroma = 128
+	compositeBlackLuma     = CompositeBlackLuma
+	compositeNeutralChroma = CompositeNeutralChroma
 )
 
 // fillPlane sets every byte of plane to value. Doubling copies keep it a few

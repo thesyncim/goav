@@ -46,10 +46,10 @@ func openMediaSink(ctx context.Context, sink pipeline.Sink, streams []av.Stream,
 // build threads one through the runtime clone, and the finished task
 // attaches itself, as it does for QoS reports.
 type taskControls struct {
-	task atomic.Pointer[task]
+	task atomic.Pointer[Task]
 }
 
-func (c *taskControls) attach(t *task) {
+func (c *taskControls) attach(t *Task) {
 	if c != nil && t != nil {
 		c.task.Store(t)
 	}

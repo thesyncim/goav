@@ -128,7 +128,7 @@ func (t *destinationTransaction) outcome() (DestinationState, error) {
 	return t.state, t.err
 }
 
-func (t *task) bindDestination(tx *destinationTransaction, attachment *runtimeAttachment) {
+func (t *Task) bindDestination(tx *destinationTransaction, attachment *runtimeAttachment) {
 	if tx == nil {
 		return
 	}
@@ -160,7 +160,7 @@ func (t *task) bindDestination(tx *destinationTransaction, attachment *runtimeAt
 	}
 }
 
-func (t *task) destinationSnapshots(work []compile.WorkDestination, txs []*destinationTransaction, fallback DestinationState, scope ...string) []DestinationSnapshot {
+func (t *Task) destinationSnapshots(work []compile.WorkDestination, txs []*destinationTransaction, fallback DestinationState, scope ...string) []DestinationSnapshot {
 	out := destinationSnapshotsFromWork(work, fallback)
 	for i := range out {
 		key := work[i].ID

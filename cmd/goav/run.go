@@ -301,7 +301,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 // control directory, and the summary lists what they write. A tcp address
 // must be loopback unless --control-remote, and clients authenticate with a
 // token written owner-only to the token file.
-func runServed(ctx context.Context, task goav.Task, runTask func(context.Context) error, control *controlFlags, files *cliFiles, stderr io.Writer) error {
+func runServed(ctx context.Context, task *goav.Task, runTask func(context.Context) error, control *controlFlags, files *cliFiles, stderr io.Writer) error {
 	attached, err := files.within(cmp.Or(control.dir, "."))
 	if err != nil {
 		return err

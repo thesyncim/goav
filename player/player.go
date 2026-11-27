@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/player/internal/engine"
 	"github.com/thesyncim/goav/runconfig"
@@ -146,6 +147,15 @@ func (w *Window) Stats() Stats {
 	}
 }
 
+// Task is the narrow view of a *goav.Task that a playback Window drives.
+type Task interface {
+	Run(context.Context) error
+	Close() error
+	Pause(context.Context) error
+	Resume(context.Context) error
+	Control(context.Context, control.Control) error
+}
+
 // Run opens the speaker and the window, runs task, and returns when the media
 // has played out, the window is closed, or ctx ends; closing the window closes
 // the task. Space pauses, the arrows seek (←/→ 5s, ↓/↑ 30s), [ and ] change
@@ -154,7 +164,7 @@ func (w *Window) Stats() Stats {
 //
 // Run must be called from the main goroutine (the windowing systems require
 // it) and at most once per process (one audio device context per process).
-func (w *Window) Run(ctx context.Context, task goav.Task) error {
+func (w *Window) Run(ctx context.Context, task Task) error {
 	if task == nil {
 		return errors.New("player: Run needs a task")
 	}

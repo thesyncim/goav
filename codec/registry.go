@@ -11,13 +11,13 @@ import (
 // ErrNotFound reports a codec id (or id+mode) with no registered descriptor.
 var ErrNotFound = errors.New("codec: not found")
 
-// SimpleRegistry is the per-runtime codec registry: descriptors for
+// Registry is the per-runtime codec registry: descriptors for
 // capability checks plus the decoder and encoder backends serving each codec.
 // It holds many backends per codec, keyed by codec, backend name, and mode;
 // registering the same identity again replaces it. Select picks the backend
 // for one request. It is populated at runtime construction and read-only
 // afterwards.
-type SimpleRegistry struct {
+type Registry struct {
 	descriptors []Descriptor
 	backends    []registered
 	preference  map[preferenceKey][]string
@@ -36,20 +36,20 @@ type registered struct {
 }
 
 // NewRegistry returns an empty codec registry.
-func NewRegistry() *SimpleRegistry {
-	return &SimpleRegistry{}
+func NewRegistry() *Registry {
+	return &Registry{}
 }
 
 // RegisterDescriptor records a codec's capabilities without an
 // implementation, so validation recognizes the codec.
-func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
+func (r *Registry) RegisterDescriptor(desc Descriptor) {
 	r.upsertDescriptor(desc)
 }
 
 // RegisterDecoder records the descriptor (decode mode added) and adds its
 // backend as a decoder for the codec, replacing a decoder registered under
 // the same backend name.
-func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
+func (r *Registry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
 	desc.Modes = mergeUnique(desc.Modes, []Mode{ModeDecode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
@@ -60,7 +60,7 @@ func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory
 // RegisterEncoder records the descriptor (encode mode added) and adds its
 // backend as an encoder for the codec, replacing an encoder registered under
 // the same backend name.
-func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
+func (r *Registry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
 	desc.Modes = mergeUnique(desc.Modes, []Mode{ModeEncode})
 	r.upsertDescriptor(desc)
 	if factory != nil {
@@ -68,7 +68,7 @@ func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory
 	}
 }
 
-func (r *SimpleRegistry) addBackend(backend registered) {
+func (r *Registry) addBackend(backend registered) {
 	r.sequence++
 	backend.sequence = r.sequence
 	r.backends = slices.DeleteFunc(r.backends, func(existing registered) bool {
@@ -83,7 +83,7 @@ func (r *SimpleRegistry) addBackend(backend registered) {
 // mode; the most specific order wins. Backends the order leaves out follow
 // in the default order: no kind, hardware, lib, go, later registrations
 // first within a kind.
-func (r *SimpleRegistry) Prefer(id av.CodecID, mode Mode, order ...string) {
+func (r *Registry) Prefer(id av.CodecID, mode Mode, order ...string) {
 	if r.preference == nil {
 		r.preference = map[preferenceKey][]string{}
 	}
@@ -96,7 +96,7 @@ type preferenceKey struct {
 }
 
 // preferenceFor is the most specific order set for id in mode.
-func (r *SimpleRegistry) preferenceFor(id av.CodecID, mode Mode) []string {
+func (r *Registry) preferenceFor(id av.CodecID, mode Mode) []string {
 	for _, key := range []preferenceKey{{id, mode}, {id, ""}, {"", mode}, {"", ""}} {
 		if order, ok := r.preference[key]; ok {
 			return order
@@ -106,7 +106,7 @@ func (r *SimpleRegistry) preferenceFor(id av.CodecID, mode Mode) []string {
 }
 
 // Descriptors returns a copy of every registered descriptor.
-func (r *SimpleRegistry) Descriptors() []Descriptor {
+func (r *Registry) Descriptors() []Descriptor {
 	out := make([]Descriptor, len(r.descriptors))
 	for i := range r.descriptors {
 		out[i] = cloneDescriptor(r.descriptors[i])
@@ -116,7 +116,7 @@ func (r *SimpleRegistry) Descriptors() []Descriptor {
 
 // Find returns the descriptors matching the codec id (empty matches all)
 // that support mode, or ErrNotFound when none do.
-func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
+func (r *Registry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 	var out []Descriptor
 	for i := range r.descriptors {
 		desc := r.descriptors[i]
@@ -137,7 +137,7 @@ func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 // DecoderFactory returns the decoder factory Select picks for a codec id with
 // no other requirement: ErrUnavailable when only descriptors are registered,
 // ErrNotFound when nothing is.
-func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
+func (r *Registry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 	choice, err := r.Select(Need{ID: id, Mode: ModeDecode})
 	if err != nil {
 		return nil, errors.Unwrap(err)
@@ -148,7 +148,7 @@ func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 // EncoderFactory returns the encoder factory Select picks for a codec id with
 // no other requirement: ErrUnavailable when only descriptors are registered,
 // ErrNotFound when nothing is.
-func (r *SimpleRegistry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
+func (r *Registry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
 	choice, err := r.Select(Need{ID: id, Mode: ModeEncode})
 	if err != nil {
 		return nil, errors.Unwrap(err)
@@ -161,7 +161,7 @@ func (d Descriptor) Supports(mode Mode) bool {
 	return slices.Contains(d.Modes, mode)
 }
 
-func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
+func (r *Registry) upsertDescriptor(desc Descriptor) {
 	desc = cloneDescriptor(desc)
 	for i := range r.descriptors {
 		if !sameDescriptorSlot(r.descriptors[i], desc) {

@@ -54,6 +54,15 @@ type Stats struct {
 	Paused                bool
 }
 
+type videoEpochState uint8
+
+const (
+	videoEpochEmpty videoEpochState = iota
+	videoEpochPictured
+	videoEpochPreviewed
+	videoEpochPresented
+)
+
 // Engine holds the queues and clocks of one playback.
 type Engine struct {
 	latency time.Duration
@@ -83,13 +92,12 @@ type Engine struct {
 	audibleTo  int64
 
 	// Video queue: fixed ring buffer of frames held by reference, PTS alongside.
-	video          [videoHardCap]*av.Frame
-	vpts           [videoHardCap]time.Duration
-	videoHead      int
-	videoCount     int
-	firstVideoAt   time.Duration
-	firstVideoSet  bool
-	presentedFresh bool
+	video         [videoHardCap]*av.Frame
+	vpts          [videoHardCap]time.Duration
+	videoHead     int
+	videoCount    int
+	firstVideoAt  time.Duration
+	firstVideoSet bool
 
 	ext      extClock
 	rate     float64
@@ -101,9 +109,10 @@ type Engine struct {
 	seek   seekCutState
 	newest [kinds]time.Duration
 	have   [kinds]bool
-	// played records that the current epoch has been heard or shown, and
-	// pictured that it has queued a picture.
-	played, pictured bool
+	// videoEpoch tracks video presentation progress within the current epoch;
+	// audioPlayed records audible audio rendered in the current epoch.
+	videoEpoch  videoEpochState
+	audioPlayed bool
 
 	presented, dropped, underruns uint64
 	avOffset, maxAV               time.Duration
@@ -333,7 +342,7 @@ func (e *Engine) Fill(out []byte) int {
 		if rendered > 0 {
 			e.recordLocked(segment{start: start, end: start + int64(rendered), pts0: pts0, pts1: e.headPTSLocked(), audible: true, epoch: e.epoch})
 			e.audibleTo = start + int64(rendered)
-			e.played = true
+			e.audioPlayed = true
 		}
 		if rendered < n {
 			e.audio = audioEmpty
@@ -528,7 +537,7 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 	// A seek while paused still shows the new position's first picture: a
 	// preview, which leaves the epoch unplayed.
 	preview := false
-	if !present && e.paused && !e.presentedFresh && e.videoCount > 0 {
+	if !present && e.paused && e.videoEpoch < videoEpochPreviewed && e.videoCount > 0 {
 		present, m, ok, preview = true, e.vpts[e.videoHead], true, true
 	}
 	if !present {
@@ -540,8 +549,13 @@ func (e *Engine) NextVideo(now time.Duration) *av.Frame {
 	pts := e.vpts[e.videoHead]
 	f := e.popVideoLocked()
 	e.presented++
-	e.presentedFresh = true
-	e.played = e.played || !preview
+	if preview {
+		if e.videoEpoch < videoEpochPreviewed {
+			e.videoEpoch = videoEpochPreviewed
+		}
+	} else {
+		e.videoEpoch = videoEpochPresented
+	}
 	if ok {
 		e.avOffset = m - pts
 		e.maxAV = max(e.maxAV, abs(e.avOffset))
@@ -684,10 +698,14 @@ func (e *Engine) Flush() {
 // queuedPictureLocked records the epoch's first queued picture and wakes
 // WaitPicture.
 func (e *Engine) queuedPictureLocked() {
-	if !e.pictured {
-		e.pictured = true
+	if e.videoEpoch == videoEpochEmpty {
+		e.videoEpoch = videoEpochPictured
 		e.signalLocked()
 	}
+}
+
+func (e *Engine) epochPlayedLocked() bool {
+	return e.audioPlayed || e.videoEpoch == videoEpochPresented
 }
 
 // WaitPicture waits until a picture of the current epoch is queued, ctx ends,
@@ -697,7 +715,7 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 	defer timer.Stop()
 	for {
 		e.mu.Lock()
-		ready := e.pictured
+		ready := e.videoEpoch >= videoEpochPictured
 		closed := e.phase == engineClosed
 		if ready {
 			e.mu.Unlock()
@@ -721,7 +739,7 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 
 func (e *Engine) flushLocked() {
 	e.seek.reset()
-	e.played, e.pictured = false, false
+	e.videoEpoch, e.audioPlayed = videoEpochEmpty, false
 	if e.phase == engineEnded {
 		e.phase = engineActive
 	}
@@ -740,7 +758,7 @@ func (e *Engine) flushLocked() {
 	e.chunkHead, e.pos, e.queued = 0, 0, 0
 	e.audio = audioEmpty
 	e.ext.reset()
-	e.firstVideoSet, e.presentedFresh = false, false
+	e.firstVideoSet = false
 	e.signalLocked()
 }
 

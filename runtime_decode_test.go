@@ -191,7 +191,7 @@ func TestDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
 		ID:   custom,
 		Type: av.MediaAudio,
 		Capabilities: codec.Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		},
 	}, decoderFactory))
 

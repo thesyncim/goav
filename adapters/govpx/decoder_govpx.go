@@ -15,7 +15,7 @@ func NewDecoderFactory() DecoderFactory {
 	return DecoderFactory{}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	if registry == nil {
 		return
 	}
@@ -61,6 +61,7 @@ type vpxState uint8
 
 const (
 	vpxUnopened vpxState = iota
+	vpxDropping
 	vpxOpen
 	vpxClosed
 )
@@ -71,12 +72,11 @@ type Decoder struct {
 	video            av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
-	dropUntilSync    bool
 	state            vpxState
 }
 
 func (d *Decoder) Descriptor() codec.Descriptor {
-	return activeVP8Descriptor(descriptor(av.CodecVP8, "VP8", []string{av.PixelFormatI420}, []string{av.MIMEVP8}))
+	return activeVP8Descriptor(descriptor(av.CodecVP8, "VP8", []av.PixelFormat{av.PixelFormatI420}, []string{av.MIMEVP8}))
 }
 
 func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
@@ -94,8 +94,7 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 	}
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
-	d.dropUntilSync = true
-	d.state = vpxOpen
+	d.state = vpxDropping
 	return nil
 }
 
@@ -113,19 +112,19 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 		return codec.ErrUnsupportedFormat
 	}
 	if pkt == nil {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		return d.appendKeyframeRequest(out, "vp8 packet loss")
 	}
 	requestedKeyframe := false
 	if pkt.LossBefore || pkt.Discontinuous {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		if err := d.appendKeyframeRequest(out, "vp8 discontinuity"); err != nil {
 			return err
 		}
 		requestedKeyframe = true
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		return d.appendKeyframeRequest(out, "vp8 corrupt packet")
 	}
 
@@ -133,14 +132,14 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if err != nil {
 		return mapGovpxError(err)
 	}
-	if d.dropUntilSync && !streamInfo.KeyFrame {
+	if d.state == vpxDropping && !streamInfo.KeyFrame {
 		if requestedKeyframe {
 			return nil
 		}
 		return d.appendKeyframeRequest(out, "vp8 waiting for keyframe")
 	}
 	if streamInfo.KeyFrame {
-		d.dropUntilSync = false
+		d.state = vpxOpen
 	}
 
 	return d.decodeVisiblePacket(pkt, streamInfo, out)
@@ -174,10 +173,10 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
-		d.dropUntilSync = true
+		d.state = vpxDropping
 	case av.EventCodecChanged, av.EventDiscontinuity:
 		d.applyEventStream(event)
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		d.decoder.Reset()
 	}
 	return nil

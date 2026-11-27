@@ -128,7 +128,7 @@ func (g *playoutGate) OutputShapes(input shape.Spec) shape.Set {
 
 // playoutClock returns the clock attach-time playout gates bind: the running
 // task's shared timeline. Nil for tasks assembled outside the build paths.
-func (t *task) playoutClock() av.Clock {
+func (t *Task) playoutClock() av.Clock {
 	if t == nil || t.timeline == nil {
 		return nil
 	}

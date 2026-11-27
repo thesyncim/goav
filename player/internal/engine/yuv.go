@@ -40,7 +40,7 @@ var matrices = [...]coefficients{
 
 // subsampling reports the chroma shift for a pixel format, and whether it is
 // luma only.
-func subsampling(format string) (xs, ys int, gray bool, err error) {
+func subsampling(format av.PixelFormat) (xs, ys int, gray bool, err error) {
 	switch format {
 	case av.PixelFormatI420:
 		return 1, 1, false, nil

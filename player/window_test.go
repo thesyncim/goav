@@ -7,13 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 )
 
 type fakeTask struct {
-	goav.Task
+	Task
 
 	mu          sync.Mutex
 	paused      bool

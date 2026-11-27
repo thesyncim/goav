@@ -11,32 +11,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func TestSelectorActiveIDContracts(t *testing.T) {
-	empty := newSelectorStage("empty", nil, "out")
-	if got := empty.activeID(); got != "" {
-		t.Fatalf("empty activeID = %q, want empty", got)
-	}
-
-	selector := newSelectorStage("select", []av.StreamID{"left", "right"}, "out")
-	if got := selector.activeID(); got != "left" {
-		t.Fatalf("default activeID = %q, want left", got)
-	}
-	if err := selector.SetActive("right"); err != nil {
-		t.Fatal(err)
-	}
-	if got := selector.activeID(); got != "right" {
-		t.Fatalf("switched activeID = %q, want right", got)
-	}
-	selector.activeIndex.Store(-1)
-	if got := selector.activeID(); got != "" {
-		t.Fatalf("negative activeID = %q, want empty", got)
-	}
-	selector.activeIndex.Store(99)
-	if got := selector.activeID(); got != "" {
-		t.Fatalf("out-of-range activeID = %q, want empty", got)
-	}
-}
-
 func TestSwitchBoundaryReachedContracts(t *testing.T) {
 	frame := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: &av.Frame{}}
 	packet := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{}}

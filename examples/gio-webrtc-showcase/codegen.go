@@ -19,7 +19,7 @@ func generateCode(cfg studioConfig, branches []branchView, rec recordingStatus, 
 	halfW := (cfg.Width / 2) &^ 1
 
 	var b strings.Builder
-	b.WriteString("// Single persistent goav.Task — zero restarts when switching scenes!\n")
+	b.WriteString("// Single persistent *goav.Task — zero restarts when switching scenes!\n")
 	b.WriteString(fmt.Sprintf("pattern := goav.From(newTestPatternInput(%d, %d, %d)).Video().As(\"pattern\")\n", cfg.Width, cfg.Height, cfg.FPS))
 	b.WriteString(fmt.Sprintf("cam     := goav.From(cameraav.New(cameraav.Config{Width: %d, Height: %d, FPS: %d})).Video()\n", cfg.CameraWidth, cfg.CameraHeight, cfg.FPS))
 	b.WriteString(fmt.Sprintf("screen  := goav.From(screenav.New(screenav.Config{Width: %d, Height: %d, FPS: %d})).Video()\n", cfg.Width, cfg.Height, cfg.FPS))

@@ -126,7 +126,7 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 		})
 }
 
-func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.Input, main pipeline.Sink) goav.Task {
+func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.Input, main pipeline.Sink) *goav.Task {
 	t.Helper()
 	task, err := goavtest.Runtime().Build(ctx, input.
 		Video().

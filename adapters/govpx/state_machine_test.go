@@ -53,7 +53,7 @@ func TestDoubleOpenAndFailedControlLifecycle(t *testing.T) {
 	if err := vp8Dec.Open(ctx, codec.DecodeConfig{Stream: av.Stream{Codec: av.CodecParameters{ID: av.CodecVP8, Width: 64, Height: 64}}}); err != nil {
 		t.Fatal(err)
 	}
-	if vp8Dec.decoder == nil || vp8Dec.decoder == firstVP8Dec || vp8Dec.state != vpxOpen {
+	if vp8Dec.decoder == nil || vp8Dec.decoder == firstVP8Dec || vp8Dec.state != vpxDropping {
 		t.Fatalf("VP8 double open did not cleanly replace handle (state=%d)", vp8Dec.state)
 	}
 	_ = vp8Dec.Close()
@@ -67,7 +67,7 @@ func TestDoubleOpenAndFailedControlLifecycle(t *testing.T) {
 	if err := vp9Dec.Open(ctx, codec.DecodeConfig{Stream: av.Stream{Codec: av.CodecParameters{ID: av.CodecVP9, Width: 64, Height: 64}}}); err != nil {
 		t.Fatal(err)
 	}
-	if vp9Dec.decoder == nil || vp9Dec.decoder == firstVP9Dec || vp9Dec.state != vpxOpen {
+	if vp9Dec.decoder == nil || vp9Dec.decoder == firstVP9Dec || vp9Dec.state != vpxDropping {
 		t.Fatalf("VP9 double open did not cleanly replace handle (state=%d)", vp9Dec.state)
 	}
 	_ = vp9Dec.Close()

@@ -177,3 +177,33 @@ func TestBufferResetDropsPooledBytesKeepsScratch(t *testing.T) {
 	}
 	kept.Release()
 }
+
+func TestBufferSizeClassesBoundedFragmentation(t *testing.T) {
+	// Verify every size class maps cleanly and classSize >= n with <= 25% overhead above 64 B.
+	testSizes := []int{
+		1, 64, 65, 80, 81, 96, 128, 129, 256,
+		1920 * 1080 * 3 / 2, // 1080p I420 (~3.11 MB -> 3.5 MiB instead of 4 MiB)
+		3840 * 2160 * 3 / 2, // 4K I420 (~12.44 MB -> 14 MiB instead of 16 MiB)
+		3840 * 2160 * 4,     // 4K RGBA (~33.18 MB -> 40 MiB instead of 64 MiB)
+		1 << maxBlockShift,
+	}
+	for _, n := range testSizes {
+		c := blockClass(n)
+		if c < 0 || c >= numBlockClass {
+			t.Fatalf("blockClass(%d) = %d, out of range [0,%d)", n, c, numBlockClass)
+		}
+		sz := classSize(c)
+		if sz < n {
+			t.Fatalf("classSize(blockClass(%d)) = %d < %d", n, sz, n)
+		}
+		if n > 1<<minBlockShift {
+			overhead := float64(sz-n) / float64(n)
+			if overhead > 0.25 {
+				t.Fatalf("size %d allocated %d (%.1f%% overhead), want <= 25%%", n, sz, overhead*100)
+			}
+		}
+	}
+	if c := blockClass((1 << maxBlockShift) + 1); c != -1 {
+		t.Fatalf("blockClass(>128MiB) = %d, want -1", c)
+	}
+}

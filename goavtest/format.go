@@ -25,7 +25,7 @@ import (
 // muxed through it demuxes to the exact packets that were written, so
 // File→FileInput round trips work without a real container.
 func Format(id av.FormatID) runconfig.Option {
-	return runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	return runconfig.WithFormatAdapter(func(registry *format.Registry) {
 		registry.RegisterMuxer(id, containerFactory{id: id})
 		registry.RegisterDemuxer(id, containerFactory{id: id})
 		registry.RegisterProber(format.NewStaticProber(format.ProbeRule{
@@ -240,10 +240,10 @@ func appendContainerStream(b []byte, stream av.Stream) []byte {
 	b = appendU32(b, uint32(stream.Codec.SampleRate))
 	b = appendU32(b, uint32(stream.Codec.Channels))
 	b = appendWireString(b, stream.Codec.ChannelLayout)
-	b = appendWireString(b, stream.Codec.SampleFormat)
+	b = appendWireString(b, string(stream.Codec.SampleFormat))
 	b = appendU32(b, uint32(stream.Codec.Width))
 	b = appendU32(b, uint32(stream.Codec.Height))
-	b = appendWireString(b, stream.Codec.PixelFormat)
+	b = appendWireString(b, string(stream.Codec.PixelFormat))
 	b = appendWireBytes(b, stream.Codec.ExtraData.Bytes)
 	return b
 }
@@ -264,10 +264,10 @@ func parseContainerStream(r *wireReader) av.Stream {
 		SampleRate:    int(r.u32()),
 		Channels:      int(r.u32()),
 		ChannelLayout: r.str(),
-		SampleFormat:  r.str(),
+		SampleFormat:  av.SampleFormat(r.str()),
 		Width:         int(r.u32()),
 		Height:        int(r.u32()),
-		PixelFormat:   r.str(),
+		PixelFormat:   av.PixelFormat(r.str()),
 	}
 	if extra := r.blob(); len(extra) != 0 {
 		stream.Codec.ExtraData = av.Buffer{

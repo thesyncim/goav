@@ -63,7 +63,7 @@ type streamRuleRemoveAttachment struct {
 // context. A rule destination's Open therefore runs on the source's path: it
 // should be fast, or hand slow work to its own goroutine.
 type streamAnnouncer struct {
-	task atomic.Pointer[task]
+	task atomic.Pointer[Task]
 	// mu serializes reactions for sources that emit from several goroutines,
 	// so one announce's check-then-attach never interleaves with another's.
 	mu sync.Mutex
@@ -71,7 +71,7 @@ type streamAnnouncer struct {
 
 // bind points the announcer at the built task; announces before bind (none
 // in practice: sources start at Run) are forwarded without a reaction.
-func (a *streamAnnouncer) bind(t *task) {
+func (a *streamAnnouncer) bind(t *Task) {
 	if a != nil {
 		a.task.Store(t)
 	}
@@ -187,7 +187,7 @@ func streamAnnounceOf(msg *pipeline.Message) (av.Event, bool) {
 
 // installStreamRules binds the job's declared rules to the built task and
 // points the source's announcer at it.
-func (t *task) installStreamRules(announcer *streamAnnouncer, sourceNode string, domain shape.MediaDomain, rules []streamRule) {
+func (t *Task) installStreamRules(announcer *streamAnnouncer, sourceNode string, domain shape.MediaDomain, rules []streamRule) {
 	if t == nil || announcer == nil || len(rules) == 0 {
 		return
 	}
@@ -211,7 +211,7 @@ func (t *task) installStreamRules(announcer *streamAnnouncer, sourceNode string,
 // the same plan, atomic apply, and rollback as a manual attach. Failures
 // surface as av.EventAttachError on task watches; a failed rule leaves the
 // task unchanged and a later re-announce retries.
-func (t *task) handleStreamAdded(ctx context.Context, event av.Event) {
+func (t *Task) handleStreamAdded(ctx context.Context, event av.Event) {
 	if event.Stream == nil {
 		// No typed payload: nothing declarative to do — the event itself
 		// already surfaced to watchers.
@@ -265,7 +265,7 @@ func (r *taskStreamRules) matchStream(index int, stream av.Stream, announcedAt t
 	return false
 }
 
-func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamRuleAttachInput, error) {
+func (t *Task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamRuleAttachInput, error) {
 	input := streamRuleAttachInput{branchNames: streamRuleBranchNames(rule)}
 	branches, err := t.streamRuleAttachBranches(rule, stream)
 	if err != nil {
@@ -282,7 +282,7 @@ func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamR
 // streamRuleAttachBranches templates one rule's branches for a matched stream,
 // solves their operation shapes, and captures them as runtime branch inputs
 // before any graph mutation.
-func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]runtimeAttachBranchInput, error) {
+func (t *Task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]runtimeAttachBranchInput, error) {
 	domain := t.rules.domain
 	if domain == "" {
 		domain = shape.DomainPacket
@@ -332,7 +332,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 // removed stream with drain semantics: destinations commit and the branch
 // snapshot reports DestinationCommitted — the same typed outcome as
 // Rebranch with DrainBranch.
-func (t *task) handleStreamRemoved(ctx context.Context, event av.Event) {
+func (t *Task) handleStreamRemoved(ctx context.Context, event av.Event) {
 	input := t.streamRuleRemoveInput(event)
 	if input.streamID == "" {
 		return
@@ -348,7 +348,7 @@ func (t *task) handleStreamRemoved(ctx context.Context, event av.Event) {
 	}
 }
 
-func (t *task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
+func (t *Task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
 	input := streamRuleRemoveInput{streamID: event.StreamID}
 	if t == nil || t.rules == nil || event.StreamID == "" {
 		return input
@@ -371,7 +371,7 @@ func (t *task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
 	return input
 }
 
-func (t *task) streamRuleAttached(id av.StreamID, rule int) bool {
+func (t *Task) streamRuleAttached(id av.StreamID, rule int) bool {
 	t.rules.mu.Lock()
 	defer t.rules.mu.Unlock()
 	for _, entry := range t.rules.attached[id] {
@@ -382,7 +382,7 @@ func (t *task) streamRuleAttached(id av.StreamID, rule int) bool {
 	return false
 }
 
-func (t *task) trackStreamRuleAttachment(id av.StreamID, rule int, attachment Attachment) {
+func (t *Task) trackStreamRuleAttachment(id av.StreamID, rule int, attachment Attachment) {
 	runtimeAttached, ok := attachment.(*runtimeAttachment)
 	if !ok {
 		return
@@ -392,7 +392,7 @@ func (t *task) trackStreamRuleAttachment(id av.StreamID, rule int, attachment At
 	t.rules.attached[id] = append(t.rules.attached[id], streamRuleAttachment{rule: rule, attachment: runtimeAttached})
 }
 
-func (t *task) publishStreamRuleError(id av.StreamID, branch string, err error) {
+func (t *Task) publishStreamRuleError(id av.StreamID, branch string, err error) {
 	reason := "stream rule reaction failed"
 	if branch != "" {
 		reason = "stream rule branch " + branch + " failed"

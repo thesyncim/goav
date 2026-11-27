@@ -180,7 +180,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 			Drop:     pipeline.DropBlock,
 		}),
 		WithDecoder(
-			codec.Descriptor{ID: pcm, Name: "PCM seek", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
+			codec.Descriptor{ID: pcm, Name: "PCM seek", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}},
 			crossPCMDecoderFactory{},
 		))
 
@@ -277,7 +277,7 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_mono")
 	rt := mustNew(WithDecoder(
-		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
+		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}},
 		tapArmTestDecoderFactory{decoder: &tapArmTestDecoder{}},
 	))
 	release := make(chan struct{}, 2)

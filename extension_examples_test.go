@@ -183,7 +183,7 @@ func exampleEncoderDescriptor() codec.Descriptor {
 		Modes:    []codec.Mode{codec.ModeEncode},
 		Realtime: true,
 		Capabilities: codec.Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		},
 		Backend: codec.BackendInfo{
 			Name:    "example",

@@ -199,7 +199,7 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 
 func TestExplainMarksSharedBranchOperations(t *testing.T) {
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
 				ID:    "video",
@@ -215,11 +215,11 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
-		runconfig.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		runconfig.WithFilterAdapter(func(registry *filter.Registry) {
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
 		}),
 	)

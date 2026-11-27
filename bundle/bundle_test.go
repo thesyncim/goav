@@ -21,7 +21,7 @@ func TestNoOutputsIsRefused(t *testing.T) {
 }
 
 func TestBuildReturnsLiveTask(t *testing.T) {
-	var _ func(context.Context, ...goav.Output) (goav.Task, error) = Build
+	var _ func(context.Context, ...goav.Output) (*goav.Task, error) = Build
 }
 
 func TestDefaultIsShared(t *testing.T) {

@@ -112,15 +112,22 @@ func rebranchPolicyFromOptions(options []RebranchArg) rebranchPolicy {
 	return policy
 }
 
+const (
+	switchGroupPending uint32 = iota
+	switchGroupOpened
+	switchGroupAbandoned
+)
+
 // switchGroup coordinates one boundary rebranch: every replacement branch
-// carries a gate from the group, and the group reports the first gate opening
-// (the boundary arrived — detach the old branch) or every gate closing before
-// any opened (the switch was abandoned by teardown).
+// carries a gate from the group, and the group transitions atomically from
+// pending to either opened (first gate reached boundary — detach the old
+// branch) or abandoned (every gate closed before any opened). Opened and
+// abandoned are strictly mutually exclusive.
 type switchGroup struct {
 	boundary  switchBoundaryKind
 	mediaTime time.Duration
 	gates     atomic.Int64
-	open      atomic.Bool
+	state     atomic.Uint32
 	opened    chan struct{}
 	abandoned chan struct{}
 }
@@ -144,13 +151,13 @@ func (g *switchGroup) gate() *switchGate {
 }
 
 func (g *switchGroup) markOpen() {
-	if g.open.CompareAndSwap(false, true) {
+	if g.state.CompareAndSwap(switchGroupPending, switchGroupOpened) {
 		close(g.opened)
 	}
 }
 
 func (g *switchGroup) gateClosed() {
-	if g.gates.Add(-1) == 0 {
+	if g.gates.Add(-1) == 0 && g.state.CompareAndSwap(switchGroupPending, switchGroupAbandoned) {
 		close(g.abandoned)
 	}
 }

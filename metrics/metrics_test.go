@@ -12,16 +12,14 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-type fakeTask struct {
-	goav.Task
-}
+type fakeTask struct{}
 
 func (fakeTask) Stats() pipeline.GraphStats {
 	return pipeline.GraphStats{
 		Messages: 9, Packets: 6, Frames: 3, Dropped: 2,
 		Nodes: map[string]pipeline.NodeStats{
 			"decode": {InMessages: 5, InPackets: 5, OutMessages: 4, OutFrames: 4,
-				Dropped: 2, DropReasons: map[pipeline.DropPolicy]uint64{"drop-oldest": 2}},
+				Dropped: 2, DropReasons: map[pipeline.DropReason]uint64{"drop-oldest": 2}},
 			`we"ird`: {InMessages: 1},
 		},
 	}

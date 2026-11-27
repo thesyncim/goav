@@ -253,7 +253,7 @@ func (p *RoomPipeline) Close(ctx context.Context) error {
 	return p.room.Close(ctx)
 }
 
-func waitRoomReady(ctx context.Context, room *Room, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
+func waitRoomReady(ctx context.Context, room *Room, errC <-chan error, cancel context.CancelFunc, task *goav.Task) error {
 	select {
 	case <-room.Ready():
 		return nil
@@ -269,7 +269,7 @@ func waitRoomReady(ctx context.Context, room *Room, errC <-chan error, cancel co
 	}
 }
 
-func waitRoomTask(ctx context.Context, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
+func waitRoomTask(ctx context.Context, errC <-chan error, cancel context.CancelFunc, task *goav.Task) error {
 	select {
 	case err := <-errC:
 		return err

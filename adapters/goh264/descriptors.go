@@ -14,7 +14,7 @@ func Descriptor() codec.Descriptor {
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			PixelFormats: []string{"yuv420p"},
+			PixelFormats: []av.PixelFormat{"yuv420p"},
 			RTPPayloads:  []string{av.MIMEH264},
 			BuildTags:    []string{"goav_goh264"},
 		},

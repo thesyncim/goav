@@ -19,14 +19,14 @@ import (
 
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatIVF, recipeAPIMuxerFactory{})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
@@ -64,7 +64,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 
 func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
@@ -80,7 +80,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 				},
 			}, recipeAPIMuxerFactory{})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
@@ -111,14 +111,14 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 
 func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatAnnexB, recipeAPIMuxerFactory{})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),

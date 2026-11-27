@@ -40,7 +40,7 @@ func counter(name string, n *atomic.Int64) launch.Element {
 }
 
 type harness struct {
-	task    goav.Task
+	task    *goav.Task
 	server  *ctlserver.Server
 	client  *ctlserver.Client
 	address string
@@ -249,7 +249,7 @@ func TestHostMethod(t *testing.T) {
 	type greetParams struct {
 		Name string `json:"name" ctl:"required" help:"who to greet"`
 	}
-	h := serve(t, liveProgram, ctlserver.Method("greet", "say hello", func(_ context.Context, task goav.Task, p greetParams) (any, error) {
+	h := serve(t, liveProgram, ctlserver.Method("greet", "say hello", func(_ context.Context, task *goav.Task, p greetParams) (any, error) {
 		return "hello " + p.Name + " from " + task.Taps()[0].Name, nil
 	}))
 	got, err := h.client.Call[string](context.Background(), "greet", map[string]string{"name": "ops"})
@@ -433,7 +433,7 @@ func TestMethodNamesAreUnique(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	noop := func(context.Context, goav.Task, struct{}) (any, error) { return nil, nil }
+	noop := func(context.Context, *goav.Task, struct{}) (any, error) { return nil, nil }
 	if _, err := ctlserver.New(task, ctlserver.Method("stats", "shadow", noop)); err == nil {
 		t.Fatal("a host method replaced the built-in stats")
 	}
@@ -498,7 +498,7 @@ func TestParamSpellings(t *testing.T) {
 // server too, not left running.
 func TestCancelReachesTheServer(t *testing.T) {
 	canceled := make(chan error, 1)
-	h := serve(t, liveProgram, ctlserver.Method("slow", "wait for a cancel", func(ctx context.Context, _ goav.Task, _ struct{}) (any, error) {
+	h := serve(t, liveProgram, ctlserver.Method("slow", "wait for a cancel", func(ctx context.Context, _ *goav.Task, _ struct{}) (any, error) {
 		<-ctx.Done()
 		canceled <- ctx.Err()
 		return nil, ctx.Err()

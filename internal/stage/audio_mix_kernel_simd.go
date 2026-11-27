@@ -1,6 +1,6 @@
 //go:build goexperiment.simd && !purego
 
-package goav
+package stage
 
 import (
 	"simd"
