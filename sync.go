@@ -79,10 +79,11 @@ func (g *syncGate) reportLate(stream av.StreamID, late time.Duration) {
 		return
 	}
 	g.report(av.Event{
-		Type:     av.EventQoS,
-		StreamID: stream,
-		Reason:   g.Name(),
-		Metadata: av.QoSMetadata(late, true),
+		Type:        av.EventQoS,
+		StreamID:    stream,
+		Reason:      g.Name(),
+		QoSLateness: late,
+		QoSDropped:  true,
 	})
 }
 

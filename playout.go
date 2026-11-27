@@ -103,10 +103,11 @@ func (g *playoutGate) reportLate(stream av.StreamID, late time.Duration, dropped
 		return
 	}
 	g.report(av.Event{
-		Type:     av.EventQoS,
-		StreamID: stream,
-		Reason:   g.Name(),
-		Metadata: av.QoSMetadata(late, dropped),
+		Type:        av.EventQoS,
+		StreamID:    stream,
+		Reason:      g.Name(),
+		QoSLateness: late,
+		QoSDropped:  dropped,
 	})
 }
 

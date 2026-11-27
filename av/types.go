@@ -600,8 +600,9 @@ const (
 	// to Event.StreamID. Select stages consume it; joins forward it unchanged.
 	EventSelectActive EventType = "select_active"
 	// EventQoS reports late or shed delivery at a playout, sync, or MaxLatency
-	// gate on the task observer stream (Watch). Build metadata with QoSMetadata
-	// and read with EventQoSReport; rate-limited per producer (~1/sec).
+	// gate on the task observer stream (Watch). Lateness and drop disposition
+	// ride Event.QoSLateness and Event.QoSDropped (read with EventQoSReport);
+	// rate-limited per producer (~1/sec).
 	EventQoS EventType = "qos"
 	// EventTaskReady fires at most once on Watch when every initial sink has
 	// received its first media message (packet or frame). Sinks attached at
@@ -639,11 +640,15 @@ type Event struct {
 	// EventDestinationCommitted, EventDestinationAborted,
 	// EventDestinationClosed, and EventDestinationCommitError.
 	DestinationName string
-	Stream          *Stream
-	Codec           *CodecParameters
-	Cause           error
-	Reason          string
-	Metadata        Metadata
+	// QoSLateness and QoSDropped carry overdue delivery measurements for
+	// EventQoS (avoiding per-report Metadata map and strconv allocations).
+	QoSLateness time.Duration
+	QoSDropped  bool
+	Stream      *Stream
+	Codec       *CodecParameters
+	Cause       error
+	Reason      string
+	Metadata    Metadata
 }
 
 // Clone returns a deep copy of CodecParameters, detaching ExtraData bytes and
