@@ -16,13 +16,22 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address (use :8080 to allow LAN viewers)")
+	addr := flag.String("addr", "", "HTTP listen address (default 127.0.0.1:8080, auto-picks free port if busy; use :8080 for LAN)")
 	headless := flag.Bool("headless", false, "run without opening the native macOS window")
 	flag.Parse()
 
 	ensureMacOSAppBundle(*headless)
 
-	listener, err := net.Listen("tcp", *addr)
+	var listener net.Listener
+	var err error
+	if *addr != "" {
+		listener, err = net.Listen("tcp", *addr)
+	} else {
+		listener, err = net.Listen("tcp", "127.0.0.1:8080")
+		if err != nil {
+			listener, err = net.Listen("tcp", "127.0.0.1:0")
+		}
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
