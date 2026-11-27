@@ -170,17 +170,26 @@ func loadMac() error {
 			objc.GetClass("NSObject"),
 			[]*objc.Protocol{objc.GetProtocol("AVCaptureVideoDataOutputSampleBufferDelegate")},
 			[]objc.FieldDef{{Name: "state", Type: reflect.TypeFor[uintptr](), Attribute: objc.ReadWrite}},
-			nil,
+			[]objc.MethodDef{
+				{
+					Cmd: sel("captureOutput:didOutputSampleBuffer:fromConnection:"),
+					Fn: func(self objc.ID, _cmd objc.SEL, _out, sample, _conn objc.ID) {
+						statePtr := objc.Send[uintptr](self, sel("state"))
+						if statePtr == 0 || sample == 0 {
+							return
+						}
+						st := (*nativeSample)(nativePointer(statePtr))
+						nativeCall(st.retain, uintptr(sample))
+						if old := atomic.SwapUintptr(&st.sample, uintptr(sample)); old != 0 {
+							nativeCall(st.release, old)
+						} else {
+							nativeCall(st.signal, st.semaphore)
+						}
+					},
+				},
+			},
 		)
 		if macErr != nil {
-			return
-		}
-		if mac.delegate.InstanceVariable("state").Offset() != 8 {
-			macErr = errors.New("screenav: unexpected Objective-C object layout")
-			return
-		}
-		if !mac.delegate.AddMethod(sel("captureOutput:didOutputSampleBuffer:fromConnection:"), objc.IMP(nativeCaptureAddress()), "v@:@@@") {
-			macErr = errors.New("screenav: cannot install screen capture delegate")
 			return
 		}
 		mac.noop = purego.NewCallback(func(uintptr) {})
