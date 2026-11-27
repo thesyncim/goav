@@ -3,297 +3,374 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/examples/gio-webrtc-showcase/screenav"
 )
 
-type server struct {
-	runtime    *goav.Runtime
-	browserURL string
-	mu         sync.Mutex
-	sessions   map[string]*session
+type studioServer struct {
+	studio *studio
 }
 
-func newServer(runtime *goav.Runtime, browserURL string) *server {
-	return &server{
-		runtime:    runtime,
-		browserURL: browserURL,
-		sessions:   make(map[string]*session),
-	}
+func newStudioServer(st *studio) *studioServer {
+	return &studioServer{studio: st}
 }
 
-func (s *server) routes(mux *http.ServeMux) {
-	mux.HandleFunc("/", serveStatic)
-	mux.HandleFunc("/api/offer", s.handleInitialOffer)
-	mux.HandleFunc("/api/sessions/", s.handleSession)
-}
-
-func (s *server) handleInitialOffer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var offer signalRequest
-	if err := decodeJSON(r, &offer); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	session, err := newSession(r.Context(), s.runtime, s.browserURL)
+func (s *studioServer) routes(mux *http.ServeMux) {
+	sub, err := fs.Sub(staticFiles, "static")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		panic(err)
 	}
-	answer, err := session.answer(r.Context(), offer)
-	if err != nil {
-		session.Close()
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
+	fileServer := http.FileServer(http.FS(sub))
 
-	s.mu.Lock()
-	s.sessions[session.id] = session
-	s.mu.Unlock()
-
-	writeJSON(w, signalResponse{ID: session.id, Type: answer.Type.String(), SDP: answer.SDP})
-}
-
-func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
-	trimmed := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
-	parts := strings.Split(strings.Trim(trimmed, "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
-		http.NotFound(w, r)
-		return
-	}
-	session := s.lookup(parts[0])
-	if session == nil {
-		http.NotFound(w, r)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "offer" && r.Method == http.MethodPost {
-		session.handleOffer(w, r)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "state" && r.Method == http.MethodGet {
-		writeJSON(w, session.State())
-		return
-	}
-	if len(parts) == 2 && parts[1] == "events" && r.Method == http.MethodGet {
-		session.handleEvents(w, r)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "branches" && r.Method == http.MethodPost {
-		session.handleAddBranch(w, r)
-		return
-	}
-	if len(parts) == 3 && parts[1] == "branches" && r.Method == http.MethodPut {
-		session.handleUpdateBranch(w, r, parts[2])
-		return
-	}
-	if len(parts) == 3 && parts[1] == "branches" && r.Method == http.MethodDelete {
-		session.handleDeleteBranch(w, r, parts[2])
-		return
-	}
-	if len(parts) == 4 && parts[1] == "branches" && parts[3] == "pause" && r.Method == http.MethodPost {
-		session.handlePauseBranch(w, r, parts[2])
-		return
-	}
-	if len(parts) == 4 && parts[1] == "branches" && parts[3] == "resume" && r.Method == http.MethodPost {
-		session.handleResumeBranch(w, r, parts[2])
-		return
-	}
-	if len(parts) == 4 && parts[1] == "branches" && parts[3] == "rebranch" && r.Method == http.MethodPost {
-		session.handleRebranch(w, r, parts[2])
-		return
-	}
-	if len(parts) == 4 && parts[1] == "branches" && parts[3] == "bitrate" && r.Method == http.MethodPost {
-		session.handleSetBitrate(w, r, parts[2])
-		return
-	}
-	if len(parts) == 3 && parts[1] == "control" && parts[2] == "keyframe" && r.Method == http.MethodPost {
-		session.handleKeyframe(w, r)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "scenarios" && r.Method == http.MethodPost {
-		session.handleScenarios(w, r)
-		return
-	}
-	http.NotFound(w, r)
-}
-
-func (s *server) lookup(id string) *session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.sessions[id]
-}
-
-func (s *server) latestSession() *session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var latest *session
-	for _, session := range s.sessions {
-		if latest == nil || session.created.After(latest.created) {
-			latest = session
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
 		}
-	}
-	return latest
+		data, err := fs.ReadFile(sub, "index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
+	})
+
+	mux.HandleFunc("GET /watch", func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(sub, "watch.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
+	})
+
+	mux.Handle("GET /static/", http.StripPrefix("/static/", noStore(fileServer)))
+	mux.Handle("GET /hls/", http.StripPrefix("/hls/", withCORS(s.studio.hlsSrv)))
+
+	mux.HandleFunc("GET /api/state", s.handleState)
+	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("POST /api/config", s.handleUpdateConfig)
+	mux.HandleFunc("POST /api/permissions/camera", s.handleCameraPermission)
+	mux.HandleFunc("POST /api/permissions/screen", s.handleScreenPermission)
+
+	mux.HandleFunc("POST /api/branches", s.handleAddBranch)
+	mux.HandleFunc("POST /api/branches/{id}/pause", s.handlePauseBranch)
+	mux.HandleFunc("POST /api/branches/{id}/resume", s.handleResumeBranch)
+	mux.HandleFunc("POST /api/branches/{id}/bitrate", s.handleBranchBitrate)
+	mux.HandleFunc("POST /api/branches/{id}/rebranch", s.handleRebranch)
+	mux.HandleFunc("DELETE /api/branches/{id}", s.handleDeleteBranch)
+
+	mux.HandleFunc("POST /api/record/start", s.handleRecordStart)
+	mux.HandleFunc("POST /api/record/stop", s.handleRecordStop)
+	mux.HandleFunc("POST /api/hls", s.handleHLS)
+	mux.HandleFunc("POST /api/whip/start", s.handleWHIPStart)
+	mux.HandleFunc("POST /api/whip/stop", s.handleWHIPStop)
+
+	mux.HandleFunc("POST /api/webrtc/offer", s.handleWebRTCOffer)
+	mux.HandleFunc("POST /api/webrtc/answer", s.handleWebRTCAnswer)
+	mux.HandleFunc("POST /api/open-watch", s.handleOpenWatch)
 }
 
-func (s *session) handleOffer(w http.ResponseWriter, r *http.Request) {
-	var offer signalRequest
-	if err := decodeJSON(r, &offer); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	answer, err := s.answer(r.Context(), offer)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, signalResponse{Type: answer.Type.String(), SDP: answer.SDP})
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
-func (s *session) handleEvents(w http.ResponseWriter, r *http.Request) {
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *studioServer) handleState(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unavailable", http.StatusInternalServerError)
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	events, unsubscribe := s.subscribe()
-	defer unsubscribe()
-
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
 
-	heartbeat := time.NewTicker(15 * time.Second)
-	defer heartbeat.Stop()
+	ch, unsub := s.studio.subscribeState()
+	defer unsub()
+
+	ticker := time.NewTicker(900 * time.Millisecond)
+	defer ticker.Stop()
+
+	send := func(st studioState) bool {
+		payload, err := json.Marshal(st)
+		if err != nil {
+			return false
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
 
 	for {
 		select {
-		case state := <-events:
-			data, err := json.Marshal(state)
-			if err != nil {
-				return
-			}
-			if _, err := fmt.Fprintf(w, "event: state\ndata: %s\n\n", data); err != nil {
-				return
-			}
-			flusher.Flush()
-		case <-heartbeat.C:
-			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
-				return
-			}
-			flusher.Flush()
 		case <-r.Context().Done():
 			return
+		case st := <-ch:
+			if !send(st) {
+				return
+			}
+		case <-ticker.C:
+			if !send(s.studio.Snapshot()) {
+				return
+			}
 		}
 	}
 }
 
-func (s *session) handleAddBranch(w http.ResponseWriter, r *http.Request) {
+func (s *studioServer) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
+	var cfg studioConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.studio.UpdateConfig(r.Context(), cfg); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleCameraPermission(w http.ResponseWriter, r *http.Request) {
+	if err := s.studio.RequestCameraAccess(r.Context()); err != nil {
+		writeErr(w, http.StatusForbidden, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleScreenPermission(w http.ResponseWriter, _ *http.Request) {
+	granted := screenav.RequestAccess()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"granted": granted,
+		"state":   s.studio.Snapshot(),
+	})
+}
+
+func (s *studioServer) handleAddBranch(w http.ResponseWriter, r *http.Request) {
 	var spec branchSpec
-	if err := decodeJSON(r, &spec); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	branch, err := s.addBranch(r.Context(), spec)
+	created, err := s.studio.AddBranch(r.Context(), spec)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, addBranchResponse{Branch: branch.Spec, NeedsRenegotiate: true})
+	writeJSON(w, http.StatusOK, map[string]any{"branch": created, "state": s.studio.Snapshot()})
 }
 
-func (s *session) handleUpdateBranch(w http.ResponseWriter, r *http.Request, id string) {
-	var spec branchSpec
-	if err := decodeJSON(r, &spec); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+func (s *studioServer) handlePauseBranch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.studio.PauseBranch(r.Context(), id, true); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	spec.ID = id
-	updated, err := s.updateBranch(r.Context(), spec)
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleResumeBranch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.studio.PauseBranch(r.Context(), id, false); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleBranchBitrate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Bitrate int `json:"bitrate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.studio.SetBitrate(r.Context(), id, req.Bitrate); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleRebranch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Width   int `json:"width"`
+		Height  int `json:"height"`
+		Bitrate int `json:"bitrate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.studio.Rebranch(r.Context(), id, req.Width, req.Height, req.Bitrate); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleDeleteBranch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.studio.RemoveBranch(r.Context(), id); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleRecordStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Format  string `json:"format"`
+		Codec   string `json:"codec"`
+		Bitrate int    `json:"bitrate"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	st, err := s.studio.StartRecording(r.Context(), req.Format, req.Codec, req.Bitrate)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, addBranchResponse{Branch: updated.Spec})
+	writeJSON(w, http.StatusOK, map[string]any{"recording": st, "state": s.studio.Snapshot()})
 }
 
-func (s *session) handleDeleteBranch(w http.ResponseWriter, r *http.Request, id string) {
-	if err := s.deleteBranch(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true, "needsRenegotiate": true})
-}
-
-func (s *session) handlePauseBranch(w http.ResponseWriter, r *http.Request, id string) {
-	if err := s.pauseBranch(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, controlResponse{OK: true, Message: "paused"})
-}
-
-func (s *session) handleResumeBranch(w http.ResponseWriter, r *http.Request, id string) {
-	if err := s.resumeBranch(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, controlResponse{OK: true, Message: "resumed"})
-}
-
-func (s *session) handleRebranch(w http.ResponseWriter, r *http.Request, id string) {
-	var spec branchSpec
-	if err := decodeJSON(r, &spec); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	spec.ID = id
-	branch, err := s.rebranch(r.Context(), id, spec)
+func (s *studioServer) handleRecordStop(w http.ResponseWriter, r *http.Request) {
+	st, err := s.studio.StopRecording(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, addBranchResponse{Branch: branch.Spec})
+	writeJSON(w, http.StatusOK, map[string]any{"recording": st, "state": s.studio.Snapshot()})
 }
 
-func (s *session) handleSetBitrate(w http.ResponseWriter, r *http.Request, id string) {
-	var req bitrateRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+func (s *studioServer) handleHLS(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enable  bool `json:"enable"`
+		Bitrate int  `json:"bitrate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.setBranchBitrate(r.Context(), id, req.Bitrate); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if err := s.studio.ToggleHLS(r.Context(), req.Enable, req.Bitrate); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, controlResponse{OK: true, Message: "bitrate retargeted"})
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
 }
 
-func (s *session) handleKeyframe(w http.ResponseWriter, r *http.Request) {
-	var req keyframeRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+func (s *studioServer) handleWHIPStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL     string `json:"url"`
+		Token   string `json:"token"`
+		Codec   string `json:"codec"`
+		Bitrate int    `json:"bitrate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Kind == "" {
-		req.Kind = "video"
-	}
-	if err := s.requestKeyframe(r.Context(), req.Kind); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if err := s.studio.StartWHIP(r.Context(), req.URL, req.Token, req.Codec, req.Bitrate); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, controlResponse{OK: true, Message: "keyframe requested"})
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
 }
 
-func (s *session) handleScenarios(w http.ResponseWriter, r *http.Request) {
-	results := runPlannerScenarios(r.Context())
-	s.setScenarios(results)
-	writeJSON(w, results)
+func (s *studioServer) handleWHIPStop(w http.ResponseWriter, r *http.Request) {
+	if err := s.studio.StopWHIP(r.Context()); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.studio.Snapshot())
+}
+
+func (s *studioServer) handleWebRTCOffer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ViewerID string `json:"viewerId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	viewerID, sdp, err := s.studio.OfferViewer(strings.TrimSpace(req.ViewerID))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"viewerId": viewerID,
+		"type":     "offer",
+		"sdp":      sdp,
+	})
+}
+
+func (s *studioServer) handleWebRTCAnswer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ViewerID string `json:"viewerId"`
+		SDP      string `json:"sdp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.studio.AnswerViewer(req.ViewerID, req.SDP); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *studioServer) handleOpenWatch(w http.ResponseWriter, _ *http.Request) {
+	url := s.studio.baseURL + "/watch"
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	}
+	if cmd != nil {
+		if err := cmd.Start(); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, code int, err error) {
+	writeJSON(w, code, map[string]string{"error": err.Error()})
 }

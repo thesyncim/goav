@@ -13,6 +13,11 @@ methodology changes, and migration notes.
 
 Entries since 2026-10-19 live in changelog.d/ until release.
 
+## v0.2.2
+
+- **Native macOS Studio (`examples/gio-webrtc-showcase`)**: replaced the cgo Gio control room with a `CGO_ENABLED=0`, 100% pure-Go (VP8 / VP9 / AV1, no H.264) native macOS `NSWindow` + `WKWebView` studio app featuring native AVFoundation camera (`cameraav`) and native macOS screen capture (`screenav`), a single persistent `goav.Select` + `goav.Composite` pipeline with sub-millisecond `control.SelectActive` scene cuts (Test Pattern, Camera, Screen, PiP, Side-by-Side), hot-attachable multi-codec WebRTC simulcast fan-out, continuous WebM/MKV/MP4 recording across scene cuts, live LL-HLS origin, WHIP publish, multi-viewer `/watch` room, and a live `goav` code & SVG pipeline graph inspector.
+- **macOS `cameraav` fixes**: only set `AVCaptureSessionPresetInputPriority` when `canSetSessionPreset:` returns true (macOS returns false and honors `setActiveFormat:` directly), and specify `kCVPixelBufferWidthKey` / `kCVPixelBufferHeightKey` alongside `kCVPixelBufferPixelFormatTypeKey` in `AVCaptureVideoDataOutput.videoSettings` so `AVCaptureSessionPresetHigh` does not override the negotiated camera dimensions.
+
 ## v0.2.1
 
 - **Hot-path GC & allocation hygiene**: eliminated per-audio-callback wake channel allocations and audio/video slice churn in `player/internal/engine`, replaced per-frame `av.StreamID` map lookups in `Mix`/`Composite` joins with flat slice-indexed ring buffers and a shared `joinStageBase`, cached steady-state RTP depacketizer resolution in `rtpav`, cached AES block ciphers and reused `zlib.Resetter` in `container/matroska`, and reused playlist render buffers in `container/hls`.

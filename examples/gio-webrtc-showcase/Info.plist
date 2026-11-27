@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.github.thesyncim.goav.studio</string>
+  <key>CFBundleName</key><string>goav Studio</string>
+  <key>CFBundleDisplayName</key><string>goav Studio</string>
+  <key>CFBundleExecutable</key><string>goav-studio</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSCameraUsageDescription</key><string>goav Studio captures your camera natively for live compositing, encoding, and WebRTC broadcast.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
+  <key>NSScreenCaptureUsageDescription</key><string>goav Studio captures your display natively for live screen sharing, PiP compositing, and WebRTC broadcast.</string>
+</dict>
+</plist>

@@ -1,42 +1,47 @@
-//go:build cgo
-
 package main
 
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	gioapp "gioui.org/app"
-	"github.com/thesyncim/goav/bundle"
-	runconfig "github.com/thesyncim/goav/runconfig"
+	"github.com/thesyncim/goav/examples/gio-webrtc-showcase/macosapp"
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP listen address")
-	headless := flag.Bool("headless", false, "serve the browser peer without opening the Gio control room")
+	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address (use :8080 to allow LAN viewers)")
+	headless := flag.Bool("headless", false, "run without opening the native macOS window")
 	flag.Parse()
 
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	browserURL := "http://localhost" + listenPort(listener.Addr().String())
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
+	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
 
-	showcase := newServer(bundle.MustNew(runconfig.WithEventCapacity(2048)), browserURL)
+	st := newStudio(baseURL)
+	if err := st.Start(context.Background()); err != nil {
+		log.Fatalf("start studio pipeline: %v", err)
+	}
+	defer st.Close()
+
+	srv := newStudioServer(st)
 	mux := http.NewServeMux()
-	showcase.routes(mux)
-	httpServer := &http.Server{Handler: logRequest(mux)}
+	srv.routes(mux)
+	httpServer := &http.Server{Handler: mux}
 
 	go func() {
-		log.Printf("gio webrtc showcase browser peer listening on %s", browserURL)
+		log.Printf("goav Studio ready -> %s (viewer room: %s/watch)", baseURL, baseURL)
 		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			log.Printf("http server error: %v", err)
 		}
 	}()
 
@@ -44,15 +49,45 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		<-ctx.Done()
-		_ = httpServer.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownCtx)
 		return
 	}
 
+	// In native macOS app mode, automatically request/detect camera & screen access
+	// once the window is up, and wire real camera/screen into the unified goav.Select task.
 	go func() {
-		if err := runControlRoom(showcase, browserURL); err != nil {
-			log.Printf("gio control room stopped: %v", err)
+		time.Sleep(500 * time.Millisecond)
+		camOK := st.RequestCameraAccess(context.Background()) == nil
+		st.refreshDevices()
+		snap := st.Snapshot()
+		scrOK := snap.Devices.ScreenAccess
+		target := "pattern"
+		switch {
+		case camOK && scrOK:
+			target = "pip"
+		case camOK:
+			target = "camera"
+		case scrOK:
+			target = "screen"
 		}
-		_ = httpServer.Shutdown(context.Background())
+		if target != "pattern" {
+			next := snap.Config
+			next.Scene = target
+			_ = st.UpdateConfig(context.Background(), next)
+		}
 	}()
-	gioapp.Main()
+
+	// Open the native CGO_ENABLED=0 macOS NSWindow + WKWebView on the main thread.
+	if err := macosapp.Run("goav Studio — Pure Go Media & WebRTC", baseURL, 1440, 920); err != nil {
+		log.Printf("native window unavailable (%v); continuing headless at %s", err, baseURL)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		<-ctx.Done()
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = httpServer.Shutdown(shutdownCtx)
 }

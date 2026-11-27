@@ -30,7 +30,7 @@ type darwinAPI struct {
 	image, timing, dimensions                                                            uintptr
 	lock, unlock, width, height, format, planeCount, planeBase, planeStride, planeHeight uintptr
 	queueCreate, queueSync, dispatchRelease, semCreate, semWait, semSignal               uintptr
-	mediaVideo, pixelKey, inputPriority                                                  objc.ID
+	mediaVideo, pixelKey, widthKey, heightKey, inputPriority                             objc.ID
 	runtimeError, interrupted, stopped, errorKey                                         objc.ID
 	delegate                                                                             objc.Class
 	calloc                                                                               func(uintptr, uintptr) unsafe.Pointer
@@ -118,6 +118,8 @@ func loadMac() error {
 		mac.mediaVideo = constant(af, "AVMediaTypeVideo")
 		mac.inputPriority = constant(af, "AVCaptureSessionPresetInputPriority")
 		mac.pixelKey = constant(cv, "kCVPixelBufferPixelFormatTypeKey")
+		mac.widthKey = constant(cv, "kCVPixelBufferWidthKey")
+		mac.heightKey = constant(cv, "kCVPixelBufferHeightKey")
 		mac.runtimeError = constant(af, "AVCaptureSessionRuntimeErrorNotification")
 		mac.interrupted = constant(af, "AVCaptureSessionWasInterruptedNotification")
 		mac.stopped = constant(af, "AVCaptureSessionDidStopRunningNotification")
@@ -277,8 +279,13 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 	}
 	d.output = object(object(class("AVCaptureVideoDataOutput"), "alloc"), "init")
 	object(d.output, "setAlwaysDiscardsLateVideoFrames:", true)
+	settings := object(class("NSMutableDictionary"), "dictionaryWithCapacity:", uintptr(3))
 	pixel := object(class("NSNumber"), "numberWithUnsignedInt:", uint32(0x34323076)) // video-range NV12 (420v).
-	settings := object(class("NSDictionary"), "dictionaryWithObject:forKey:", pixel, mac.pixelKey)
+	widthNum := object(class("NSNumber"), "numberWithInt:", int32(c.Width))
+	heightNum := object(class("NSNumber"), "numberWithInt:", int32(c.Height))
+	object(settings, "setObject:forKey:", pixel, mac.pixelKey)
+	object(settings, "setObject:forKey:", widthNum, mac.widthKey)
+	object(settings, "setObject:forKey:", heightNum, mac.heightKey)
 	object(d.output, "setVideoSettings:", settings)
 	object(d.session, "beginConfiguration")
 	if !objc.Send[bool](d.session, sel("canAddInput:"), input) || !objc.Send[bool](d.session, sel("canAddOutput:"), d.output) {
@@ -287,11 +294,9 @@ func openDevice(ctx context.Context, c Config) (captureDevice, error) {
 	}
 	object(d.session, "addInput:", input)
 	object(d.session, "addOutput:", d.output)
-	if !objc.Send[bool](d.session, sel("canSetSessionPreset:"), mac.inputPriority) {
-		object(d.session, "commitConfiguration")
-		return nil, ErrUnsupported
+	if objc.Send[bool](d.session, sel("canSetSessionPreset:"), mac.inputPriority) {
+		object(d.session, "setSessionPreset:", mac.inputPriority)
 	}
-	object(d.session, "setSessionPreset:", mac.inputPriority)
 	if !objc.Send[bool](device, sel("lockForConfiguration:"), &nativeErr) {
 		object(d.session, "commitConfiguration")
 		return nil, fmt.Errorf("cameraav: lock device: %s", goString(object(nativeErr, "localizedDescription")))
