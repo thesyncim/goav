@@ -9,8 +9,6 @@ type nativeSample struct {
 	retain, release, signal, semaphore uintptr
 }
 
-func nativeCaptureAddress() uintptr
-
 // nativePointer turns a C/ObjC symbol address returned by dlsym into unsafe.Pointer.
 //
 //go:nosplit
