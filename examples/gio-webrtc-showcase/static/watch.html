@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>goav Studio — Live WebRTC Viewer Room</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .watch-main { max-width: 1280px; margin: 0 auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .watch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; }
+    .watch-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .watch-tile video { width: 100%; aspect-ratio: 16/9; background: #050609; border-radius: 8px; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>goav Studio · Live Viewer Room</h1>
+      <span id="conn-state" class="pill cyan">connecting…</span>
+    </div>
+    <div class="topbar-right">
+      <a href="/" style="text-decoration:none;"><button class="sm">← Studio Control</button></a>
+    </div>
+  </header>
+
+  <main class="watch-main">
+    <div class="muted">Receiving live pure-Go WebRTC simulcast tracks directly from <span class="mono">goav</span> (VP8 / VP9 / AV1, zero cgo, zero FFmpeg).</div>
+    <div id="watch-grid" class="watch-grid"></div>
+  </main>
+
+  <script>
+    (() => {
+      let viewerId = "";
+      let pc = null;
+      let lastReneg = -1;
+      const grid = document.getElementById("watch-grid");
+      const statusEl = document.getElementById("conn-state");
+
+      let negotiating = false;
+      async function connect() {
+        if (negotiating) return;
+        negotiating = true;
+        try {
+          if (!pc || pc.connectionState === "failed" || pc.connectionState === "closed" || pc.connectionState === "disconnected") {
+            if (pc) {
+              try { pc.close(); } catch (_) {}
+            }
+            viewerId = "";
+            pc = new RTCPeerConnection();
+            pc.onconnectionstatechange = () => {
+              statusEl.textContent = pc.connectionState;
+              statusEl.className = "pill " + (pc.connectionState === "connected" ? "green" : "cyan");
+              if (pc.connectionState === "failed" || pc.connectionState === "disconnected" || pc.connectionState === "closed") {
+                setTimeout(() => connect().catch(() => {}), 800);
+              }
+            };
+            pc.ontrack = (ev) => {
+              const track = ev.track;
+              const id = ev.streams?.[0]?.id || track.id;
+              let tile = document.querySelector(`[data-track="${CSS.escape(id)}"]`);
+              if (!tile) {
+                tile = document.createElement("div");
+                tile.className = "watch-tile";
+                tile.dataset.track = id;
+                tile.innerHTML = `
+                  <div class="card-head">
+                    <strong class="mono">${id}</strong>
+                    <span class="pill cyan" data-fps="${id}">-- fps</span>
+                  </div>
+                  <video autoplay playsinline muted controls></video>
+                `;
+                grid.appendChild(tile);
+              }
+              const v = tile.querySelector("video");
+              v.srcObject = new MediaStream([track]);
+              v.play().catch(() => {});
+            };
+          }
+          const offerRes = await fetch("/api/webrtc/offer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ viewerId }),
+          }).then((r) => r.json());
+          viewerId = offerRes.viewerId;
+          await pc.setRemoteDescription({ type: "offer", sdp: offerRes.sdp });
+          const ans = await pc.createAnswer();
+          await pc.setLocalDescription(ans);
+          await fetch("/api/webrtc/answer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ viewerId, sdp: pc.localDescription.sdp }),
+          });
+        } finally {
+          negotiating = false;
+        }
+      }
+
+      setInterval(async () => {
+        if (!pc || pc.connectionState !== "connected") return;
+        const stats = await pc.getStats();
+        stats.forEach((r) => {
+          if (r.type === "inbound-rtp" && r.kind === "video" && r.trackIdentifier) {
+            const el = document.querySelector(`[data-fps="${CSS.escape(r.trackIdentifier)}"]`);
+            if (el && typeof r.framesPerSecond === "number") {
+              el.textContent = `${r.framesPerSecond.toFixed(0)} fps`;
+            }
+          }
+        });
+      }, 1000);
+
+      connect().catch(() => {});
+      const es = new EventSource("/api/events");
+      es.onmessage = (ev) => {
+        const st = JSON.parse(ev.data);
+        if (lastReneg !== -1 && st.renegSeq !== lastReneg) {
+          connect().catch(() => {});
+        }
+        lastReneg = st.renegSeq;
+      };
+      window.addEventListener("beforeunload", () => {
+        es.close();
+        if (pc) pc.close();
+      });
+    })();
+  </script>
+</body>
+</html>

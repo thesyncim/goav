@@ -3,23 +3,18 @@ module github.com/thesyncim/goav/examples/gio-webrtc-showcase
 go 1.27.4
 
 require (
-	gioui.org v0.10.3
-	github.com/ebitengine/oto/v3 v3.5.1
+	github.com/ebitengine/purego v0.11.3
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/rtcp v1.2.19
 	github.com/pion/webrtc/v4 v4.2.24
 	github.com/thesyncim/goav v0.2.0
+	github.com/thesyncim/goav/cameraav v0.0.0
 	github.com/thesyncim/goav/rtpav v0.0.0-20261124213030-4062f221251b
 	github.com/thesyncim/goav/webrtcav v0.0.0-20261124213030-4062f221251b
 )
 
 require (
-	gioui.org/shader v1.0.9 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
-	github.com/go-text/typesetting v0.3.5 // indirect
-	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/jfreymuth/pulse v0.1.3 // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.14 // indirect
 	github.com/pion/ice/v4 v4.4.7 // indirect
@@ -39,16 +34,14 @@ require (
 	github.com/thesyncim/govpx v0.5.2 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/exp/shiny v0.0.0-20261014143641-f0251eb4aa3e // indirect
-	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
 
 replace (
 	github.com/thesyncim/goav => ../..
+	github.com/thesyncim/goav/cameraav => ../../cameraav
 	github.com/thesyncim/goav/rtpav => ../../rtpav
 	github.com/thesyncim/goav/webrtcav => ../../webrtcav
 )

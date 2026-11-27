@@ -176,7 +176,7 @@ RTP and WebRTC, in and out, live in their own modules ([Realtime](docs/REALTIME.
 your own sources, codecs, and sinks plug in through small interfaces
 ([Adapters & Extending](docs/EXTENDING.md)). More in the [Developer Guide](docs/GUIDE.md)
 and [`examples/`](examples), including a browser
-[WebRTC ladder](examples/webrtc-runtime-ladder) and a native [Gio control room](examples/gio-webrtc-showcase).
+[WebRTC ladder](examples/webrtc-runtime-ladder) and a `CGO_ENABLED=0` [native macOS Studio](examples/gio-webrtc-showcase).
 
 ## Built for live services
 
