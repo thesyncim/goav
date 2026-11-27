@@ -163,9 +163,9 @@ type funcSource struct {
 	fn   func(context.Context, Emitter) error
 }
 
-func (s *funcSource) Name() string                              { return s.name }
+func (s *funcSource) Name() string                               { return s.name }
 func (s *funcSource) Start(ctx context.Context, e Emitter) error { return s.fn(ctx, e) }
-func (s *funcSource) Close() error                              { return nil }
+func (s *funcSource) Close() error                               { return nil }
 
 type funcSink struct {
 	name string

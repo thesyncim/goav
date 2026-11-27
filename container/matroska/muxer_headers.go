@@ -599,7 +599,6 @@ func normalizeSimpleTags(tags []SimpleTag) error {
 	return nil
 }
 
-
 func (m *Muxer) startCluster(timecode int64) error {
 	if m.clusterSized {
 		if err := m.ebml.FinishSizedElement(m.clusterPatch); err != nil {
@@ -650,7 +649,6 @@ func (m *Muxer) writeSimpleBlock(packet Packet, blockTimecode int16, track Track
 	}
 	return m.writeBlock(idSimpleBlock, packet, blockTimecode, simpleBlockFlags(packet), track)
 }
-
 
 func (m *Muxer) updateMaxTime(packet Packet) {
 	end := packet.TimeNS

@@ -665,4 +665,3 @@ func maxBlockAdditionMappingID(mappings []BlockAdditionMapping) (uint64, error) 
 	}
 	return maxID, nil
 }
-

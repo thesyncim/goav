@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
@@ -17,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/builderr"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"

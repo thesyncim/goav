@@ -42,4 +42,3 @@ func compositeTestChromaAt(frame *av.Frame, x, y int) (byte, byte) {
 	chromaW := (frame.Video.Width + 1) / 2
 	return frame.Planes[1].Buffer.Bytes[y*chromaW+x], frame.Planes[2].Buffer.Bytes[y*chromaW+x]
 }
-

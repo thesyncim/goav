@@ -363,4 +363,3 @@ func (d *Demuxer) parseChapterDisplay(parent io.Reader, header ebml.Header) (Cha
 	}
 	return display, nil
 }
-

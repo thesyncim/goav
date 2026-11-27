@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/control"
+	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 )
 

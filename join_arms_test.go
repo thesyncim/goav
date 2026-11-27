@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
+	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )

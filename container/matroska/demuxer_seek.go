@@ -713,4 +713,3 @@ func (d *Demuxer) seekToPacketIndexEntry(entry packetIndexEntry) error {
 	d.laceSeekFrameIndex = entry.FrameIndex
 	return nil
 }
-

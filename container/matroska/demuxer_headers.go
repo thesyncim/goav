@@ -881,4 +881,3 @@ func (d *Demuxer) parseTracks(header ebml.Header) error {
 	}
 	return master.Validate()
 }
-

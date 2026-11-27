@@ -406,7 +406,7 @@ func (s *studio) rebuildTaskLocked(ctx context.Context) error {
 	s.task = task
 	s.taskCancel = cancel
 	s.taskDone = make(chan struct{})
-	s.builtCamOK = s.cameraAccess
+	s.builtCamOK = s.cameraAccess && len(s.cachedCams) > 0
 	s.builtScrOK = s.cachedScreen
 	s.lastError = ""
 
@@ -635,7 +635,8 @@ func (s *studio) UpdateConfig(ctx context.Context, next studioConfig) error {
 		s.cfg.CaptureCursor = next.CaptureCursor
 		structuralChange = true
 	}
-	if s.cameraAccess != s.builtCamOK || s.cachedScreen != s.builtScrOK {
+	wantCamOK := s.cameraAccess && len(s.cachedCams) > 0
+	if wantCamOK != s.builtCamOK || s.cachedScreen != s.builtScrOK {
 		structuralChange = true
 	}
 	if next.Scene != "" {

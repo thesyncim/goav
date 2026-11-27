@@ -348,20 +348,20 @@ func rescaleValue(value int64, from TimeBase, to TimeBase, nearest bool) (int64,
 // timing, audio/video geometry, formats, and codec-specific extradata.
 // Decoders are configured from these; the planner reads them as shape facts.
 type CodecParameters struct {
-	ID            CodecID   `json:"id,omitempty"`
-	Type          MediaType `json:"type,omitempty"`
-	Profile       string    `json:"profile,omitempty"`
-	Level         string    `json:"level,omitempty"`
-	ClockRate     uint32    `json:"clockRate,omitempty"`
-	SampleRate    int       `json:"sampleRate,omitempty"`
-	Channels      int       `json:"channels,omitempty"`
-	ChannelLayout string    `json:"channelLayout,omitempty"`
+	ID            CodecID      `json:"id,omitempty"`
+	Type          MediaType    `json:"type,omitempty"`
+	Profile       string       `json:"profile,omitempty"`
+	Level         string       `json:"level,omitempty"`
+	ClockRate     uint32       `json:"clockRate,omitempty"`
+	SampleRate    int          `json:"sampleRate,omitempty"`
+	Channels      int          `json:"channels,omitempty"`
+	ChannelLayout string       `json:"channelLayout,omitempty"`
 	Width         int          `json:"width,omitempty"`
 	Height        int          `json:"height,omitempty"`
 	PixelFormat   PixelFormat  `json:"pixelFormat,omitempty"`
 	SampleFormat  SampleFormat `json:"sampleFormat,omitempty"`
 	ExtraData     Buffer       `json:"extraData,omitzero"`
-	Attributes    Metadata  `json:"attributes,omitempty"`
+	Attributes    Metadata     `json:"attributes,omitempty"`
 }
 
 // Stream describes one media stream an input carries: identity, kind, codec

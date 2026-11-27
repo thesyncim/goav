@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )

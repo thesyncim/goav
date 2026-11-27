@@ -127,7 +127,6 @@ func (d *Demuxer) parseAttachedFile(parent io.Reader, header ebml.Header) (Attac
 	return attachment, nil
 }
 
-
 func (d *Demuxer) parseTags(header ebml.Header) error {
 	if header.Size.Unknown {
 		return ErrInvalidData
@@ -373,4 +372,3 @@ func (d *Demuxer) parseSimpleTag(parent io.Reader, header ebml.Header) (SimpleTa
 	}
 	return tag, nil
 }
-

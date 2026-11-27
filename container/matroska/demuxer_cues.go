@@ -49,7 +49,6 @@ func (d *Demuxer) parseCues(header ebml.Header) error {
 	return master.Validate()
 }
 
-
 func (d *Demuxer) parseCuePoint(parent io.Reader, header ebml.Header) (CuePoint, error) {
 	if header.Size.Unknown {
 		return CuePoint{}, ErrInvalidData

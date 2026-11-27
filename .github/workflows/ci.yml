@@ -323,7 +323,7 @@ jobs:
         working-directory: cmd/goav
         run: |
           export GOWORK="$RUNNER_TEMP/goav.work"
-          go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/player" "$GITHUB_WORKSPACE/cmd/goav"
+          go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/cameraav" "$GITHUB_WORKSPACE/rtpav" "$GITHUB_WORKSPACE/webrtcav" "$GITHUB_WORKSPACE/player" "$GITHUB_WORKSPACE/cmd/goav"
           CGO_ENABLED=0 go build ./...
           CGO_ENABLED=0 go build -tags goav_noplay ./...
           CGO_ENABLED=0 go test -count=1 ./...
@@ -339,7 +339,7 @@ jobs:
         if: matrix.full
         run: |
           export GOWORK="$RUNNER_TEMP/goav-cross.work"
-          go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/player" "$GITHUB_WORKSPACE/cmd/goav"
+          go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/cameraav" "$GITHUB_WORKSPACE/rtpav" "$GITHUB_WORKSPACE/webrtcav" "$GITHUB_WORKSPACE/player" "$GITHUB_WORKSPACE/cmd/goav"
           for target in darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
             echo "::group::$target"
             (cd player && CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build ./...) || exit 1
@@ -354,7 +354,10 @@ jobs:
           for mod in examples/go.mod examples/*/go.mod; do
             dir="$(dirname "$mod")"
             echo "::group::$dir"
-            (cd "$dir" && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test -count=1 ./...)
+            workfile="$RUNNER_TEMP/goav-example.work"
+            rm -f "$workfile"
+            GOWORK="$workfile" go work init "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/cameraav" "$GITHUB_WORKSPACE/rtpav" "$GITHUB_WORKSPACE/webrtcav" "$GITHUB_WORKSPACE/$dir"
+            (cd "$dir" && GOWORK="$workfile" CGO_ENABLED=0 go build ./... && GOWORK="$workfile" CGO_ENABLED=0 go test -count=1 ./...)
             echo "::endgroup::"
           done
 

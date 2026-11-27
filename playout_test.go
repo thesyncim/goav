@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"

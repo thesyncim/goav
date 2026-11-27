@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/raceflag"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	sourcepkg "github.com/thesyncim/goav/source"

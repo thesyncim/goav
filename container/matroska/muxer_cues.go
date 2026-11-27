@@ -266,4 +266,3 @@ func writeCueReference(w *ebml.Writer, reference CueReference, scaleNS int64) er
 	}
 	return w.WriteElement(idCueReference, payload.Bytes())
 }
-

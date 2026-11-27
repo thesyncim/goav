@@ -375,4 +375,3 @@ func writeAttachedFile(w *ebml.Writer, attachment Attachment) error {
 	}
 	return w.WriteElement(idAttachedFile, payload.Bytes())
 }
-
