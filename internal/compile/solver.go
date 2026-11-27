@@ -3,6 +3,7 @@ package compile
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -491,7 +492,7 @@ func selectShapeConversionAdapter(env Env, media av.MediaType, transform recipei
 			continue
 		}
 		if transform.Kind == recipeir.TransformResample && transform.Resample.SampleFormat != "" &&
-			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, transform.Resample.SampleFormat) {
+			len(descriptor.SampleFormats) != 0 && !slices.Contains(descriptor.SampleFormats, transform.Resample.SampleFormat) {
 			continue
 		}
 		if transform.Kind == recipeir.TransformResize {
@@ -499,7 +500,7 @@ func selectShapeConversionAdapter(env Env, media av.MediaType, transform recipei
 				continue
 			}
 			if transform.Resize.PixelFormat != "" && len(descriptor.PixelFormats) != 0 &&
-				!stringAllowed(descriptor.PixelFormats, transform.Resize.PixelFormat) {
+				!slices.Contains(descriptor.PixelFormats, transform.Resize.PixelFormat) {
 				continue
 			}
 		}
@@ -543,11 +544,11 @@ func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType,
 			continue
 		}
 		if media == av.MediaAudio && pref.SampleFormat != "" &&
-			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, pref.SampleFormat) {
+			len(descriptor.SampleFormats) != 0 && !slices.Contains(descriptor.SampleFormats, pref.SampleFormat) {
 			continue
 		}
 		if media == av.MediaVideo && pref.PixelFormat != "" &&
-			len(descriptor.PixelFormats) != 0 && !stringAllowed(descriptor.PixelFormats, pref.PixelFormat) {
+			len(descriptor.PixelFormats) != 0 && !slices.Contains(descriptor.PixelFormats, pref.PixelFormat) {
 			continue
 		}
 		narrowed = append(narrowed, descriptor)
@@ -755,7 +756,7 @@ func shapeConversionDetailText(factory string, actual shape.Spec, transform reci
 			parts = append(parts, formatChannels(actual.Channels)+"→"+formatChannels(config.Channels))
 		}
 		if config.SampleFormat != "" && config.SampleFormat != actual.SampleFormat {
-			parts = append(parts, formatMediaFormat(actual.SampleFormat)+"→"+config.SampleFormat)
+			parts = append(parts, formatMediaFormat(string(actual.SampleFormat))+"→"+string(config.SampleFormat))
 		}
 	case transform.Kind == recipeir.TransformResize:
 		config := transform.Resize
@@ -763,7 +764,7 @@ func shapeConversionDetailText(factory string, actual shape.Spec, transform reci
 			parts = append(parts, formatFrameSize(actual.Width, actual.Height)+"→"+formatFrameSize(config.Width, config.Height))
 		}
 		if config.PixelFormat != "" && config.PixelFormat != actual.PixelFormat {
-			parts = append(parts, formatMediaFormat(actual.PixelFormat)+"→"+config.PixelFormat)
+			parts = append(parts, formatMediaFormat(string(actual.PixelFormat))+"→"+string(config.PixelFormat))
 		}
 	}
 	return strings.Join(parts, " ")
@@ -785,13 +786,13 @@ func HumanizeShape(spec shape.Spec) string {
 		parts = append(parts, formatChannels(spec.Channels))
 	}
 	if spec.SampleFormat != "" {
-		parts = append(parts, spec.SampleFormat)
+		parts = append(parts, string(spec.SampleFormat))
 	}
 	if spec.Width != 0 || spec.Height != 0 {
 		parts = append(parts, formatFrameSize(spec.Width, spec.Height))
 	}
 	if spec.PixelFormat != "" {
-		parts = append(parts, spec.PixelFormat)
+		parts = append(parts, string(spec.PixelFormat))
 	}
 	if len(parts) == 0 {
 		return "any"

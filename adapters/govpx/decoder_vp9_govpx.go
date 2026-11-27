@@ -32,12 +32,11 @@ type VP9Decoder struct {
 	video            av.VideoFrame
 	requestKeyframes bool
 	dropDamagedVideo bool
-	dropUntilSync    bool
 	state            vpxState
 }
 
 func (d *VP9Decoder) Descriptor() codec.Descriptor {
-	return activeVP9Descriptor(descriptor(av.CodecVP9, "VP9", []string{av.PixelFormatI420}, []string{av.MIMEVP9}))
+	return activeVP9Descriptor(descriptor(av.CodecVP9, "VP9", []av.PixelFormat{av.PixelFormatI420}, []string{av.MIMEVP9}))
 }
 
 func (d *VP9Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
@@ -55,8 +54,7 @@ func (d *VP9Decoder) Open(ctx context.Context, config codec.DecodeConfig) error 
 	}
 	d.requestKeyframes = config.Resilience.RequestKeyframes
 	d.dropDamagedVideo = config.Resilience.DropDamagedVideo
-	d.dropUntilSync = true
-	d.state = vpxOpen
+	d.state = vpxDropping
 	return nil
 }
 
@@ -74,19 +72,19 @@ func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.
 		return codec.ErrUnsupportedFormat
 	}
 	if pkt == nil {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		return d.appendKeyframeRequest(out, "vp9 packet loss")
 	}
 	requestedKeyframe := false
 	if pkt.LossBefore || pkt.Discontinuous {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		if err := d.appendKeyframeRequest(out, "vp9 discontinuity"); err != nil {
 			return err
 		}
 		requestedKeyframe = true
 	}
 	if pkt.Corrupt && d.dropDamagedVideo {
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		return d.appendKeyframeRequest(out, "vp9 corrupt packet")
 	}
 
@@ -94,14 +92,14 @@ func (d *VP9Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.
 	if err != nil {
 		return mapGovpxError(err)
 	}
-	if d.dropUntilSync && !streamInfo.KeyFrame {
+	if d.state == vpxDropping && !streamInfo.KeyFrame {
 		if requestedKeyframe {
 			return nil
 		}
 		return d.appendKeyframeRequest(out, "vp9 waiting for keyframe")
 	}
 	if streamInfo.KeyFrame {
-		d.dropUntilSync = false
+		d.state = vpxOpen
 	}
 
 	return d.decodeVisiblePacket(pkt, streamInfo, out)
@@ -135,10 +133,10 @@ func (d *VP9Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	}
 	switch event.Type {
 	case av.EventPacketLoss:
-		d.dropUntilSync = true
+		d.state = vpxDropping
 	case av.EventCodecChanged, av.EventDiscontinuity:
 		d.applyEventStream(event)
-		d.dropUntilSync = true
+		d.state = vpxDropping
 		d.decoder.Reset()
 	}
 	return nil

@@ -349,11 +349,11 @@ func (r *testRecipe) Explain(ctx context.Context) (plan.Report, error) {
 	return r.rt().Explain(ctx, r.outs...)
 }
 
-func (r *testRecipe) Build(ctx context.Context) (goav.Task, error) {
+func (r *testRecipe) Build(ctx context.Context) (*goav.Task, error) {
 	return r.rt().Build(ctx, r.outs...)
 }
 
-func (r *testRecipe) BuildLive(ctx context.Context) (goav.Task, error) { return r.Build(ctx) }
+func (r *testRecipe) BuildLive(ctx context.Context) (*goav.Task, error) { return r.Build(ctx) }
 
 func (r *testRecipe) Run(ctx context.Context) error { return r.rt().Run(ctx, r.outs...) }
 
@@ -458,11 +458,11 @@ func (j *testBranchJob) Explain(ctx context.Context) (plan.Report, error) {
 
 func (j *testBranchJob) Describe() (pipeline.Spec, error) { return j.recipe().Describe() }
 
-func (j *testBranchJob) Build(ctx context.Context) (goav.Task, error) {
+func (j *testBranchJob) Build(ctx context.Context) (*goav.Task, error) {
 	return j.recipe().Build(ctx)
 }
 
-func (j *testBranchJob) BuildLive(ctx context.Context) (goav.Task, error) {
+func (j *testBranchJob) BuildLive(ctx context.Context) (*goav.Task, error) {
 	return j.recipe().Build(ctx)
 }
 

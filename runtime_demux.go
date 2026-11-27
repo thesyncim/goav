@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -91,7 +92,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 		return demuxBuild{}, err
 	}
 	if realtime {
-		markTimelinePaced(b.taskClock())
+		stage.MarkTimelinePaced(b.taskClock())
 	}
 	return demuxBuild{source: source, streams: streams}, nil
 }

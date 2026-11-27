@@ -31,7 +31,7 @@ func (attachBranch) rebranchArg() {}
 
 // Attach adds Outputs fed from the task's taps, tracks, and graph routes to
 // the running task.
-func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
+func (t *Task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 	branches, err := t.attachBranches(outs)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 // attachBranches lowers Outputs rooted at the task's taps, tracks, and routes
 // onto attach branches. A tap an earlier Output of the group declares is
 // known by the domain at its position.
-func (t *task) attachBranches(outs []Output) ([]attachBranch, error) {
+func (t *Task) attachBranches(outs []Output) ([]attachBranch, error) {
 	invalid := publicError(compile.StreamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)"))
 	if len(outs) == 0 {
 		return nil, runtimeBranchInvalidError("no runtime branches to attach", "attach Outputs: task.Attach(ctx, task.Tap(name).To(destination))")
@@ -114,7 +114,7 @@ func (h *compileHandles) attachBranch(plan compile.AttachBranchPlan, source bran
 
 // rebranchArgs replaces each Output among args with the branches it attaches
 // as, so Rebranch takes the Outputs Attach does.
-func (t *task) rebranchArgs(args []RebranchArg) ([]RebranchArg, error) {
+func (t *Task) rebranchArgs(args []RebranchArg) ([]RebranchArg, error) {
 	var outs []Output
 	mapped := make([]RebranchArg, 0, len(args))
 	for _, arg := range args {
@@ -179,15 +179,11 @@ func (g *recipeGraph) withStreamAnnouncer() *streamAnnouncer {
 
 // installStreamRules binds the recipe's OnStream rules to the built task: the
 // rules anchor on the single source node and react on its emit path.
-func (r recipeResolved) installStreamRules(built Task, announcer *streamAnnouncer) {
-	if announcer == nil || len(r.streamRules) == 0 {
+func (r recipeResolved) installStreamRules(built *Task, announcer *streamAnnouncer) {
+	if announcer == nil || len(r.streamRules) == 0 || built == nil {
 		return
 	}
-	runtimeTask, ok := built.(*task)
-	if !ok || runtimeTask == nil {
-		return
-	}
-	runtimeTask.installStreamRules(announcer, r.rulesSource, r.rulesDomain, r.streamRules)
+	built.installStreamRules(announcer, r.rulesSource, r.rulesDomain, r.streamRules)
 }
 
 // branchForDiscoveredStream templates one rule branch for a matched stream:
@@ -211,16 +207,16 @@ func branchForDiscoveredStream(branch attachBranch, sourceNode string, domain sh
 }
 
 // Tap is the stream at one of the task's taps.
-func (t *task) Tap(name string) Stream {
+func (t *Task) Tap(name string) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{tap: name}}}
 }
 
 // Track is a stream one of the task's inputs produces.
-func (t *task) Track(input Input, stream av.Stream) Stream {
+func (t *Task) Track(input Input, stream av.Stream) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{input: input, track: &stream}}}
 }
 
 // Route is the stream a graph route carries.
-func (t *task) Route(route pipeline.Route) Stream {
+func (t *Task) Route(route pipeline.Route) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{route: &route}}}
 }

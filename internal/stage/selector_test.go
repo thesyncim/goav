@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func selectorTestEOS(id av.StreamID) *pipeline.Message {
 }
 
 func TestSelectorForwardsActiveInputOnly(t *testing.T) {
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "sel")
+	sel := NewSelector("sel", []av.StreamID{"a", "b"}, "sel")
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -67,7 +67,7 @@ func TestSelectorForwardsActiveInputOnly(t *testing.T) {
 }
 
 func TestSelectorForwardsActivePacketsOnly(t *testing.T) {
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "sel")
+	sel := NewSelector("sel", []av.StreamID{"a", "b"}, "sel")
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -95,7 +95,7 @@ func TestSelectorForwardsActivePacketsOnly(t *testing.T) {
 }
 
 func TestSelectorRejectsUnknownActive(t *testing.T) {
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "sel")
+	sel := NewSelector("sel", []av.StreamID{"a", "b"}, "sel")
 	if err := sel.SetActive("c"); err == nil {
 		t.Fatal("SetActive(c) accepted an unknown input, want error")
 	}
@@ -106,7 +106,7 @@ func TestSelectorRejectsUnknownActive(t *testing.T) {
 }
 
 func TestSelectorEmitsEOSAfterAllInputsEnd(t *testing.T) {
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "sel")
+	sel := NewSelector("sel", []av.StreamID{"a", "b"}, "sel")
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -125,7 +125,7 @@ func TestSelectorEmitsEOSAfterAllInputsEnd(t *testing.T) {
 }
 
 func TestSelectorActiveStoreIsRaceClean(t *testing.T) {
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "sel")
+	sel := NewSelector("sel", []av.StreamID{"a", "b"}, "sel")
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -154,6 +154,65 @@ type selectorPacketEmitter struct {
 func (c *selectorPacketEmitter) Emit(_ context.Context, m *pipeline.Message) error {
 	if m.Kind == pipeline.MessagePacket {
 		c.packets = append(c.packets, m.Packet.Ref())
+	}
+	return nil
+}
+
+func TestSelectorActiveIDContracts(t *testing.T) {
+	empty := NewSelector("empty", nil, "out")
+	if got := empty.activeID(); got != "" {
+		t.Fatalf("empty activeID = %q, want empty", got)
+	}
+
+	selector := NewSelector("select", []av.StreamID{"left", "right"}, "out")
+	if got := selector.activeID(); got != "left" {
+		t.Fatalf("default activeID = %q, want left", got)
+	}
+	if err := selector.SetActive("right"); err != nil {
+		t.Fatal(err)
+	}
+	if got := selector.activeID(); got != "right" {
+		t.Fatalf("switched activeID = %q, want right", got)
+	}
+	selector.activeIndex.Store(-1)
+	if got := selector.activeID(); got != "" {
+		t.Fatalf("negative activeID = %q, want empty", got)
+	}
+	selector.activeIndex.Store(99)
+	if got := selector.activeID(); got != "" {
+		t.Fatalf("out-of-range activeID = %q, want empty", got)
+	}
+}
+
+func mixTestReadS16(frame *av.Frame) []int16 {
+	b := frame.Planes[0].Buffer.Bytes
+	out := make([]int16, len(b)/2)
+	for i := range out {
+		out[i] = int16(uint16(b[i*2]) | uint16(b[i*2+1])<<8)
+	}
+	return out
+}
+
+type mixTestEmitter struct {
+	frames []*av.Frame
+	events []*av.Event
+}
+
+func (c *mixTestEmitter) Emit(_ context.Context, m *pipeline.Message) error {
+	switch m.Kind {
+	case pipeline.MessageFrame:
+		if m.Frame != nil {
+			f := *m.Frame
+			if len(m.Frame.Planes) > 0 {
+				f.Planes = append([]av.Plane(nil), m.Frame.Planes...)
+				for i := range f.Planes {
+					f.Planes[i].Buffer = av.Buffer{Bytes: append([]byte(nil), f.Planes[i].Buffer.Bytes...)}
+				}
+			}
+			c.frames = append(c.frames, &f)
+		}
+	case pipeline.MessageEvent:
+		c.events = append(c.events, m.Event)
 	}
 	return nil
 }

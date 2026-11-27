@@ -26,7 +26,7 @@ import (
 // alike) and capability-open, so it never fails a compatibility check.
 func Codec(id av.CodecID) runconfig.Option {
 	desc := codecDescriptor(id)
-	return runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	return runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		registry.RegisterEncoder(desc, passthroughCodecFactory{desc: desc})
 		registry.RegisterDecoder(desc, passthroughCodecFactory{desc: desc})
 	})
@@ -193,7 +193,7 @@ func appendFramePayload(b []byte, frame *av.Frame) []byte {
 		b = appendU32(b, uint32(frame.Audio.SampleRate))
 		b = appendU32(b, uint32(frame.Audio.Channels))
 		b = appendWireString(b, frame.Audio.ChannelLayout)
-		b = appendWireString(b, frame.Audio.SampleFormat)
+		b = appendWireString(b, string(frame.Audio.SampleFormat))
 		b = appendU32(b, uint32(frame.Audio.Samples))
 	default:
 		var video av.VideoFrame
@@ -203,7 +203,7 @@ func appendFramePayload(b []byte, frame *av.Frame) []byte {
 		b = appendU8(b, frameKindVideo)
 		b = appendU32(b, uint32(video.Width))
 		b = appendU32(b, uint32(video.Height))
-		b = appendWireString(b, video.PixelFormat)
+		b = appendWireString(b, string(video.PixelFormat))
 	}
 	b = appendU32(b, uint32(len(frame.Planes)))
 	for i := range frame.Planes {
@@ -235,7 +235,7 @@ func parseFramePayload(payload []byte, frame *av.Frame, audioScratch *av.AudioFr
 			SampleRate:    int(r.u32()),
 			Channels:      int(r.u32()),
 			ChannelLayout: r.internedString(),
-			SampleFormat:  r.internedString(),
+			SampleFormat:  av.SampleFormat(r.internedString()),
 			Samples:       int(r.u32()),
 		}
 		frame.Type = av.MediaAudio
@@ -250,7 +250,7 @@ func parseFramePayload(payload []byte, frame *av.Frame, audioScratch *av.AudioFr
 		*video = av.VideoFrame{
 			Width:       int(r.u32()),
 			Height:      int(r.u32()),
-			PixelFormat: r.internedString(),
+			PixelFormat: av.PixelFormat(r.internedString()),
 		}
 		frame.Type = av.MediaVideo
 		frame.Video = video

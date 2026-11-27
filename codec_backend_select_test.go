@@ -21,7 +21,7 @@ import (
 // hardwareVP8 registers a second VP8 encoder that declares itself hardware,
 // so the default preference picks it over the bundled pure-Go govpx.
 func hardwareVP8() runconfig.Option {
-	return runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	return runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		desc := codec.Descriptor{
 			ID:   av.CodecVP8,
 			Type: av.MediaVideo,
@@ -175,7 +175,7 @@ func TestMisspelledKnobScopeIsRefused(t *testing.T) {
 // takes, on a request naming none, is refused with each backend and why,
 // and the nearest setting, not as an unsupported codec.
 func TestMisspelledKnobNamesEachBackendsReason(t *testing.T) {
-	strict := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	strict := runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
 		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
 		for _, backend := range []codec.BackendInfo{{Name: "fakehw", Kind: codec.KindHardware}, {Name: "fakelib", Kind: codec.KindLib}} {
@@ -205,7 +205,7 @@ func TestMisspelledKnobNamesEachBackendsReason(t *testing.T) {
 // Explain prints, and why it cannot serve, which a request naming it reads.
 func TestBackendNoticeAndUnavailabilityReachTheUser(t *testing.T) {
 	missing := errors.New("libx is not installed; fix: install libx")
-	backends := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	backends := runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
 		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
 		registry.RegisterEncoder(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Backend: codec.BackendInfo{Name: "credited", Kind: codec.KindLib, Notice: "Credited Codec by Example"}}, choice.Encoder)

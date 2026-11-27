@@ -350,38 +350,57 @@ func registerJoinElements() {
 	type timedJoinArgs struct {
 		Sync string `launch:"sync" help:"arrival|pts"`
 	}
-	timed := func(args reflect.Value, inputs []value, call *termNode, layers bool) ([]goav.JoinArg, error) {
-		out := make([]goav.JoinArg, 0, len(inputs)+1)
-		for i, in := range inputs {
-			switch {
-			case in.kind == kindStream:
-				out = append(out, in.stream)
-			case in.kind == kindLayer && layers:
-				out = append(out, in.layer)
-			default:
-				return nil, joinInputError(call, i, in)
-			}
-		}
+	parseSync := func(args reflect.Value, call *termNode) (bool, error) {
 		switch a := argsOf[timedJoinArgs](args); a.Sync {
 		case "", "arrival":
+			return false, nil
 		case "pts":
-			out = append(out, goav.ByPTS())
+			return true, nil
 		default:
-			return nil, &Error{Pos: call.pos, End: call.end, Msg: call.name + " sync " + quote(a.Sync) + " is not arrival or pts", Hint: call.name + "(a, b, sync=pts)"}
+			return false, &Error{Pos: call.pos, End: call.end, Msg: call.name + " sync " + quote(a.Sync) + " is not arrival or pts", Hint: call.name + "(a, b, sync=pts)"}
 		}
-		return out, nil
 	}
 	join(define[timedJoinArgs]("mix", "sum audio streams", "join"), func(args reflect.Value, inputs []value, call *termNode) (goav.Stream, error) {
-		arms, err := timed(args, inputs, call, false)
-		return goav.Mix(arms...), err
+		out := make([]goav.MixArg, 0, len(inputs)+1)
+		for i, in := range inputs {
+			if in.kind != kindStream {
+				return goav.Stream{}, joinInputError(call, i, in)
+			}
+			out = append(out, in.stream)
+		}
+		byPTS, err := parseSync(args, call)
+		if err != nil {
+			return goav.Stream{}, err
+		}
+		if byPTS {
+			out = append(out, goav.ByPTS())
+		}
+		return goav.Mix(out...), nil
 	})
 	join(define[struct{}]("select", "forward one stream at a time", "join"), func(_ reflect.Value, inputs []value, call *termNode) (goav.Stream, error) {
 		streams, err := joinStreams(inputs, call)
 		return goav.Select(streams...), err
 	})
 	join(define[timedJoinArgs]("composite", "draw video streams on one canvas", "join"), func(args reflect.Value, inputs []value, call *termNode) (goav.Stream, error) {
-		arms, err := timed(args, inputs, call, true)
-		return goav.Composite(arms...), err
+		out := make([]goav.CompositeArg, 0, len(inputs)+1)
+		for i, in := range inputs {
+			switch in.kind {
+			case kindStream:
+				out = append(out, in.stream)
+			case kindLayer:
+				out = append(out, in.layer)
+			default:
+				return goav.Stream{}, joinInputError(call, i, in)
+			}
+		}
+		byPTS, err := parseSync(args, call)
+		if err != nil {
+			return goav.Stream{}, err
+		}
+		if byPTS {
+			out = append(out, goav.ByPTS())
+		}
+		return goav.Composite(out...), nil
 	})
 }
 

@@ -16,7 +16,7 @@ func NewDecoderFactory() DecoderFactory {
 	return DecoderFactory{}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	if registry == nil {
 		return
 	}
@@ -320,11 +320,12 @@ func (d *Decoder) fillDecodedFrame(timing *frameTiming, src *goh264lib.Frame, fr
 		return codec.ErrOutputBufferTooSmall
 	}
 
-	pixelFormat, err := src.RawPixelFormat()
+	rawPixelFormat, err := src.RawPixelFormat()
 	if err != nil {
 		return err
 	}
-	switch pixelFormat {
+	pixelFormat := av.PixelFormat(rawPixelFormat)
+	switch rawPixelFormat {
 	case "yuv420p":
 		pixelFormat = av.PixelFormatI420
 	case "yuv422p":

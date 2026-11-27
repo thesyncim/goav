@@ -1,7 +1,7 @@
 // Join arms: what an arm may declare, its taps, and the restamp that
 // republishes an arm under its id.
 
-package goav
+package stage
 
 import (
 	"context"
@@ -18,45 +18,56 @@ import (
 // shared exactly like every other fanout; downstream joins clone what they
 // buffer). With in set, only that stream and stream-less events pass: a
 // file's source carries all its streams.
-type armRestampStage struct {
-	name   string
-	detail string
-	in     av.StreamID
-	out    av.StreamID
+type ArmRestamp struct {
+	name    string
+	detail  string
+	in      av.StreamID
+	out     av.StreamID
+	frame   av.Frame
+	packet  av.Packet
+	message pipeline.Message
 }
 
-func newArmRestampStage(name string, detail string, in av.StreamID, out av.StreamID) *armRestampStage {
-	return &armRestampStage{name: name, detail: detail, in: in, out: out}
+func NewArmRestamp(name string, detail string, in av.StreamID, out av.StreamID) *ArmRestamp {
+	return &ArmRestamp{name: name, detail: detail, in: in, out: out}
 }
 
-func (s *armRestampStage) Name() string { return s.name }
+func (s *ArmRestamp) Name() string { return s.name }
 
 // DescribeNode reports the same detail the join planner records on the
 // planned restamp node, keeping Describe() ≡ Build().
-func (s *armRestampStage) DescribeNode() pipeline.NodeSpec {
+func (s *ArmRestamp) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
-func (s *armRestampStage) passes(id av.StreamID, event bool) bool {
+func (s *ArmRestamp) passes(id av.StreamID, event bool) bool {
 	return s.in == "" || id == s.in || (event && id == "")
 }
 
-func (s *armRestampStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+func (s *ArmRestamp) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil || !s.passes(msg.Frame.StreamID, false) {
 			return nil
 		}
-		frame := *msg.Frame
-		frame.StreamID = s.out
-		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame})
+		s.frame = *msg.Frame
+		s.frame.StreamID = s.out
+		s.message.Kind = pipeline.MessageFrame
+		s.message.Packet = nil
+		s.message.Frame = &s.frame
+		s.message.Event = nil
+		return emitter.Emit(ctx, &s.message)
 	case pipeline.MessagePacket:
 		if msg.Packet == nil || !s.passes(msg.Packet.StreamID, false) {
 			return nil
 		}
-		packet := *msg.Packet
-		packet.StreamID = s.out
-		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet})
+		s.packet = *msg.Packet
+		s.packet.StreamID = s.out
+		s.message.Kind = pipeline.MessagePacket
+		s.message.Packet = &s.packet
+		s.message.Frame = nil
+		s.message.Event = nil
+		return emitter.Emit(ctx, &s.message)
 	case pipeline.MessageEvent:
 		if msg.Event == nil {
 			return nil
@@ -83,4 +94,4 @@ func (s *armRestampStage) Handle(ctx context.Context, msg *pipeline.Message, emi
 	}
 }
 
-func (s *armRestampStage) Close() error { return nil }
+func (s *ArmRestamp) Close() error { return nil }

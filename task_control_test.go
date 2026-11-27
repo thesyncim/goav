@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -33,7 +34,7 @@ func (s *controlFrameSource) Start(ctx context.Context, emitter pipeline.Emitter
 			return nil
 		}
 		for _, id := range []av.StreamID{s.a, s.b} {
-			msg := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: selectorTestFrame(id, sampleFor(id))}
+			msg := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixTestS16Frame(id, sampleFor(id))}
 			if err := emitter.Emit(ctx, msg); err != nil {
 				if errors.Is(err, pipeline.ErrBackpressure) {
 					continue
@@ -120,7 +121,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	}
 
 	source := &controlFrameSource{name: "source", a: "a", b: "b"}
-	selector := newSelectorStage("select", []av.StreamID{"a", "b"}, "out")
+	selector := stage.NewSelector("select", []av.StreamID{"a", "b"}, "out")
 	sink := newControlSink("sink")
 
 	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
@@ -163,7 +164,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	if err := sink.waitFor(ctx, 200); err != nil {
 		t.Fatalf("after switch, active 'b' frame never forwarded: %v", err)
 	}
-	if got := selector.activeID(); got != "b" {
+	if got := selector.ActiveID(); got != "b" {
 		t.Fatalf("selector active = %q, want b", got)
 	}
 
@@ -183,7 +184,7 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 }
 
 // controlUntilAccepted retries control.Control until the graph is running and accepts it.
-func controlUntilAccepted(ctx context.Context, task *task, ctrl control.Control) error {
+func controlUntilAccepted(ctx context.Context, task *Task, ctrl control.Control) error {
 	for {
 		err := task.Control(ctx, ctrl)
 		if err == nil {
@@ -476,7 +477,7 @@ func TestTaskControlAtTapTargetsByTapName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := built.(*task)
+	task := built
 	t.Cleanup(func() { _ = task.Close() })
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()

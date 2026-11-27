@@ -584,7 +584,7 @@ func compositeJoinedOutputShape(p *JoinPlan) shape.Spec {
 		case av.PixelFormatI420:
 		default:
 			if unsupportedPixelFormat == "" {
-				unsupportedPixelFormat = arm.PixelFormat
+				unsupportedPixelFormat = string(arm.PixelFormat)
 			}
 		}
 	}
@@ -596,7 +596,7 @@ func compositeJoinedOutputShape(p *JoinPlan) shape.Spec {
 	case missingPixelFormat:
 		spec.PixelFormat = ""
 	case unsupportedPixelFormat != "":
-		spec.PixelFormat = unsupportedPixelFormat
+		spec.PixelFormat = av.PixelFormat(unsupportedPixelFormat)
 	default:
 		spec.PixelFormat = av.PixelFormatI420
 	}

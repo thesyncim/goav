@@ -99,21 +99,19 @@ func (p SyncPolicy) ObserveEvent(event *av.Event) {
 }
 
 type syncScheduler struct {
-	mu     sync.Mutex
-	latest map[av.StreamID]time.Duration
-	wait   func(context.Context) error
+	mu      sync.Mutex
+	latest  map[av.StreamID]time.Duration
+	changed chan struct{}
 }
 
 func newSyncScheduler() *syncScheduler {
-	return &syncScheduler{latest: make(map[av.StreamID]time.Duration), wait: syncSchedulerWait}
+	return &syncScheduler{latest: make(map[av.StreamID]time.Duration)}
 }
 
-func syncSchedulerWait(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(time.Millisecond):
-		return nil
+func (s *syncScheduler) notifyLocked() {
+	if s.changed != nil {
+		close(s.changed)
+		s.changed = nil
 	}
 }
 
@@ -137,22 +135,26 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 			return max - pts, true, nil
 		}
 		s.latest[stream] = pts
+		s.notifyLocked()
 		return 0, false, nil
 	}
 	s.latest[stream] = pts
+	s.notifyLocked()
 	for s.tooEarlyLocked(pts, tolerance) {
 		if err := ctx.Err(); err != nil {
 			return 0, false, err
 		}
-		wait := s.wait
-		if wait == nil {
-			wait = syncSchedulerWait
+		if s.changed == nil {
+			s.changed = make(chan struct{})
 		}
+		ch := s.changed
 		s.mu.Unlock()
-		err := wait(ctx)
-		s.mu.Lock()
-		if err != nil {
-			return 0, false, err
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			return 0, false, ctx.Err()
+		case <-ch:
+			s.mu.Lock()
 		}
 	}
 	return 0, false, nil
@@ -170,6 +172,7 @@ func (s *syncScheduler) observeEvent(event *av.Event) {
 		} else {
 			clear(s.latest)
 		}
+		s.notifyLocked()
 		s.mu.Unlock()
 	}
 }

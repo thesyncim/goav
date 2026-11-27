@@ -6,17 +6,17 @@ import (
 	"slices"
 )
 
-// SimpleRegistry is the per-runtime filter registry: factories and
+// Registry is the per-runtime filter registry: factories and
 // capability descriptors keyed by filter name. Registration is last-wins; it
 // is populated at runtime construction and read-only afterwards.
-type SimpleRegistry struct {
+type Registry struct {
 	factories   map[string]Factory
 	descriptors map[string]Descriptor
 }
 
 // NewRegistry returns an empty filter registry.
-func NewRegistry() *SimpleRegistry {
-	return &SimpleRegistry{
+func NewRegistry() *Registry {
+	return &Registry{
 		factories:   make(map[string]Factory),
 		descriptors: make(map[string]Descriptor),
 	}
@@ -24,7 +24,7 @@ func NewRegistry() *SimpleRegistry {
 
 // RegisterFactory records a filter factory under its descriptor's name; last
 // registration wins.
-func (r *SimpleRegistry) RegisterFactory(desc Descriptor, factory Factory) {
+func (r *Registry) RegisterFactory(desc Descriptor, factory Factory) {
 	if factory != nil {
 		r.factories[desc.Name] = factory
 		r.descriptors[desc.Name] = cloneDescriptor(desc)
@@ -32,7 +32,7 @@ func (r *SimpleRegistry) RegisterFactory(desc Descriptor, factory Factory) {
 }
 
 // Factory returns the factory registered under name, or ErrNotFound.
-func (r *SimpleRegistry) Factory(name string) (Factory, error) {
+func (r *Registry) Factory(name string) (Factory, error) {
 	factory, ok := r.factories[name]
 	if !ok {
 		return nil, ErrNotFound
@@ -42,7 +42,7 @@ func (r *SimpleRegistry) Factory(name string) (Factory, error) {
 
 // Descriptors lists every registered filter descriptor sorted by name, so
 // capability-driven selection (the shape solver) is deterministic.
-func (r *SimpleRegistry) Descriptors() []Descriptor {
+func (r *Registry) Descriptors() []Descriptor {
 	out := make([]Descriptor, 0, len(r.descriptors))
 	for _, desc := range r.descriptors {
 		out = append(out, cloneDescriptor(desc))
@@ -53,7 +53,7 @@ func (r *SimpleRegistry) Descriptors() []Descriptor {
 
 // Descriptor returns the capability descriptor registered under name, or
 // ErrNotFound.
-func (r *SimpleRegistry) Descriptor(name string) (Descriptor, error) {
+func (r *Registry) Descriptor(name string) (Descriptor, error) {
 	desc, ok := r.descriptors[name]
 	if !ok {
 		return Descriptor{}, ErrNotFound

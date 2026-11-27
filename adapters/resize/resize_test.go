@@ -199,7 +199,7 @@ func newTestFilter(t *testing.T, config filter.ResizeConfig, stream av.Stream) *
 	return resizer
 }
 
-func videoStream(width int, height int, pixelFormat string) av.Stream {
+func videoStream(width int, height int, pixelFormat av.PixelFormat) av.Stream {
 	return av.Stream{
 		ID:   "video",
 		Type: av.MediaVideo,
@@ -213,7 +213,7 @@ func videoStream(width int, height int, pixelFormat string) av.Stream {
 	}
 }
 
-func videoFrame(streamID av.StreamID, width int, height int, pixelFormat string, y []byte, u []byte, v []byte) av.Frame {
+func videoFrame(streamID av.StreamID, width int, height int, pixelFormat av.PixelFormat, y []byte, u []byte, v []byte) av.Frame {
 	return av.Frame{
 		StreamID: streamID,
 		Type:     av.MediaVideo,
@@ -230,7 +230,7 @@ func videoFrame(streamID av.StreamID, width int, height int, pixelFormat string,
 	}
 }
 
-func patternedVideoFrame(streamID av.StreamID, width int, height int, pixelFormat string) av.Frame {
+func patternedVideoFrame(streamID av.StreamID, width int, height int, pixelFormat av.PixelFormat) av.Frame {
 	y := make([]byte, width*height)
 	for i := range y {
 		y[i] = byte(i)

@@ -197,7 +197,7 @@ type studio struct {
 
 	mu         sync.Mutex
 	cfg        studioConfig
-	task       goav.Task
+	task       *goav.Task
 	taskCancel context.CancelFunc
 	taskDone   chan struct{}
 
@@ -309,7 +309,7 @@ func (s *studio) addBranchInitial(spec branchSpec) {
 }
 
 // currentTask returns the active goav.Task pointer (for tests).
-func (s *studio) currentTask() goav.Task {
+func (s *studio) currentTask() *goav.Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.task
@@ -406,11 +406,11 @@ func (s *studio) rebuildTaskLocked(ctx context.Context) error {
 	s.task = task
 	s.taskCancel = cancel
 	s.taskDone = make(chan struct{})
-	s.builtCamOK = s.cameraAccess
+	s.builtCamOK = s.cameraAccess && len(s.cachedCams) > 0
 	s.builtScrOK = s.cachedScreen
 	s.lastError = ""
 
-	go func(t goav.Task, c context.Context, done chan struct{}) {
+	go func(t *goav.Task, c context.Context, done chan struct{}) {
 		defer close(done)
 		if err := t.Run(c); err != nil && !errors.Is(err, context.Canceled) {
 			s.mu.Lock()
@@ -467,7 +467,7 @@ func sceneArmID(scene string) av.StreamID {
 	}
 }
 
-func (s *studio) selectArmAsync(task goav.Task, scene string) {
+func (s *studio) selectArmAsync(task *goav.Task, scene string) {
 	arm := sceneArmID(scene)
 	go func() {
 		deadline := time.Now().Add(2 * time.Second)
@@ -635,7 +635,8 @@ func (s *studio) UpdateConfig(ctx context.Context, next studioConfig) error {
 		s.cfg.CaptureCursor = next.CaptureCursor
 		structuralChange = true
 	}
-	if s.cameraAccess != s.builtCamOK || s.cachedScreen != s.builtScrOK {
+	wantCamOK := s.cameraAccess && len(s.cachedCams) > 0
+	if wantCamOK != s.builtCamOK || s.cachedScreen != s.builtScrOK {
 		structuralChange = true
 	}
 	if next.Scene != "" {
@@ -880,7 +881,7 @@ func (s *studio) attachBranchLocked(ctx context.Context, b *studioBranch) error 
 	return nil
 }
 
-func buildBranchOutput(task goav.Task, b *studioBranch) (goav.Output, error) {
+func buildBranchOutput(task *goav.Task, b *studioBranch) (goav.Output, error) {
 	enc, err := buildCodecSpec(b.spec.Codec, b.spec.Bitrate, b.spec.FPS)
 	if err != nil {
 		return goav.Output{}, err

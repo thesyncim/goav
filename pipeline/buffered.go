@@ -121,6 +121,7 @@ type bufferedMessage struct {
 	packet  av.Packet
 	frame   av.Frame
 	event   av.Event
+	stream  av.Stream
 	audio   av.AudioFrame
 	video   av.VideoFrame
 	planes  []av.Plane
@@ -504,7 +505,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, e *bufferedEmitter, m
 						fanoutKnown = true
 					}
 					if fanout {
-						observeDrop(target.counters, target.policy.Drop, &g.cold)
+						observeDrop(target.counters, target.policy.Drop.Reason(), &g.cold)
 						delivery.Shed++
 						continue
 					}
@@ -638,13 +639,13 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 			// Full, locked, or closed since the tail was read: decide again.
 		case bufferDropIncoming:
 			g.abandon(node, slot, held)
-			observeDrop(node.counters, node.policy.Drop, &g.cold)
+			observeDrop(node.counters, node.policy.Drop.Reason(), &g.cold)
 			return false, nil
 		case bufferDropOldest:
 			if dropped := q.pop(); dropped != nil {
 				node.releaseSlot(dropped)
 				g.pending.done()
-				observeDrop(node.counters, node.policy.Drop, &g.cold)
+				observeDrop(node.counters, node.policy.Drop.Reason(), &g.cold)
 			} else {
 				// The worker took the oldest first, or its push is still
 				// publishing: look again.

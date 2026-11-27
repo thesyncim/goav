@@ -115,12 +115,7 @@ func TestTaskCloseContextOptInHonorsCanceledContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	closer, ok := task.(interface {
-		CloseContext(context.Context) error
-	})
-	if !ok {
-		t.Fatalf("task = %T, want structural CloseContext support", task)
-	}
+	closer := task
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := closer.CloseContext(ctx); !errors.Is(err, context.Canceled) {
@@ -408,7 +403,7 @@ func TestCloseAbandonsEveryAttachmentBeforeContextExpires(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := task.(interface{ CloseContext(context.Context) error }).CloseContext(ctx); !errors.Is(err, context.Canceled) {
+	if err := task.CloseContext(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Close=%v", err)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -582,7 +577,7 @@ func TestInterruptedDrainAbortsBeforeInFlightHandlerCompletes(t *testing.T) {
 					var detachErr error
 					if interruption == "task_close" {
 						closeCtx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-						closeErr := live.(interface{ CloseContext(context.Context) error }).CloseContext(closeCtx)
+						closeErr := live.CloseContext(closeCtx)
 						cancel()
 						if !errors.Is(closeErr, context.DeadlineExceeded) {
 							t.Fatalf("concurrent Close=%v", closeErr)
@@ -711,7 +706,7 @@ func TestCloseAfterSuccessfulRunAbandonsUnfinishedDrain(t *testing.T) {
 	go func() { detached <- live.Detach(t.Context(), attachment, goav.DrainBranch()) }()
 	<-held.entered
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	closeErr := live.(interface{ CloseContext(context.Context) error }).CloseContext(ctx)
+	closeErr := live.CloseContext(ctx)
 	cancel()
 	if !errors.Is(closeErr, context.DeadlineExceeded) {
 		t.Fatalf("Close=%v", closeErr)

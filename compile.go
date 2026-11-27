@@ -28,7 +28,7 @@ func (r *Runtime) Run(ctx context.Context, outs ...Output) error {
 }
 
 // Build builds the Outputs into one task without starting it.
-func (r *Runtime) Build(ctx context.Context, outs ...Output) (Task, error) {
+func (r *Runtime) Build(ctx context.Context, outs ...Output) (*Task, error) {
 	g, err := compileGraph(outs)
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	return r.graphPlan.Describe()
 }
 
-func (r recipeResolved) Build(ctx context.Context) (Task, error) {
+func (r recipeResolved) Build(ctx context.Context) (*Task, error) {
 	if !r.graphPlan.ready() {
 		return nil, publicError(compile.RecipeGraphUnsupportedRecipeError("build recipe", r.recipe))
 	}
@@ -221,24 +221,19 @@ func (r recipeResolved) workIR() compile.WorkPlan {
 	return compile.WorkPlan{}
 }
 
-func installTaskTaps(mediaTask Task, taps []compile.WorkTap) {
-	if len(taps) == 0 {
+func installTaskTaps(mediaTask *Task, taps []compile.WorkTap) {
+	if len(taps) == 0 || mediaTask == nil {
 		return
 	}
-	runtimeTask, ok := mediaTask.(*task)
-	if !ok || runtimeTask == nil {
-		return
-	}
-	runtimeTask.taps = tapInfosFromPlan(taps)
+	mediaTask.taps = tapInfosFromPlan(taps)
 }
 
-func installTaskExplainReport(mediaTask Task, report plan.Report) {
-	runtimeTask, ok := mediaTask.(*task)
-	if !ok || runtimeTask == nil {
+func installTaskExplainReport(mediaTask *Task, report plan.Report) {
+	if mediaTask == nil {
 		return
 	}
-	runtimeTask.explainReport = clonePlanReport(report)
-	runtimeTask.explainReportReady = true
+	mediaTask.explainReport = clonePlanReport(report)
+	mediaTask.explainReportReady = true
 }
 
 func tapInfosFromPlan(taps []compile.WorkTap) []TapSnapshot {

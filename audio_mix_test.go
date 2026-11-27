@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -80,7 +81,7 @@ func cloneMixTestFrame(frame *av.Frame) *av.Frame {
 }
 
 func TestAudioMixStageSumsAlignedS16(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
+	mix := stage.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -106,7 +107,7 @@ func TestAudioMixStageSumsAlignedS16(t *testing.T) {
 }
 
 func TestAudioMixStageClampsOverflow(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
+	mix := stage.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	_ = mix.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixTestS16Frame("a", 30000, -30000)}, emit)
@@ -117,7 +118,7 @@ func TestAudioMixStageClampsOverflow(t *testing.T) {
 }
 
 func TestAudioMixStageEmitsEOSWhenAllInputsEnd(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
+	mix := stage.NewAudioMix("mix", []av.StreamID{"a", "b"}, "mix", compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	eos := func(id av.StreamID) *pipeline.Message {
@@ -231,7 +232,7 @@ func TestMixRequiresExplicitDecodeForPacketArms(t *testing.T) {
 func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
-	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
+	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}
 	rt := mustNew(WithDecoder(desc, recipePCMDecoderFactory{}))
 
 	packetSrc := func(id av.StreamID) Input {

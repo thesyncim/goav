@@ -2182,7 +2182,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 		Name:          filter.FactoryResample,
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 	}, resampleFactory))
 	task, err := mustNew(formats, codecs, filters).Build(ctx,
 		Read("input.ogg", strings.NewReader("")).
@@ -2296,7 +2296,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 	formats := withTestFormats(
 		testFormatProber(remuxTestProber{streams: streams}),
 		testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		func(registry *format.SimpleRegistry) {
+		func(registry *format.Registry) {
 			registry.RegisterMuxerDescriptor(format.Descriptor{
 				Format:     audioOnly,
 				Media:      []av.MediaType{av.MediaAudio},
@@ -2365,7 +2365,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -2424,7 +2424,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2496,7 +2496,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2547,7 +2547,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264Encoder(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
@@ -2593,7 +2593,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 			ID:   customPCM,
 			Type: av.MediaAudio,
 			Capabilities: codec.Capabilities{
-				SampleFormats: []string{av.SampleFormatS16},
+				SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 			},
 		}, encoderFactory),
 	)
@@ -2619,7 +2619,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2694,7 +2694,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2767,7 +2767,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -2853,7 +2853,7 @@ func TestAttachAfterSiblingDetachRefusalNamesFix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2935,7 +2935,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -3027,7 +3027,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -3152,7 +3152,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -3269,7 +3269,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,

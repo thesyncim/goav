@@ -23,7 +23,7 @@ func referenceRGB(y, u, v byte, kr, kb float64) [3]float64 {
 
 // planarFrame builds a frame of the given format whose planes sit at odd
 // offsets with padded strides, the layouts decoders hand out.
-func planarFrame(format string, w, h int, yv, uv, vv func(x, y int) byte) *av.Frame {
+func planarFrame(format av.PixelFormat, w, h int, yv, uv, vv func(x, y int) byte) *av.Frame {
 	xs, ys, gray, err := subsampling(format)
 	if err != nil {
 		panic(err)
@@ -136,7 +136,7 @@ func TestConvertSubsamplingAddressesTheRightChroma(t *testing.T) {
 	// gets a distinct Cr; pixel (x, y) must read sample (x>>1, y>>ys).
 	cr := func(x, y int) byte { return byte(128 + 10*x + 40*y) }
 	for _, tc := range []struct {
-		format string
+		format av.PixelFormat
 		ys     int
 	}{{av.PixelFormatI420, 1}, {av.PixelFormatYUV422P, 0}} {
 		f := planarFrame(tc.format, 5, 3, func(int, int) byte { return 126 }, func(int, int) byte { return 128 }, cr)

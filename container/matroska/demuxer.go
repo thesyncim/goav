@@ -38,8 +38,7 @@ type Demuxer struct {
 	unknownTags           []UnknownElement
 	pendingClusterUnknown []UnknownElement
 	cues                  []CuePoint
-	cuesSeen              bool
-	cuesSorted            bool
+	cuesState             cuesState
 	seekEntries           []SeekEntry
 	preloadedTopLevel     []preloadedTopLevelElement
 	clusterIndex          []clusterIndexEntry
@@ -195,8 +194,7 @@ func (d *Demuxer) init(r io.Reader, opts DemuxerOptions) error {
 	d.unknownTags = d.unknownTags[:0]
 	d.pendingClusterUnknown = d.pendingClusterUnknown[:0]
 	d.cues = d.cues[:0]
-	d.cuesSeen = false
-	d.cuesSorted = true
+	d.cuesState = cuesUnseen
 	d.seekEntries = d.seekEntries[:0]
 	d.preloadedTopLevel = d.preloadedTopLevel[:0]
 	d.clusterIndex = d.clusterIndex[:0]

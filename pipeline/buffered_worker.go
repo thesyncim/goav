@@ -198,6 +198,10 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 			return nil
 		}
 		m.event = *src.Event
+		if src.Event.Stream != nil {
+			m.stream = *src.Event.Stream
+			m.event.Stream = &m.stream
+		}
 		m.message.Event = &m.event
 	}
 	return nil

@@ -160,7 +160,7 @@ func (s *flushGateSink) waitForTick(ctx context.Context, min int64) error {
 // delivery, runs it, and waits until the queue is full and the pump is blocked:
 // the sink holds tick 0, ticks 1..4 fill the capacity-4 queue, and tick 5 is
 // blocked in the pump's emit. Every later flush count is deterministic.
-func flushHeldTask(t *testing.T, ctx context.Context) (*task, *flushGateSink, chan error) {
+func flushHeldTask(t *testing.T, ctx context.Context) (*Task, *flushGateSink, chan error) {
 	t.Helper()
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{
 		Name:   "seek-flush",

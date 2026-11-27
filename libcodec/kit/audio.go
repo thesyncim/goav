@@ -306,6 +306,14 @@ func (e *audioEncoder) Close() error {
 	return err
 }
 
+type audioDecoderLifecycle uint8
+
+const (
+	decUnopened audioDecoderLifecycle = iota
+	decOpen
+	decClosed
+)
+
 type audioDecoder struct {
 	c       *Codec
 	desc    codec.Descriptor
@@ -313,7 +321,7 @@ type audioDecoder struct {
 	config  AudioConfig
 	session AudioDecoder
 	out     *codec.DecodeResult
-	closed  bool
+	state   audioDecoderLifecycle
 	emitFn  func(*Samples) error
 }
 
@@ -348,11 +356,11 @@ func (d *audioDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if d.session != nil {
+	if d.state == decOpen && d.session != nil {
 		_ = d.Close()
 	}
-	d.closed = false
 	d.session = session
+	d.state = decOpen
 	return nil
 }
 
@@ -363,7 +371,7 @@ func (d *audioDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed || d.session == nil {
+	if d.state != decOpen {
 		return codec.ErrClosed
 	}
 	if packet == nil || len(packet.Payload.Bytes) == 0 {
@@ -438,7 +446,7 @@ func (d *audioDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) e
 	if out == nil {
 		return codec.ErrNilResult
 	}
-	if d.closed || d.session == nil {
+	if d.state != decOpen {
 		return codec.ErrClosed
 	}
 	d.out = out
@@ -449,7 +457,7 @@ func (d *audioDecoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if err := ctx.Err(); err != nil || event == nil {
 		return err
 	}
-	if d.closed || d.session == nil {
+	if d.state != decOpen {
 		return codec.ErrClosed
 	}
 	switch event.Type {
@@ -510,11 +518,12 @@ func (d *audioDecoder) restart(stream av.Stream) error {
 }
 
 func (d *audioDecoder) Close() error {
-	if d.closed {
+	if d.state == decClosed {
 		return nil
 	}
-	d.closed = true
-	if d.session == nil {
+	prev := d.state
+	d.state = decClosed
+	if prev != decOpen || d.session == nil {
 		return nil
 	}
 	err := d.session.Close()

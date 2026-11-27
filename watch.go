@@ -48,13 +48,13 @@ const defaultWatchCapacity = 256
 
 // Watch returns an independent, filtered subscription to the task's event
 // stream. See Task.Watch for the delivery, overflow, and closure contract.
-func (t *task) Watch(filters ...EventFilter) Subscription {
+func (t *Task) Watch(filters ...EventFilter) Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }
 
 // watchCapacity sizes one watcher buffer: the runtime's configured capacity,
 // or defaultWatchCapacity (256).
-func (t *task) watchCapacity() int {
+func (t *Task) watchCapacity() int {
 	if t.runtime != nil && t.runtime.eventCapacity >= 1 {
 		return t.runtime.eventCapacity
 	}
@@ -67,10 +67,17 @@ func (t *task) watchCapacity() int {
 // the graph channel to every matching watcher with a non-blocking send. A
 // watcher whose buffer is full sheds the event for itself only — the
 // distributor, the other watchers, and the data plane never block on it.
+type watchState uint8
+
+const (
+	watchIdle watchState = iota
+	watchRunning
+	watchDone
+)
+
 type eventWatch struct {
 	mu       sync.Mutex
-	started  bool
-	done     bool
+	state    watchState
 	watchers []*eventWatcher
 
 	// dropped counts events shed across all watchers because a watcher buffer
@@ -92,7 +99,7 @@ func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []E
 	watcher := &eventWatcher{parent: w, filters: filters, events: make(chan av.Event, capacity)}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.done || source == nil {
+	if w.state == watchDone || source == nil {
 		// The underlying stream already ended (or the graph has none): hand
 		// back a closed channel so the caller observes closure immediately
 		// instead of holding a watcher that can never fire.
@@ -100,8 +107,8 @@ func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []E
 		return watcher
 	}
 	w.watchers = append(w.watchers, watcher)
-	if !w.started {
-		w.started = true
+	if w.state == watchIdle {
+		w.state = watchRunning
 		go w.distribute(source)
 	}
 	return watcher
@@ -127,7 +134,7 @@ func (w *eventWatch) unsubscribe(watcher *eventWatcher) error {
 func (w *eventWatch) publish(event av.Event) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.done {
+	if w.state == watchDone {
 		return
 	}
 	for _, watcher := range w.watchers {
@@ -151,7 +158,7 @@ func (w *eventWatch) distribute(source <-chan av.Event) {
 		w.publish(event)
 	}
 	w.mu.Lock()
-	w.done = true
+	w.state = watchDone
 	watchers := w.watchers
 	w.watchers = nil
 	w.mu.Unlock()

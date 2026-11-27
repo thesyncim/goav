@@ -27,18 +27,18 @@ const (
 // Spec is the core media-format descriptor: the shape of a stream at a point in
 // a pipeline. A zero Spec matches anything; populated fields constrain the match.
 type Spec struct {
-	Domain       MediaDomain  `json:"domain,omitempty"`
-	MediaKind    av.MediaType `json:"mediaKind,omitempty"`
-	StreamID     av.StreamID  `json:"streamID,omitempty"`
-	Codec        av.CodecID   `json:"codec,omitempty"`
-	Format       av.FormatID  `json:"format,omitempty"`
-	Width        int          `json:"width,omitempty"`
-	Height       int          `json:"height,omitempty"`
-	PixelFormat  string       `json:"pixelFormat,omitempty"`
-	SampleRate   int          `json:"sampleRate,omitempty"`
-	Channels     int          `json:"channels,omitempty"`
-	SampleFormat string       `json:"sampleFormat,omitempty"`
-	Realtime     bool         `json:"realtime,omitempty"`
+	Domain       MediaDomain     `json:"domain,omitempty"`
+	MediaKind    av.MediaType    `json:"mediaKind,omitempty"`
+	StreamID     av.StreamID     `json:"streamID,omitempty"`
+	Codec        av.CodecID      `json:"codec,omitempty"`
+	Format       av.FormatID     `json:"format,omitempty"`
+	Width        int             `json:"width,omitempty"`
+	Height       int             `json:"height,omitempty"`
+	PixelFormat  av.PixelFormat  `json:"pixelFormat,omitempty"`
+	SampleRate   int             `json:"sampleRate,omitempty"`
+	Channels     int             `json:"channels,omitempty"`
+	SampleFormat av.SampleFormat `json:"sampleFormat,omitempty"`
+	Realtime     bool            `json:"realtime,omitempty"`
 }
 
 // Set is a collection of acceptable Specs. An empty Set accepts any Spec.
@@ -133,7 +133,7 @@ func Format(format av.FormatID) Option {
 // Video states the video layout facts: geometry and pixel format. Zero or
 // empty fields stay unconstrained — Video(0, 0, "i420") pins only the pixel
 // format, which is how a Prefer steers an otherwise open solver choice.
-func Video(width int, height int, pixelFormat string) Option {
+func Video(width int, height int, pixelFormat av.PixelFormat) Option {
 	return func(spec *Spec) {
 		if spec == nil {
 			return
@@ -149,7 +149,7 @@ func Video(width int, height int, pixelFormat string) Option {
 // sample format. Zero or empty fields stay unconstrained — Audio(0, 0,
 // "f32") pins only the sample format, which is how a Prefer steers an
 // otherwise open solver choice.
-func Audio(sampleRate int, channels int, sampleFormat string) Option {
+func Audio(sampleRate int, channels int, sampleFormat av.SampleFormat) Option {
 	return func(spec *Spec) {
 		if spec == nil {
 			return
@@ -254,7 +254,7 @@ func (s Spec) String() string {
 		parts = append(parts, fmt.Sprintf("size=%dx%d", s.Width, s.Height))
 	}
 	if s.PixelFormat != "" {
-		parts = append(parts, "pixel_format="+s.PixelFormat)
+		parts = append(parts, "pixel_format="+string(s.PixelFormat))
 	}
 	if s.SampleRate != 0 {
 		parts = append(parts, fmt.Sprintf("sample_rate=%d", s.SampleRate))
@@ -263,7 +263,7 @@ func (s Spec) String() string {
 		parts = append(parts, fmt.Sprintf("channels=%d", s.Channels))
 	}
 	if s.SampleFormat != "" {
-		parts = append(parts, "sample_format="+s.SampleFormat)
+		parts = append(parts, "sample_format="+string(s.SampleFormat))
 	}
 	if s.Realtime {
 		parts = append(parts, "realtime=true")

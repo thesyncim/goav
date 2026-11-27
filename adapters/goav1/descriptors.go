@@ -14,7 +14,7 @@ func Descriptor() codec.Descriptor {
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			PixelFormats: []string{
+			PixelFormats: []av.PixelFormat{
 				av.PixelFormatI420,
 				av.PixelFormatYUV420P,
 				av.PixelFormatI422,
@@ -44,7 +44,7 @@ func EncoderDescriptor() codec.Descriptor {
 		Realtime:     true,
 		Experimental: true,
 		Capabilities: codec.Capabilities{
-			PixelFormats: []string{
+			PixelFormats: []av.PixelFormat{
 				av.PixelFormatI420,
 				av.PixelFormatYUV420P,
 			},

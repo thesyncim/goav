@@ -362,7 +362,7 @@ func TestSeekableMuxerWritesCuesSortedByTime(t *testing.T) {
 	if err := demuxer.SeekToTime(0); err != nil {
 		t.Fatal(err)
 	}
-	if !demuxer.cuesSorted {
+	if demuxer.cuesState != cuesSorted {
 		t.Fatalf("generated cues were parsed as unsorted: %+v", demuxer.Cues())
 	}
 	cues := demuxer.Cues()
@@ -820,7 +820,7 @@ func TestDemuxerPreservesCueTrackPositionMetadata(t *testing.T) {
 
 func TestDemuxerCueForTime(t *testing.T) {
 	sorted := Demuxer{
-		cuesSorted: true,
+		cuesState: cuesSorted,
 		cues: []CuePoint{
 			{TimeNS: 10_000_000, TrackID: 1},
 			{TimeNS: 20_000_000, TrackID: 1},
@@ -838,7 +838,7 @@ func TestDemuxerCueForTime(t *testing.T) {
 	}
 
 	unsorted := Demuxer{
-		cuesSorted: false,
+		cuesState: cuesUnsorted,
 		cues: []CuePoint{
 			{TimeNS: 20_000_000, TrackID: 1},
 			{TimeNS: 10_000_000, TrackID: 1},
@@ -853,7 +853,7 @@ func TestDemuxerCueForTime(t *testing.T) {
 	}
 
 	trackCues := Demuxer{
-		cuesSorted: true,
+		cuesState: cuesSorted,
 		cues: []CuePoint{
 			{
 				TimeNS: 10_000_000,
@@ -895,7 +895,7 @@ func TestDemuxerCueForTime(t *testing.T) {
 	}
 
 	unsortedTrackCues := Demuxer{
-		cuesSorted: false,
+		cuesState: cuesUnsorted,
 		cues: []CuePoint{
 			{
 				TimeNS: 40_000_000,

@@ -99,7 +99,7 @@ func TestRecipeRTPAV1DecodeSinkYUV420P(t *testing.T) {
 	testRecipeRTPAV1DecodeSink420(t, av.PixelFormatYUV420P)
 }
 
-func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
+func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat av.PixelFormat) {
 	t.Helper()
 	ctx := context.Background()
 	stream := av.Stream{

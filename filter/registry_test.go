@@ -13,8 +13,8 @@ func TestRegistryFactory(t *testing.T) {
 		Name:          FactoryResize,
 		Input:         av.MediaVideo,
 		Output:        av.MediaVideo,
-		PixelFormats:  []string{av.PixelFormatI420},
-		SampleFormats: []string{av.SampleFormatS16},
+		PixelFormats:  []av.PixelFormat{av.PixelFormatI420},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		ResizeModes:   []ResizeMode{ResizeExact},
 		Realtime:      true,
 		Stateless:     true,
@@ -77,7 +77,7 @@ func TestRegistryDescriptorsSortedAndCloned(t *testing.T) {
 		Name:         FactoryResize,
 		Input:        av.MediaVideo,
 		Output:       av.MediaVideo,
-		PixelFormats: []string{av.PixelFormatYUV420P},
+		PixelFormats: []av.PixelFormat{av.PixelFormatYUV420P},
 	}, &fakeFactory{})
 
 	descriptors := registry.Descriptors()

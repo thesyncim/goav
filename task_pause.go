@@ -9,7 +9,7 @@ import (
 )
 
 // Pause freezes the task's shared timeline (see Task.Pause).
-func (t *task) Pause(ctx context.Context) error {
+func (t *Task) Pause(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -21,7 +21,7 @@ func (t *task) Pause(ctx context.Context) error {
 }
 
 // Resume continues the paused task timeline (see Task.Resume).
-func (t *task) Resume(ctx context.Context) error {
+func (t *Task) Resume(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -32,14 +32,14 @@ func (t *task) Resume(ctx context.Context) error {
 	return nil
 }
 
-func (t *task) timelineControlRefusal(operation string) error {
+func (t *Task) timelineControlRefusal(operation string) error {
 	t.lifecycleMu.Lock()
 	closing := t.phase >= taskClosing
 	t.lifecycleMu.Unlock()
 	if closing {
 		return fmt.Errorf("goav: %s: task is closed: %w", operation, control.ErrNotRunning)
 	}
-	if t.timeline == nil || !t.timeline.paced() {
+	if t.timeline == nil || !t.timeline.Paced() {
 		return fmt.Errorf("goav: %s: task has no paced source or playout gate (use WithRealtime(true), UseClock, or .Playout(...)): %w", operation, format.ErrRateUnsupported)
 	}
 	return nil

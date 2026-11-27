@@ -303,7 +303,7 @@ func conformNodeDetail(target shape.Spec) string {
 	if target.Width > 0 && target.Height > 0 {
 		parts = append(parts, "size="+strconv.Itoa(target.Width)+"x"+strconv.Itoa(target.Height))
 	}
-	for _, format := range []string{target.SampleFormat, target.PixelFormat} {
+	for _, format := range []string{string(target.SampleFormat), string(target.PixelFormat)} {
 		if format != "" {
 			parts = append(parts, "format="+format)
 		}

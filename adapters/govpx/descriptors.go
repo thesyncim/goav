@@ -9,12 +9,12 @@ const backendName = "govpx"
 
 func Descriptors() []codec.Descriptor {
 	return []codec.Descriptor{
-		descriptor(av.CodecVP8, "VP8", []string{av.PixelFormatI420, av.PixelFormatYUV420P}, []string{av.MIMEVP8}),
-		descriptor(av.CodecVP9, "VP9", []string{av.PixelFormatI420, av.PixelFormatYUV420P}, []string{av.MIMEVP9}),
+		descriptor(av.CodecVP8, "VP8", []av.PixelFormat{av.PixelFormatI420, av.PixelFormatYUV420P}, []string{av.MIMEVP8}),
+		descriptor(av.CodecVP9, "VP9", []av.PixelFormat{av.PixelFormatI420, av.PixelFormatYUV420P}, []string{av.MIMEVP9}),
 	}
 }
 
-func descriptor(id av.CodecID, name string, pixelFormats []string, rtpPayloads []string) codec.Descriptor {
+func descriptor(id av.CodecID, name string, pixelFormats []av.PixelFormat, rtpPayloads []string) codec.Descriptor {
 	return codec.Descriptor{
 		ID:           id,
 		Name:         name,

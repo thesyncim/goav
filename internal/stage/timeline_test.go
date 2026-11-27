@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -124,7 +124,7 @@ func waitSleepRequest(t *testing.T, clock *blockingTestClock) time.Duration {
 
 func TestTimelineRateChangeMidSleepWakesEarly(t *testing.T) {
 	clock := newBlockingTestClock()
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 
 	slept := make(chan error, 1)
 	go func() {
@@ -161,7 +161,7 @@ func TestTimelineRateChangeMidSleepWakesEarly(t *testing.T) {
 
 func TestTimelinePauseFreezesNowAndResumeContinues(t *testing.T) {
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 
 	clock.Advance(100 * time.Millisecond)
 	if got := timeline.Now(); got != 100*time.Millisecond {
@@ -193,7 +193,7 @@ func TestTimelinePauseFreezesNowAndResumeContinues(t *testing.T) {
 
 func TestTimelinePauseHoldsSleepUntilResume(t *testing.T) {
 	clock := newBlockingTestClock()
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 	timeline.Pause()
 
 	slept := make(chan error, 1)
@@ -221,7 +221,7 @@ func TestTimelinePauseHoldsSleepUntilResume(t *testing.T) {
 
 func TestTimelineSleepScalesWallTimeByRate(t *testing.T) {
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 	if err := timeline.SetRate(4); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestTimelineSleepScalesWallTimeByRate(t *testing.T) {
 
 func TestTimelineSleepHonoursContext(t *testing.T) {
 	clock := newBlockingTestClock()
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	slept := make(chan error, 1)
@@ -263,7 +263,7 @@ func TestTimelineSleepHonoursContext(t *testing.T) {
 }
 
 func TestTimelineSetRateRejectsInvalidRates(t *testing.T) {
-	timeline := newTimeline(&recordingTestClock{})
+	timeline := NewTimeline(&recordingTestClock{})
 	for _, rate := range []float64{0, -1} {
 		if err := timeline.SetRate(rate); err == nil {
 			t.Fatalf("SetRate(%v) accepted, want rejection", rate)
@@ -276,7 +276,7 @@ func TestTimelineSetRateRejectsInvalidRates(t *testing.T) {
 
 func TestTimelineConcurrentNowUnderEpochChanges(t *testing.T) {
 	clock := &recordingTestClock{}
-	timeline := newTimeline(clock)
+	timeline := NewTimeline(clock)
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -317,7 +317,7 @@ func TestTimelineConcurrentNowUnderEpochChanges(t *testing.T) {
 // change broadcast and ctx directly, with no goroutine, child context or
 // channel per sleep (one per paced packet on the realtime path).
 func TestTimelineRealClockSleepAllocs(t *testing.T) {
-	for _, timeline := range []*timeline{newTimeline(nil), newTimeline(av.MonotonicClock())} {
+	for _, timeline := range []*Timeline{NewTimeline(nil), NewTimeline(av.MonotonicClock())} {
 		if !timeline.monotonic {
 			t.Fatal("timeline on av.MonotonicClock does not take the direct timer path")
 		}
@@ -330,7 +330,7 @@ func TestTimelineRealClockSleepAllocs(t *testing.T) {
 			t.Fatalf("real-clock timeline Sleep allocs = %v, want 0", allocs)
 		}
 	}
-	if newTimeline(newBlockingTestClock()).monotonic {
+	if NewTimeline(newBlockingTestClock()).monotonic {
 		t.Fatal("a fake clock took the real-clock path; its Sleep would be bypassed")
 	}
 }
@@ -339,7 +339,7 @@ func TestTimelineRealClockSleepAllocs(t *testing.T) {
 // sleeper parks on its own goroutine only (none spawned per sleep), a rate
 // change re-derives the remaining wait mid-sleep, and ctx interrupts it.
 func TestTimelineRealClockSleepWakes(t *testing.T) {
-	timeline := newTimeline(nil)
+	timeline := NewTimeline(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

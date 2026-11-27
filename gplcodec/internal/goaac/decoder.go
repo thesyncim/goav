@@ -41,7 +41,7 @@ func Descriptor() codec.Descriptor {
 		Profiles: []string{"aac_lc"},
 		Realtime: true,
 		Capabilities: codec.Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		},
 		Backend: codec.BackendInfo{
 			Name:    backendName,
@@ -53,7 +53,7 @@ func Descriptor() codec.Descriptor {
 	}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	if registry == nil {
 		return
 	}

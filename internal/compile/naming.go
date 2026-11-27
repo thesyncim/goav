@@ -151,7 +151,7 @@ func resizeDetail(config filter.ResizeConfig) string {
 	}
 	parts = append(parts, string(mode))
 	if config.PixelFormat != "" {
-		parts = append(parts, "pixfmt="+config.PixelFormat)
+		parts = append(parts, "pixfmt="+string(config.PixelFormat))
 	}
 	return JoinSpecDetail(parts...)
 }
@@ -168,7 +168,7 @@ func resampleDetail(config filter.ResampleConfig) string {
 		parts = append(parts, "layout="+config.ChannelLayout)
 	}
 	if config.SampleFormat != "" {
-		parts = append(parts, "samplefmt="+config.SampleFormat)
+		parts = append(parts, "samplefmt="+string(config.SampleFormat))
 	}
 	return JoinSpecDetail(parts...)
 }

@@ -294,16 +294,16 @@ func (s *sender) Handle(ctx context.Context, msg *pipeline.Message) error {
 }
 
 func (s *sender) Close() error {
-	s.mu.Lock()
-	wasOpen := s.state == senderOpen
-	s.state = senderClosed
-	s.atomicState.Store(uint32(senderClosed))
-	cancel := s.cancel
-	done := s.done
-	streams := s.streams
-	s.mu.Unlock()
-
 	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		wasOpen := s.state == senderOpen
+		s.state = senderClosed
+		s.atomicState.Store(uint32(senderClosed))
+		cancel := s.cancel
+		done := s.done
+		streams := s.streams
+		s.mu.Unlock()
+
 		if cancel != nil {
 			cancel()
 		}

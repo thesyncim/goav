@@ -12,8 +12,8 @@ import (
 // AttachPlannedForTest attaches outs to a running task as Attach does and
 // returns, beside the attachment, the graph patch the attach planned before
 // it touched the graph: the attach twin of Describe.
-func AttachPlannedForTest(ctx context.Context, live Task, outs ...Output) (pipeline.Spec, Attachment, error) {
-	t := live.(*task)
+func AttachPlannedForTest(ctx context.Context, live *Task, outs ...Output) (pipeline.Spec, Attachment, error) {
+	t := live
 	branches, err := t.attachBranches(outs)
 	if err != nil {
 		return pipeline.Spec{}, nil, err
@@ -27,8 +27,8 @@ func AttachPlannedForTest(ctx context.Context, live Task, outs ...Output) (pipel
 
 // RebranchPlannedForTest plans and attaches the replacements a Rebranch with
 // args attaches, leaving the replaced branch in place.
-func RebranchPlannedForTest(ctx context.Context, live Task, args ...RebranchArg) (pipeline.Spec, Attachment, error) {
-	t := live.(*task)
+func RebranchPlannedForTest(ctx context.Context, live *Task, args ...RebranchArg) (pipeline.Spec, Attachment, error) {
+	t := live
 	args, err := t.rebranchArgs(args)
 	if err != nil {
 		return pipeline.Spec{}, nil, err
@@ -40,7 +40,7 @@ func RebranchPlannedForTest(ctx context.Context, live Task, args ...RebranchArg)
 	return t.attachPlanned(ctx, input.attach)
 }
 
-func (t *task) attachPlanned(ctx context.Context, input runtimeAttachInput) (pipeline.Spec, Attachment, error) {
+func (t *Task) attachPlanned(ctx context.Context, input runtimeAttachInput) (pipeline.Spec, Attachment, error) {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	p, err := t.planAttach(ctx, input)

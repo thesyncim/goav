@@ -232,14 +232,14 @@ func TestGraphBufferedDropStats(t *testing.T) {
 		t.Fatalf("values = %v, want %v", values, want)
 	}
 	if stats.Messages != 3 || stats.Packets != 3 || stats.Delivered != 2 ||
-		stats.Dropped != 1 || stats.DropReasons[DropOldest] != 1 {
+		stats.Dropped != 1 || stats.DropReasons[DropReasonOldest] != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if got := stats.Nodes["source"]; got.OutPackets != 3 || got.InPackets != 0 {
 		t.Fatalf("source stats = %+v", got)
 	}
 	if got := stats.Nodes["sink"]; got.InPackets != 2 || got.OutPackets != 0 ||
-		got.Dropped != 1 || got.DropReasons[DropOldest] != 1 {
+		got.Dropped != 1 || got.DropReasons[DropReasonOldest] != 1 {
 		t.Fatalf("sink stats = %+v", got)
 	}
 }

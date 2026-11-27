@@ -60,8 +60,8 @@ func TestBuildTimeBranchBufferIsHonored(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := task.Stats().DropReasons[pipeline.DropNewest]; got == 0 {
-		t.Fatalf("DropReasons[DropNewest] = 0, want the preview branch to shed frames (stats %+v)", task.Stats().DropReasons)
+	if got := task.Stats().DropReasons[pipeline.DropReasonNewest]; got == 0 {
+		t.Fatalf("DropReasons[DropReasonNewest] = 0, want the preview branch to shed frames (stats %+v)", task.Stats().DropReasons)
 	}
 }
 

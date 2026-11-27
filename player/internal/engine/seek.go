@@ -144,7 +144,7 @@ func (e *Engine) Discontinuity() {
 	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.seek.mode == seekIdle && e.played {
+	if e.seek.mode == seekIdle && e.epochPlayedLocked() {
 		e.beginSeekLocked(now)
 	}
 }

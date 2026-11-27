@@ -28,7 +28,7 @@ type Muxer struct {
 	scratch    []byte
 }
 
-func Register(registry *format.SimpleRegistry) {
+func Register(registry *format.Registry) {
 	if registry == nil {
 		return
 	}

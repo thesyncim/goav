@@ -56,7 +56,7 @@ func toyCodecDescriptor() codec.Descriptor {
 		Name: "toy PCM",
 		Type: av.MediaAudio,
 		Capabilities: codec.Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		},
 		Backend: codec.BackendInfo{Name: "adapterproof", Package: "adapterproof"},
 	}
@@ -393,7 +393,7 @@ func toyFilterDescriptor() filter.Descriptor {
 		Name:          filter.FactoryResample,
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		Stateless:     true,
 	}
 }

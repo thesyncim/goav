@@ -13,6 +13,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -105,7 +106,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 
 	// Switch live to the second sub-mix "mix-2" (10+20).
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), control.SelectActive("mix-2").At("mix")); err != nil {
+	if err := controlUntilAccepted(ctx, tk, control.SelectActive("mix-2").At("mix")); err != nil {
 		t.Fatalf("SelectActive to mix-2: %v", err)
 	}
 	if err := sink.waitFor(ctx, 30); err != nil {
@@ -154,7 +155,7 @@ func TestNestedSelectRoutingPinned(t *testing.T) {
 	}
 
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), control.SelectActive("b").AtTap("left.select")); err != nil {
+	if err := controlUntilAccepted(ctx, tk, control.SelectActive("b").AtTap("left.select")); err != nil {
 		t.Fatalf("SelectActive to inner left select by tap: %v", err)
 	}
 	if err := sink.waitFor(ctx, 200); err != nil {
@@ -216,11 +217,11 @@ func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 	if y := compositeTestYAt(out, 0, 4); y != 50 {
 		t.Fatalf("Y at (0,4) = %d, want 50 (outer leaf c)", y)
 	}
-	if y := compositeTestYAt(out, 4, 4); y != compositeBlackLuma {
-		t.Fatalf("Y at (4,4) = %d, want %d (black canvas)", y, compositeBlackLuma)
+	if y := compositeTestYAt(out, 4, 4); y != stage.CompositeBlackLuma {
+		t.Fatalf("Y at (4,4) = %d, want %d (black canvas)", y, stage.CompositeBlackLuma)
 	}
-	if u, v := compositeTestChromaAt(out, 2, 2); u != compositeNeutralChroma || v != compositeNeutralChroma {
-		t.Fatalf("chroma at (2,2) = U %d V %d, want %d (black, not green)", u, v, compositeNeutralChroma)
+	if u, v := compositeTestChromaAt(out, 2, 2); u != stage.CompositeNeutralChroma || v != stage.CompositeNeutralChroma {
+		t.Fatalf("chroma at (2,2) = U %d V %d, want %d (black, not green)", u, v, stage.CompositeNeutralChroma)
 	}
 }
 

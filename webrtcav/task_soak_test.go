@@ -143,7 +143,7 @@ func TestTaskAVLifecycleSoak(t *testing.T) {
 	defer stop()
 	done := make(chan error, 1)
 	go func() { done <- task.Run(runCtx) }()
-	var receiver goav.Task
+	var receiver *goav.Task
 	var receivedVideo *webrtc.TrackRemote
 	videoCount, audioCount := &soakCountSink{name: "remote-video"}, &soakCountSink{name: "remote-audio"}
 	var receiveDone chan error

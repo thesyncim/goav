@@ -309,7 +309,7 @@ func (s *fakeVideoEncSession) Flush(emit func(*Packet) error) error {
 }
 func (s *fakeVideoEncSession) Close() error { s.closed++; return nil }
 
-func makeI420Frame(w, h int, format string, pts int64, meta av.Metadata) *av.Frame {
+func makeI420Frame(w, h int, format av.PixelFormat, pts int64, meta av.Metadata) *av.Frame {
 	return &av.Frame{
 		Type:     av.MediaVideo,
 		PTS:      av.Timestamp{Value: pts, Base: av.TimeBase{Num: 1, Den: 1000}},

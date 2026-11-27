@@ -27,9 +27,9 @@ import (
 // validates the final config before the root package publishes a concrete
 // Runtime.
 type Config struct {
-	Codecs           *codec.SimpleRegistry
-	Filters          *filter.SimpleRegistry
-	Formats          *format.SimpleRegistry
+	Codecs           *codec.Registry
+	Filters          *filter.Registry
+	Formats          *format.Registry
 	Buffer           pipeline.BufferPolicy
 	Realtime         bool
 	Clock            av.Clock
@@ -149,7 +149,7 @@ func optionError(index int, reason string, cause error) error {
 // WithCodecAdapter registers a whole codec bundle at once: the callback
 // receives the runtime's codec registry. Use WithDecoder/WithEncoder for the
 // direct single-value form.
-func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
+func WithCodecAdapter(register func(*codec.Registry)) Option {
 	return func(config *Config) error {
 		if register == nil {
 			return errors.New("codec registry callback is nil")
@@ -237,7 +237,7 @@ func WithProber(prober format.Prober) Option {
 
 // WithFormatAdapter registers a whole container-format bundle at once: the
 // callback receives the runtime's format registry.
-func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
+func WithFormatAdapter(register func(*format.Registry)) Option {
 	return func(config *Config) error {
 		if register == nil {
 			return errors.New("format registry callback is nil")
@@ -249,7 +249,7 @@ func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 
 // WithFilterAdapter registers a whole filter bundle at once: the callback
 // receives the runtime's filter registry.
-func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
+func WithFilterAdapter(register func(*filter.Registry)) Option {
 	return func(config *Config) error {
 		if register == nil {
 			return errors.New("filter registry callback is nil")

@@ -213,7 +213,7 @@ func TestCloseInitiatesGraphShutdownWhenAttachmentConsumesContext(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.(interface{ CloseContext(context.Context) error }).CloseContext(ctx); !errors.Is(err, context.Canceled) {
+	if err := task.CloseContext(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("CloseContext=%v", err)
 	}
 	if err := task.Close(); err != nil {

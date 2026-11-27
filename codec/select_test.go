@@ -23,7 +23,7 @@ func backendDescriptor(id av.CodecID, name string, kind BackendKind, mutate ...f
 	return desc
 }
 
-func h264Registry() *SimpleRegistry {
+func h264Registry() *Registry {
 	r := NewRegistry()
 	r.RegisterEncoder(backendDescriptor(av.CodecH264, "goh264", KindGo), namedEncoder("goh264"))
 	r.RegisterEncoder(backendDescriptor(av.CodecH264, "openh264", KindLib, func(d *Descriptor) {
@@ -37,7 +37,7 @@ func h264Registry() *SimpleRegistry {
 	return r
 }
 
-func chosen(t *testing.T, r *SimpleRegistry, need Need) Choice {
+func chosen(t *testing.T, r *Registry, need Need) Choice {
 	t.Helper()
 	choice, err := r.Select(need)
 	if err != nil {

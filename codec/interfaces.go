@@ -43,8 +43,8 @@ type Descriptor struct {
 // Descriptor so each fact has one owner. Backend selection filters on these
 // fields; an empty list or a zero bound accepts anything.
 type Capabilities struct {
-	SampleFormats []string
-	PixelFormats  []string
+	SampleFormats []av.SampleFormat
+	PixelFormats  []av.PixelFormat
 	// SampleRates lists the audio rates the codec accepts; empty means any.
 	// Planning refuses other rates with the .Resample(...) fix instead of
 	// letting the encoder fail at open.

@@ -40,7 +40,7 @@ func joinPlanGuard(t *testing.T, rt *Runtime, outs ...Output) pipeline.Spec {
 // encoded and muxed to a file.
 func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	pcm := av.CodecID("x_pcm_s16")
-	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
+	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}
 	rt := mustNew(
 		testBundleFilters(),
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),

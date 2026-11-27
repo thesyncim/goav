@@ -18,13 +18,13 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
+func (t *Task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
 	for _, node := range slices.Backward(nodes) {
 		_ = t.graph.Remove(node)
 	}
 }
 
-func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
+func (t *Task) trackAttachmentLocked(attachment *runtimeAttachment) {
 	t.pruneIsolatedLocked()
 	if t.attachments == nil {
 		t.attachments = make(map[*runtimeAttachment]struct{})
@@ -36,7 +36,7 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 // handler. Keep that domain until retirement settles, then prune only healthy
 // records. Check Failed after Retired so a concurrent last handler cannot be
 // mistaken for a healthy completion.
-func (t *task) pruneIsolatedLocked() {
+func (t *Task) pruneIsolatedLocked() {
 	t.isolated = slices.DeleteFunc(t.isolated, func(b *isolatedBranch) bool {
 		if b.attachment == nil {
 			return false
@@ -48,7 +48,7 @@ func (t *task) pruneIsolatedLocked() {
 	})
 }
 
-func (t *task) tapsLocked() []TapSnapshot {
+func (t *Task) tapsLocked() []TapSnapshot {
 	base := t.taps
 	out := make([]TapSnapshot, 0, len(base)+len(t.branchTaps))
 	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
@@ -81,14 +81,14 @@ func (t *task) tapsLocked() []TapSnapshot {
 	return out
 }
 
-func (t *task) addAttachmentTapsLocked(taps []TapSnapshot) {
+func (t *Task) addAttachmentTapsLocked(taps []TapSnapshot) {
 	if len(taps) == 0 {
 		return
 	}
 	t.branchTaps = append(t.branchTaps, taps...)
 }
 
-func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
+func (t *Task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
 	if attachment == nil || len(attachment.taps) == 0 || len(t.branchTaps) == 0 {
 		return
 	}
@@ -109,7 +109,7 @@ func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
 // A commit-intent detach must be able to observe execution failure before
 // Run returns. Refuse unsupported graphs before removing children, connecting
 // replacements, or changing any destination disposition.
-func (t *task) validateAttachmentDisposition(disposition oldBranchDisposition) error {
+func (t *Task) validateAttachmentDisposition(disposition oldBranchDisposition) error {
 	if disposition != oldBranchDrain {
 		return nil
 	}
@@ -127,7 +127,7 @@ func (t *task) validateAttachmentDisposition(disposition oldBranchDisposition) e
 	}
 }
 
-func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) error {
+func (t *Task) stopAttachment(ctx context.Context, input runtimeDetachInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) err
 	return t.stopAttachmentLocked(ctx, input)
 }
 
-func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInput) error {
+func (t *Task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInput) error {
 	attachment := input.runtime
 	disposition := input.disposition
 	if attachment == nil {
@@ -205,7 +205,7 @@ func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInpu
 	return err
 }
 
-func (t *task) publishAttachmentDestinationLifecycleEvents(attachment *runtimeAttachment, disposition oldBranchDisposition) {
+func (t *Task) publishAttachmentDestinationLifecycleEvents(attachment *runtimeAttachment, disposition oldBranchDisposition) {
 	if attachment == nil {
 		return
 	}
@@ -226,7 +226,7 @@ func (t *task) publishAttachmentDestinationLifecycleEvents(attachment *runtimeAt
 	}
 }
 
-func (t *task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttachment, cause error) {
+func (t *Task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttachment, cause error) {
 	if attachment == nil || cause == nil {
 		return
 	}
@@ -242,7 +242,7 @@ func (t *task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttac
 // taps and nodes. Each child is tried once: one that does not stop (its
 // context ended) is never reselected, and stranded reports that one is
 // still attached.
-func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) (first error, stranded bool) {
+func (t *Task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) (first error, stranded bool) {
 	if input.runtime == nil {
 		return nil, false
 	}
@@ -263,7 +263,7 @@ func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDe
 	}
 }
 
-func (t *task) publishBranchLifecycleEvent(kind av.EventType, attachment *runtimeAttachment, disposition oldBranchDisposition) {
+func (t *Task) publishBranchLifecycleEvent(kind av.EventType, attachment *runtimeAttachment, disposition oldBranchDisposition) {
 	if t == nil || attachment == nil {
 		return
 	}
@@ -272,15 +272,13 @@ func (t *task) publishBranchLifecycleEvent(kind av.EventType, attachment *runtim
 		reason = "runtime branch detached"
 	}
 	event := av.Event{
-		Type:   kind,
-		Reason: reason,
-		Metadata: av.Metadata{
-			av.MetadataAttachmentID:   attachment.ID(),
-			av.MetadataAttachmentName: attachment.Name(),
-		},
+		Type:           kind,
+		Reason:         reason,
+		AttachmentID:   attachment.ID(),
+		AttachmentName: attachment.Name(),
 	}
 	if kind == av.EventBranchDetached {
-		event.Metadata[av.MetadataDetachDisposition] = detachDispositionLabel(disposition)
+		event.DetachDisposition = detachDispositionLabel(disposition)
 	}
 	t.watch.publish(event)
 }
@@ -296,7 +294,7 @@ func detachDispositionLabel(disposition oldBranchDisposition) string {
 	}
 }
 
-func (t *task) childAttachmentLocked(parent *runtimeAttachment, skip map[*runtimeAttachment]bool) *runtimeAttachment {
+func (t *Task) childAttachmentLocked(parent *runtimeAttachment, skip map[*runtimeAttachment]bool) *runtimeAttachment {
 	if parent == nil {
 		return nil
 	}
@@ -340,7 +338,7 @@ const (
 type runtimeAttachment struct {
 	id           string
 	name         string
-	owner        *task
+	owner        *Task
 	anchorTap    string
 	anchorNode   string
 	anchorTaps   []string
@@ -599,11 +597,7 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 	select {
 	case <-group.opened:
 	case <-group.abandoned:
-		select {
-		case <-group.opened:
-		default:
-			return
-		}
+		return
 	}
 	_ = a.detachReplaced(context.Background(), disposition)
 }
@@ -739,7 +733,7 @@ func branchStatsForNodes(stats pipeline.GraphStats, nodes []pipeline.NodeRef) pi
 		return pipeline.GraphStats{}
 	}
 	out := pipeline.GraphStats{
-		DropReasons: make(map[pipeline.DropPolicy]uint64),
+		DropReasons: make(map[pipeline.DropReason]uint64),
 		Nodes:       make(map[string]pipeline.NodeStats, len(nodes)),
 	}
 	for i := range nodes {
@@ -775,7 +769,7 @@ func branchStatsForNodes(stats pipeline.GraphStats, nodes []pipeline.NodeRef) pi
 func clonePublicNodeStats(stats pipeline.NodeStats) pipeline.NodeStats {
 	cloned := stats
 	if stats.DropReasons != nil {
-		cloned.DropReasons = make(map[pipeline.DropPolicy]uint64, len(stats.DropReasons))
+		cloned.DropReasons = make(map[pipeline.DropReason]uint64, len(stats.DropReasons))
 		maps.Copy(cloned.DropReasons, stats.DropReasons)
 	}
 	return cloned

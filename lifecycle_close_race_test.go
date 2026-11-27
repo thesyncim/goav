@@ -68,7 +68,7 @@ func TestCloseDeadlineWhileDrainDetachOwnsAttachmentLock(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := live.(*task)
+			owner := live
 			draining, err := live.Attach(t.Context(), live.Tap("packets").As("draining").To(Sink(held)))
 			if err != nil {
 				t.Fatal(err)
@@ -174,7 +174,7 @@ func TestCloseAbandonsAttachmentWhileGraphInstallationIsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := live.(*task)
+	owner := live
 	graph := &heldAttachmentInstallGraph{Graph: owner.graph, entered: make(chan pipeline.Sink), release: make(chan struct{})}
 	owner.graph = graph
 	sink := &retirementSink{name: "installing"}
@@ -233,7 +233,7 @@ func TestDrainRequiresRunErrorReporterBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := live.(*task)
+	owner := live
 	owner.graph = graphWithoutRunError{owner.graph}
 	defer live.Close()
 	attachment, err := live.Attach(t.Context(), live.Tap("packets").As("original").To(lifecycleTestSink("original")))

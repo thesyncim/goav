@@ -25,7 +25,7 @@ func Descriptor() codec.Descriptor {
 		Modes:    []codec.Mode{codec.ModeDecode, codec.ModeEncode},
 		Realtime: true,
 		Capabilities: codec.Capabilities{
-			SampleFormats: []string{av.SampleFormatS16},
+			SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 			SampleRates:   []int{8000, 12000, 16000, 24000, 48000},
 			RTPPayloads:   []string{av.MIMEOpus},
 		},
@@ -39,7 +39,7 @@ func Descriptor() codec.Descriptor {
 	}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	registry.RegisterDecoder(Descriptor(), NewDecoderFactory())
 	registry.RegisterEncoder(Descriptor(), NewEncoderFactory())
 }

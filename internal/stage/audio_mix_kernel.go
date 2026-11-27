@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import "encoding/binary"
 
@@ -19,11 +19,11 @@ func detectMixS16Kernel() mixS16Kernel {
 	return mixS16Kernel{name: "scalar", fn: mixS16ScalarKernel}
 }
 
-func mixS16KernelName() string {
+func MixS16KernelName() string {
 	return selectedMixS16Kernel.name
 }
 
-func mixS16Into(dst []byte, inputs [][]byte, n int) {
+func MixS16Into(dst []byte, inputs [][]byte, n int) {
 	kernel := selectedMixS16Kernel
 	if kernel.fn == nil {
 		kernel = mixS16Kernel{name: "scalar", fn: mixS16ScalarKernel}

@@ -210,14 +210,14 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 
 func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIEncoderFactory{})
 		}),
@@ -312,7 +312,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
-	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.Registry) {
 		registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 	}))
 	_, err := rt.Build(context.Background(), goav.Read("input.wav", strings.NewReader("")).
@@ -437,7 +437,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		},
 	}
 	demuxerOpened := false
-	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.Registry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -471,7 +471,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
 	}}
 	demuxerOpened := false
-	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := mustRuntime(runconfig.WithFormatAdapter(func(registry *format.Registry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -526,14 +526,14 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 	}}
 	demuxerOpened := false
 	rt := mustRuntime(
-		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithFormatAdapter(func(registry *format.Registry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 		}),
-		runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 		}),
-		runconfig.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		runconfig.WithFilterAdapter(func(registry *filter.Registry) {
 			registry.RegisterFactory(filter.Descriptor{
 				Name:   filter.FactoryResample,
 				Input:  av.MediaVideo,

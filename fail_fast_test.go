@@ -107,7 +107,7 @@ func TestLiveTaskFailsFastOnDestinationError(t *testing.T) {
 
 			for event := range events {
 				if event.Type == av.EventDestinationCommitted {
-					t.Fatalf("destination %q committed after a failed run", event.Metadata[av.MetadataDestinationName])
+					t.Fatalf("destination %q committed after a failed run", event.DestinationName)
 				}
 			}
 			for _, destination := range task.Snapshot().Destinations {

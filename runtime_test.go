@@ -217,24 +217,24 @@ func specRenderURI(spec pipeline.Spec, target string) string {
 	return out
 }
 
-func withTestCodecs(configure ...func(*codec.SimpleRegistry)) Option {
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+func withTestCodecs(configure ...func(*codec.Registry)) Option {
+	return WithCodecAdapter(func(registry *codec.Registry) {
 		for i := range configure {
 			configure[i](registry)
 		}
 	})
 }
 
-func withTestFormats(configure ...func(*format.SimpleRegistry)) Option {
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
+func withTestFormats(configure ...func(*format.Registry)) Option {
+	return WithFormatAdapter(func(registry *format.Registry) {
 		for i := range configure {
 			configure[i](registry)
 		}
 	})
 }
 
-func withTestFilters(configure ...func(*filter.SimpleRegistry)) Option {
-	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+func withTestFilters(configure ...func(*filter.Registry)) Option {
+	return WithFilterAdapter(func(registry *filter.Registry) {
 		for i := range configure {
 			configure[i](registry)
 		}
@@ -242,43 +242,43 @@ func withTestFilters(configure ...func(*filter.SimpleRegistry)) Option {
 }
 
 func withTestCodecDescriptor(desc codec.Descriptor) Option {
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	return WithCodecAdapter(func(registry *codec.Registry) {
 		registry.RegisterDescriptor(desc)
 	})
 }
 
-func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.SimpleRegistry) {
-	return func(registry *codec.SimpleRegistry) {
+func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.Registry) {
+	return func(registry *codec.Registry) {
 		registry.RegisterDecoder(desc, factory)
 	}
 }
 
-func testCodecEncoder(desc codec.Descriptor, factory codec.EncoderFactory) func(*codec.SimpleRegistry) {
-	return func(registry *codec.SimpleRegistry) {
+func testCodecEncoder(desc codec.Descriptor, factory codec.EncoderFactory) func(*codec.Registry) {
+	return func(registry *codec.Registry) {
 		registry.RegisterEncoder(desc, factory)
 	}
 }
 
-func testFormatProber(prober format.Prober) func(*format.SimpleRegistry) {
-	return func(registry *format.SimpleRegistry) {
+func testFormatProber(prober format.Prober) func(*format.Registry) {
+	return func(registry *format.Registry) {
 		registry.RegisterProber(prober)
 	}
 }
 
-func testFormatDemuxer(id av.FormatID, factory format.DemuxerFactory) func(*format.SimpleRegistry) {
-	return func(registry *format.SimpleRegistry) {
+func testFormatDemuxer(id av.FormatID, factory format.DemuxerFactory) func(*format.Registry) {
+	return func(registry *format.Registry) {
 		registry.RegisterDemuxer(id, factory)
 	}
 }
 
-func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.SimpleRegistry) {
-	return func(registry *format.SimpleRegistry) {
+func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.Registry) {
+	return func(registry *format.Registry) {
 		registry.RegisterMuxer(id, factory)
 	}
 }
 
-func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*filter.SimpleRegistry) {
-	return func(registry *filter.SimpleRegistry) {
+func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*filter.Registry) {
+	return func(registry *filter.Registry) {
 		registry.RegisterFactory(desc, factory)
 	}
 }
@@ -388,7 +388,7 @@ func TestRuntimeWithDirectFormatHooks(t *testing.T) {
 }
 
 func TestRuntimeWithFilterAdapter(t *testing.T) {
-	rt := runtimeValue(t, mustNew(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+	rt := runtimeValue(t, mustNew(WithFilterAdapter(func(registry *filter.Registry) {
 		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
 	})))
 

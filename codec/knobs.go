@@ -439,7 +439,7 @@ func KnobScope(key string) (string, bool) {
 // CheckScopes refuses a setting scoped to a backend the registry holds no
 // descriptor of for codec id (openh264.rc with no openh264), with the nearest
 // backend name, so a misspelled scope is never silently skipped.
-func (r *SimpleRegistry) CheckScopes(id av.CodecID, s Settings) error {
+func (r *Registry) CheckScopes(id av.CodecID, s Settings) error {
 	var names []string
 	for _, desc := range r.descriptors {
 		if desc.ID == id && !slices.Contains(names, desc.Backend.Name) {

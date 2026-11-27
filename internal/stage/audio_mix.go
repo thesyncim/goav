@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -14,29 +14,29 @@ import (
 // StreamID. It is a normal pipeline.Stage: the buffered runner calls Handle
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
-type audioMixStage struct {
+type AudioMix struct {
 	joinStageBase
 	inputs [][]byte
 	audio  av.AudioFrame
 }
 
-func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode) *audioMixStage {
-	return newAudioMixStageWithPrealloc(name, inputs, out, mode, 1)
+func NewAudioMix(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode) *AudioMix {
+	return NewAudioMixWithPrealloc(name, inputs, out, mode, 1)
 }
 
-func newAudioMixStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int) *audioMixStage {
-	return newAudioMixStageWithPreallocAndPools(name, inputs, out, mode, preallocDepth, nil)
+func NewAudioMixWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int) *AudioMix {
+	return NewAudioMixWithPreallocAndPools(name, inputs, out, mode, preallocDepth, nil)
 }
 
-func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int, pools *mediaPools) *audioMixStage {
+func NewAudioMixWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, mode compile.JoinSyncMode, preallocDepth int, pools *MediaPools) *AudioMix {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
-	stage := &audioMixStage{
+	stage := &AudioMix{
 		joinStageBase: joinStageBase{
 			name:  name,
 			out:   out,
-			sync:  newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+			sync:  NewJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
 			free:  make([][]*av.Frame, len(inputs)),
 			pools: pools,
 		},
@@ -57,7 +57,7 @@ func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out
 	return stage
 }
 
-func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+func (s *AudioMix) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
@@ -79,7 +79,7 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 	return err
 }
 
-func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
+func (s *AudioMix) drain(ctx context.Context, emitter pipeline.Emitter) error {
 	for {
 		frames, ref, ok := s.sync.step()
 		if !ok {
@@ -163,7 +163,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	}
 	dst.Planes = dst.Planes[:1]
 	mixed := av.NewBuffer(n)
-	mixS16Into(mixed.Bytes, inputs, n)
+	MixS16Into(mixed.Bytes, inputs, n)
 	*audio = *base.Audio
 	audio.Samples = n / frameBytes
 	dst.StreamID = out
@@ -192,7 +192,7 @@ func firstMixFrame(frames []*av.Frame) *av.Frame {
 
 // cloneMixFrame keeps an arm frame past the call that lent it: a pooled
 // header with the frame's fields and its own reference to each plane.
-func (s *audioMixStage) cloneMixFrame(armIdx int, frame *av.Frame) *av.Frame {
+func (s *AudioMix) cloneMixFrame(armIdx int, frame *av.Frame) *av.Frame {
 	clone := s.takeMixFrame(armIdx)
 	planes := clone.Planes
 	audio := clone.Audio
@@ -212,7 +212,7 @@ func (s *audioMixStage) cloneMixFrame(armIdx int, frame *av.Frame) *av.Frame {
 	return clone
 }
 
-func (s *audioMixStage) takeMixFrame(armIdx int) *av.Frame {
+func (s *AudioMix) takeMixFrame(armIdx int) *av.Frame {
 	free := s.free[armIdx]
 	if len(free) == 0 {
 		return &av.Frame{

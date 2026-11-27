@@ -32,7 +32,7 @@ func doubleRateDescriptor() filter.Descriptor {
 		Name:          filter.FactoryResample,
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		Stateless:     true,
 	}
 }

@@ -57,8 +57,7 @@ func (s *Scratch) Reset() {
 	s.Events = s.Events[:0]
 }
 
-// DropPolicy says why a message or observer event was shed, and doubles as the
-// recorded reason on drop counters (Stats DropReasons).
+// DropPolicy configures what a buffered queue does when it is full.
 type DropPolicy string
 
 const (
@@ -80,29 +79,48 @@ const (
 	// drains (true backpressure), instead of erroring. Source paces to the
 	// slowest blocking consumer; no pipeline teardown.
 	DropBlock DropPolicy = "block"
+)
+
+// Reason returns the telemetry DropReason corresponding to this policy.
+func (p DropPolicy) Reason() DropReason {
+	return DropReason(p)
+}
+
+// DropReason records why a message or observer event was shed in Stats DropReasons.
+// It covers both queue DropPolicy reasons and orthogonal observation reasons
+// (stale, overflow, sync, flush, observer).
+type DropReason string
+
+const (
+	DropReasonNever       DropReason = DropReason(DropNever)
+	DropReasonOldest      DropReason = DropReason(DropOldest)
+	DropReasonNewest      DropReason = DropReason(DropNewest)
+	DropReasonUntilSync   DropReason = DropReason(DropUntilSync)
+	DropReasonNonKeyVideo DropReason = DropReason(DropNonKeyVideo)
+	DropReasonBlock       DropReason = DropReason(DropBlock)
 	// DropStale is the reason recorded when a buffered message is shed because it
 	// waited longer than BufferPolicy.MaxLatency (orthogonal to the drop policy:
 	// any policy can also shed stale messages when MaxLatency is set).
-	DropStale DropPolicy = "stale"
+	DropStale DropReason = "stale"
 	// DropOverflow is the reason recorded when a buffered message is shed because
 	// admitting it would exceed the node's BufferPolicy.MaxBytes byte budget
 	// (orthogonal to the drop policy, like DropStale).
-	DropOverflow DropPolicy = "overflow"
+	DropOverflow DropReason = "overflow"
 	// DropSync is the reason recorded for messages a node sheds internally to
 	// stay time-aligned (a PTS-sync join dropping stale frames to catch up).
 	// These drops happen inside the node, not in its queue, so they reach the
 	// counters through the optional DropReporter capability at snapshot time.
-	DropSync DropPolicy = "sync"
+	DropSync DropReason = "sync"
 	// DropFlush records queued packet/frame media shed from queues exclusively
 	// downstream of a source before seek/segment control. Shared queues and
 	// their descendants retain their bounded admitted tail; unrelated media
 	// must not be discarded. Events and media following a queued discontinuity
-	// are preserved. This is an observation reason, not a selectable policy.
-	DropFlush DropPolicy = "flush"
+	// are preserved.
+	DropFlush DropReason = "flush"
 	// DropObserver is the reason recorded when the graph's cold-side observer
 	// event channel is full. Media/event delivery to graph routes still
 	// continues; only the raw observer copy is shed.
-	DropObserver DropPolicy = "observer"
+	DropObserver DropReason = "observer"
 )
 
 // defaultEventCapacity is the event channel depth of a graph that sets none.
@@ -322,7 +340,7 @@ type GraphStats struct {
 	Events           uint64                  `json:"events"`
 	EventsByType     map[av.EventType]uint64 `json:"eventsByType,omitempty"`
 	Dropped          uint64                  `json:"dropped"`
-	DropReasons      map[DropPolicy]uint64   `json:"dropReasons,omitempty"`
+	DropReasons      map[DropReason]uint64   `json:"dropReasons,omitempty"`
 	Delivered        uint64                  `json:"delivered"`
 	LastEvent        av.Event                `json:"-"`
 	LastEventPresent bool                    `json:"-"`
@@ -341,7 +359,7 @@ type NodeStats struct {
 	OutFrames        uint64                `json:"outFrames"`
 	OutEvents        uint64                `json:"outEvents"`
 	Dropped          uint64                `json:"dropped"`
-	DropReasons      map[DropPolicy]uint64 `json:"dropReasons,omitempty"`
+	DropReasons      map[DropReason]uint64 `json:"dropReasons,omitempty"`
 	LastEvent        av.Event              `json:"-"`
 	LastEventPresent bool                  `json:"-"`
 }

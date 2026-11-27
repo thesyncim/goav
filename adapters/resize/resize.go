@@ -21,7 +21,7 @@ func Descriptor() filter.Descriptor {
 		Name:         filter.FactoryResize,
 		Input:        av.MediaVideo,
 		Output:       av.MediaVideo,
-		PixelFormats: []string{av.PixelFormatI420},
+		PixelFormats: []av.PixelFormat{av.PixelFormatI420},
 		ResizeModes: []filter.ResizeMode{
 			filter.ResizeExact,
 			filter.ResizeFit,
@@ -32,13 +32,13 @@ func Descriptor() filter.Descriptor {
 		Stateless: true,
 		Metadata: av.Metadata{
 			"backend":       backendName,
-			"pixel_formats": av.PixelFormatI420 + "," + av.PixelFormatYUV420P,
+			"pixel_formats": string(av.PixelFormatI420) + "," + string(av.PixelFormatYUV420P),
 			"modes":         string(filter.ResizeExact) + "," + string(filter.ResizeFit) + "," + string(filter.ResizeFill) + "," + string(filter.ResizePassthrough),
 		},
 	}
 }
 
-func Register(registry *filter.SimpleRegistry) {
+func Register(registry *filter.Registry) {
 	registry.RegisterFactory(Descriptor(), NewFactory())
 }
 
@@ -53,10 +53,10 @@ func (Factory) NewFilter(ctx context.Context, config filter.Config) (filter.Fram
 type Filter struct {
 	inputWidth   int
 	inputHeight  int
-	inputFormat  string
+	inputFormat  av.PixelFormat
 	targetWidth  int
 	targetHeight int
-	outputFormat string
+	outputFormat av.PixelFormat
 	mode         filter.ResizeMode
 	outputVideo  av.VideoFrame
 	// luma and chroma hold each plane kind's axis filters, and scratch the
@@ -245,7 +245,7 @@ func (f *Filter) frameDimensions(frame *av.Frame) (int, int) {
 	return width, height
 }
 
-func (f *Filter) framePixelFormat(frame *av.Frame) string {
+func (f *Filter) framePixelFormat(frame *av.Frame) av.PixelFormat {
 	if frame.Video != nil && frame.Video.PixelFormat != "" {
 		return frame.Video.PixelFormat
 	}
@@ -348,15 +348,15 @@ func supportedMode(mode filter.ResizeMode) bool {
 		mode == filter.ResizePassthrough
 }
 
-func normalizePixelFormat(format string) (string, bool) {
+func normalizePixelFormat(format av.PixelFormat) (av.PixelFormat, bool) {
 	switch format {
 	case "":
 		return "", true
 	case av.PixelFormatI420:
 		return av.PixelFormatI420, true
 	}
-	switch strings.ToLower(format) {
-	case av.PixelFormatI420, "yuv420p":
+	switch strings.ToLower(string(format)) {
+	case string(av.PixelFormatI420), "yuv420p":
 		return av.PixelFormatI420, true
 	default:
 		return "", false

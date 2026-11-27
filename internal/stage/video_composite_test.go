@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -53,7 +53,7 @@ func compositeTestChromaAt(frame *av.Frame, x, y int) (byte, byte) {
 }
 
 func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
@@ -120,7 +120,7 @@ func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 }
 
 func TestVideoCompositeRejectsNonI420(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
@@ -138,7 +138,7 @@ func TestVideoCompositeRejectsNonI420(t *testing.T) {
 }
 
 func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
@@ -161,7 +161,7 @@ func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
 }
 
 func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
-	stage := newVideoCompositeStageWithPrealloc("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoCompositeWithPrealloc("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncPTS, 0)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
@@ -196,7 +196,7 @@ func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
 		t.Fatalf("selector events = %+v", emit.events)
 	}
 
-	arrival := newVideoCompositeStage("arrival", []av.StreamID{"a", "b"}, "out",
+	arrival := NewVideoComposite("arrival", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	if err := arrival.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &discontinuity}, emit); err != nil {
 		t.Fatalf("arrival discontinuity error = %v", err)
@@ -274,7 +274,7 @@ func TestVideoCompositeCopyPlaneClipsAndGuards(t *testing.T) {
 }
 
 func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 
 	// A kept arm frame is a header over the arm's own bytes, holding a
@@ -323,7 +323,7 @@ func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
 }
 
 func TestVideoCompositeEOSErrorDuringDrain(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 1, 2, 3)}, &mixTestEmitter{}); err != nil {
 		t.Fatalf("frame error = %v", err)
@@ -344,7 +344,7 @@ func (e *videoCompositeFailEmitter) Emit(context.Context, *pipeline.Message) err
 }
 
 func TestVideoCompositeAcceptsYUV420P(t *testing.T) {
-	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	stage := NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	defer func() { _ = stage.Close() }()
 

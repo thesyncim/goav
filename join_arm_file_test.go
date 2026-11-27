@@ -29,7 +29,7 @@ func conformTestAudio(rate, channels, samples int) *av.Frame {
 	}
 }
 
-func conformTestVideo(width, height int, format string) *av.Frame {
+func conformTestVideo(width, height int, format av.PixelFormat) *av.Frame {
 	return &av.Frame{
 		StreamID: "b.webm",
 		Type:     av.MediaVideo,

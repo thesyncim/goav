@@ -9,7 +9,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/player/internal/engine"
 )
@@ -22,6 +21,8 @@ type windowState uint8
 const (
 	windowRunning windowState = iota
 	windowEnded
+	windowClosed
+	windowEndedClosed
 )
 
 // game is the ebiten side of a Window: it presents the engine's video on
@@ -29,7 +30,7 @@ const (
 type game struct {
 	ctx   context.Context
 	w     *Window
-	task  goav.Task
+	task  Task
 	title string
 	sized bool
 	done  <-chan error
@@ -56,10 +57,9 @@ type game struct {
 	rateDirty   bool
 	wantSeek    time.Duration
 	seekPending bool
-	ctrlClosed  bool
 }
 
-func newGame(ctx context.Context, w *Window, task goav.Task, title string, width, height int, notice string, done <-chan error) *game {
+func newGame(ctx context.Context, w *Window, task Task, title string, width, height int, notice string, done <-chan error) *game {
 	g := &game{ctx: ctx, w: w, task: task, title: title, done: done, ctrlWake: make(chan struct{}, 1), rate: 3}
 	if width > 0 && height > 0 {
 		ebiten.SetWindowSize(width, height)
@@ -85,7 +85,7 @@ func runWindow(g *game) error {
 func (g *game) result() (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.state == windowEnded, g.taskErr
+	return g.state == windowEnded || g.state == windowEndedClosed, g.taskErr
 }
 
 func (g *game) setStatus(s string) {
@@ -103,7 +103,11 @@ func (g *game) wakeControls() {
 
 func (g *game) stopControls() {
 	g.mu.Lock()
-	g.ctrlClosed = true
+	if g.state == windowEnded || g.state == windowEndedClosed {
+		g.state = windowEndedClosed
+	} else {
+		g.state = windowClosed
+	}
 	g.mu.Unlock()
 	g.wakeControls()
 }
@@ -114,7 +118,7 @@ func (g *game) runControls() {
 	for range g.ctrlWake {
 		for {
 			g.mu.Lock()
-			if g.ctrlClosed {
+			if g.state >= windowClosed {
 				g.mu.Unlock()
 				return
 			}

@@ -145,36 +145,36 @@ func audioOpusTestStream() av.Stream {
 
 // Runtime registry options mirroring the root module's test fixtures: build a
 // goav runtime whose codec/format registries carry exactly the test doubles.
-func withTestCodecs(configure ...func(*codec.SimpleRegistry)) runconfig.Option {
-	return runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+func withTestCodecs(configure ...func(*codec.Registry)) runconfig.Option {
+	return runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		for i := range configure {
 			configure[i](registry)
 		}
 	})
 }
 
-func withTestFormats(configure ...func(*format.SimpleRegistry)) runconfig.Option {
-	return runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+func withTestFormats(configure ...func(*format.Registry)) runconfig.Option {
+	return runconfig.WithFormatAdapter(func(registry *format.Registry) {
 		for i := range configure {
 			configure[i](registry)
 		}
 	})
 }
 
-func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.SimpleRegistry) {
-	return func(registry *codec.SimpleRegistry) {
+func testCodecDecoder(desc codec.Descriptor, factory codec.DecoderFactory) func(*codec.Registry) {
+	return func(registry *codec.Registry) {
 		registry.RegisterDecoder(desc, factory)
 	}
 }
 
-func testFormatProber(prober format.Prober) func(*format.SimpleRegistry) {
-	return func(registry *format.SimpleRegistry) {
+func testFormatProber(prober format.Prober) func(*format.Registry) {
+	return func(registry *format.Registry) {
 		registry.RegisterProber(prober)
 	}
 }
 
-func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.SimpleRegistry) {
-	return func(registry *format.SimpleRegistry) {
+func testFormatMuxer(id av.FormatID, factory format.MuxerFactory) func(*format.Registry) {
+	return func(registry *format.Registry) {
 		registry.RegisterMuxer(id, factory)
 	}
 }

@@ -227,11 +227,11 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	if attached.Type != av.EventBranchAttached {
 		t.Fatalf("attached event type = %q, want %q", attached.Type, av.EventBranchAttached)
 	}
-	if attached.Metadata[av.MetadataAttachmentID] != attachment.ID() || attached.Metadata[av.MetadataAttachmentName] != "rec" {
-		t.Fatalf("attached metadata = %#v, want attachment id/name", attached.Metadata)
+	if attached.AttachmentID != attachment.ID() || attached.AttachmentName != "rec" {
+		t.Fatalf("attached event = %+v, want attachment id/name", attached)
 	}
-	if _, ok := attached.Metadata[av.MetadataDetachDisposition]; ok {
-		t.Fatalf("attached metadata includes detach disposition: %#v", attached.Metadata)
+	if attached.DetachDisposition != "" {
+		t.Fatalf("attached event includes detach disposition: %+v", attached)
 	}
 
 	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
@@ -241,10 +241,10 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	if detached.Type != av.EventBranchDetached {
 		t.Fatalf("detached event type = %q, want %q", detached.Type, av.EventBranchDetached)
 	}
-	if detached.Metadata[av.MetadataAttachmentID] != attachment.ID() ||
-		detached.Metadata[av.MetadataAttachmentName] != "rec" ||
-		detached.Metadata[av.MetadataDetachDisposition] != "drain" {
-		t.Fatalf("detached metadata = %#v, want id/name/drain disposition", detached.Metadata)
+	if detached.AttachmentID != attachment.ID() ||
+		detached.AttachmentName != "rec" ||
+		detached.DetachDisposition != "drain" {
+		t.Fatalf("detached event = %+v, want id/name/drain disposition", detached)
 	}
 }
 
@@ -274,10 +274,10 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	if event.Type != av.EventDestinationCommitted {
 		t.Fatalf("destination event type = %q, want %q", event.Type, av.EventDestinationCommitted)
 	}
-	if event.Metadata[av.MetadataDestinationName] != "rec" ||
-		event.Metadata[av.MetadataAttachmentID] != attachment.ID() ||
-		event.Metadata[av.MetadataAttachmentName] != "rec" {
-		t.Fatalf("destination event metadata = %#v, want destination and attachment facts", event.Metadata)
+	if event.DestinationName != "rec" ||
+		event.AttachmentID != attachment.ID() ||
+		event.AttachmentName != "rec" {
+		t.Fatalf("destination event = %+v, want destination and attachment facts", event)
 	}
 }
 
@@ -300,7 +300,7 @@ func TestTaskFinalizerPublishesRootDestinationCommitError(t *testing.T) {
 	if event.Type != av.EventDestinationCommitError {
 		t.Fatalf("destination event type = %q, want %q", event.Type, av.EventDestinationCommitError)
 	}
-	if event.Metadata[av.MetadataDestinationName] != "commit-error.ivf" || !errors.Is(event.Cause, commitErr) {
+	if event.DestinationName != "commit-error.ivf" || !errors.Is(event.Cause, commitErr) {
 		t.Fatalf("destination event = %+v, want commit-error.ivf with commit cause", event)
 	}
 }

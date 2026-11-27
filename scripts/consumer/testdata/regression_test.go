@@ -317,10 +317,6 @@ func TestResolvedConcurrentCloseHonorsEachCallersDeadline(t *testing.T) {
 	if err := task.Run(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	closer, ok := task.(interface{ CloseContext(context.Context) error })
-	if !ok {
-		t.Fatal("built task has no CloseContext")
-	}
 	first := make(chan error, 1)
 	go func() { first <- task.Close() }()
 	select {
@@ -331,7 +327,7 @@ func TestResolvedConcurrentCloseHonorsEachCallersDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
 	second := make(chan error, 1)
-	go func() { second <- closer.CloseContext(ctx) }()
+	go func() { second <- task.CloseContext(ctx) }()
 	select {
 	case err := <-second:
 		if !errors.Is(err, context.DeadlineExceeded) {

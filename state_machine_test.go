@@ -9,7 +9,9 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type testStateEmitter func(context.Context, *pipeline.Message) error
@@ -32,8 +34,8 @@ func TestStateMachineTaskRejectsDuplicateRun(t *testing.T) {
 
 func TestStateMachineTimelineControlRefusedWhileClosing(t *testing.T) {
 	task := newTask(newWatchTestGraph(1), nil)
-	task.timeline = newTimeline(av.MonotonicClock())
-	task.timeline.markPaced()
+	task.timeline = stage.NewTimeline(av.MonotonicClock())
+	task.timeline.MarkPaced()
 
 	task.lifecycleMu.Lock()
 	task.phase = taskClosing
@@ -100,22 +102,22 @@ func TestStateMachineSwitchGateClosedCannotOpenGroup(t *testing.T) {
 }
 
 func TestStateMachineJoinSyncAndSelectorEOSOnce(t *testing.T) {
-	sync := newJoinSyncStateWithPendingCap(compile.JoinSyncArrival, []av.StreamID{"a", "b"}, 2)
-	if sync.markEOS("a") {
+	sync := stage.NewJoinSyncStateWithPendingCap(compile.JoinSyncArrival, []av.StreamID{"a", "b"}, 2)
+	if sync.MarkEOS("a") {
 		t.Fatal("markEOS(a) returned true before b ended")
 	}
-	if !sync.markEOS("b") {
+	if !sync.MarkEOS("b") {
 		t.Fatal("markEOS(b) returned false when all arms ended")
 	}
-	if sync.markEOS("b") || sync.markEOS("") {
+	if sync.MarkEOS("b") || sync.MarkEOS("") {
 		t.Fatal("markEOS returned true a second time after EOS was emitted")
 	}
-	sync.buffer(&av.Frame{StreamID: "a"})
-	if sync.pendingCount("a") != 0 {
-		t.Fatalf("post-EOS frame buffered: len=%d, want 0", sync.pendingCount("a"))
+	sync.Buffer(&av.Frame{StreamID: "a"})
+	if sync.PendingCount("a") != 0 {
+		t.Fatalf("post-EOS frame buffered: len=%d, want 0", sync.PendingCount("a"))
 	}
 
-	sel := newSelectorStage("sel", []av.StreamID{"a", "b"}, "out")
+	sel := stage.NewSelector("sel", []av.StreamID{"a", "b"}, "out")
 	var eosCount int
 	emitter := testStateEmitter(func(_ context.Context, msg *pipeline.Message) error {
 		if msg.Kind == pipeline.MessageEvent && msg.Event != nil && msg.Event.Type == av.EventEndOfStream {
@@ -185,5 +187,56 @@ func TestStateMachineReconnectingSourceCloseStopsBackoffAndControl(t *testing.T)
 	ctrl := src.(pipeline.ControllableSource)
 	if err := ctrl.Control(t.Context(), &pipeline.Message{}); !errors.Is(err, pipeline.ErrClosed) {
 		t.Fatalf("Control after Close() = %v, want pipeline.ErrClosed", err)
+	}
+}
+
+func TestJoinConformStageFailedBindDoesNotBypass(t *testing.T) {
+	rt := mustNew() // no filters registered -> resize bind fails
+	stage := newJoinConformStage(rt.newBuilder(), "conform", "conform", shape.Frame(av.MediaVideo, shape.Video(64, 48, av.PixelFormatI420)), false)
+	frame := &av.Frame{
+		StreamID: "v",
+		Type:     av.MediaVideo,
+		Video:    &av.VideoFrame{Width: 128, Height: 96, PixelFormat: av.PixelFormatI420},
+	}
+	msg := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
+	emitted := 0
+	emitter := testStateEmitter(func(_ context.Context, _ *pipeline.Message) error {
+		emitted++
+		return nil
+	})
+	if err := stage.Handle(t.Context(), msg, emitter); err == nil {
+		t.Fatal("first Handle with missing resize adapter succeeded, want error")
+	}
+	if err := stage.Handle(t.Context(), msg, emitter); err == nil {
+		t.Fatal("second Handle with same format bypassed failed bind and succeeded, want error")
+	}
+	if emitted != 0 {
+		t.Fatalf("emitted = %d after failed binds, want 0", emitted)
+	}
+	if err := stage.Close(); err != nil {
+		t.Fatalf("first Close = %v", err)
+	}
+	if err := stage.Close(); err != nil {
+		t.Fatalf("second Close = %v", err)
+	}
+	if err := stage.Handle(t.Context(), msg, emitter); !errors.Is(err, pipeline.ErrClosed) {
+		t.Fatalf("Handle after Close = %v, want pipeline.ErrClosed", err)
+	}
+}
+
+func TestSwitchGroupOpenedAndAbandonedMutuallyExclusive(t *testing.T) {
+	group := newSwitchGroup(NextFrame().kind)
+	gate := group.gate()
+	group.markOpen()
+	_ = gate.Close()
+	select {
+	case <-group.opened:
+	default:
+		t.Fatal("opened channel not closed after markOpen")
+	}
+	select {
+	case <-group.abandoned:
+		t.Fatal("abandoned channel closed after group was already opened")
+	default:
 	}
 }

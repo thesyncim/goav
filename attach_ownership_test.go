@@ -77,7 +77,7 @@ func TestAttachRollbackAtEveryInstallationBoundary(t *testing.T) {
 		a, b := &rollbackOwnedStage{name: "a"}, &rollbackOwnedStage{name: "b"}
 		c := &attachOwnedSink{name: "c"}
 		p := &attachPlan{
-			task: &task{graph: &rollbackFailureGraph{Graph: g, at: at}},
+			task: &Task{graph: &rollbackFailureGraph{Graph: g, at: at}},
 			plan: &compile.AttachPlan{Nodes: []compile.ComposeNode{
 				{Name: "a", Inputs: []pipeline.NodeRef{"source"}},
 				{Name: "b", Inputs: []pipeline.NodeRef{"a"}},
@@ -173,7 +173,7 @@ func TestAttachRollbackWaitsForActiveHandle(t *testing.T) {
 		<-a.entered
 	}}
 	p := &attachPlan{
-		task: &task{graph: wrapped},
+		task: &Task{graph: wrapped},
 		plan: &compile.AttachPlan{Nodes: []compile.ComposeNode{
 			{Name: "a", Inputs: []pipeline.NodeRef{"first"}},
 			{Name: "b", Inputs: []pipeline.NodeRef{"second"}},
@@ -215,7 +215,7 @@ func TestAttachRollbackTransfersOwnershipOnAdd(t *testing.T) {
 	}
 	a, b := &attachOwnedSink{name: "a"}, &attachOwnedSink{name: "b"}
 	p := &attachPlan{
-		task:    &task{graph: g},
+		task:    &Task{graph: g},
 		plan:    &compile.AttachPlan{Nodes: []compile.ComposeNode{{Name: "a"}, {Name: "b"}}},
 		opened:  []openedNode{{sink: a, owned: true}, {sink: b, owned: true}},
 		buffers: []pipeline.BufferPolicy{{}, {Capacity: 1}},

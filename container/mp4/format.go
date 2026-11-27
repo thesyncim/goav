@@ -21,7 +21,7 @@ type DemuxerFactory struct{}
 // Register installs the MP4 demuxer and muxer for av.FormatMP4. The default
 // prober already detects ISO BMFF (ftyp magic and the .mp4/.mov family of
 // extensions), so no prober is registered here.
-func Register(registry *format.SimpleRegistry) {
+func Register(registry *format.Registry) {
 	if registry == nil {
 		return
 	}
@@ -146,8 +146,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if next, ok := d.demuxer.nextTrack(); ok && next < len(d.avccLength) {
 		length = d.avccLength[next]
 	}
-	// Reset before writing into Payload.Bytes so any pooled Owner is released
-	// prior to reusing the slice rather than after filling it.
+	// Reset packet headers before reusing the backing Payload.Bytes slice.
 	out.Packet.Reset()
 	if length == 0 {
 		if err := d.demuxer.ReadInto(out.Packet.Payload.Bytes[:0], &sample); err != nil {

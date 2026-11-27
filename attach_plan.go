@@ -30,7 +30,7 @@ import (
 
 // attachPlan is one attach group planned against a running task.
 type attachPlan struct {
-	task *task
+	task *Task
 	name string
 	// dests are the group's destination handles, in its recipe's order.
 	dests []destinationSpec
@@ -95,7 +95,7 @@ type attachDeclaredTap struct {
 // planAttach plans an attach group below its anchors through the build's
 // lowering, checks it against the live anchors, and opens its nodes. On
 // failure it closes everything it opened.
-func (t *task) planAttach(ctx context.Context, input runtimeAttachInput) (*attachPlan, error) {
+func (t *Task) planAttach(ctx context.Context, input runtimeAttachInput) (*attachPlan, error) {
 	p := &attachPlan{
 		task:     t,
 		name:     firstNonEmpty(input.name, "runtime-attach"),
@@ -714,7 +714,7 @@ func (p *attachPlan) feeds(index int, node compile.ComposeNode) bool {
 
 // attachBufferPolicy is the queue an attached branch's nodes run behind: the
 // branch's own, or the runtime's on a buffered task.
-func (t *task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolicy {
+func (t *Task) attachBufferPolicy(buffer flow.BranchBuffer) pipeline.BufferPolicy {
 	policy := buffer.PipelinePolicy()
 	if t.graph.Spec().Execution.Mode != "buffered" {
 		return policy

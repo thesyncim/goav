@@ -83,6 +83,42 @@ func TestTimeBaseRescaleHelpers(t *testing.T) {
 	if !ok || negative != -1 {
 		t.Fatalf("negative rescale = %d ok=%v", negative, ok)
 	}
+
+	// Identity timebase fast path.
+	same, ok := RescaleValue(123456789, video, video)
+	if !ok || same != 123456789 {
+		t.Fatalf("same timebase rescale = %d ok=%v", same, ok)
+	}
+
+	// Nearest rounding (halves away from zero).
+	cases := []struct {
+		val  int64
+		from TimeBase
+		to   TimeBase
+		want int64
+	}{
+		{3, TimeBase{Num: 1, Den: 2}, TimeBase{Num: 1, Den: 1}, 2},   // 1.5 -> 2
+		{-3, TimeBase{Num: 1, Den: 2}, TimeBase{Num: 1, Den: 1}, -2}, // -1.5 -> -2
+		{5, TimeBase{Num: 1, Den: 3}, TimeBase{Num: 1, Den: 1}, 2},   // 1.666 -> 2
+		{4, TimeBase{Num: 1, Den: 3}, TimeBase{Num: 1, Den: 1}, 1},   // 1.333 -> 1
+		{-4, TimeBase{Num: 1, Den: 3}, TimeBase{Num: 1, Den: 1}, -1}, // -1.333 -> -1
+		{3000, video, TimeBase{Num: 1, Den: 1000}, 33},               // 33.333ms -> 33ms
+		{6000, video, TimeBase{Num: 1, Den: 1000}, 67},               // 66.666ms -> 67ms
+	}
+	for _, tc := range cases {
+		got, ok := RescaleValueNearest(tc.val, tc.from, tc.to)
+		if !ok || got != tc.want {
+			t.Fatalf("RescaleValueNearest(%d, %v, %v) = %d, %v; want %d, true", tc.val, tc.from, tc.to, got, ok, tc.want)
+		}
+	}
+	tsNearest, ok := Timestamp{Value: 6000, Base: video}.RescaleNearest(TimeBase{Num: 1, Den: 1000})
+	if !ok || tsNearest.Value != 67 {
+		t.Fatalf("Timestamp.RescaleNearest = %+v ok=%v, want 67", tsNearest, ok)
+	}
+	durNearest, ok := Duration{Value: 6000, Base: video}.RescaleNearest(TimeBase{Num: 1, Den: 1000})
+	if !ok || durNearest.Value != 67 {
+		t.Fatalf("Duration.RescaleNearest = %+v ok=%v, want 67", durNearest, ok)
+	}
 }
 
 func TestTimestampDeltaAndDurationCompare(t *testing.T) {

@@ -32,7 +32,7 @@ func TestDecoderFrameFormatFromBounds(t *testing.T) {
 func TestDecoderFrameFormatFromStreamPixelFormats(t *testing.T) {
 	tests := []struct {
 		name         string
-		pixelFormat  string
+		pixelFormat  av.PixelFormat
 		mono         bool
 		subsamplingX bool
 		subsamplingY bool

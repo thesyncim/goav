@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/compile"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -28,9 +29,9 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			}
 			stream = qualifyStream(selected, in.qualifiers[arm.Input])
 		}
-		stage := newArmRestampStage(node.Name, node.Detail, stream.ID, p.Arms[node.Arm].Stream.ID)
+		restamp := stage.NewArmRestamp(node.Name, node.Detail, stream.ID, p.Arms[node.Arm].Stream.ID)
 		stream.ID = p.Arms[node.Arm].Stream.ID
-		return stream, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
+		return stream, addComposeStage(graph, restamp, in.buffers[node.Name], node.Inputs)
 	case compile.ComposeArmDecode:
 		stream := streams[node.Inputs[0]]
 		// Arm events must flow through decode (dropInputEvents=false): the
@@ -73,15 +74,15 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			seen[id] = struct{}{}
 			armIDs = append(armIDs, id)
 		}
-		stage := newJoinStage(p, armIDs, rt)
-		if admitting, ok := stage.(interface{ enableAdmission() }); ok && in.admission {
-			admitting.enableAdmission()
+		st := newJoinStage(p, armIDs, rt)
+		if admitting, ok := st.(interface{ EnableAdmission() }); ok && in.admission {
+			admitting.EnableAdmission()
 		}
 		joined := p.Joined
 		if p.Late {
 			joined = p.ResolvedJoinedStream(streams, node.Inputs)
 		}
-		return joined, addComposeStage(graph, stage, in.buffers[node.Name], node.Inputs)
+		return joined, addComposeStage(graph, st, in.buffers[node.Name], node.Inputs)
 	}
 	return av.Stream{}, nil
 }
@@ -92,18 +93,22 @@ func newJoinStage(p *compile.JoinPlan, armIDs []av.StreamID, rt *Runtime) pipeli
 	if p.Tree.Custom != nil {
 		return p.Tree.Custom.Stage
 	}
+	var pools *stage.MediaPools
+	if rt != nil {
+		pools = rt.mediaPools
+	}
 	switch p.Tree.Kind {
 	case compile.JoinMix:
-		return newAudioMixStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt))
+		return stage.NewAudioMixWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Tree.Sync, joinStagePreallocDepth(rt), pools)
 	case compile.JoinComposite:
-		return newVideoCompositeStageWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Layouts, p.Tree.Sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt))
+		return stage.NewVideoCompositeWithPreallocAndPools(p.Name, armIDs, av.StreamID(p.Name), p.Layouts, p.Tree.Sync, joinStagePreallocDepth(rt), pools)
 	default:
 		// The selector is the control target: an injected SelectActive shares
 		// its input queue with the flooding arms, so a lossy queue could evict
 		// the control before the worker applies it. The pinned non-lossy
 		// DropBlock queue backpressures instead, so the switch is always
 		// delivered (the DropBlock control-plane lesson).
-		return newSelectorStage(p.Name, armIDs, av.StreamID(p.Name))
+		return stage.NewSelector(p.Name, armIDs, av.StreamID(p.Name))
 	}
 }
 

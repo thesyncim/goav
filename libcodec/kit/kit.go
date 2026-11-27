@@ -52,7 +52,7 @@ type Codec struct {
 	// Bitstream says how a video backend frames its payloads, and Pixels the
 	// pixel format its encoder reads (default i420; nv12 is converted).
 	Bitstream Bitstream
-	Pixels    string
+	Pixels    av.PixelFormat
 	// Reorder says the decoder returns pictures in decode order; the kit
 	// holds them and hands them on in presentation order.
 	Reorder bool
@@ -137,7 +137,7 @@ func Register(codecs ...Codec) runconfig.Option {
 	for i := range codecs {
 		codecs[i].reg = &registration{}
 	}
-	return runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	return runconfig.WithCodecAdapter(func(registry *codec.Registry) {
 		for i := range codecs {
 			c := &codecs[i]
 			err := c.bind()
@@ -318,10 +318,10 @@ func (c *Codec) descriptor(mode codec.Mode) codec.Descriptor {
 	r := c.registration()
 	capabilities := c.Capabilities
 	if c.Media == av.MediaVideo && capabilities.PixelFormats == nil {
-		capabilities.PixelFormats = []string{av.PixelFormatI420}
+		capabilities.PixelFormats = []av.PixelFormat{av.PixelFormatI420}
 	}
 	if c.Media == av.MediaAudio && capabilities.SampleFormats == nil {
-		capabilities.SampleFormats = []string{av.SampleFormatS16}
+		capabilities.SampleFormats = []av.SampleFormat{av.SampleFormatS16}
 	}
 	knobs, raw := c.Knobs, c.RawKnobs
 	if mode == codec.ModeDecode {

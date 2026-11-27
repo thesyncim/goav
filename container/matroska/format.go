@@ -38,6 +38,14 @@ type TrackDemuxer interface {
 	SeekToTime(int64) error
 }
 
+type formatMuxState uint8
+
+const (
+	formatMuxUnopened formatMuxState = iota
+	formatMuxOpen
+	formatMuxClosed
+)
+
 // FormatMuxer adapts a Matroska-family muxer to format.Muxer. The zero value
 // writes Matroska; NewFormatMuxer writes a profile through its own muxer.
 type FormatMuxer struct {
@@ -45,7 +53,7 @@ type FormatMuxer struct {
 	open   func(io.Writer) (TrackMuxer, error)
 	muxer  TrackMuxer
 	tracks []formatTrack
-	closed bool
+	state  formatMuxState
 }
 
 type formatDemuxState uint8
@@ -95,7 +103,7 @@ type formatTrack struct {
 	opus bool
 }
 
-func Register(registry *format.SimpleRegistry) {
+func Register(registry *format.Registry) {
 	if registry == nil {
 		return
 	}
@@ -197,7 +205,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 	}
 	m.muxer = muxer
 	m.tracks = tracks
-	m.closed = false
+	m.state = formatMuxOpen
 	return nil
 }
 
@@ -208,10 +216,10 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	if packet == nil {
 		return format.ErrNilPacket
 	}
-	if m.closed {
+	switch m.state {
+	case formatMuxClosed:
 		return ErrClosed
-	}
-	if m.muxer == nil {
+	case formatMuxUnopened:
 		return ErrNilWriter
 	}
 	track, ok := m.track(packet.StreamID)
@@ -247,11 +255,12 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 }
 
 func (m *FormatMuxer) Close() error {
-	if m == nil || m.closed {
+	if m == nil || m.state == formatMuxClosed {
 		return nil
 	}
-	m.closed = true
-	if m.muxer == nil {
+	prev := m.state
+	m.state = formatMuxClosed
+	if prev != formatMuxOpen || m.muxer == nil {
 		return nil
 	}
 	return m.muxer.Close()

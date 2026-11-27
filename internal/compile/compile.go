@@ -49,9 +49,9 @@ func (r *Request) context() context.Context {
 // leaf type. Present is false when no runtime is configured.
 type Env struct {
 	Present     bool
-	Codecs      *codec.SimpleRegistry
-	Filters     *filter.SimpleRegistry
-	Formats     *format.SimpleRegistry
+	Codecs      *codec.Registry
+	Filters     *filter.Registry
+	Formats     *format.Registry
 	Buffer      pipeline.BufferPolicy
 	Realtime    bool
 	ShapeDeltas []runconfig.ShapeDeltaContributor

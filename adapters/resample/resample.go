@@ -21,16 +21,16 @@ func Descriptor() filter.Descriptor {
 		Name:          filter.FactoryResample,
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16},
 		Realtime:      true,
 		Metadata: av.Metadata{
 			"backend":       backendName,
-			"sample_format": av.SampleFormatS16,
+			"sample_format": string(av.SampleFormatS16),
 		},
 	}
 }
 
-func Register(registry *filter.SimpleRegistry) {
+func Register(registry *filter.Registry) {
 	registry.RegisterFactory(Descriptor(), NewFactory())
 }
 
@@ -57,7 +57,7 @@ type Filter struct {
 	inputChannels   int
 	outputChannels  int
 	outputLayout    string
-	outputFormat    string
+	outputFormat    av.SampleFormat
 	outputAudio     av.AudioFrame
 	outputTimeBase  av.TimeBase
 	outputFrameType av.MediaType

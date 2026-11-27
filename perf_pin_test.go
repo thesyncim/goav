@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/internal/raceflag"
+	"github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -154,7 +155,7 @@ func TestAudioMixStepAllocs(t *testing.T) {
 		{name: "eight-arms", ids: []av.StreamID{"a", "b", "c", "d", "e", "f", "g", "h"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mix := newAudioMixStage("mix", tt.ids, "mix", compile.JoinSyncArrival)
+			mix := stage.NewAudioMix("mix", tt.ids, "mix", compile.JoinSyncArrival)
 			emit := discardPinEmitter{}
 			messages := make([]*pipeline.Message, len(tt.ids))
 			for i := range tt.ids {
@@ -183,7 +184,7 @@ func TestVideoCompositeStepAllocs(t *testing.T) {
 		t.Skip(raceflag.SkipReason)
 	}
 	ctx := context.Background()
-	composite := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+	composite := stage.NewVideoComposite("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival)
 	emit := discardPinEmitter{}
 	frameA := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 100, 10, 20)}
@@ -213,20 +214,20 @@ func TestMetadataPoolAllocs(t *testing.T) {
 	if pools == nil {
 		t.Fatal("WithMediaPools(true) did not install runtime media pools")
 	}
-	metadata := pools.takeMetadata()
+	metadata := pools.TakeMetadata()
 	metadata["stream"] = "audio"
-	pools.putMetadata(metadata)
+	pools.PutMetadata(metadata)
 
-	metadata = pools.takeMetadata()
+	metadata = pools.TakeMetadata()
 	if len(metadata) != 0 {
 		t.Fatalf("pooled metadata was not cleared: %#v", metadata)
 	}
-	pools.putMetadata(metadata)
+	pools.PutMetadata(metadata)
 
 	if allocs := testing.AllocsPerRun(1000, func() {
-		metadata := pools.takeMetadata()
+		metadata := pools.TakeMetadata()
 		metadata["stream"] = "audio"
-		pools.putMetadata(metadata)
+		pools.PutMetadata(metadata)
 	}); allocs != 0 {
 		t.Fatalf("metadata pool allocs = %v, want 0", allocs)
 	}
@@ -249,20 +250,20 @@ func TestFramePlanePoolAllocs(t *testing.T) {
 		{name: "i420", count: 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			planes := pools.takePlanes(tt.count)
+			planes := pools.TakePlanes(tt.count)
 			for i := range planes {
 				planes[i].Buffer.Bytes = make([]byte, 0, 64)
 				planes[i].Stride = 8
 			}
-			pools.putPlanes(planes)
+			pools.PutPlanes(planes)
 
 			if allocs := testing.AllocsPerRun(1000, func() {
-				planes := pools.takePlanes(tt.count)
+				planes := pools.TakePlanes(tt.count)
 				for i := range planes {
 					planes[i].Buffer.Bytes = append(planes[i].Buffer.Bytes, byte(i))
 					planes[i].Stride = i + 1
 				}
-				pools.putPlanes(planes)
+				pools.PutPlanes(planes)
 			}); allocs != 0 {
 				t.Fatalf("frame plane pool allocs = %v, want 0", allocs)
 			}
@@ -277,20 +278,17 @@ func TestRuntimeMediaPoolsRecycleJoinStagePlanes(t *testing.T) {
 		t.Fatal("WithMediaPools(true) did not install runtime media pools")
 	}
 
-	mix := newAudioMixStageWithPreallocAndPools("mix", []av.StreamID{"a", "b"}, "out", compile.JoinSyncArrival, 2, pools)
+	mix := stage.NewAudioMixWithPreallocAndPools("mix", []av.StreamID{"a", "b"}, "out", compile.JoinSyncArrival, 2, pools)
 	if err := mix.Close(); err != nil {
 		t.Fatal(err)
 	}
-	composite := newVideoCompositeStageWithPreallocAndPools("composite", []av.StreamID{"a", "b"}, "out",
+	composite := stage.NewVideoCompositeWithPreallocAndPools("composite", []av.StreamID{"a", "b"}, "out",
 		[]compile.CompositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, compile.JoinSyncArrival, 2, pools)
 	if err := composite.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	pools.mu.Lock()
-	audioPlaneSets := len(pools.audioPlanes)
-	videoPlaneSets := len(pools.videoPlanes)
-	pools.mu.Unlock()
+	audioPlaneSets, videoPlaneSets := pools.PlanePoolCounts()
 	if audioPlaneSets < 5 {
 		t.Fatalf("audio join returned %d plane sets, want at least 5", audioPlaneSets)
 	}
@@ -304,9 +302,9 @@ func TestRuntimeMediaPoolsRecycleJoinStagePlanes(t *testing.T) {
 // frame/packet headers instead of allocating a shallow clone for each forward.
 func TestSelectorPassthroughAllocs(t *testing.T) {
 	ctx := context.Background()
-	selectStage := newSelectorStage("select", []av.StreamID{"a", "b"}, "out")
+	selectStage := stage.NewSelector("select", []av.StreamID{"a", "b"}, "out")
 	emit := discardPinEmitter{}
-	frame := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: selectorTestFrame("a", 100)}
+	frame := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixTestS16Frame("a", 100)}
 	packet := &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{
 		StreamID: "a",
 		Type:     av.MediaAudio,

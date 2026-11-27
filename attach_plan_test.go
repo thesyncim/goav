@@ -30,7 +30,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		name   string
 		input  func() goav.Input
 		base   func(goav.Input) []goav.Output
-		attach func(goav.Task, goav.Input) []goav.Output
+		attach func(*goav.Task, goav.Input) []goav.Output
 		// rebranch attaches the Outputs as a gated Rebranch's replacements.
 		rebranch bool
 		want     []string
@@ -46,7 +46,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "decode from a packet tap",
 			input: packets, base: packetTap,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				return []goav.Output{task.Tap("audio.packets").Decode().As("pcm").To(named("pcm"))}
 			},
 			want: []string{"pcm/decode-pcm", "pcm/pcm"},
@@ -54,7 +54,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "resample and encode into a mux",
 			input: frames, base: frameTap,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				return []goav.Output{task.Tap("audio.frames").Resample(16_000, codec.Mono).Encode(codec.Opus()).As("voice").To(goav.Write("voice.ogg", io.Discard, goav.Format(av.FormatOgg)))}
 			},
 			want: []string{"voice/resample-voice", "voice/encode-voice", "voice/voice.ogg"},
@@ -62,7 +62,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "a sink two branches share",
 			input: frames, base: frameTap,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				shared := named("monitor")
 				return []goav.Output{
 					task.Tap("audio.frames").As("a").To(shared),
@@ -74,7 +74,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "work two branches share",
 			input: frames, base: frameTap,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				low := task.Tap("audio.frames").Resample(16_000, codec.Mono)
 				return []goav.Output{low.As("a").To(named("a")), low.Encode(codec.Opus()).As("b").To(named("b"))}
 			},
@@ -83,7 +83,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "a tap an earlier branch declares",
 			input: packets, base: packetTap,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				return []goav.Output{
 					task.Tap("audio.packets").Decode().Tap("late.frames").As("pcm").To(named("pcm")),
 					task.Tap("late.frames").Encode(codec.Opus()).As("again").To(named("again")),
@@ -94,7 +94,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "an input's track",
 			input: packets, base: packetTap,
-			attach: func(task goav.Task, in goav.Input) []goav.Output {
+			attach: func(task *goav.Task, in goav.Input) []goav.Output {
 				tap := task.Taps()[0]
 				stream := av.Stream{ID: tap.Shape.StreamID, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}
 				return []goav.Output{task.Track(in, stream).As("track").To(named("track"))}
@@ -103,7 +103,7 @@ func TestAttachPatchDescribeEqualsBuild(t *testing.T) {
 		{
 			name:  "a gated rebranch",
 			input: frames, base: frameTap, rebranch: true,
-			attach: func(task goav.Task, _ goav.Input) []goav.Output {
+			attach: func(task *goav.Task, _ goav.Input) []goav.Output {
 				return []goav.Output{task.Tap("audio.frames").As("next").To(named("next"))}
 			},
 			want: []string{"next/switch-gate", "next/next"},

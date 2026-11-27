@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	stagepkg "github.com/thesyncim/goav/internal/stage"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -27,7 +28,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	pcm := av.CodecID("x_pcm_mono")
 	decoder := &tapArmTestDecoder{}
 	rt := mustNew(WithDecoder(
-		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
+		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}},
 		tapArmTestDecoderFactory{decoder: decoder},
 	))
 
@@ -121,7 +122,7 @@ func TestMixArmChainErrorSurfaces(t *testing.T) {
 }
 
 func TestArmRestampStageContracts(t *testing.T) {
-	stage := newArmRestampStage("mix-tap-dry", "restamp, tap=dry", "", "dry")
+	stage := stagepkg.NewArmRestamp("mix-tap-dry", "restamp, tap=dry", "", "dry")
 	if stage.Name() != "mix-tap-dry" {
 		t.Fatalf("Name() = %q", stage.Name())
 	}
@@ -188,7 +189,7 @@ func TestArmRestampStageContracts(t *testing.T) {
 	}
 
 	// A bound file arm passes only its stream and stream-less events.
-	bound := newArmRestampStage("mix-select-a.webm", "bind on open type=audio", "2", "a.webm")
+	bound := stagepkg.NewArmRestamp("mix-select-a.webm", "bind on open type=audio", "2", "a.webm")
 	filtered := &tapArmStageTestEmitter{}
 	for _, msg := range []*pipeline.Message{
 		{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "1"}},
@@ -236,7 +237,7 @@ func TestStreamSharedByTwoJoinsDecodesOnce(t *testing.T) {
 	pcm := av.CodecID("x_pcm_mono")
 	decoder := &tapArmTestDecoder{}
 	rt := mustNew(WithDecoder(
-		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
+		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}},
 		tapArmTestDecoderFactory{decoder: decoder},
 	))
 	music := tapArmTestPacketSource("music", pcm, 100, 200).Audio().Decode().Tap("music.frames")

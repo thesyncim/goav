@@ -10,7 +10,7 @@ import (
 // NV12 is semi-planar 4:2:0: a luma plane, then one plane of interleaved Cb
 // and Cr. Hardware codecs prefer it; goav frames are planar, so the kit
 // converts NV12 to and from I420.
-const NV12 = "nv12"
+const NV12 av.PixelFormat = "nv12"
 
 // layout is how a pixel format lays out its planes.
 type layout struct {
@@ -18,11 +18,11 @@ type layout struct {
 	shiftX   int // chroma subsampling, as a right shift of the luma width
 	shiftY   int
 	bytes    int // per sample
-	planar   string
+	planar   av.PixelFormat
 	interlvd bool // chroma planes interleaved into one (NV12)
 }
 
-var layouts = map[string]layout{
+var layouts = map[av.PixelFormat]layout{
 	av.PixelFormatI420: {planes: 3, shiftX: 1, shiftY: 1, bytes: 1},
 	av.PixelFormatI422: {planes: 3, shiftX: 1, bytes: 1},
 	av.PixelFormatI444: {planes: 3, bytes: 1},
@@ -42,7 +42,7 @@ var layouts = map[string]layout{
 // encoder for a keyframe.
 type Picture struct {
 	Width, Height int
-	Format        string
+	Format        av.PixelFormat
 	Planes        [3][]byte
 	Strides       [3]int
 	Owner         av.BufferOwner
@@ -51,7 +51,7 @@ type Picture struct {
 	Keyframe      bool
 }
 
-func layoutOf(format string) (layout, bool) {
+func layoutOf(format av.PixelFormat) (layout, bool) {
 	if format == "" {
 		format = av.PixelFormatI420
 	}
@@ -144,7 +144,7 @@ func toNV12(pic Picture, scratch []byte) (Picture, []byte) {
 // published in place, one Owner reference per plane; any other is copied
 // once into pooled planes (NV12 converted to I420), after which the backend
 // may reuse its memory.
-func fillFrame(frame *av.Frame, pic *Picture) (string, error) {
+func fillFrame(frame *av.Frame, pic *Picture) (av.PixelFormat, error) {
 	l, ok := layoutOf(pic.Format)
 	if !ok || pic.Width <= 0 || pic.Height <= 0 {
 		return "", fmt.Errorf("%w: decoded picture %dx%d in %q", codec.ErrUnsupportedFormat, pic.Width, pic.Height, pic.Format)

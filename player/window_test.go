@@ -7,13 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 )
 
 type fakeTask struct {
-	goav.Task
+	Task
 
 	mu          sync.Mutex
 	paused      bool
@@ -76,6 +75,12 @@ func TestGameWindowStateResult(t *testing.T) {
 	g.mu.Unlock()
 	if finished, err := g.result(); !finished || !errors.Is(err, wantErr) {
 		t.Fatalf("ended result = (%v, %v), want (true, %v)", finished, err, wantErr)
+	}
+	// stopControls runs in defer when runWindow returns; it must preserve the
+	// ended result so Window.Run does not hang waiting on an already-drained done.
+	g.stopControls()
+	if finished, err := g.result(); !finished || !errors.Is(err, wantErr) {
+		t.Fatalf("ended+closed result = (%v, %v), want (true, %v)", finished, err, wantErr)
 	}
 }
 

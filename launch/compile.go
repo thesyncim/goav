@@ -90,7 +90,7 @@ type value struct {
 	input  goav.Input
 	stream goav.Stream
 	dest   goav.Destination
-	layer  goav.JoinArg
+	layer  goav.CompositeArg
 	file   fileRef
 }
 

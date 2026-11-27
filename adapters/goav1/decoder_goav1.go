@@ -18,7 +18,7 @@ func NewDecoderFactory() DecoderFactory {
 	return DecoderFactory{}
 }
 
-func Register(registry *codec.SimpleRegistry) {
+func Register(registry *codec.Registry) {
 	if registry == nil {
 		return
 	}
@@ -425,7 +425,7 @@ func (d *Decoder) applyEventStream(event *av.Event) {
 	d.video.PixelFormat = d.stream.Codec.PixelFormat
 }
 
-func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelFormat string) av.Stream {
+func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelFormat av.PixelFormat) av.Stream {
 	stream.Type = av.MediaVideo
 	stream.Codec.ID = av.CodecAV1
 	stream.Codec.Type = av.MediaVideo
@@ -448,7 +448,7 @@ func normalizeDecoderStream(stream av.Stream, format backend.FrameFormat, pixelF
 	return stream
 }
 
-func normalizeDecoderPixelFormat(pixelFormat string) string {
+func normalizeDecoderPixelFormat(pixelFormat av.PixelFormat) av.PixelFormat {
 	switch pixelFormat {
 	case av.PixelFormatYUV420P:
 		return av.PixelFormatI420
@@ -554,7 +554,7 @@ func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *backend.Frame, frame *av
 	return nil
 }
 
-func backendFramePixelFormat(format backend.FrameFormat) (string, int, error) {
+func backendFramePixelFormat(format backend.FrameFormat) (av.PixelFormat, int, error) {
 	if format.Width <= 0 || format.Height <= 0 || format.BitDepth != 8 {
 		return "", 0, codec.ErrUnsupportedFormat
 	}

@@ -393,10 +393,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	if !ok || tap.Node != "sampler/sample" {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
-	runtimeTask, ok := builtTask.(*task)
-	if !ok {
-		t.Fatalf("task = %T, want *task", builtTask)
-	}
+	runtimeTask := builtTask
 	runtimeTask.attachMu.Lock()
 	branchTapCount := len(runtimeTask.branchTaps)
 	runtimeTask.attachMu.Unlock()
@@ -585,7 +582,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := builtTask.(*task)
+	task := builtTask
 	task.taps = []TapSnapshot{
 		{
 			Name:      "audio.packets",
@@ -835,7 +832,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := mediaTask.(*task)
+	runtimeTask := mediaTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
@@ -899,7 +896,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := mediaTask.(*task)
+	runtimeTask := mediaTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
@@ -1010,7 +1007,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := mediaTask.(*task)
+	runtimeTask := mediaTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "video.frames",
 		MediaKind: av.MediaVideo,
@@ -1148,7 +1145,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := mediaTask.(*task)
+	runtimeTask := mediaTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -1269,7 +1266,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := mediaTask.(*task)
+	runtimeTask := mediaTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -1349,7 +1346,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	graph := newRuntimeRollbackGraph()
 	// The branch connects inside first; its edge from the anchor, last, fails.
 	graph.failConnectAt = 2
-	mediaTask := &task{
+	mediaTask := &Task{
 		graph:   graph,
 		runtime: rt,
 		taps: []TapSnapshot{{
@@ -1424,7 +1421,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	))
 	graph := newRuntimeRollbackGraph()
 	graph.failConnectAt = 2
-	mediaTask := &task{
+	mediaTask := &Task{
 		graph:   graph,
 		runtime: rt,
 		taps: []TapSnapshot{{
@@ -1508,7 +1505,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	graph := newRuntimeRollbackGraph()
 	graph.failConnectAt = 1
 	sink := &runtimeTestSink{name: "monitor"}
-	mediaTask := &task{
+	mediaTask := &Task{
 		graph:   graph,
 		runtime: rt,
 		taps: []TapSnapshot{{
@@ -1592,7 +1589,7 @@ func TestTaskAttachCloseRejectsOrClosesPreparedRuntimeComponents(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			mediaTask := builtTask.(*task)
+			mediaTask := builtTask
 			mediaTask.taps = []TapSnapshot{{
 				Name:      "audio.frames",
 				MediaKind: av.MediaAudio,
@@ -1699,7 +1696,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		t.Fatal(err)
 	}
 	defer builtTask.Close()
-	mediaTask := builtTask.(*task)
+	mediaTask := builtTask
 	mediaTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2010,7 +2007,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -2092,7 +2089,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.packets",
 		MediaKind: av.MediaAudio,
@@ -2199,7 +2196,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2300,7 +2297,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2401,7 +2398,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2519,7 +2516,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,
@@ -2645,7 +2642,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeTask := builtTask.(*task)
+	runtimeTask := builtTask
 	runtimeTask.taps = []TapSnapshot{{
 		Name:      "audio.frames",
 		MediaKind: av.MediaAudio,

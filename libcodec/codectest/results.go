@@ -125,8 +125,8 @@ func merged(base, reported av.CodecParameters) av.CodecParameters {
 	set(&out.Profile, reported.Profile)
 	set(&out.Level, reported.Level)
 	set(&out.ChannelLayout, reported.ChannelLayout)
-	set(&out.PixelFormat, reported.PixelFormat)
-	set(&out.SampleFormat, reported.SampleFormat)
+	set((*string)(&out.PixelFormat), string(reported.PixelFormat))
+	set((*string)(&out.SampleFormat), string(reported.SampleFormat))
 	for _, pair := range [][2]*int{{&out.SampleRate, &reported.SampleRate}, {&out.Channels, &reported.Channels}, {&out.Width, &reported.Width}, {&out.Height, &reported.Height}} {
 		if *pair[1] > 0 {
 			*pair[0] = *pair[1]

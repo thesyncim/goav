@@ -94,7 +94,7 @@ func TestDecoderPixelFormatMapping(t *testing.T) {
 	tests := []struct {
 		name        string
 		format      backend.FrameFormat
-		pixelFormat string
+		pixelFormat av.PixelFormat
 		planeCount  int
 		wantErr     bool
 	}{
@@ -149,7 +149,7 @@ func TestDecoderPixelFormatMapping(t *testing.T) {
 }
 
 func TestDecoderPixelFormatAliases(t *testing.T) {
-	tests := map[string]string{
+	tests := map[av.PixelFormat]av.PixelFormat{
 		av.PixelFormatYUV420P: av.PixelFormatI420,
 		av.PixelFormatYUV422P: av.PixelFormatI422,
 		av.PixelFormatYUV444P: av.PixelFormatI444,
@@ -167,7 +167,7 @@ func TestDecoderFillDecodedFramePlanarFormats(t *testing.T) {
 	tests := []struct {
 		name        string
 		format      backend.FrameFormat
-		pixelFormat string
+		pixelFormat av.PixelFormat
 	}{
 		{
 			name:        "i422",

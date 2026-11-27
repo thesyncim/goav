@@ -145,7 +145,7 @@ func TestRequireWorksInBranches(t *testing.T) {
 		})
 	rt := solverTestOpusRuntime(
 		testBundleFilters(),
-		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 	_, err := rt.Build(context.Background(), source.
 		Audio().
@@ -241,7 +241,7 @@ func TestPreferBiasesOpenConversionTarget(t *testing.T) {
 		Name:          "sampleconv",
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16, "f32"},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16, "f32"},
 		Realtime:      true,
 		Stateless:     true,
 	}, factory))
@@ -288,7 +288,7 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 		Name:          "sampleconv",
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
-		SampleFormats: []string{av.SampleFormatS16, "f32"},
+		SampleFormats: []av.SampleFormat{av.SampleFormatS16, "f32"},
 		Realtime:      true,
 		Stateless:     true,
 	}, factory))
@@ -350,7 +350,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 		WithRealtime(false),
 		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
-		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []av.SampleFormat{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 	branch := func(prefer bool) Output {
 		s := source().Audio().Decode().Auto(shape.AllowResample())

@@ -49,14 +49,14 @@ func ValidateRecipeIRTransformAdapterDescriptor(operation string, stream recipei
 	switch spec.Kind {
 	case recipeir.TransformResize:
 		if mode := resizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
-			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
+			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), toStrings(desc.ResizeModes))
 		}
-		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
-			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", format, desc.PixelFormats)
+		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !slices.Contains(desc.PixelFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", string(format), toStrings(desc.PixelFormats))
 		}
 	case recipeir.TransformResample:
-		if format := spec.Resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
-			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
+		if format := spec.Resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !slices.Contains(desc.SampleFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "sample_format", string(format), toStrings(desc.SampleFormats))
 		}
 	}
 	return nil
@@ -77,11 +77,11 @@ func stringAllowed(allowed []string, value string) bool {
 	return slices.Contains(allowed, value)
 }
 
-func resizeModesToStrings(modes []filter.ResizeMode) []string {
-	out := make([]string, 0, len(modes))
-	for i := range modes {
-		if modes[i] != "" {
-			out = append(out, string(modes[i]))
+func toStrings[S ~string](values []S) []string {
+	out := make([]string, 0, len(values))
+	for i := range values {
+		if values[i] != "" {
+			out = append(out, string(values[i]))
 		}
 	}
 	return out

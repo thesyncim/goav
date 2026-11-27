@@ -19,8 +19,8 @@ type Need struct {
 	Backend      string
 	Media        av.MediaType
 	Profile      string
-	PixelFormat  string
-	SampleFormat string
+	PixelFormat  av.PixelFormat
+	SampleFormat av.SampleFormat
 	SampleRate   int
 	BitDepth     int
 	Width        int
@@ -137,7 +137,7 @@ func modeNoun(mode Mode) string {
 // the most preferred backend whose declared capabilities and knobs fit (see
 // Prefer). It never substitutes another backend for a named one, and reads
 // only declarations: nothing is loaded or opened.
-func (r *SimpleRegistry) Select(need Need) (Choice, error) {
+func (r *Registry) Select(need Need) (Choice, error) {
 	candidates := r.candidates(need)
 	var fitting []registered
 	var rejected []Rejection
@@ -227,7 +227,7 @@ func descriptorsOf(backends []registered) []Descriptor {
 
 // candidates are the backends serving need's codec and mode, most preferred
 // first.
-func (r *SimpleRegistry) candidates(need Need) []registered {
+func (r *Registry) candidates(need Need) []registered {
 	order := r.preferenceFor(need.ID, need.Mode)
 	var out []registered
 	for _, backend := range r.backends {
@@ -278,14 +278,14 @@ func kindRank(kind BackendKind) int {
 	return 3
 }
 
-func (r *SimpleRegistry) preferenceReason(need Need, chosen registered) string {
+func (r *Registry) preferenceReason(need Need, chosen registered) string {
 	if order := r.preferenceFor(need.ID, need.Mode); preferenceRank(order, chosen.desc.Backend) < len(order) {
 		return "runtime preference " + strings.Join(order, " > ")
 	}
 	return "default preference: hardware > lib > go"
 }
 
-func (r *SimpleRegistry) descriptorsFor(id av.CodecID, mode Mode) []Descriptor {
+func (r *Registry) descriptorsFor(id av.CodecID, mode Mode) []Descriptor {
 	var out []Descriptor
 	for i := range r.descriptors {
 		if r.descriptors[i].ID == id && r.descriptors[i].Supports(mode) {
@@ -304,9 +304,9 @@ func (d Descriptor) Check(need Need) error {
 	case need.Media != "" && d.Type != "" && need.Media != d.Type:
 		return fmt.Errorf("codes %s, not %s", d.Type, need.Media)
 	case need.PixelFormat != "" && len(capabilities.PixelFormats) != 0 && !slices.Contains(capabilities.PixelFormats, need.PixelFormat):
-		return fmt.Errorf("pixel format %s not supported (%s)", need.PixelFormat, strings.Join(capabilities.PixelFormats, ", "))
+		return fmt.Errorf("pixel format %s not supported (%s)", need.PixelFormat, joinStrings(capabilities.PixelFormats))
 	case need.SampleFormat != "" && len(capabilities.SampleFormats) != 0 && !slices.Contains(capabilities.SampleFormats, need.SampleFormat):
-		return fmt.Errorf("sample format %s not supported (%s)", need.SampleFormat, strings.Join(capabilities.SampleFormats, ", "))
+		return fmt.Errorf("sample format %s not supported (%s)", need.SampleFormat, joinStrings(capabilities.SampleFormats))
 	case need.SampleRate > 0 && len(capabilities.SampleRates) != 0 && !slices.Contains(capabilities.SampleRates, need.SampleRate):
 		return fmt.Errorf("sample rate %d not supported (%s)", need.SampleRate, joinInts(capabilities.SampleRates))
 	case need.Profile != "" && len(d.Profiles) != 0 && !slices.ContainsFunc(d.Profiles, func(profile string) bool { return strings.EqualFold(profile, need.Profile) }):
@@ -352,4 +352,15 @@ func joinInts(values []int) string {
 		parts[i] = strconv.Itoa(value)
 	}
 	return strings.Join(parts, ", ")
+}
+
+func joinStrings[S ~string](values []S) string {
+	var b strings.Builder
+	for i, v := range values {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(string(v))
+	}
+	return b.String()
 }

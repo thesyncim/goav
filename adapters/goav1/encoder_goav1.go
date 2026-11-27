@@ -245,7 +245,10 @@ func normalizeAV1EncodeStream(config codec.EncodeConfig) (av.Stream, int, int, e
 		return av.Stream{}, 0, 0, fmt.Errorf("goav1: AV1 encode dimensions must be even and at least 16x16, got %dx%d: %w", width, height, codec.ErrUnsupportedFormat)
 	}
 
-	pixelFormat := firstNonEmpty(parameters.PixelFormat, stream.Codec.PixelFormat)
+	pixelFormat := parameters.PixelFormat
+	if pixelFormat == "" {
+		pixelFormat = stream.Codec.PixelFormat
+	}
 	if pixelFormat == "" {
 		pixelFormat = av.PixelFormatI420
 	}
@@ -401,7 +404,7 @@ func av1FrameFromFrame(frame *av.Frame, width, height int) (backend.I420Frame, e
 	}, nil
 }
 
-func normalizeAV1EncodePixelFormat(pixelFormat string) string {
+func normalizeAV1EncodePixelFormat(pixelFormat av.PixelFormat) av.PixelFormat {
 	switch pixelFormat {
 	case av.PixelFormatYUV420P:
 		return av.PixelFormatI420

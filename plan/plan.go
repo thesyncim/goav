@@ -132,8 +132,8 @@ type AdapterRequirement struct {
 	Transform     string              `json:"transform,omitempty"`
 	Input         av.MediaType        `json:"input,omitempty"`
 	Output        av.MediaType        `json:"output,omitempty"`
-	PixelFormats  []string            `json:"pixelFormats,omitempty"`
-	SampleFormats []string            `json:"sampleFormats,omitempty"`
+	PixelFormats  []av.PixelFormat    `json:"pixelFormats,omitempty"`
+	SampleFormats []av.SampleFormat   `json:"sampleFormats,omitempty"`
 	ResizeModes   []filter.ResizeMode `json:"resizeModes,omitempty"`
 	Realtime      bool                `json:"realtime,omitempty"`
 	Stateless     bool                `json:"stateless,omitempty"`

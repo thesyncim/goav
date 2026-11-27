@@ -442,7 +442,7 @@ func applySettings(event *av.Event, set func(name, value string) error) error {
 }
 
 // samePlanar reports two names of one planar layout (i420 and yuv420p).
-func samePlanar(a, b string) bool {
+func samePlanar(a, b av.PixelFormat) bool {
 	if a == "" {
 		a = av.PixelFormatI420
 	}

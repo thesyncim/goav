@@ -1,4 +1,4 @@
-package goav
+package stage
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 // the data-plane rule. SetRate/Pause/Resume serialize on a cold-side mutex,
 // re-anchor the epoch atomically, and rotate a broadcast channel so in-flight
 // Sleeps recompute their remaining wall wait under the new epoch.
-type timeline struct {
+type Timeline struct {
 	inner av.Clock
 	// monotonic is set when inner is av's real monotonic clock, whose Sleep is
 	// a plain timer wait: sleepInner then waits on a timer directly.
@@ -51,25 +51,28 @@ type timelineEpoch struct {
 	paused      bool
 }
 
-var _ av.Clock = (*timeline)(nil)
+var _ av.Clock = (*Timeline)(nil)
 
 // newTimeline anchors a timeline at zero on the inner clock's current reading,
 // running at 1x. A nil inner clock falls back to av.MonotonicClock, matching
 // the pacing default.
-func newTimeline(inner av.Clock) *timeline {
+func NewTimeline(inner av.Clock) *Timeline {
 	if inner == nil {
 		inner = av.MonotonicClock()
 	}
-	t := &timeline{inner: inner, monotonic: av.IsMonotonicClock(inner)}
+	t := &Timeline{inner: inner, monotonic: av.IsMonotonicClock(inner)}
 	t.epoch.Store(&timelineEpoch{wallAnchor: inner.Now(), rate: 1})
 	change := make(chan struct{})
 	t.change.Store(&change)
 	return t
 }
 
+// Inner returns the underlying wall clock wrapped by this timeline.
+func (t *Timeline) Inner() av.Clock { return t.inner }
+
 // Now reports the timeline reading: the integral of rate over unpaused inner
 // time since construction. Lock-free — one epoch load plus arithmetic.
-func (t *timeline) Now() time.Duration {
+func (t *Timeline) Now() time.Duration {
 	return t.epoch.Load().readingAt(t.inner.Now())
 }
 
@@ -82,14 +85,14 @@ func (e *timelineEpoch) readingAt(wall time.Duration) time.Duration {
 }
 
 // Rate reports the current playback-rate multiplier.
-func (t *timeline) Rate() float64 {
+func (t *Timeline) Rate() float64 {
 	return t.epoch.Load().rate
 }
 
 // SetRate re-anchors the timeline at the current reading with a new rate.
 // In-flight Sleeps wake and recompute their remaining wall wait, so every
 // paced consumer changes pace together, mid-sleep included.
-func (t *timeline) SetRate(rate float64) error {
+func (t *Timeline) SetRate(rate float64) error {
 	if !(rate > 0) || math.IsInf(rate, 0) {
 		return fmt.Errorf("goav: timeline needs a positive, finite playback rate, got %v", rate)
 	}
@@ -110,7 +113,7 @@ func (t *timeline) SetRate(rate float64) error {
 
 // Pause freezes the timeline at its current reading. Sleeps hold until Resume
 // (or their context ends). Pausing a paused timeline is a no-op.
-func (t *timeline) Pause() {
+func (t *Timeline) Pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	epoch := t.epoch.Load()
@@ -126,7 +129,7 @@ func (t *timeline) Pause() {
 
 // Resume continues a paused timeline from the frozen reading at the current
 // rate. Resuming a running timeline is a no-op.
-func (t *timeline) Resume() {
+func (t *Timeline) Resume() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	epoch := t.epoch.Load()
@@ -144,7 +147,7 @@ func (t *timeline) Resume() {
 // sleepers observe it: a sleeper that loads the old channel is woken by its
 // close; one that loads the new channel already sees the new epoch (atomic
 // loads/stores order the pair).
-func (t *timeline) setEpochLocked(next timelineEpoch) {
+func (t *Timeline) setEpochLocked(next timelineEpoch) {
 	t.epoch.Store(&next)
 	fresh := make(chan struct{})
 	old := t.change.Swap(&fresh)
@@ -153,12 +156,12 @@ func (t *timeline) setEpochLocked(next timelineEpoch) {
 
 // markPaced records that a paced consumer (demux pacer, clock-aware source)
 // waits on this timeline; the task refuses rate controls until one exists.
-func (t *timeline) markPaced() {
+func (t *Timeline) MarkPaced() {
 	t.consumers.Store(true)
 }
 
 // paced reports whether any paced consumer waits on the timeline.
-func (t *timeline) paced() bool {
+func (t *Timeline) Paced() bool {
 	return t.consumers.Load()
 }
 
@@ -166,14 +169,14 @@ func (t *timeline) paced() bool {
 // timeline — the one call every seam that hands out the clock (provider open,
 // realtime demux, gate lowering) makes so task-wide rate and pause controls
 // have a consumer to scale. Non-timeline clocks (unit-test fakes) are ignored.
-func markTimelinePaced(clock av.Clock) {
-	if timeline, ok := clock.(*timeline); ok {
-		timeline.markPaced()
+func MarkTimelinePaced(clock av.Clock) {
+	if timeline, ok := clock.(*Timeline); ok {
+		timeline.MarkPaced()
 	}
 }
 
 // pausedNow reports whether the timeline is currently frozen at its reading.
-func (t *timeline) pausedNow() bool {
+func (t *Timeline) PausedNow() bool {
 	return t.epoch.Load().paused
 }
 
@@ -183,7 +186,7 @@ func (t *timeline) pausedNow() bool {
 // finishing on the stale conversion. While paused it holds for the next epoch
 // change. All wall waits go through the inner clock's Sleep so fake clocks
 // keep pacing deterministic.
-func (t *timeline) Sleep(ctx context.Context, d time.Duration) error {
+func (t *Timeline) Sleep(ctx context.Context, d time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -227,7 +230,7 @@ func (t *timeline) Sleep(ctx context.Context, d time.Duration) error {
 // per paced sleep. Any other clock (a test fake) runs its Sleep in a goroutine
 // with its own cancelable context, so an abandoned wait releases fake-clock
 // waiters instead of leaking them.
-func (t *timeline) sleepInner(ctx context.Context, change <-chan struct{}, wall time.Duration) error {
+func (t *Timeline) sleepInner(ctx context.Context, change <-chan struct{}, wall time.Duration) error {
 	if t.monotonic {
 		return sleepWall(ctx, change, wall)
 	}

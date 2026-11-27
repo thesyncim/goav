@@ -43,15 +43,22 @@ const (
 	asmDropping
 )
 
+type syncRequestState uint8
+
+const (
+	syncReqNone syncRequestState = iota
+	syncReqPending
+	syncReqSent
+)
+
 type videoFrameAssembler struct {
-	stream           av.Stream
-	buffer           []byte
-	state            assemblerState
-	lossBefore       bool
-	discontinuous    bool
-	requestSync      bool
-	hasSyncTimestamp bool
-	syncTimestamp    uint32
+	stream        av.Stream
+	buffer        []byte
+	state         assemblerState
+	lossBefore    bool
+	discontinuous bool
+	syncReq       syncRequestState
+	syncTimestamp uint32
 	// keyframe is frame-level: detected on the first fragment, kept through
 	// emission.
 	keyframe  bool
@@ -305,8 +312,7 @@ func (a *videoFrameAssembler) handleEvent(ctx context.Context, event *av.Event) 
 
 func (a *videoFrameAssembler) beginFrame(timestamp uint32, keyframe bool) {
 	a.state = asmAssembling
-	a.requestSync = false
-	a.hasSyncTimestamp = false
+	a.syncReq = syncReqNone
 	a.timestamp = timestamp
 	a.keyframe = keyframe
 	a.buffer = a.buffer[:0]
@@ -314,8 +320,7 @@ func (a *videoFrameAssembler) beginFrame(timestamp uint32, keyframe bool) {
 
 func (a *videoFrameAssembler) resumeWithBufferedParams(timestamp uint32) {
 	a.state = asmAssembling
-	a.requestSync = false
-	a.hasSyncTimestamp = false
+	a.syncReq = syncReqNone
 	a.timestamp = timestamp
 	a.keyframe = false
 }
@@ -326,15 +331,13 @@ func (a *videoFrameAssembler) markLoss(discontinuous bool) {
 	if discontinuous {
 		a.discontinuous = true
 	}
-	a.requestSync = true
-	a.hasSyncTimestamp = false
+	a.syncReq = syncReqPending
 	a.clearPartial()
 }
 
 func (a *videoFrameAssembler) dropUntilSync() {
 	if a.state != asmDropping {
-		a.requestSync = true
-		a.hasSyncTimestamp = false
+		a.syncReq = syncReqPending
 	}
 	a.state = asmDropping
 	a.lossBefore = true
@@ -355,14 +358,14 @@ func (a *videoFrameAssembler) resetPartial() {
 }
 
 func (a *videoFrameAssembler) requestSyncOnFrame(timestamp uint32, out *DepacketizeResult) error {
-	if !a.hasSyncTimestamp || a.syncTimestamp != timestamp {
-		a.requestSync = true
+	if a.syncReq != syncReqSent || a.syncTimestamp != timestamp {
+		a.syncReq = syncReqPending
 	}
 	return a.emitPendingSync(timestamp, out)
 }
 
 func (a *videoFrameAssembler) emitPendingSync(timestamp uint32, out *DepacketizeResult) error {
-	if !a.requestSync {
+	if a.syncReq != syncReqPending {
 		return nil
 	}
 	if len(out.Events) == cap(out.Events) {
@@ -374,8 +377,7 @@ func (a *videoFrameAssembler) emitPendingSync(timestamp uint32, out *Depacketize
 		Epoch:    a.stream.Epoch,
 		Reason:   "video depacketizer needs sync",
 	})
-	a.requestSync = false
-	a.hasSyncTimestamp = true
+	a.syncReq = syncReqSent
 	a.syncTimestamp = timestamp
 	return nil
 }
