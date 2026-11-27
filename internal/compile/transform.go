@@ -73,10 +73,6 @@ func resizeModeAllowed(allowed []filter.ResizeMode, mode filter.ResizeMode) bool
 	return slices.Contains(allowed, mode)
 }
 
-func stringAllowed(allowed []string, value string) bool {
-	return slices.Contains(allowed, value)
-}
-
 func toStrings[S ~string](values []S) []string {
 	out := make([]string, 0, len(values))
 	for i := range values {
