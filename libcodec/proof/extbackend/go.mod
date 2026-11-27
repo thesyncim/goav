@@ -3,7 +3,7 @@ module github.com/thesyncim/goav/libcodec/proof/extbackend
 go 1.27.4
 
 require (
-	github.com/thesyncim/goav v0.2.0
+	github.com/thesyncim/goav v0.2.3-0.20261127194215-bce3f85b9498
 	github.com/thesyncim/goav/libcodec v0.0.0-20261124213030-4062f221251b
 )
 
