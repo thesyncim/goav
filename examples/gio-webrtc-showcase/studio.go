@@ -701,8 +701,7 @@ func (s *studio) RequestCameraAccess(ctx context.Context) error {
 	s.mu.Lock()
 	s.cameraAccess = (err == nil)
 	if err != nil {
-		s.lastError = err.Error()
-		s.recordEventLocked("error", "permission", err.Error())
+		s.recordEventLocked("info", "permission", "camera access not yet granted: "+err.Error())
 	} else {
 		s.lastError = ""
 		s.recordEventLocked("info", "permission", "macOS camera access granted")

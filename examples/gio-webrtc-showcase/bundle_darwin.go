@@ -6,19 +6,21 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 //go:embed Info.plist
 var embeddedInfoPlist []byte
 
-// ensureMacOSAppBundle wraps and re-execs the current binary inside a stable,
-// ad-hoc signed macOS .app bundle with Info.plist camera & screen usage keys
-// when launched via plain `go run` (no wrapper script or `cd` needed).
+// ensureMacOSAppBundle wraps and relaunches the current binary inside a stable,
+// ad-hoc signed macOS .app bundle via LaunchServices (`open -W -n -a`).
+// Launching through LaunchServices gives `goav Studio.app` its own macOS TCC
+// identity (instead of inheriting the parent terminal's TCC attribution), so
+// macOS prompts cleanly for Camera and Screen Recording access.
 func ensureMacOSAppBundle(headless bool) {
 	if headless || os.Getenv("GOAV_STUDIO_BUNDLED") == "1" {
 		return
@@ -68,9 +70,20 @@ func ensureMacOSAppBundle(headless bool) {
 		_ = os.WriteFile(stampPath, []byte(key), 0o644)
 	}
 
-	args := append([]string{appBin}, os.Args[1:]...)
-	env := append(os.Environ(), "GOAV_STUDIO_BUNDLED=1")
-	_ = syscall.Exec(appBin, args, env)
+	openArgs := []string{"-W", "-n", "-a", app}
+	if len(os.Args) > 1 {
+		openArgs = append(openArgs, "--args")
+		openArgs = append(openArgs, os.Args[1:]...)
+	}
+	fmt.Fprintf(os.Stderr, "launching %s...\n", app)
+	cmd := exec.Command("open", openArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "goav Studio launch error: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func fileExecutable(path string) bool {

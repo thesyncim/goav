@@ -159,7 +159,10 @@ func (s *studioServer) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 
 func (s *studioServer) handleCameraPermission(w http.ResponseWriter, r *http.Request) {
 	if err := s.studio.RequestCameraAccess(r.Context()); err != nil {
-		writeErr(w, http.StatusForbidden, err)
+		if runtime.GOOS == "darwin" {
+			_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera").Start()
+		}
+		writeErr(w, http.StatusForbidden, fmt.Errorf("%w (opened System Settings → Privacy & Security → Camera)", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, s.studio.Snapshot())
@@ -167,6 +170,10 @@ func (s *studioServer) handleCameraPermission(w http.ResponseWriter, r *http.Req
 
 func (s *studioServer) handleScreenPermission(w http.ResponseWriter, _ *http.Request) {
 	granted := screenav.RequestAccess()
+	s.studio.refreshDevices()
+	if !granted && runtime.GOOS == "darwin" {
+		_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture").Start()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"granted": granted,
 		"state":   s.studio.Snapshot(),
