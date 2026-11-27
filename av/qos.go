@@ -28,6 +28,9 @@ func EventQoSReport(event *Event) (lateness time.Duration, dropped bool, ok bool
 	if event == nil {
 		return 0, false, false
 	}
+	if event.QoSLateness > 0 {
+		return event.QoSLateness, event.QoSDropped, true
+	}
 	value, err := strconv.ParseInt(event.Metadata[metadataQoSLateness], 10, 64)
 	if err != nil || value <= 0 {
 		return 0, false, false

@@ -106,10 +106,11 @@ func (g *bufferedRunner) reportStaleQoS(node *bufferedNode, msg *bufferedMessage
 		return
 	}
 	event := av.Event{
-		Type:     av.EventQoS,
-		StreamID: qosStreamID(&msg.message),
-		Reason:   node.name,
-		Metadata: av.QoSMetadata(time.Since(msg.enqueuedAt)-node.policy.MaxLatency, true),
+		Type:        av.EventQoS,
+		StreamID:    qosStreamID(&msg.message),
+		Reason:      node.name,
+		QoSLateness: time.Since(msg.enqueuedAt) - node.policy.MaxLatency,
+		QoSDropped:  true,
 	}
 	g.observe(event, node.counters)
 }
