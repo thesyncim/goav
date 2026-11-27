@@ -25,7 +25,7 @@ require (
 	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/pion/turn/v5 v5.1.2 // indirect
-	github.com/thesyncim/goav1 v0.2.4 // indirect
+	github.com/thesyncim/goav1 v0.2.6 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 // indirect
 	github.com/thesyncim/gopus v0.2.11 // indirect
 	github.com/thesyncim/govpx v0.5.2 // indirect

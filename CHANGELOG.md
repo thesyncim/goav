@@ -13,6 +13,13 @@ methodology changes, and migration notes.
 
 Entries since 2026-10-19 live in changelog.d/ until release.
 
+## v0.3.0
+
+- **Breaking (pre-v1 API)**: Replace the 16-method `goav.Task` interface with a concrete `*goav.Task` struct; split `JoinArg` into `MixArg` and `CompositeArg` (making `Mix(At(...))` a compile error); split `pipeline.DropPolicy` from `pipeline.DropReason`; rename `SimpleRegistry` to `Registry` across codec/filter/format/runconfig; introduce typed `av.PixelFormat` and `av.SampleFormat`; promote `av.Event` attachment, destination, and QoS (`QoSLateness`/`QoSDropped`) lifecycle fields out of `Metadata`.
+- **Zero-cost state machines & correctness**: Replace 14 implicit flag/boolean state machines across core, containers, adapters, `cameraav`, `screenav`, `player`, `libcodec/kit`, `rtpav`, and `scheme` with zero-cost explicit `uint8`/`uint32` enum state machines; fix `player.Window.Run` `windowEndedClosed` hang, `Task.Snapshot` premature `taskClosing` promotion, async `Event.Stream` aliasing in buffered pipelines, concurrent `rtpav` `sender.Close()` RTCP BYE race, and `goh264` `PixelFormatI420` descriptor mismatch.
+- **Hot-path performance & layout**: Add sub-power-of-two `av.NewBuffer` size classes, `av.RescaleValue` identity/nearest fast paths, zero-polling `flow.SyncPolicy` broadcast wakeup, O(N) HLS box compaction, and deterministic `testing/synctest` coverage; extract built-in stages/kernels/timeline/pools into `internal/stage`, and split oversized files across `runtime*.go`, `pipeline/`, `container/{matroska,hls}`, `rtpav/`, and `player/internal/engine/`.
+- **Dependencies & CI**: Bump `github.com/thesyncim/goav1` (`v0.2.4` -> `v0.2.6`), fix zero-camera Linux CI restarts in `examples/gio-webrtc-showcase`, add PR `concurrency:` auto-cancel groups, serialize `libcodec-macos` tests (`-p 1`), and repin nested modules.
+
 ## v0.2.2
 
 - **Native macOS Studio (`examples/gio-webrtc-showcase`)**: replaced the cgo Gio control room with a `CGO_ENABLED=0`, 100% pure-Go (VP8 / VP9 / AV1, no H.264) native macOS `NSWindow` + `WKWebView` studio app featuring native AVFoundation camera (`cameraav`) and native macOS screen capture (`screenav`), a single persistent `goav.Select` + `goav.Composite` pipeline with sub-millisecond `control.SelectActive` scene cuts (Test Pattern, Camera, Screen, PiP, Side-by-Side), hot-attachable multi-codec WebRTC simulcast fan-out, continuous WebM/MKV/MP4 recording across scene cuts, live LL-HLS origin, WHIP publish, multi-viewer `/watch` room, and a live `goav` code & SVG pipeline graph inspector.
