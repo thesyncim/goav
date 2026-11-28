@@ -214,8 +214,15 @@ func (s *studio) StartRecording(ctx context.Context, format, codecName string, b
 	if s.task == nil {
 		return recordingStatus{}, fmt.Errorf("pipeline not running")
 	}
-	if format == "" {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "webm":
 		format = "webm"
+	case "mkv":
+		format = "mkv"
+	case "mp4":
+		format = "mp4"
+	default:
+		return recordingStatus{}, fmt.Errorf("unsupported recording format %q (expected webm, mkv, or mp4)", format)
 	}
 	if codecName == "" {
 		codecName = "vp9"
