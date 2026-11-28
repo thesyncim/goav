@@ -5,6 +5,7 @@ dist/
 coverage.out
 *.test
 .claude/
+.junie/
 bench-results/*
 !bench-results/
 !bench-results/README.md

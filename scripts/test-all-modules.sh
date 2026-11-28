@@ -59,5 +59,16 @@ trap 'rm -rf "$scratch"' EXIT
 for gomod in "$root"/examples/go.mod "$root"/examples/*/go.mod; do
   [ -f "$gomod" ] || continue
   rel="${gomod#"$root"/}"
-  run_mod "$(dirname "$rel")"
+  dir="$(dirname "$rel")"
+  if [ "$dir" = "examples/gio-webrtc-showcase" ]; then
+    # gio-webrtc-showcase carries no replace directives so `go run ...@version`
+    # works; test it against this checkout through the temporary workspace.
+    (
+      export GOWORK="$scratch/go.work"
+      go work use "$root/$dir"
+      run_mod "$dir"
+    )
+    continue
+  fi
+  run_mod "$dir"
 done
