@@ -1,0 +1,1 @@
+- Set `GOPROXY`/`GONOPROXY`/`GONOSUMDB` on the `Verify externally resolved lifecycle fixes` step in `.github/workflows/release.yml` so freshly tagged nested modules resolve directly instead of hitting a stale Go proxy cache.

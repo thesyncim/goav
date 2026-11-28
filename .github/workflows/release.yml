@@ -134,6 +134,10 @@ jobs:
 
       - name: Verify externally resolved lifecycle fixes
         if: startsWith(steps.release.outputs.tag, 'v')
+        env:
+          GOPROXY: https://proxy.golang.org,direct
+          GONOPROXY: github.com/thesyncim/goav
+          GONOSUMDB: github.com/thesyncim
         run: bash scripts/check-consumers.sh "$(git rev-parse HEAD)"
 
       - name: Build root CLI artifacts
